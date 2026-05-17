@@ -391,18 +391,20 @@ func detectOpenAICompletionsCompat(model Model) OpenAICompletionsCompat {
 		strings.Contains(baseURL, "api.x.ai") ||
 		isTogether ||
 		strings.Contains(baseURL, "chutes.ai") ||
-		strings.Contains(baseURL, "deepseek.com") ||
+		isDeepSeek ||
 		isZai ||
 		isMoonshot ||
 		provider == "opencode" ||
 		strings.Contains(baseURL, "opencode.ai") ||
 		isCloudflareWorkersAI ||
 		isCloudflareAIGateway
-	useMaxTokens := strings.Contains(baseURL, "chutes.ai") || isMoonshot || isCloudflareAIGateway || isTogether
+	useMaxTokens := strings.Contains(baseURL, "chutes.ai") || isMoonshot || isCloudflareAIGateway || isTogether || isDeepSeek || isGrok
 	thinkingFormat := "openai"
 	switch {
 	case isDeepSeek:
 		thinkingFormat = "deepseek"
+	case isGrok:
+		thinkingFormat = "xai"
 	case isZai:
 		thinkingFormat = "zai"
 	case isTogether:
@@ -421,14 +423,14 @@ func detectOpenAICompletionsCompat(model Model) OpenAICompletionsCompat {
 	return OpenAICompletionsCompat{
 		SupportsStore:                       !isNonStandard,
 		SupportsDeveloperRole:               !isNonStandard,
-		SupportsReasoningEffort:             !isGrok && !isZai && !isMoonshot && !isTogether && !isCloudflareAIGateway,
+		SupportsReasoningEffort:             !isZai && !isMoonshot && !isTogether && !isCloudflareAIGateway,
 		SupportsUsageInStreaming:            true,
 		MaxTokensField:                      maxTokensField,
 		RequiresReasoningContentOnAssistant: isDeepSeek,
 		ThinkingFormat:                      thinkingFormat,
-		SupportsStrictMode:                  !isMoonshot && !isTogether && !isCloudflareAIGateway,
+		SupportsStrictMode:                  !(isDeepSeek || isGrok || isMoonshot || isTogether || isCloudflareAIGateway),
 		CacheControlFormat:                  cacheControlFormat,
-		SupportsLongCacheRetention:          !(isTogether || isCloudflareWorkersAI || isCloudflareAIGateway),
+		SupportsLongCacheRetention:          !(isDeepSeek || isGrok || isTogether || isCloudflareWorkersAI || isCloudflareAIGateway),
 	}
 }
 
@@ -469,7 +471,7 @@ func applyOpenAICompletionsReasoning(payload *OpenAICompletionsPayload, model Mo
 	}
 	if level != "" {
 		level = ClampThinkingLevel(model, level)
-		if level == "off" {
+		if level == "off" && compat.ThinkingFormat != "xai" {
 			level = ""
 		}
 	}
@@ -486,6 +488,10 @@ func applyOpenAICompletionsReasoning(payload *OpenAICompletionsPayload, model Mo
 			payload.ReasoningEffort = mapped
 		}
 		payload.Thinking = map[string]any{"type": state}
+	case "xai":
+		if level != "" && compat.SupportsReasoningEffort {
+			payload.ReasoningEffort = mapped
+		}
 	case "openrouter":
 		if level != "" {
 			payload.Reasoning = map[string]any{"effort": mapped}

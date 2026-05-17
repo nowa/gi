@@ -36,9 +36,6 @@ func (p OpenAICompletionsProvider) StreamSimple(model Model, llmContext Context,
 	reasoning := ""
 	if options.Reasoning != "" {
 		reasoning = ClampThinkingLevel(model, options.Reasoning)
-		if reasoning == "off" {
-			reasoning = ""
-		}
 	}
 	payload, err := BuildOpenAICompletionsPayloadChecked(model, llmContext, OpenAICompletionsPayloadOptions{
 		MaxTokens:      options.MaxTokens,

@@ -50,6 +50,95 @@ func TestOpenAICompletionsProviderStreamsFromHTTP(t *testing.T) {
 	}
 }
 
+func TestOpenAICompletionsProviderUsesOfficialGrokEndpointAndPayload(t *testing.T) {
+	var requestPath string
+	var authHeader string
+	var payload OpenAICompletionsPayload
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestPath = r.URL.Path
+		authHeader = r.Header.Get("Authorization")
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		w.Header().Set("content-type", "text/event-stream")
+		writeSSE(t, w, `{"id":"grok-live","choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	model := MustGetModel("xai", "grok-4.3")
+	model.BaseURL = server.URL + "/v1"
+	stream, err := NewOpenAICompletionsProvider(server.Client()).StreamSimple(model, Context{Messages: []Message{UserMessageText("hi")}}, SimpleStreamOptions{
+		APIKey:    "xai-key",
+		MaxTokens: 1234,
+		Reasoning: "high",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := stream.Result(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if requestPath != "/v1/chat/completions" || authHeader != "Bearer xai-key" {
+		t.Fatalf("request path/auth = %q %q", requestPath, authHeader)
+	}
+	if payload.Model != "grok-4.3" || payload.MaxTokens != 1234 || payload.MaxCompletionTokens != 0 || payload.ReasoningEffort != "high" {
+		t.Fatalf("payload = %#v", payload)
+	}
+	if payload.Store != nil || payload.PromptCacheKey != "" || len(payload.Messages) != 1 {
+		t.Fatalf("payload = %#v", payload)
+	}
+	if result.ResponseID != "grok-live" || result.Content[0].Text != "ok" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestOpenAICompletionsProviderUsesOfficialDeepSeekEndpointAndPayload(t *testing.T) {
+	var requestPath string
+	var authHeader string
+	var payload OpenAICompletionsPayload
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestPath = r.URL.Path
+		authHeader = r.Header.Get("Authorization")
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		w.Header().Set("content-type", "text/event-stream")
+		writeSSE(t, w, `{"id":"deepseek-live","choices":[{"delta":{"reasoning_content":"think "}}]}`)
+		writeSSE(t, w, `{"id":"deepseek-live","choices":[{"delta":{"content":"done"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	model := MustGetModel("deepseek", "deepseek-v4-flash")
+	model.BaseURL = server.URL
+	stream, err := NewOpenAICompletionsProvider(server.Client()).StreamSimple(model, Context{Messages: []Message{UserMessageText("hi")}}, SimpleStreamOptions{
+		APIKey:    "deepseek-key",
+		MaxTokens: 2048,
+		Reasoning: "medium",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := stream.Result(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if requestPath != "/chat/completions" || authHeader != "Bearer deepseek-key" {
+		t.Fatalf("request path/auth = %q %q", requestPath, authHeader)
+	}
+	if payload.Model != "deepseek-v4-flash" || payload.MaxTokens != 2048 || payload.MaxCompletionTokens != 0 || payload.ReasoningEffort != "high" || payload.Thinking["type"] != "enabled" {
+		t.Fatalf("payload = %#v", payload)
+	}
+	if payload.Store != nil || payload.PromptCacheKey != "" || len(payload.Messages) != 1 {
+		t.Fatalf("payload = %#v", payload)
+	}
+	if result.ResponseID != "deepseek-live" || len(result.Content) != 2 || result.Content[0].Thinking != "think " || result.Content[1].Text != "done" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestOpenAICompletionsProviderStreamsToolCalls(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/event-stream")

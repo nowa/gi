@@ -19,7 +19,7 @@ func TestGetSupportedThinkingLevels(t *testing.T) {
 		{name: "sonnet no xhigh", provider: "anthropic", modelID: "claude-sonnet-4-5", not: "xhigh"},
 		{name: "gpt 5.4 xhigh", provider: "openai-codex", modelID: "gpt-5.4", contains: "xhigh"},
 		{name: "gpt 5.5 xhigh", provider: "openai-codex", modelID: "gpt-5.5", contains: "xhigh"},
-		{name: "deepseek exact", provider: "deepseek", modelID: "deepseek-v4-flash", exact: []string{"off", "high", "xhigh"}},
+		{name: "deepseek exact", provider: "deepseek", modelID: "deepseek-v4-flash", exact: []string{"off", "low", "medium", "high", "xhigh"}},
 		{name: "opencode-go exact", provider: "opencode-go", modelID: "deepseek-v4-flash", exact: []string{"off", "high", "xhigh"}},
 		{name: "openrouter deepseek exact", provider: "openrouter", modelID: "deepseek/deepseek-v4-flash", exact: []string{"off", "high", "xhigh"}},
 		{name: "openrouter opus xhigh", provider: "openrouter", modelID: "anthropic/claude-opus-4.6", contains: "xhigh"},

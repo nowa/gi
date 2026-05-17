@@ -119,6 +119,67 @@ func TestTogetherReasoningControls(t *testing.T) {
 	}
 }
 
+func TestOfficialGrokAndDeepSeekModelCatalog(t *testing.T) {
+	t.Setenv("XAI_API_KEY", "test-xai-key")
+	t.Setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+
+	if got := FindEnvKeys("xai"); len(got) != 1 || got[0] != "XAI_API_KEY" || GetEnvAPIKey("xai") != "test-xai-key" {
+		t.Fatalf("xai env keys = %#v key=%q", got, GetEnvAPIKey("xai"))
+	}
+	if got := FindEnvKeys("deepseek"); len(got) != 1 || got[0] != "DEEPSEEK_API_KEY" || GetEnvAPIKey("deepseek") != "test-deepseek-key" {
+		t.Fatalf("deepseek env keys = %#v key=%q", got, GetEnvAPIKey("deepseek"))
+	}
+
+	grok := MustGetModel("xai", "grok-4.3")
+	if grok.API != "openai-completions" || grok.Provider != "xai" || grok.BaseURL != "https://api.x.ai/v1" {
+		t.Fatalf("grok model = %#v", grok)
+	}
+	if !grok.Reasoning || !stringSlicesEqual(grok.Input, []string{"text", "image"}) || grok.ContextWindow != 1000000 {
+		t.Fatalf("grok model = %#v", grok)
+	}
+	if grok.Cost != (ModelCost{Input: 1.25, Output: 2.50, CacheRead: 0.20, CacheWrite: 0}) {
+		t.Fatalf("grok cost = %#v", grok.Cost)
+	}
+	if !thinkingMapHas(grok.ThinkingLevelMap, map[string]string{"off": "none", "low": "low", "medium": "medium", "high": "high"}) || !thinkingMapHasNil(grok.ThinkingLevelMap, "xhigh") {
+		t.Fatalf("grok thinking map = %#v", grok.ThinkingLevelMap)
+	}
+	if got := GetSupportedThinkingLevels(grok); !stringSlicesEqual(got, []string{"off", "low", "medium", "high"}) {
+		t.Fatalf("grok levels = %#v", got)
+	}
+	for _, alias := range []string{"grok-4.3-latest", "grok-latest"} {
+		model := MustGetModel("xai", alias)
+		if model.BaseURL != grok.BaseURL || model.API != grok.API || model.ContextWindow != grok.ContextWindow {
+			t.Fatalf("grok alias %s = %#v", alias, model)
+		}
+	}
+	grokCompat := ResolveOpenAICompletionsCompat(grok)
+	if grokCompat.SupportsStore || grokCompat.SupportsDeveloperRole || !grokCompat.SupportsReasoningEffort || grokCompat.SupportsStrictMode || grokCompat.SupportsLongCacheRetention || grokCompat.MaxTokensField != "max_tokens" || grokCompat.ThinkingFormat != "xai" {
+		t.Fatalf("grok compat = %#v", grokCompat)
+	}
+
+	deepseek := MustGetModel("deepseek", "deepseek-v4-flash")
+	if deepseek.API != "openai-completions" || deepseek.Provider != "deepseek" || deepseek.BaseURL != "https://api.deepseek.com" {
+		t.Fatalf("deepseek model = %#v", deepseek)
+	}
+	if !deepseek.Reasoning || !stringSlicesEqual(deepseek.Input, []string{"text"}) || deepseek.ContextWindow != 1000000 || deepseek.MaxTokens != 384000 {
+		t.Fatalf("deepseek model = %#v", deepseek)
+	}
+	if deepseek.Cost != (ModelCost{Input: 0.14, Output: 0.28, CacheRead: 0.0028, CacheWrite: 0}) {
+		t.Fatalf("deepseek cost = %#v", deepseek.Cost)
+	}
+	if !thinkingMapHas(deepseek.ThinkingLevelMap, map[string]string{"low": "high", "medium": "high", "high": "high", "xhigh": "max"}) || !thinkingMapHasNil(deepseek.ThinkingLevelMap, "minimal") {
+		t.Fatalf("deepseek thinking map = %#v", deepseek.ThinkingLevelMap)
+	}
+	pro := MustGetModel("deepseek", "deepseek-v4-pro")
+	if pro.BaseURL != deepseek.BaseURL || pro.MaxTokens != 384000 || pro.Cost != (ModelCost{Input: 0.435, Output: 0.87, CacheRead: 0.003625, CacheWrite: 0}) {
+		t.Fatalf("deepseek pro = %#v", pro)
+	}
+	deepseekCompat := ResolveOpenAICompletionsCompat(deepseek)
+	if deepseekCompat.SupportsStore || deepseekCompat.SupportsDeveloperRole || !deepseekCompat.SupportsReasoningEffort || deepseekCompat.SupportsStrictMode || deepseekCompat.SupportsLongCacheRetention || !deepseekCompat.RequiresReasoningContentOnAssistant || deepseekCompat.MaxTokensField != "max_tokens" || deepseekCompat.ThinkingFormat != "deepseek" {
+		t.Fatalf("deepseek compat = %#v", deepseekCompat)
+	}
+}
+
 func TestOpenCodeZenModelCatalog(t *testing.T) {
 	t.Setenv("OPENCODE_API_KEY", "test-opencode-key")
 	if got := FindEnvKeys("opencode"); len(got) != 1 || got[0] != "OPENCODE_API_KEY" || GetEnvAPIKey("opencode") != "test-opencode-key" {

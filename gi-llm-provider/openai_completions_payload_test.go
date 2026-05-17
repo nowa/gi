@@ -242,6 +242,71 @@ func TestBuildOpenAICompletionsPayloadReasoningAndZAIToolStream(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAICompletionsPayloadOfficialGrokAndDeepSeek(t *testing.T) {
+	context := Context{
+		SystemPrompt: "You are concise.",
+		Messages:     []Message{UserMessageText("Hi")},
+		Tools: []Tool{{
+			Name:        "lookup",
+			Description: "Lookup",
+			Parameters:  Object(map[string]Schema{"query": String()}, "query"),
+		}},
+	}
+
+	grok := MustGetModel("xai", "grok-4.3")
+	payload := BuildOpenAICompletionsPayload(grok, context, OpenAICompletionsPayloadOptions{
+		MaxTokens:      4096,
+		Reasoning:      "high",
+		CacheRetention: "long",
+		SessionID:      "grok-session",
+	})
+	if payload.MaxTokens != 4096 || payload.MaxCompletionTokens != 0 {
+		t.Fatalf("grok max tokens = %#v", payload)
+	}
+	if payload.ReasoningEffort != "high" || payload.Reasoning != nil || payload.Thinking != nil {
+		t.Fatalf("grok reasoning payload = %#v", payload)
+	}
+	if payload.Store != nil || payload.PromptCacheKey != "" || payload.PromptCacheRetention != "" {
+		t.Fatalf("grok unsupported fields = %#v", payload)
+	}
+	if len(payload.Messages) == 0 || payload.Messages[0].Role != "system" {
+		t.Fatalf("grok messages = %#v", payload.Messages)
+	}
+	if len(payload.Tools) != 1 || payload.Tools[0].Function.Strict != nil {
+		t.Fatalf("grok tools = %#v", payload.Tools)
+	}
+
+	payload = BuildOpenAICompletionsPayload(grok, Context{Messages: []Message{UserMessageText("Hi")}}, OpenAICompletionsPayloadOptions{Reasoning: "off"})
+	if payload.ReasoningEffort != "none" {
+		t.Fatalf("grok off reasoning payload = %#v", payload)
+	}
+
+	deepseek := MustGetModel("deepseek", "deepseek-v4-flash")
+	payload = BuildOpenAICompletionsPayload(deepseek, context, OpenAICompletionsPayloadOptions{
+		MaxTokens:      8192,
+		Reasoning:      "medium",
+		CacheRetention: "long",
+		SessionID:      "deepseek-session",
+	})
+	if payload.MaxTokens != 8192 || payload.MaxCompletionTokens != 0 {
+		t.Fatalf("deepseek max tokens = %#v", payload)
+	}
+	if payload.ReasoningEffort != "high" || payload.Thinking["type"] != "enabled" || payload.Reasoning != nil {
+		t.Fatalf("deepseek reasoning payload = %#v", payload)
+	}
+	if payload.Store != nil || payload.PromptCacheKey != "" || payload.PromptCacheRetention != "" {
+		t.Fatalf("deepseek unsupported fields = %#v", payload)
+	}
+	if len(payload.Tools) != 1 || payload.Tools[0].Function.Strict != nil {
+		t.Fatalf("deepseek tools = %#v", payload.Tools)
+	}
+
+	payload = BuildOpenAICompletionsPayload(deepseek, Context{Messages: []Message{UserMessageText("Hi")}}, OpenAICompletionsPayloadOptions{Reasoning: "off"})
+	if payload.ReasoningEffort != "" || payload.Thinking["type"] != "disabled" {
+		t.Fatalf("deepseek off reasoning payload = %#v", payload)
+	}
+}
+
 func TestOpenAICompletionsResolvedZAIToolStreamCompat(t *testing.T) {
 	want := map[string]bool{
 		"glm-5.1":     true,
