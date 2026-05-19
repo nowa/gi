@@ -9,7 +9,9 @@ This is the Go module `github.com/nowa/gi`, targeting Go 1.26. Main packages:
 - `gi-agent-core/harness/`: session storage, prompt formatting, compaction, skills, and local execution helpers.
 - `gi-tui/`: terminal UI components, key parsing, raw terminal support, image helpers, and headless rendering tests.
 
-Tests live beside implementation as `*_test.go`. Root docs include `README.md` and `PI_COMPATIBILITY.md`.
+Tests live beside implementation as `*_test.go`. Root docs include `README.md`,
+`PI_COMPATIBILITY.md`, `CONTRIBUTING.md`, `LICENSE`, `NOTICE`,
+`THIRD_PARTY_NOTICES.md`, and `SECURITY.md`.
 
 ## Build, Test, and Development Commands
 

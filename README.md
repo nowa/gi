@@ -170,6 +170,12 @@ There is no Makefile; `go test ./...` is the default validation gate.
 
 ## Contributing
 
-See [AGENTS.md](AGENTS.md) for repository-specific contributor and agent rules.
-Keep tests deterministic and avoid requiring live provider credentials in the
-default suite.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor guidance and
+[AGENTS.md](AGENTS.md) for repository-specific coding-agent rules. Keep tests
+deterministic and avoid requiring live provider credentials in the default suite.
+
+## License
+
+Gi is distributed under the MIT License. See [LICENSE](LICENSE), [NOTICE](NOTICE),
+and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Security reporting guidance
+is in [SECURITY.md](SECURITY.md).

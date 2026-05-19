@@ -1,0 +1,13 @@
+Gi
+
+This repository is distributed under the MIT License. See LICENSE.
+
+Gi is a Go rebuild of selected Pi packages and is designed for compatibility
+with the behavior documented in PI_COMPATIBILITY.md and the parity reports.
+Pi is licensed under the MIT License:
+
+  Copyright (c) 2025 Mario Zechner
+
+No endorsement by the Pi authors is implied.
+
+Direct third-party dependency notices are listed in THIRD_PARTY_NOTICES.md.
