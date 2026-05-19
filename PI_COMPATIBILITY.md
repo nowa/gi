@@ -2,6 +2,10 @@
 
 This repository is a Go rebuild of the Pi `pi-ai`, `pi-agent-core`, and `pi-tui` packages.
 
+Case-level provider/agent parity is tracked in
+[`PI_AI_AGENT_TEST_CASE_PARITY.md`](PI_AI_AGENT_TEST_CASE_PARITY.md). Case-level
+TUI parity is tracked in [`PI_TUI_TEST_CASE_PARITY.md`](PI_TUI_TEST_CASE_PARITY.md).
+
 ## Package Mapping
 
 | Pi package | Go package | Status |

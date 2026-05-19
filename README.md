@@ -32,8 +32,9 @@ Pi's `pi-web-ui` package is not ported here. Pi's full interactive
 | `@earendil-works/pi-coding-agent` | `gi-coding-agent` | Partial utility-level foundation. Full interactive coding-agent runtime parity is not in the current scope. |
 
 Detailed coverage is tracked in [PI_COMPATIBILITY.md](PI_COMPATIBILITY.md).
-Per-case TUI mapping is tracked in
-[PI_TUI_TEST_CASE_PARITY.md](PI_TUI_TEST_CASE_PARITY.md).
+Per-case provider/agent mapping is tracked in
+[PI_AI_AGENT_TEST_CASE_PARITY.md](PI_AI_AGENT_TEST_CASE_PARITY.md), and per-case
+TUI mapping is tracked in [PI_TUI_TEST_CASE_PARITY.md](PI_TUI_TEST_CASE_PARITY.md).
 
 ## Installation
 
