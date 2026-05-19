@@ -1,6 +1,6 @@
 # Gi Agent Harness
 
-`gi` is a Go rebuild of Pi's agent harness packages. It provides library
+`gi` is a Go rebuild of selected Pi agent harness packages. It provides library
 packages for streaming LLM calls, agent loops, tool execution, session harnesses,
 and terminal UI surfaces without depending on provider SDKs.
 
@@ -16,9 +16,10 @@ port.
 | `github.com/nowa/gi/gi-agent-core` | Agent runtime with state management, tool calling, lifecycle events, queues, and turn orchestration. |
 | `github.com/nowa/gi/gi-agent-core/harness` | Session storage, prompt formatting, compaction, skills, local execution helpers, and test harness utilities. |
 | `github.com/nowa/gi/gi-tui` | Terminal UI library with components, editor/input behavior, overlays, key parsing, image fallbacks, and differential rendering. |
-| `github.com/nowa/gi/gi-coding-agent` | Coding-agent utility foundation: args, prompt templates, frontmatter/path/ANSI helpers, and session JSONL management. |
+| `github.com/nowa/gi/gi-coding-agent` | Partial coding-agent utility foundation only: args, prompt templates, frontmatter/path/ANSI helpers, and session JSONL management. It is not a full interactive coding-agent port. |
 
-Pi's `pi-web-ui` package is not ported here.
+Pi's `pi-web-ui` package is not ported here. Pi's full interactive
+`pi-coding-agent` runtime is also not ported yet.
 
 ## Compatibility Status
 
