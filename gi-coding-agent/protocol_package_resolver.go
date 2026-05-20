@@ -22,6 +22,18 @@ type ProtocolPackageResources struct {
 	Themes     []ProtocolPackageResource
 }
 
+type ProtocolPackageSourceSpec struct {
+	Source  string
+	Filters ProtocolPackageResourceFilters
+}
+
+type ProtocolPackageResourceFilters struct {
+	Extensions []string
+	Skills     []string
+	Prompts    []string
+	Themes     []string
+}
+
 type protocolPackageManifest struct {
 	Extensions []string
 	Skills     []string
@@ -30,43 +42,60 @@ type protocolPackageManifest struct {
 }
 
 func (m *DefaultPackageManager) ResolveProtocolPackageResources(sources []string) (ProtocolPackageResources, error) {
+	specs := make([]ProtocolPackageSourceSpec, 0, len(sources))
+	for _, source := range sources {
+		specs = append(specs, ProtocolPackageSourceSpec{Source: source})
+	}
+	return m.ResolveProtocolPackageSourceSpecs(specs)
+}
+
+func (m *DefaultPackageManager) ResolveProtocolPackageSourceSpecs(specs []ProtocolPackageSourceSpec) (ProtocolPackageResources, error) {
 	var result ProtocolPackageResources
-	for _, sourceText := range sources {
-		sourceText = strings.TrimSpace(sourceText)
-		if sourceText == "" {
-			continue
-		}
-		sourcePath := ResolveToCwd(sourceText, m.cwd)
-		info, err := os.Stat(sourcePath)
+	for _, spec := range specs {
+		resolved, packageDir, err := m.resolveProtocolPackageSource(spec.Source)
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
 			return ProtocolPackageResources{}, err
 		}
-		metadata := ProtocolSourceInfo{
-			Source: m.GetPackageIdentity(sourceText),
-			Scope:  "temporary",
-			Origin: "package",
-		}
-		if !info.IsDir() {
-			if isProtocolExtensionFile(sourcePath) {
-				resource := protocolPackageResource(sourcePath, metadata)
-				result.Extensions = append(result.Extensions, resource)
-			}
+		if packageDir == "" {
 			continue
 		}
-		resolved := resolveProtocolPackageDir(sourcePath, metadata)
-		result.Extensions = append(result.Extensions, resolved.Extensions...)
-		result.Skills = append(result.Skills, resolved.Skills...)
-		result.Prompts = append(result.Prompts, resolved.Prompts...)
-		result.Themes = append(result.Themes, resolved.Themes...)
+		result.Extensions = append(result.Extensions, applyProtocolPackageFilters(packageDir, resolved.Extensions, spec.Filters.Extensions)...)
+		result.Skills = append(result.Skills, applyProtocolPackageFilters(packageDir, resolved.Skills, spec.Filters.Skills)...)
+		result.Prompts = append(result.Prompts, applyProtocolPackageFilters(packageDir, resolved.Prompts, spec.Filters.Prompts)...)
+		result.Themes = append(result.Themes, applyProtocolPackageFilters(packageDir, resolved.Themes, spec.Filters.Themes)...)
 	}
 	result.Extensions = dedupeProtocolPackageResources(result.Extensions)
 	result.Skills = dedupeProtocolPackageResources(result.Skills)
 	result.Prompts = dedupeProtocolPackageResources(result.Prompts)
 	result.Themes = dedupeProtocolPackageResources(result.Themes)
 	return result, nil
+}
+
+func (m *DefaultPackageManager) resolveProtocolPackageSource(sourceText string) (ProtocolPackageResources, string, error) {
+	sourceText = strings.TrimSpace(sourceText)
+	if sourceText == "" {
+		return ProtocolPackageResources{}, "", nil
+	}
+	sourcePath := ResolveToCwd(sourceText, m.cwd)
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ProtocolPackageResources{}, "", nil
+		}
+		return ProtocolPackageResources{}, "", err
+	}
+	metadata := ProtocolSourceInfo{
+		Source: m.GetPackageIdentity(sourceText),
+		Scope:  "temporary",
+		Origin: "package",
+	}
+	if !info.IsDir() {
+		if !isProtocolExtensionFile(sourcePath) {
+			return ProtocolPackageResources{}, filepath.Dir(sourcePath), nil
+		}
+		return ProtocolPackageResources{Extensions: []ProtocolPackageResource{protocolPackageResource(sourcePath, metadata)}}, filepath.Dir(sourcePath), nil
+	}
+	return resolveProtocolPackageDir(sourcePath, metadata), sourcePath, nil
 }
 
 func resolveProtocolPackageDir(packageDir string, metadata ProtocolSourceInfo) ProtocolPackageResources {
@@ -211,6 +240,48 @@ func expandProtocolPackageEntry(packageDir, entry string) []string {
 	return matches
 }
 
+func applyProtocolPackageFilters(packageDir string, resources []ProtocolPackageResource, filters []string) []ProtocolPackageResource {
+	if len(filters) == 0 {
+		return resources
+	}
+	hasPositive := false
+	for _, filter := range filters {
+		filter = strings.TrimSpace(filter)
+		if filter != "" && filter[0] != '!' && filter[0] != '-' && filter[0] != '+' {
+			hasPositive = true
+			break
+		}
+	}
+	result := make([]ProtocolPackageResource, len(resources))
+	copy(result, resources)
+	if hasPositive {
+		for i := range result {
+			result[i].Enabled = false
+		}
+	}
+	for _, filter := range filters {
+		filter = strings.TrimSpace(filter)
+		if filter == "" {
+			continue
+		}
+		enabled := true
+		patternText := filter
+		switch filter[0] {
+		case '!', '-':
+			enabled = false
+			patternText = strings.TrimSpace(filter[1:])
+		case '+':
+			patternText = strings.TrimSpace(filter[1:])
+		}
+		for i := range result {
+			if protocolPackagePatternMatches(packageDir, result[i].Path, patternText) {
+				result[i].Enabled = enabled
+			}
+		}
+	}
+	return result
+}
+
 func filterProtocolPackagePaths(packageDir string, paths []string, excludePatterns []string) []string {
 	if len(excludePatterns) == 0 {
 		return paths
@@ -249,6 +320,9 @@ func protocolPackagePatternMatches(packageDir, candidate, patternText string) bo
 	}
 	if strings.HasPrefix(patternText, "**/") {
 		suffix := strings.TrimPrefix(patternText, "**/")
+		if ok, _ := path.Match(suffix, path.Base(rel)); ok {
+			return true
+		}
 		return rel == suffix || strings.HasSuffix(rel, "/"+suffix) || strings.Contains(rel, "/"+strings.TrimSuffix(suffix, "/")+"/")
 	}
 	if ok, _ := path.Match(patternText, rel); ok {

@@ -166,6 +166,175 @@ func TestProtocolPackageManifestPatternRules(t *testing.T) {
 	})
 }
 
+func TestProtocolPackageResourceFilterRules(t *testing.T) {
+	t.Run("applies user filters on top of manifest filters", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "layered-pkg")
+		foo := filepath.Join(pkgDir, "extensions", "foo.gi.json")
+		bar := filepath.Join(pkgDir, "extensions", "bar.gi.json")
+		baz := filepath.Join(pkgDir, "extensions", "baz.gi.json")
+		writeGiProtocolExtensionDescriptor(t, foo)
+		writeGiProtocolExtensionDescriptor(t, bar)
+		writeGiProtocolExtensionDescriptor(t, baz)
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "package.json"), map[string]any{
+			"extensions": []any{"extensions", "!**/baz.gi.json"},
+		})
+
+		result, err := manager.ResolveProtocolPackageSourceSpecs([]ProtocolPackageSourceSpec{{
+			Source: pkgDir,
+			Filters: ProtocolPackageResourceFilters{
+				Extensions: []string{"!**/bar.gi.json"},
+			},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathEnabled(result.Extensions, foo) ||
+			protocolPackagePathEnabled(result.Extensions, bar) ||
+			protocolPackageHasAnyPath(result.Extensions, baz) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+	})
+
+	t.Run("excludes extensions from package with pattern", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "pattern-pkg")
+		foo := filepath.Join(pkgDir, "extensions", "foo.gi.json")
+		bar := filepath.Join(pkgDir, "extensions", "bar.gi.json")
+		baz := filepath.Join(pkgDir, "extensions", "baz.gi.json")
+		writeGiProtocolExtensionDescriptor(t, foo)
+		writeGiProtocolExtensionDescriptor(t, bar)
+		writeGiProtocolExtensionDescriptor(t, baz)
+
+		result, err := manager.ResolveProtocolPackageSourceSpecs([]ProtocolPackageSourceSpec{{
+			Source:  pkgDir,
+			Filters: ProtocolPackageResourceFilters{Extensions: []string{"!**/baz.gi.json"}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathEnabled(result.Extensions, foo) ||
+			!protocolPackagePathEnabled(result.Extensions, bar) ||
+			!protocolPackagePathDisabled(result.Extensions, baz) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+	})
+
+	t.Run("filters themes from package", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "theme-pkg")
+		nice := filepath.Join(pkgDir, "themes", "nice.json")
+		ugly := filepath.Join(pkgDir, "themes", "ugly.json")
+		writeResourceFile(t, nice, "{}")
+		writeResourceFile(t, ugly, "{}")
+
+		result, err := manager.ResolveProtocolPackageSourceSpecs([]ProtocolPackageSourceSpec{{
+			Source:  pkgDir,
+			Filters: ProtocolPackageResourceFilters{Themes: []string{"!ugly.json"}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathEnabled(result.Themes, nice) || !protocolPackagePathDisabled(result.Themes, ugly) {
+			t.Fatalf("themes = %#v", result.Themes)
+		}
+	})
+
+	t.Run("combines include and exclude patterns", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "combo-pkg")
+		alpha := filepath.Join(pkgDir, "extensions", "alpha.gi.json")
+		beta := filepath.Join(pkgDir, "extensions", "beta.gi.json")
+		gamma := filepath.Join(pkgDir, "extensions", "gamma.gi.json")
+		writeGiProtocolExtensionDescriptor(t, alpha)
+		writeGiProtocolExtensionDescriptor(t, beta)
+		writeGiProtocolExtensionDescriptor(t, gamma)
+
+		result, err := manager.ResolveProtocolPackageSourceSpecs([]ProtocolPackageSourceSpec{{
+			Source: pkgDir,
+			Filters: ProtocolPackageResourceFilters{
+				Extensions: []string{"**/alpha.gi.json", "**/beta.gi.json", "!**/beta.gi.json"},
+			},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathEnabled(result.Extensions, alpha) ||
+			!protocolPackagePathDisabled(result.Extensions, beta) ||
+			!protocolPackagePathDisabled(result.Extensions, gamma) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+	})
+
+	t.Run("works with direct paths", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "direct-pkg")
+		one := filepath.Join(pkgDir, "extensions", "one.gi.json")
+		two := filepath.Join(pkgDir, "extensions", "two.gi.json")
+		writeGiProtocolExtensionDescriptor(t, one)
+		writeGiProtocolExtensionDescriptor(t, two)
+
+		result, err := manager.ResolveProtocolPackageSourceSpecs([]ProtocolPackageSourceSpec{{
+			Source:  pkgDir,
+			Filters: ProtocolPackageResourceFilters{Extensions: []string{"extensions/one.gi.json"}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathEnabled(result.Extensions, one) || !protocolPackagePathDisabled(result.Extensions, two) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+	})
+
+	t.Run("force-include overrides exclude in package filters", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "force-pkg")
+		alpha := filepath.Join(pkgDir, "extensions", "alpha.gi.json")
+		beta := filepath.Join(pkgDir, "extensions", "beta.gi.json")
+		gamma := filepath.Join(pkgDir, "extensions", "gamma.gi.json")
+		writeGiProtocolExtensionDescriptor(t, alpha)
+		writeGiProtocolExtensionDescriptor(t, beta)
+		writeGiProtocolExtensionDescriptor(t, gamma)
+
+		result, err := manager.ResolveProtocolPackageSourceSpecs([]ProtocolPackageSourceSpec{{
+			Source:  pkgDir,
+			Filters: ProtocolPackageResourceFilters{Extensions: []string{"!**/*.gi.json", "+extensions/beta.gi.json"}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathDisabled(result.Extensions, alpha) ||
+			!protocolPackagePathEnabled(result.Extensions, beta) ||
+			!protocolPackagePathDisabled(result.Extensions, gamma) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+	})
+
+	t.Run("force-includes multiple resources", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "multi-force-pkg")
+		skillA := filepath.Join(pkgDir, "skills", "skill-a", "SKILL.md")
+		skillB := filepath.Join(pkgDir, "skills", "skill-b", "SKILL.md")
+		skillC := filepath.Join(pkgDir, "skills", "skill-c", "SKILL.md")
+		writeResourceSkill(t, skillA, "skill-a", "A", "Content")
+		writeResourceSkill(t, skillB, "skill-b", "B", "Content")
+		writeResourceSkill(t, skillC, "skill-c", "C", "Content")
+
+		result, err := manager.ResolveProtocolPackageSourceSpecs([]ProtocolPackageSourceSpec{{
+			Source:  pkgDir,
+			Filters: ProtocolPackageResourceFilters{Skills: []string{"!**/*", "+skills/skill-a", "+skills/skill-c"}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathEnabled(result.Skills, skillA) ||
+			!protocolPackagePathDisabled(result.Skills, skillB) ||
+			!protocolPackagePathEnabled(result.Skills, skillC) {
+			t.Fatalf("skills = %#v", result.Skills)
+		}
+	})
+}
+
 func writeProtocolPackageManifest(t *testing.T, path string, fields map[string]any) {
 	t.Helper()
 	gi := map[string]any{"manifestVersion": 1}
@@ -176,9 +345,33 @@ func writeProtocolPackageManifest(t *testing.T, path string, fields map[string]a
 }
 
 func protocolPackageHasPath(resources []ProtocolPackageResource, path string) bool {
+	return protocolPackagePathEnabled(resources, path)
+}
+
+func protocolPackagePathEnabled(resources []ProtocolPackageResource, path string) bool {
 	clean := filepath.Clean(path)
 	for _, resource := range resources {
 		if filepath.Clean(resource.Path) == clean && resource.Enabled {
+			return true
+		}
+	}
+	return false
+}
+
+func protocolPackagePathDisabled(resources []ProtocolPackageResource, path string) bool {
+	clean := filepath.Clean(path)
+	for _, resource := range resources {
+		if filepath.Clean(resource.Path) == clean && !resource.Enabled {
+			return true
+		}
+	}
+	return false
+}
+
+func protocolPackageHasAnyPath(resources []ProtocolPackageResource, path string) bool {
+	clean := filepath.Clean(path)
+	for _, resource := range resources {
+		if filepath.Clean(resource.Path) == clean {
 			return true
 		}
 	}

@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `948`
+- `已有`: `955`
 - `待实现`: `0`
-- `需要协议 runtime`: `89`
+- `需要协议 runtime`: `82`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -1212,14 +1212,14 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1199 | should support glob patterns in manifest extensions | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
 | 1222 | should support glob patterns in manifest skills | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
 | 1249 | should expand positive glob manifest entries before collecting skills | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
-| 1278 | should apply user filters on top of manifest filters (not replace) | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1316 | should exclude extensions from package with ! pattern | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1339 | should filter themes from package | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1360 | should combine include and exclude patterns | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1383 | should work with direct paths (no patterns) | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1278 | should apply user filters on top of manifest filters (not replace) | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
+| 1316 | should exclude extensions from package with ! pattern | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
+| 1339 | should filter themes from package | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
+| 1360 | should combine include and exclude patterns | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
+| 1383 | should work with direct paths (no patterns) | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 1406 | should force-include extensions with + pattern after exclusion | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1422 | should force-include overrides exclude in package filters | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1445 | should force-include multiple resources | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1422 | should force-include overrides exclude in package filters | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
+| 1445 | should force-include multiple resources | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 1470 | should force-include after specific exclusion | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1484 | should handle force-include in manifest patterns | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
 | 1506 | should force-include themes | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
