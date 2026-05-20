@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `526`
-- `待实现`: `218`
+- `已有`: `534`
+- `待实现`: `210`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -1880,14 +1880,14 @@ Gi coverage / implementation target: `部分已有: gi-coding-agent/tools_read_t
 | 605 | should preserve executeBash sanitization when using local bash operations | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 616 | should persist full output when truncation happens by line count only | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 639 | executeBash should persist full output when truncation happens by line count only | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 659 | should include filename when searching a single file | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 672 | should respect global limit and include context lines | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 693 | should treat flag-like patterns as search text | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 712 | should include hidden files that are not gitignored | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 732 | should respect .gitignore | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 747 | should surface fd glob parse errors | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 756 | should treat flag-like patterns as search text | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 767 | should list dotfiles and directories | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 659 | should include filename when searching a single file | 已有 | gi-coding-agent/tools_search_test.go |
+| 672 | should respect global limit and include context lines | 已有 | gi-coding-agent/tools_search_test.go |
+| 693 | should treat flag-like patterns as search text | 已有 | gi-coding-agent/tools_search_test.go |
+| 712 | should include hidden files that are not gitignored | 已有 | gi-coding-agent/tools_search_test.go |
+| 732 | should respect .gitignore | 已有 | gi-coding-agent/tools_search_test.go |
+| 747 | should surface fd glob parse errors | 已有 | gi-coding-agent/tools_search_test.go |
+| 756 | should treat flag-like patterns as search text | 已有 | gi-coding-agent/tools_search_test.go |
+| 767 | should list dotfiles and directories | 已有 | gi-coding-agent/tools_search_test.go |
 | 792 | should match text with trailing whitespace stripped | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
 | 808 | should match fullwidth punctuation in Chinese text | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
 | 822 | should match compatibility-equivalent Unicode forms | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
