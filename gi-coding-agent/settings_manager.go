@@ -227,6 +227,10 @@ func (s *SettingsManager) GetPackages() []any {
 	return settingsSlice(s.merged, "packages")
 }
 
+func (s *SettingsManager) SetPackages(packages []any) {
+	s.setGlobal("packages", cloneSettingsValue(packages))
+}
+
 func (s *SettingsManager) SetProjectPackages(packages []any) {
 	s.setProject("packages", cloneSettingsValue(packages))
 }

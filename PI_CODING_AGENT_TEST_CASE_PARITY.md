@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `547`
-- `待实现`: `197`
+- `已有`: `558`
+- `待实现`: `186`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -70,7 +70,7 @@ Status meanings:
 | `footer-width.test.ts` | 2 | 已有 | gi-coding-agent/footer_test.go |
 | `frontmatter.test.ts` | 8 | 已有 | gi-coding-agent/utils_test.go |
 | `git-ssh-url.test.ts` | 9 | 已有 | gi-coding-agent/git_test.go |
-| `git-update.test.ts` | 11 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `git-update.test.ts` | 11 | 已有 | gi-coding-agent/package_manager_git_update_test.go |
 | `image-processing.test.ts` | 9 | 已有 | gi-coding-agent/image_resize_test.go |
 | `image-resize-callers.test.ts` | 2 | 已有 | gi-coding-agent/image_resize_test.go |
 | `initial-message.test.ts` | 3 | 已有 | gi-coding-agent/initial_message_test.go |
@@ -813,22 +813,22 @@ Gi coverage / implementation target: `gi-coding-agent/git_test.go`
 ## `git-update.test.ts`
 
 Pi cases: `11`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/package_manager_git_update_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 114 | should skip reset, clean, and install when already up to date | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 154 | should update to latest commit when remote has new commits | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 169 | should handle multiple commits ahead | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 183 | should update even when local checkout has no upstream | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 217 | should recover when remote history is rewritten | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 239 | should recover when local commit no longer exists in remote | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 261 | should handle complete history rewrite | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 285 | should not update pinned git sources (with @ref) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 314 | should refresh cached temporary git sources when resolving | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 361 | should not refresh pinned temporary git sources | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 392 | should not install locally when source is only registered globally | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 114 | should skip reset, clean, and install when already up to date | 已有 | gi-coding-agent/package_manager_git_update_test.go |
+| 154 | should update to latest commit when remote has new commits | 已有 | gi-coding-agent/package_manager_git_update_test.go |
+| 169 | should handle multiple commits ahead | 已有 | gi-coding-agent/package_manager_git_update_test.go |
+| 183 | should update even when local checkout has no upstream | 已有 | gi-coding-agent/package_manager_git_update_test.go |
+| 217 | should recover when remote history is rewritten | 已有 | gi-coding-agent/package_manager_git_update_test.go |
+| 239 | should recover when local commit no longer exists in remote | 已有 | gi-coding-agent/package_manager_git_update_test.go |
+| 261 | should handle complete history rewrite | 已有 | gi-coding-agent/package_manager_git_update_test.go |
+| 285 | should not update pinned git sources (with @ref) | 已有 | gi-coding-agent/package_manager_git_update_test.go |
+| 314 | should refresh cached temporary git sources when resolving | 已有 | gi-coding-agent/package_manager_git_update_test.go |
+| 361 | should not refresh pinned temporary git sources | 已有 | gi-coding-agent/package_manager_git_update_test.go |
+| 392 | should not install locally when source is only registered globally | 已有 | gi-coding-agent/package_manager_git_update_test.go |
 
 ## `image-processing.test.ts`
 
