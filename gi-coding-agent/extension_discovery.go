@@ -51,7 +51,7 @@ func defaultProtocolExtensionDirs(cwd, agentDir string) []string {
 		dirs = append(dirs, filepath.Join(agentDir, "extensions"))
 	}
 	if cwd != "" {
-		projectDir := filepath.Join(cwd, ".pi", "extensions")
+		projectDir := filepath.Join(cwd, ConfigDirName, "extensions")
 		if filepath.Clean(projectDir) != filepath.Clean(filepath.Join(agentDir, "extensions")) {
 			dirs = append(dirs, projectDir)
 		}

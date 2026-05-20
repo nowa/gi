@@ -287,7 +287,7 @@ func TestDefaultPackageManagerGitUpdatePiPinnedTemporaryAndScope(t *testing.T) {
 		env.reset(t)
 		env.setupRemoteAndInstall(t, "")
 		createPackageManagerCommit(t, env.remoteDir, "extension.ts", "// v2", "Second commit")
-		projectGitDir := filepath.Join(env.tempDir, ".pi", "git", "github.com", "test", "extension")
+		projectGitDir := filepath.Join(env.tempDir, ".gi", "git", "github.com", "test", "extension")
 		if _, err := os.Stat(projectGitDir); !os.IsNotExist(err) {
 			t.Fatalf("project git dir exists before update: %v", err)
 		}

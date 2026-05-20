@@ -424,7 +424,7 @@ func ListAllSessions(args ...SessionListProgress) []SessionInfo {
 	if err != nil {
 		return nil
 	}
-	root := filepath.Join(home, ".pi", "agent", "sessions")
+	root := filepath.Join(home, ConfigDirName, "agent", "sessions")
 	dirEntries, err := os.ReadDir(root)
 	if err != nil {
 		return nil
@@ -689,7 +689,7 @@ func GetDefaultSessionDir(cwd string) (string, error) {
 	}
 	safePath := strings.TrimLeft(cwd, `/\`)
 	replacer := strings.NewReplacer("/", "-", `\`, "-", ":", "-")
-	dir := filepath.Join(home, ".pi", "agent", "sessions", "--"+replacer.Replace(safePath)+"--")
+	dir := filepath.Join(home, ConfigDirName, "agent", "sessions", "--"+replacer.Replace(safePath)+"--")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}

@@ -10,10 +10,10 @@ func TestFormatSkillInvocationWithAdditionalInstructions(t *testing.T) {
 		Name:        "inspect",
 		Description: "Inspect things",
 		Content:     "Use inspection tools.",
-		FilePath:    "/project/.pi/skills/inspect/SKILL.md",
+		FilePath:    "/project/.gi/skills/inspect/SKILL.md",
 	}
 	got := FormatSkillInvocation(skill, "Check errors.")
-	want := "<skill name=\"inspect\" location=\"/project/.pi/skills/inspect/SKILL.md\">\nReferences are relative to /project/.pi/skills/inspect.\n\nUse inspection tools.\n</skill>\n\nCheck errors."
+	want := "<skill name=\"inspect\" location=\"/project/.gi/skills/inspect/SKILL.md\">\nReferences are relative to /project/.gi/skills/inspect.\n\nUse inspection tools.\n</skill>\n\nCheck errors."
 	if got != want {
 		t.Fatalf("FormatSkillInvocation() = %q, want %q", got, want)
 	}

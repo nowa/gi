@@ -9,15 +9,19 @@ Status meanings:
 - `已有`: behavior already has Gi coverage in the listed Go tests.
 - `待实现`: missing coding-agent host/runtime behavior; implement in Gi before marking covered.
 - `需要协议 runtime`: the Pi case touches extensions, packages, dynamic registration, RPC, or custom TUI contribution surfaces; implement through `protocol/spec` boundaries instead of private core branches.
-- `不适用`: intentionally excluded from the Go port. No cases are marked this way yet.
+- `不适用`: intentionally excluded from the Go port, with the reason in the row.
+
+Pi test case names are preserved verbatim. When a Pi case names `.pi`, Gi
+coverage means the equivalent `.gi` path unless the row explicitly says
+otherwise.
 
 ## Summary
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `972`
+- `已有`: `987`
 - `待实现`: `0`
-- `需要协议 runtime`: `46`
+- `需要协议 runtime`: `31`
 - `不适用`: `19`
 
 ## Commit Plan
@@ -1153,23 +1157,23 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 81 | should return no package-sourced paths when no sources configured | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 91 | should resolve local extension paths from settings | 已有 | gi-coding-agent/resource_loader_test.go (Gi protocol descriptor equivalent) |
 | 102 | should resolve skill paths from settings | 已有 | gi-coding-agent/resource_loader_test.go |
-| 122 | should auto-discover root markdown skills from .pi skill dirs | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 138 | should resolve project paths relative to .pi | 已有 | gi-coding-agent/resource_loader_test.go (Gi protocol descriptor equivalent) |
-| 150 | should auto-discover user prompts with overrides | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 162 | should resolve symlinked user and project resources once | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 230 | should auto-discover project prompts with overrides | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 122 | should auto-discover root markdown skills from .pi skill dirs | 已有 | gi-coding-agent/resource_loader_test.go (Gi .gi equivalent) |
+| 138 | should resolve project paths relative to .pi | 已有 | gi-coding-agent/resource_loader_test.go (Gi .gi protocol descriptor equivalent) |
+| 150 | should auto-discover user prompts with overrides | 已有 | gi-coding-agent/resource_loader_test.go |
+| 162 | should resolve symlinked user and project resources once | 已有 | gi-coding-agent/resource_loader_test.go |
+| 230 | should auto-discover project prompts with overrides | 已有 | gi-coding-agent/resource_loader_test.go |
 | 242 | should resolve directory with package.json pi.extensions in extensions setting | 已有 | Gi 协议等价：resolve gi.package.json gi.extensions descriptor paths |
-| 278 | should use the agent dir as baseDir for user .pi/agent skills | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 291 | should use the project .pi dir as baseDir for project .pi skills | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 305 | should use ~/.agents as baseDir for user .agents skills | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 330 | should use each project .agents dir as baseDir for project .agents skills | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 366 | should scan .agents/skills from cwd up to git repo root | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 396 | should scan .agents/skills up to filesystem root when not in a git repo | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 420 | should ignore root markdown files in .agents/skills | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 440 | should keep ~/.agents/skills user-scoped when cwd is under home in a non-git directory | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 476 | should dedupe user skill entries when ~/.pi/agent/skills is a symlink to ~/.agents/skills | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 507 | should respect .gitignore in skill directories | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 527 | should not apply parent .gitignore to .pi auto-discovery | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 278 | should use the agent dir as baseDir for user .pi/agent skills | 已有 | gi-coding-agent/resource_loader_test.go (Gi .gi/agent equivalent) |
+| 291 | should use the project .pi dir as baseDir for project .pi skills | 已有 | gi-coding-agent/resource_loader_test.go (Gi .gi equivalent) |
+| 305 | should use ~/.agents as baseDir for user .agents skills | 已有 | gi-coding-agent/resource_loader_test.go |
+| 330 | should use each project .agents dir as baseDir for project .agents skills | 已有 | gi-coding-agent/resource_loader_test.go |
+| 366 | should scan .agents/skills from cwd up to git repo root | 已有 | gi-coding-agent/resource_loader_test.go |
+| 396 | should scan .agents/skills up to filesystem root when not in a git repo | 已有 | gi-coding-agent/resource_loader_test.go |
+| 420 | should ignore root markdown files in .agents/skills | 已有 | gi-coding-agent/resource_loader_test.go |
+| 440 | should keep ~/.agents/skills user-scoped when cwd is under home in a non-git directory | 已有 | gi-coding-agent/resource_loader_test.go |
+| 476 | should dedupe user skill entries when ~/.pi/agent/skills is a symlink to ~/.agents/skills | 已有 | gi-coding-agent/resource_loader_test.go (Gi ~/.gi/agent equivalent) |
+| 507 | should respect .gitignore in skill directories | 已有 | gi-coding-agent/resource_loader_test.go |
+| 527 | should not apply parent .gitignore to .pi auto-discovery | 已有 | gi-coding-agent/resource_loader_test.go (Gi .gi equivalent) |
 | 541 | should resolve local paths | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 549 | should handle directories with pi manifest | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
 | 578 | should handle directories with auto-discovery layout | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
@@ -1190,7 +1194,7 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 945 | should parse package source types from docs examples | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 959 | should never parse dot-relative paths as git | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 971 | should store global local packages relative to agent settings base | 已有 | gi-coding-agent/package_manager_settings_test.go |
-| 985 | should store project local packages relative to .pi settings base | 已有 | gi-coding-agent/package_manager_settings_test.go |
+| 985 | should store project local packages relative to .pi settings base | 已有 | gi-coding-agent/package_manager_settings_test.go (Gi .gi equivalent) |
 | 999 | should remove local package entries using equivalent path forms | 已有 | gi-coding-agent/package_manager_settings_test.go |
 | 1012 | should parse HTTPS GitHub URLs correctly | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 1020 | should parse HTTPS URLs with git: prefix | 已有 | gi-coding-agent/package_manager_source_test.go |
@@ -1467,7 +1471,7 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 255 | should honor overrides for auto-discovered resources | 已有 | gi-coding-agent/resource_loader_test.go |
 | 299 | should discover AGENTS.md context files | 已有 | gi-coding-agent/resource_loader_test.go |
 | 309 | should skip AGENTS.md and CLAUDE.md discovery when noContextFiles is true | 已有 | gi-coding-agent/resource_loader_test.go |
-| 320 | should discover SYSTEM.md from cwd/.pi | 已有 | gi-coding-agent/resource_loader_test.go |
+| 320 | should discover SYSTEM.md from cwd/.pi | 已有 | gi-coding-agent/resource_loader_test.go (Gi .gi equivalent) |
 | 331 | should discover APPEND_SYSTEM.md | 已有 | gi-coding-agent/resource_loader_test.go |
 | 344 | should load skills and prompts with extension metadata | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 411 | should skip skill discovery when noSkills is true | 已有 | gi-coding-agent/resource_loader_test.go |
@@ -1681,8 +1685,8 @@ Gi coverage / implementation target: `gi-coding-agent/settings_manager_test.go`
 | 159 | should reload global settings from disk | 已有 | gi-coding-agent/settings_manager_test.go |
 | 187 | should keep previous settings when file is invalid | 已有 | gi-coding-agent/settings_manager_test.go |
 | 201 | should collect and clear load errors via drainErrors | 已有 | gi-coding-agent/settings_manager_test.go |
-| 217 | should not create .pi folder when only reading project settings | 已有 | gi-coding-agent/settings_manager_test.go |
-| 235 | should create .pi folder when writing project settings | 已有 | gi-coding-agent/settings_manager_test.go |
+| 217 | should not create .pi folder when only reading project settings | 已有 | gi-coding-agent/settings_manager_test.go (Gi .gi equivalent) |
+| 235 | should create .pi folder when writing project settings | 已有 | gi-coding-agent/settings_manager_test.go (Gi .gi equivalent) |
 | 261 | should load shellCommandPrefix from settings | 已有 | gi-coding-agent/settings_manager_test.go |
 | 270 | should return undefined when shellCommandPrefix is not set | 已有 | gi-coding-agent/settings_manager_test.go |
 | 279 | should preserve shellCommandPrefix when saving unrelated settings | 已有 | gi-coding-agent/settings_manager_test.go |

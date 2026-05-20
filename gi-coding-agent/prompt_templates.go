@@ -9,7 +9,7 @@ import (
 	"unicode"
 )
 
-const ConfigDirName = ".pi"
+const ConfigDirName = ".gi"
 
 type SourceInfo struct {
 	Path   string

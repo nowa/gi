@@ -29,7 +29,7 @@ func TestPackageManagerSettingsNormalizationPiParity(t *testing.T) {
 		}
 	})
 
-	t.Run("stores project local packages relative to .pi settings base", func(t *testing.T) {
+	t.Run("stores project local packages relative to .gi settings base", func(t *testing.T) {
 		agentDir, projectDir := createPackageManagerSettingsDirs(t)
 		pkgDir := filepath.Join(projectDir, "project-local-pkg")
 		createPackageManagerSettingsPackage(t, pkgDir)

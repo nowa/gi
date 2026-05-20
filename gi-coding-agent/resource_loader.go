@@ -206,11 +206,25 @@ func (l *DefaultResourceLoader) loadSkills() ResourceSkillsResult {
 			result.Skills = append(result.Skills, loaded.Skills...)
 			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 		}
-		for _, dir := range []string{filepath.Join(l.agentDir, "skills"), filepath.Join(l.cwd, ConfigDirName, "skills")} {
+		for _, dir := range []string{filepath.Join(l.agentDir, "skills")} {
 			loaded := agentharness.LoadSkills(dir)
 			result.Skills = append(result.Skills, loaded.Skills...)
 			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 		}
+		userAgentsDir := userAgentsDirFromAgentDir(l.agentDir)
+		if userAgentsDir != "" {
+			loaded := agentharness.LoadSkillsWithOptions(agentharness.LoadSkillsOptions{RespectGitignore: true}, filepath.Join(userAgentsDir, "skills"))
+			result.Skills = append(result.Skills, loaded.Skills...)
+			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
+		}
+		for _, dir := range projectAgentsSkillDirs(l.cwd, userAgentsDir) {
+			loaded := agentharness.LoadSkillsWithOptions(agentharness.LoadSkillsOptions{RespectGitignore: true}, dir)
+			result.Skills = append(result.Skills, loaded.Skills...)
+			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
+		}
+		loaded := agentharness.LoadSkills(filepath.Join(l.cwd, ConfigDirName, "skills"))
+		result.Skills = append(result.Skills, loaded.Skills...)
+		result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 	}
 	for _, path := range l.additionalSkillPaths {
 		loaded := agentharness.LoadSkills(ResolveToCwd(path, l.cwd))
@@ -225,6 +239,55 @@ func (l *DefaultResourceLoader) loadSkills() ResourceSkillsResult {
 	result.Skills = filterSkills(result.Skills, l.resourceFilters("skills"), l.cwd, l.agentDir)
 	result.Skills = dedupeSkillsByName(result.Skills)
 	return result
+}
+
+func projectAgentsSkillDirs(cwd, userAgentsDir string) []string {
+	var dirs []string
+	for _, dir := range projectAgentsDirs(cwd, userAgentsDir) {
+		dirs = append(dirs, filepath.Join(dir, "skills"))
+	}
+	return dirs
+}
+
+func userAgentsDirFromAgentDir(agentDir string) string {
+	if agentDir == "" {
+		return ""
+	}
+	agentDir = filepath.Clean(agentDir)
+	configDir := filepath.Dir(agentDir)
+	if filepath.Base(agentDir) != "agent" || filepath.Base(configDir) != ConfigDirName {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(configDir), ".agents")
+}
+
+func projectAgentsDirs(cwd, userAgentsDir string) []string {
+	var scanned []string
+	current := filepath.Clean(cwd)
+	for {
+		agentsDir := filepath.Join(current, ".agents")
+		if userAgentsDir == "" || filepath.Clean(agentsDir) != filepath.Clean(userAgentsDir) {
+			scanned = append(scanned, agentsDir)
+		}
+		if hasGitDir(current) || isFilesystemRoot(current) {
+			break
+		}
+		current = filepath.Dir(current)
+	}
+	for i, j := 0, len(scanned)-1; i < j; i, j = i+1, j-1 {
+		scanned[i], scanned[j] = scanned[j], scanned[i]
+	}
+	return scanned
+}
+
+func hasGitDir(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, ".git"))
+	return err == nil && info.IsDir()
+}
+
+func isFilesystemRoot(path string) bool {
+	parent := filepath.Dir(path)
+	return parent == path
 }
 
 func (l *DefaultResourceLoader) loadPrompts() []PromptTemplate {

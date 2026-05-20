@@ -109,7 +109,7 @@ func TestSettingsManagerPackagesAndExtensions(t *testing.T) {
 func TestSettingsManagerReloadAndErrors(t *testing.T) {
 	agentDir, projectDir := createSettingsTestDirs(t)
 	globalPath := filepath.Join(agentDir, "settings.json")
-	projectPath := filepath.Join(projectDir, ".pi", "settings.json")
+	projectPath := filepath.Join(projectDir, ".gi", "settings.json")
 	writeSettingsJSON(t, globalPath, map[string]any{
 		"theme":      "dark",
 		"extensions": []any{"/before.ts"},
@@ -162,20 +162,20 @@ func TestSettingsManagerReloadAndErrors(t *testing.T) {
 func TestSettingsManagerProjectDirectoryCreation(t *testing.T) {
 	agentDir, projectDir := createSettingsTestDirs(t)
 	writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{"theme": "dark"})
-	if err := os.RemoveAll(filepath.Join(projectDir, ".pi")); err != nil {
+	if err := os.RemoveAll(filepath.Join(projectDir, ".gi")); err != nil {
 		t.Fatal(err)
 	}
 
 	manager := NewSettingsManager(projectDir, agentDir)
-	if _, err := os.Stat(filepath.Join(projectDir, ".pi")); !os.IsNotExist(err) {
-		t.Fatalf(".pi should not be created by read, err=%v", err)
+	if _, err := os.Stat(filepath.Join(projectDir, ".gi")); !os.IsNotExist(err) {
+		t.Fatalf(".gi should not be created by read, err=%v", err)
 	}
 	if manager.GetTheme() != "dark" {
 		t.Fatalf("theme = %q", manager.GetTheme())
 	}
 
 	manager.SetProjectPackages([]any{map[string]any{"source": "git:github.com/gi-packages/test-pkg"}})
-	if _, err := os.Stat(filepath.Join(projectDir, ".pi", "settings.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(projectDir, ".gi", "settings.json")); err != nil {
 		t.Fatalf("project settings should be created: %v", err)
 	}
 }
@@ -210,14 +210,14 @@ func TestSettingsManagerShellCommandPrefixAndSessionDir(t *testing.T) {
 	}
 
 	writeSettingsJSON(t, settingsPath, map[string]any{"sessionDir": "/global/sessions"})
-	writeSettingsJSON(t, filepath.Join(projectDir, ".pi", "settings.json"), map[string]any{"sessionDir": "./sessions"})
+	writeSettingsJSON(t, filepath.Join(projectDir, ".gi", "settings.json"), map[string]any{"sessionDir": "./sessions"})
 	manager = NewSettingsManager(projectDir, agentDir)
 	if manager.GetSessionDir() != "./sessions" {
 		t.Fatalf("project sessionDir = %q", manager.GetSessionDir())
 	}
 
 	writeSettingsJSON(t, settingsPath, map[string]any{"sessionDir": "~/sessions"})
-	if err := os.Remove(filepath.Join(projectDir, ".pi", "settings.json")); err != nil {
+	if err := os.Remove(filepath.Join(projectDir, ".gi", "settings.json")); err != nil {
 		t.Fatal(err)
 	}
 	manager = NewSettingsManager(projectDir, agentDir)
@@ -267,7 +267,7 @@ func TestSettingsManagerPreservesExternalArrayEdits(t *testing.T) {
 
 func TestSettingsManagerPreservesExternalProjectEdits(t *testing.T) {
 	agentDir, projectDir := createSettingsTestDirs(t)
-	projectSettingsPath := filepath.Join(projectDir, ".pi", "settings.json")
+	projectSettingsPath := filepath.Join(projectDir, ".gi", "settings.json")
 	writeSettingsJSON(t, projectSettingsPath, map[string]any{
 		"extensions": []any{"./old-extension.ts"},
 		"prompts":    []any{"./old-prompt.md"},
@@ -310,7 +310,7 @@ func createSettingsTestDirs(t *testing.T) (string, string) {
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(projectDir, ".pi"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(projectDir, ".gi"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return agentDir, projectDir

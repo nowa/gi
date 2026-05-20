@@ -211,9 +211,9 @@ func TestToolExecutionComponentPiBuiltinDisplayParity(t *testing.T) {
 		},
 		{
 			title:   "AGENTS.md",
-			path:    func(dir string) string { return filepath.Join(dir, ".pi", "AGENTS.md") },
+			path:    func(dir string) string { return filepath.Join(dir, ".gi", "AGENTS.md") },
 			content: "Hidden resource instructions",
-			compact: "read resource .pi/AGENTS.md",
+			compact: "read resource .gi/AGENTS.md",
 			hidden:  "Hidden resource instructions",
 		},
 		{

@@ -121,7 +121,7 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 	}
 	agentDir := options.AgentDir
 	if agentDir == "" {
-		agentDir = filepath.Join(cwd, ".pi", "agent")
+		agentDir = filepath.Join(cwd, ConfigDirName, "agent")
 	}
 	if sessionManager == nil {
 		sessionDir := GetAgentDirSessionDir(cwd, agentDir)
@@ -247,7 +247,7 @@ func NewDefaultAgentSessionResourceLoader(cwd, agentDir string) *DefaultAgentSes
 func (l *DefaultAgentSessionResourceLoader) GetSkills() AgentSessionSkillsResult {
 	paths := []string{
 		filepath.Join(l.agentDir, "skills"),
-		filepath.Join(l.cwd, ".pi", "skills"),
+		filepath.Join(l.cwd, ConfigDirName, "skills"),
 	}
 	seen := map[string]struct{}{}
 	var result AgentSessionSkillsResult

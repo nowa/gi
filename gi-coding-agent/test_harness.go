@@ -88,7 +88,7 @@ func NewCodingAgentTestHarness(options CodingAgentTestHarnessOptions) (*CodingAg
 	}
 	session, err := CreateAgentSession(AgentSessionOptions{
 		CWD:            tempDir,
-		AgentDir:       filepath.Join(tempDir, ".pi", "agent"),
+		AgentDir:       filepath.Join(tempDir, ".gi", "agent"),
 		Model:          model,
 		SessionManager: sessionManager,
 		RetrySettings:  options.RetrySettings,

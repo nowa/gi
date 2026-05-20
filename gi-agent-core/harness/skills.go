@@ -32,7 +32,16 @@ type SourcedSkillResult struct {
 	Diagnostics []SkillDiagnostic
 }
 
+type LoadSkillsOptions struct {
+	IncludeRootMarkdownFiles bool
+	RespectGitignore         bool
+}
+
 func LoadSkills(paths ...string) SkillResult {
+	return LoadSkillsWithOptions(LoadSkillsOptions{IncludeRootMarkdownFiles: true}, paths...)
+}
+
+func LoadSkillsWithOptions(options LoadSkillsOptions, paths ...string) SkillResult {
 	var result SkillResult
 	for _, inputPath := range paths {
 		absPath, _ := filepath.Abs(inputPath)
@@ -46,7 +55,7 @@ func LoadSkills(paths ...string) SkillResult {
 		if !info.IsDir() {
 			continue
 		}
-		loaded := loadSkillsFromDir(absPath, true)
+		loaded := loadSkillsFromDir(absPath, options.IncludeRootMarkdownFiles, options.RespectGitignore)
 		result.Skills = append(result.Skills, loaded.Skills...)
 		result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 	}
@@ -74,7 +83,7 @@ func LoadSourcedSkills(inputs map[string]any) SourcedSkillResult {
 	return result
 }
 
-func loadSkillsFromDir(dir string, includeRootFiles bool) SkillResult {
+func loadSkillsFromDir(dir string, includeRootFiles, respectGitignore bool) SkillResult {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return SkillResult{Diagnostics: []SkillDiagnostic{{Type: "warning", Code: "list_failed", Message: err.Error(), Path: dir}}}
@@ -93,6 +102,7 @@ func loadSkillsFromDir(dir string, includeRootFiles bool) SkillResult {
 
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	var result SkillResult
+	ignoreRules := skillIgnoreRules(dir, respectGitignore)
 	for _, entry := range entries {
 		name := entry.Name()
 		if strings.HasPrefix(name, ".") || name == "node_modules" {
@@ -104,8 +114,11 @@ func loadSkillsFromDir(dir string, includeRootFiles bool) SkillResult {
 			result.Diagnostics = append(result.Diagnostics, SkillDiagnostic{Type: "warning", Code: "file_info_failed", Message: err.Error(), Path: fullPath})
 			continue
 		}
+		if skillEntryIgnored(fullPath, dir, name, info.IsDir(), ignoreRules) {
+			continue
+		}
 		if info.IsDir() {
-			loaded := loadSkillsFromDir(fullPath, false)
+			loaded := loadSkillsFromDir(fullPath, false, respectGitignore)
 			result.Skills = append(result.Skills, loaded.Skills...)
 			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 			continue
@@ -119,6 +132,56 @@ func loadSkillsFromDir(dir string, includeRootFiles bool) SkillResult {
 		}
 	}
 	return result
+}
+
+func skillIgnoreRules(dir string, enabled bool) []string {
+	if !enabled {
+		return nil
+	}
+	content, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		return nil
+	}
+	var rules []string
+	for _, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "!") {
+			continue
+		}
+		rules = append(rules, filepath.ToSlash(line))
+	}
+	return rules
+}
+
+func skillEntryIgnored(path, dir, name string, isDir bool, rules []string) bool {
+	if len(rules) == 0 {
+		return false
+	}
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	name = filepath.ToSlash(name)
+	for _, rule := range rules {
+		dirRule := strings.TrimSuffix(rule, "/")
+		if strings.HasSuffix(rule, "/") {
+			if isDir && (name == dirRule || rel == dirRule) {
+				return true
+			}
+			continue
+		}
+		if rel == rule || name == rule {
+			return true
+		}
+		if matched, _ := filepath.Match(rule, rel); matched {
+			return true
+		}
+		if matched, _ := filepath.Match(rule, name); matched {
+			return true
+		}
+	}
+	return false
 }
 
 func loadSkillFromFile(path string) (*Skill, []SkillDiagnostic) {

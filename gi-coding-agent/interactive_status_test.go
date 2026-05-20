@@ -264,7 +264,7 @@ func TestInteractiveModeShowLoadedResourcesProtocolExtensionLabels(t *testing.T)
 		{
 			name: "package extensions still strip index.gi.json correctly",
 			extensions: []InteractiveExtensionResource{
-				{Path: "/tmp/project/.pi/git/github.com/gi-packages/plan-mode/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/gi-packages/plan-mode/extensions/index.gi.json", "git:github.com/gi-packages/plan-mode", "project", "package", "/tmp/project/.pi/git/github.com/gi-packages/plan-mode")},
+				{Path: "/tmp/project/.gi/git/github.com/gi-packages/plan-mode/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.gi/git/github.com/gi-packages/plan-mode/extensions/index.gi.json", "git:github.com/gi-packages/plan-mode", "project", "package", "/tmp/project/.gi/git/github.com/gi-packages/plan-mode")},
 			},
 			want: "[Extensions]\n  gi-packages/plan-mode",
 		},
@@ -274,8 +274,8 @@ func TestInteractiveModeShowLoadedResourcesProtocolExtensionLabels(t *testing.T)
 			expanded:   true,
 			want: `[Extensions]
   project
-    /tmp/project/.pi/extensions/answer.gi.json
-    /tmp/project/.pi/extensions/local-index
+    /tmp/project/.gi/extensions/answer.gi.json
+    /tmp/project/.gi/extensions/local-index
     git:github.com/HazAT/pi-interactive-subagents
       extensions
       extensions/subagents
@@ -310,15 +310,15 @@ func TestInteractiveModeShowLoadedResourcesContextPathsMatchPi(t *testing.T) {
 
 	cwd := "/Users/test/Development/pi-mono"
 	files := []InteractiveContextFile{
-		{Path: "/Users/test/.pi/agent/AGENTS.md"},
+		{Path: "/Users/test/.gi/agent/AGENTS.md"},
 		{Path: "/Users/test/Development/pi-mono/AGENTS.md"},
 	}
 	compact := renderInteractiveLoadedResources(InteractiveLoadedResources{CWD: cwd, ContextFiles: files}, InteractiveShowLoadedResourcesOptions{})
-	if compact != "[Context]\n  ~/.pi/agent/AGENTS.md, AGENTS.md" {
+	if compact != "[Context]\n  ~/.gi/agent/AGENTS.md, AGENTS.md" {
 		t.Fatalf("compact = %q", compact)
 	}
 	expanded := renderInteractiveLoadedResources(InteractiveLoadedResources{CWD: cwd, ToolOutputExpanded: true, ContextFiles: files}, InteractiveShowLoadedResourcesOptions{})
-	if expanded != "[Context]\n  ~/.pi/agent/AGENTS.md, ~/Development/pi-mono/AGENTS.md" {
+	if expanded != "[Context]\n  ~/.gi/agent/AGENTS.md, ~/Development/pi-mono/AGENTS.md" {
 		t.Fatalf("expanded = %q", expanded)
 	}
 }
@@ -336,13 +336,13 @@ func sourceInfo(path, source, scope, origin, baseDir string) *InteractiveSourceI
 
 func createInteractiveExtensionFixtures() []InteractiveExtensionResource {
 	return []InteractiveExtensionResource{
-		{Path: "/tmp/project/.pi/extensions/answer.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/extensions/answer.gi.json", "local", "project", "top-level", "/tmp/project/.pi/extensions")},
-		{Path: "/tmp/project/.pi/extensions/local-index/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/extensions/local-index/index.gi.json", "local", "project", "top-level", "/tmp/project/.pi/extensions")},
+		{Path: "/tmp/project/.gi/extensions/answer.gi.json", SourceInfo: sourceInfo("/tmp/project/.gi/extensions/answer.gi.json", "local", "project", "top-level", "/tmp/project/.gi/extensions")},
+		{Path: "/tmp/project/.gi/extensions/local-index/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.gi/extensions/local-index/index.gi.json", "local", "project", "top-level", "/tmp/project/.gi/extensions")},
 		{Path: "/tmp/agent/extensions/user-index/index.gi.json", SourceInfo: sourceInfo("/tmp/agent/extensions/user-index/index.gi.json", "local", "user", "top-level", "/tmp/agent/extensions")},
-		{Path: "/tmp/project/.pi/git/github.com/gi-packages/plan-mode/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/gi-packages/plan-mode/extensions/index.gi.json", "git:github.com/gi-packages/plan-mode", "project", "package", "/tmp/project/.pi/git/github.com/gi-packages/plan-mode")},
-		{Path: "/tmp/project/.pi/git/github.com/gi-packages/git-guard/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/gi-packages/git-guard/extensions/index.gi.json", "git:github.com/gi-packages/git-guard", "project", "package", "/tmp/project/.pi/git/github.com/gi-packages/git-guard")},
-		{Path: "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/index.gi.json", "git:github.com/HazAT/pi-interactive-subagents", "project", "package", "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents")},
-		{Path: "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.gi.json", "git:github.com/HazAT/pi-interactive-subagents", "project", "package", "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents")},
+		{Path: "/tmp/project/.gi/git/github.com/gi-packages/plan-mode/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.gi/git/github.com/gi-packages/plan-mode/extensions/index.gi.json", "git:github.com/gi-packages/plan-mode", "project", "package", "/tmp/project/.gi/git/github.com/gi-packages/plan-mode")},
+		{Path: "/tmp/project/.gi/git/github.com/gi-packages/git-guard/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.gi/git/github.com/gi-packages/git-guard/extensions/index.gi.json", "git:github.com/gi-packages/git-guard", "project", "package", "/tmp/project/.gi/git/github.com/gi-packages/git-guard")},
+		{Path: "/tmp/project/.gi/git/github.com/HazAT/pi-interactive-subagents/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.gi/git/github.com/HazAT/pi-interactive-subagents/extensions/index.gi.json", "git:github.com/HazAT/pi-interactive-subagents", "project", "package", "/tmp/project/.gi/git/github.com/HazAT/pi-interactive-subagents")},
+		{Path: "/tmp/project/.gi/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.gi/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.gi.json", "git:github.com/HazAT/pi-interactive-subagents", "project", "package", "/tmp/project/.gi/git/github.com/HazAT/pi-interactive-subagents")},
 		{Path: "/tmp/temp/cli-extension.gi.json", SourceInfo: sourceInfo("/tmp/temp/cli-extension.gi.json", "cli", "temporary", "top-level", "/tmp/temp")},
 	}
 }

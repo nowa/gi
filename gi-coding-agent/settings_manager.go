@@ -35,7 +35,7 @@ func NewSettingsManager(cwd, agentDir string) *SettingsManager {
 		cwd:             cwd,
 		agentDir:        agentDir,
 		globalPath:      filepath.Join(agentDir, "settings.json"),
-		projectPath:     filepath.Join(cwd, ".pi", "settings.json"),
+		projectPath:     filepath.Join(cwd, ConfigDirName, "settings.json"),
 		modifiedGlobal:  map[string]struct{}{},
 		modifiedProject: map[string]struct{}{},
 	}

@@ -42,6 +42,18 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("auto-discovers root markdown skills from project .gi skill dirs", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		writeResourceSkill(t, filepath.Join(cwd, ConfigDirName, "skills", "project-root.md"), "project-root", "Project root skill", "Project content")
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+
+		if !resourceHasSkill(loader.GetSkills().Skills, "project-root") {
+			t.Fatalf("skills = %#v", loader.GetSkills().Skills)
+		}
+	})
+
 	t.Run("discovers prompts from agent dir", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		writeResourceFile(t, filepath.Join(agentDir, "prompts", "test-prompt.md"), "---\ndescription: A test prompt\n---\nPrompt content.")
@@ -51,6 +63,81 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 
 		if !resourceHasPrompt(loader.GetPrompts().Prompts, "test-prompt") {
 			t.Fatalf("prompts = %#v", loader.GetPrompts().Prompts)
+		}
+	})
+
+	t.Run("discovers .agents skills from user dir and project dirs up to git root", func(t *testing.T) {
+		home, agentDir, repo, cwd := createResourceLoaderHomeDirs(t, true)
+		writeResourceSkill(t, filepath.Join(home, ".agents", "skills", "user-skill", "SKILL.md"), "user-skill", "User skill", "User content")
+		writeResourceSkill(t, filepath.Join(repo, ".agents", "skills", "repo-skill", "SKILL.md"), "repo-skill", "Repo skill", "Repo content")
+		writeResourceSkill(t, filepath.Join(cwd, ".agents", "skills", "cwd-skill", "SKILL.md"), "cwd-skill", "CWD skill", "CWD content")
+		writeResourceSkill(t, filepath.Join(home, "work", ".agents", "skills", "outside-skill", "SKILL.md"), "outside-skill", "Outside skill", "Outside content")
+		writeResourceSkill(t, filepath.Join(cwd, ".agents", "skills", "root.md"), "root-md", "Root markdown should be ignored", "Ignored content")
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+
+		skills := loader.GetSkills().Skills
+		if !resourceHasSkill(skills, "user-skill") ||
+			!resourceHasSkill(skills, "repo-skill") ||
+			!resourceHasSkill(skills, "cwd-skill") ||
+			resourceHasSkill(skills, "outside-skill") ||
+			resourceHasSkill(skills, "root-md") {
+			t.Fatalf("skills = %#v", skills)
+		}
+	})
+
+	t.Run("keeps home .agents user scoped when cwd is under home without git", func(t *testing.T) {
+		home, agentDir, _, cwd := createResourceLoaderHomeDirs(t, false)
+		writeResourceSkill(t, filepath.Join(home, ".agents", "skills", "user-skill", "SKILL.md"), "user-skill", "User skill", "User content")
+		writeResourceSkill(t, filepath.Join(home, "work", ".agents", "skills", "work-skill", "SKILL.md"), "work-skill", "Work skill", "Work content")
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+
+		if got := resourceSkillCount(loader.GetSkills().Skills, "user-skill"); got != 1 {
+			t.Fatalf("user-skill count = %d, skills = %#v", got, loader.GetSkills().Skills)
+		}
+		if !resourceHasSkill(loader.GetSkills().Skills, "work-skill") {
+			t.Fatalf("skills = %#v", loader.GetSkills().Skills)
+		}
+	})
+
+	t.Run("dedupes user skills when .gi agent skills symlink to .agents skills", func(t *testing.T) {
+		home, agentDir, _, cwd := createResourceLoaderHomeDirs(t, false)
+		userSkills := filepath.Join(home, ".agents", "skills")
+		writeResourceSkill(t, filepath.Join(userSkills, "shared-skill", "SKILL.md"), "shared-skill", "Shared skill", "Shared content")
+		if err := os.MkdirAll(agentDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(userSkills, filepath.Join(agentDir, "skills")); err != nil {
+			t.Fatal(err)
+		}
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+
+		if got := resourceSkillCount(loader.GetSkills().Skills, "shared-skill"); got != 1 {
+			t.Fatalf("shared-skill count = %d, skills = %#v", got, loader.GetSkills().Skills)
+		}
+	})
+
+	t.Run("respects .agents skill gitignore without applying parent ignore to .gi", func(t *testing.T) {
+		_, agentDir, repo, cwd := createResourceLoaderHomeDirs(t, true)
+		writeResourceFile(t, filepath.Join(repo, ".agents", "skills", ".gitignore"), "ignored-skill/\n")
+		writeResourceSkill(t, filepath.Join(repo, ".agents", "skills", "keep-skill", "SKILL.md"), "keep-skill", "Keep skill", "Keep content")
+		writeResourceSkill(t, filepath.Join(repo, ".agents", "skills", "ignored-skill", "SKILL.md"), "ignored-skill", "Ignored skill", "Ignored content")
+		writeResourceFile(t, filepath.Join(repo, ".gitignore"), ".gi/skills/project-skill/\n")
+		writeResourceSkill(t, filepath.Join(cwd, ConfigDirName, "skills", "project-skill", "SKILL.md"), "project-skill", "Project skill", "Project content")
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+
+		skills := loader.GetSkills().Skills
+		if !resourceHasSkill(skills, "keep-skill") ||
+			resourceHasSkill(skills, "ignored-skill") ||
+			!resourceHasSkill(skills, "project-skill") {
+			t.Fatalf("skills = %#v diagnostics = %#v", skills, loader.GetSkills().Diagnostics)
 		}
 	})
 
@@ -82,7 +169,7 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
-	t.Run("resolves project extension paths relative to .pi", func(t *testing.T) {
+	t.Run("resolves project extension paths relative to .gi", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		extensionPath := filepath.Join(cwd, ConfigDirName, "extensions", "project-ext.gi.json")
 		writeGiProtocolExtensionDescriptor(t, extensionPath)
@@ -214,7 +301,7 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
-	t.Run("dedupes symlinked user and project extensions with project path winning", func(t *testing.T) {
+	t.Run("dedupes symlinked user and project resources with project path winning", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		shared := filepath.Join(filepath.Dir(agentDir), "shared-extensions")
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(shared, "shared.gi.json"))
@@ -225,6 +312,30 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := os.Symlink(shared, filepath.Join(cwd, ConfigDirName, "extensions")); err != nil {
+			t.Fatal(err)
+		}
+		sharedSkills := filepath.Join(filepath.Dir(agentDir), "shared-skills")
+		writeResourceSkill(t, filepath.Join(sharedSkills, "shared-skill", "SKILL.md"), "shared-skill", "Shared skill", "Shared content")
+		if err := os.Symlink(sharedSkills, filepath.Join(agentDir, "skills")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(sharedSkills, filepath.Join(cwd, ConfigDirName, "skills")); err != nil {
+			t.Fatal(err)
+		}
+		sharedPrompts := filepath.Join(filepath.Dir(agentDir), "shared-prompts")
+		writeResourceFile(t, filepath.Join(sharedPrompts, "shared.md"), "Shared prompt")
+		if err := os.Symlink(sharedPrompts, filepath.Join(agentDir, "prompts")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(sharedPrompts, filepath.Join(cwd, ConfigDirName, "prompts")); err != nil {
+			t.Fatal(err)
+		}
+		sharedThemes := filepath.Join(filepath.Dir(agentDir), "shared-themes")
+		writeJSON(t, filepath.Join(sharedThemes, "shared.json"), map[string]any{"name": "shared-theme"})
+		if err := os.Symlink(sharedThemes, filepath.Join(agentDir, "themes")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(sharedThemes, filepath.Join(cwd, ConfigDirName, "themes")); err != nil {
 			t.Fatal(err)
 		}
 
@@ -238,6 +349,27 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		want := filepath.Join(cwd, ConfigDirName, "extensions", "shared.gi.json")
 		if extensions.Extensions[0].Path != want {
 			t.Fatalf("extension path = %q, want %q", extensions.Extensions[0].Path, want)
+		}
+		if got := resourceSkillCount(loader.GetSkills().Skills, "shared-skill"); got != 1 {
+			t.Fatalf("shared-skill count = %d, skills = %#v", got, loader.GetSkills().Skills)
+		}
+		if skill := resourceFindSkill(loader.GetSkills().Skills, "shared-skill"); skill == nil ||
+			skill.FilePath != filepath.Join(cwd, ConfigDirName, "skills", "shared-skill", "SKILL.md") {
+			t.Fatalf("skill = %#v", skill)
+		}
+		if got := resourcePromptCount(loader.GetPrompts().Prompts, "shared"); got != 1 {
+			t.Fatalf("shared prompt count = %d, prompts = %#v", got, loader.GetPrompts().Prompts)
+		}
+		if prompt := resourceFindPrompt(loader.GetPrompts().Prompts, "shared"); prompt == nil ||
+			prompt.FilePath != filepath.Join(cwd, ConfigDirName, "prompts", "shared.md") {
+			t.Fatalf("prompt = %#v", prompt)
+		}
+		if got := resourceThemeCount(loader.GetThemes().Themes, "shared-theme"); got != 1 {
+			t.Fatalf("shared-theme count = %d, themes = %#v", got, loader.GetThemes().Themes)
+		}
+		if theme := resourceFindTheme(loader.GetThemes().Themes, "shared-theme"); theme == nil ||
+			theme.SourcePath != filepath.Join(cwd, ConfigDirName, "themes", "shared.json") {
+			t.Fatalf("theme = %#v", theme)
 		}
 	})
 
@@ -312,6 +444,26 @@ func createResourceLoaderDirs(t *testing.T) (string, string) {
 	return agentDir, cwd
 }
 
+func createResourceLoaderHomeDirs(t *testing.T, withGitRoot bool) (string, string, string, string) {
+	t.Helper()
+	home := t.TempDir()
+	agentDir := filepath.Join(home, ConfigDirName, "agent")
+	repo := filepath.Join(home, "work", "repo")
+	cwd := filepath.Join(repo, "nested")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if withGitRoot {
+		if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return home, agentDir, repo, cwd
+}
+
 func writeResourceSkill(t *testing.T, path, name, description, content string) {
 	t.Helper()
 	writeResourceFile(t, path, "---\nname: "+name+"\ndescription: "+description+"\n---\n"+content)
@@ -340,6 +492,16 @@ func resourceFindSkill(skills []agentharness.Skill, name string) *agentharness.S
 	return nil
 }
 
+func resourceSkillCount(skills []agentharness.Skill, name string) int {
+	var count int
+	for _, skill := range skills {
+		if skill.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
 func resourceHasPrompt(prompts []PromptTemplate, name string) bool {
 	return resourceFindPrompt(prompts, name) != nil
 }
@@ -353,6 +515,16 @@ func resourceFindPrompt(prompts []PromptTemplate, name string) *PromptTemplate {
 	return nil
 }
 
+func resourcePromptCount(prompts []PromptTemplate, name string) int {
+	var count int
+	for _, prompt := range prompts {
+		if prompt.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
 func resourceFindTheme(themes []ResourceTheme, name string) *ResourceTheme {
 	for i := range themes {
 		if themes[i].Name == name {
@@ -360,4 +532,14 @@ func resourceFindTheme(themes []ResourceTheme, name string) *ResourceTheme {
 		}
 	}
 	return nil
+}
+
+func resourceThemeCount(themes []ResourceTheme, name string) int {
+	var count int
+	for _, theme := range themes {
+		if theme.Name == name {
+			count++
+		}
+	}
+	return count
 }

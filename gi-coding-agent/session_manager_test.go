@@ -184,7 +184,7 @@ func TestSessionManagerCreateContinueAndDefaultDirMatchPiPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantDir := filepath.Join(home, ".pi", "agent", "sessions", "--tmp-project-one--")
+	wantDir := filepath.Join(home, ".gi", "agent", "sessions", "--tmp-project-one--")
 	if defaultDir != wantDir {
 		t.Fatalf("default session dir = %q, want %q", defaultDir, wantDir)
 	}

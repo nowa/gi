@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD010 MD013 -->
+
 # Gi Agent Harness
 
 `gi` is a Go rebuild of selected Pi agent harness packages. It provides library
@@ -16,10 +18,10 @@ port.
 | `github.com/nowa/gi/gi-agent-core` | Agent runtime with state management, tool calling, lifecycle events, queues, and turn orchestration. |
 | `github.com/nowa/gi/gi-agent-core/harness` | Session storage, prompt formatting, compaction, skills, local execution helpers, and test harness utilities. |
 | `github.com/nowa/gi/gi-tui` | Terminal UI library with components, editor/input behavior, overlays, key parsing, image fallbacks, and differential rendering. |
-| `github.com/nowa/gi/gi-coding-agent` | Partial coding-agent utility foundation only: args, prompt templates, frontmatter/path/ANSI helpers, and session JSONL management. It is not a full interactive coding-agent port. |
+| `github.com/nowa/gi/gi-coding-agent` | Coding-agent migration surface: CLI/config/settings, resources, session JSONL, tool helpers, protocol-backed packages/extensions, and interactive runtime pieces as they are ported. |
 
-Pi's `pi-web-ui` package is not ported here. Pi's full interactive
-`pi-coding-agent` runtime is also not ported yet.
+Pi's `pi-web-ui` package is not ported here. The `pi-coding-agent` migration is
+active and scoped by the per-case parity table.
 
 ## Compatibility Status
 
@@ -29,7 +31,7 @@ Pi's `pi-web-ui` package is not ported here. Pi's full interactive
 | `@earendil-works/pi-agent-core` | `gi-agent-core` | Pi test-compatible for the agent loop, tools, stateful agent behavior, queues, and lifecycle events. |
 | `pi-agent-core` harness/session | `gi-agent-core/harness` | Pi test-compatible for sessions, prompt formatting, compaction, local env, skills, and storage helpers. |
 | `@earendil-works/pi-tui` | `gi-tui` | TUI milestone complete. Pi TUI test files and case-level behavior are mapped and covered in Go. |
-| `@earendil-works/pi-coding-agent` | `gi-coding-agent` | Partial utility-level foundation. Full interactive coding-agent runtime parity is not in the current scope. |
+| `@earendil-works/pi-coding-agent` | `gi-coding-agent` | In progress. Case-level scope and remaining protocol-runtime work are tracked in `PI_CODING_AGENT_TEST_CASE_PARITY.md`. |
 
 Detailed coverage is tracked in [PI_COMPATIBILITY.md](PI_COMPATIBILITY.md).
 Per-case provider/agent mapping is tracked in
@@ -42,6 +44,9 @@ The proposed cross-language package, extension, and custom TUI component
 protocol for a future full coding-agent runtime is described in
 [protocol/README.md](protocol/README.md), with machine-readable schemas,
 registries, and replay examples under [protocol/spec/](protocol/spec/).
+Gi uses `.gi` for project-local coding-agent settings, resources, sessions, and
+package stores. Pi case names that mention `.pi` are treated as `.gi`
+equivalents in Gi's parity table.
 
 ## Installation
 
