@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `430`
-- `待实现`: `314`
+- `已有`: `441`
+- `待实现`: `303`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -99,7 +99,7 @@ Status meanings:
 | `rpc-jsonl.test.ts` | 4 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `rpc-prompt-response-semantics.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `rpc.test.ts` | 14 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `sdk-openrouter-attribution.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `sdk-openrouter-attribution.test.ts` | 4 | 已有 | gi-coding-agent/sdk_attribution_test.go |
 | `sdk-session-manager.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `sdk-skills.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `session-cwd.test.ts` | 3 | 已有 | gi-coding-agent/session_cwd_test.go |
@@ -112,7 +112,7 @@ Status meanings:
 | `skills.test.ts` | 28 | 已有 | gi-agent-core/harness/skills_test.go |
 | `stdout-cleanliness.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `syntax-highlight.test.ts` | 5 | 已有 | gi-coding-agent/syntax_highlight_test.go |
-| `system-prompt.test.ts` | 7 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `system-prompt.test.ts` | 7 | 已有 | gi-coding-agent/system_prompt_test.go |
 | `test-harness.test.ts` | 15 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `theme-export.test.ts` | 2 | 已有 | gi-coding-agent/theme_export_test.go |
 | `tool-execution-component.test.ts` | 16 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -1550,15 +1550,15 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 ## `sdk-openrouter-attribution.test.ts`
 
 Pi cases: `4`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/sdk_attribution_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 140 | adds default attribution headers for OpenRouter models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 148 | does not add attribution headers when telemetry is disabled | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 158 | adds attribution headers for custom providers routed through OpenRouter | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 166 | lets provider and request headers override the defaults | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 140 | adds default attribution headers for OpenRouter models | 已有 | gi-coding-agent/sdk_attribution_test.go |
+| 148 | does not add attribution headers when telemetry is disabled | 已有 | gi-coding-agent/sdk_attribution_test.go |
+| 158 | adds attribution headers for custom providers routed through OpenRouter | 已有 | gi-coding-agent/sdk_attribution_test.go |
+| 166 | lets provider and request headers override the defaults | 已有 | gi-coding-agent/sdk_attribution_test.go |
 
 ## `sdk-session-manager.test.ts`
 
@@ -1756,18 +1756,18 @@ Gi coverage / implementation target: `gi-coding-agent/syntax_highlight_test.go`
 ## `system-prompt.test.ts`
 
 Pi cases: `7`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/system_prompt_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 6 | shows (none) for empty tools list | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 17 | shows file paths guideline even with no tools | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 30 | includes all default tools when snippets are provided | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 51 | includes custom tools in available tools section when promptSnippet is provided | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 65 | omits custom tools from available tools section when promptSnippet is not provided | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 78 | appends promptGuidelines to default guidelines | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 90 | deduplicates and trims promptGuidelines | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 6 | shows (none) for empty tools list | 已有 | gi-coding-agent/system_prompt_test.go |
+| 17 | shows file paths guideline even with no tools | 已有 | gi-coding-agent/system_prompt_test.go |
+| 30 | includes all default tools when snippets are provided | 已有 | gi-coding-agent/system_prompt_test.go |
+| 51 | includes custom tools in available tools section when promptSnippet is provided | 已有 | gi-coding-agent/system_prompt_test.go |
+| 65 | omits custom tools from available tools section when promptSnippet is not provided | 已有 | gi-coding-agent/system_prompt_test.go |
+| 78 | appends promptGuidelines to default guidelines | 已有 | gi-coding-agent/system_prompt_test.go |
+| 90 | deduplicates and trims promptGuidelines | 已有 | gi-coding-agent/system_prompt_test.go |
 
 ## `test-harness.test.ts`
 
