@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `631`
-- `待实现`: `135`
+- `已有`: `633`
+- `待实现`: `133`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -110,7 +110,7 @@ Status meanings:
 | `settings-manager-bug.test.ts` | 4 | 已有 | gi-coding-agent/settings_manager_test.go |
 | `settings-manager.test.ts` | 17 | 已有 | gi-coding-agent/settings_manager_test.go |
 | `skills.test.ts` | 28 | 已有 | gi-agent-core/harness/skills_test.go |
-| `stdout-cleanliness.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `stdout-cleanliness.test.ts` | 2 | 已有 | gi-coding-agent/stdout_cleanliness_test.go |
 | `syntax-highlight.test.ts` | 5 | 已有 | gi-coding-agent/syntax_highlight_test.go |
 | `system-prompt.test.ts` | 7 | 已有 | gi-coding-agent/system_prompt_test.go |
 | `test-harness.test.ts` | 15 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -1730,14 +1730,14 @@ Gi coverage / implementation target: `gi-agent-core/harness/skills_test.go`
 
 ## `stdout-cleanliness.test.ts`
 
-Pi cases: `2`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `2`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/stdout_cleanliness_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 84 | keeps stdout empty for --mode json --help while routing startup chatter to stderr | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 94 | keeps stdout empty for -p --help while routing startup chatter to stderr | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 84 | keeps stdout empty for --mode json --help while routing startup chatter to stderr | 已有 | gi-coding-agent/stdout_cleanliness_test.go |
+| 94 | keeps stdout empty for -p --help while routing startup chatter to stderr | 已有 | gi-coding-agent/stdout_cleanliness_test.go |
 
 ## `syntax-highlight.test.ts`
 
