@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `519`
-- `待实现`: `225`
+- `已有`: `526`
+- `待实现`: `218`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -1864,16 +1864,16 @@ Gi coverage / implementation target: `部分已有: gi-coding-agent/tools_read_t
 | 395 | should include the original error message for unknown edit access errors | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 414 | should include ENOENT in diff preview for missing files | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 421 | should include EACCES in diff preview for unreadable files | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 433 | should execute simple commands | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 440 | should handle command errors | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 446 | should respect timeout | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 433 | should execute simple commands | 已有 | gi-coding-agent/tools_bash_test.go |
+| 440 | should handle command errors | 已有 | gi-coding-agent/tools_bash_test.go |
+| 446 | should respect timeout | 已有 | gi-coding-agent/tools_bash_test.go |
 | 452 | should include full output path for truncated timeout and abort errors | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 488 | should throw error when cwd does not exist | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 488 | should throw error when cwd does not exist | 已有 | gi-coding-agent/tools_bash_test.go |
 | 498 | should handle process spawn errors | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 509 | should pass shellPath through to shell resolution | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 531 | should prepend command prefix when configured | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 540 | should include output from both prefix and command | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 549 | should work without command prefix | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 531 | should prepend command prefix when configured | 已有 | gi-coding-agent/tools_bash_test.go |
+| 540 | should include output from both prefix and command | 已有 | gi-coding-agent/tools_bash_test.go |
+| 549 | should work without command prefix | 已有 | gi-coding-agent/tools_bash_test.go |
 | 556 | should coalesce streaming updates for chatty output | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 576 | should decode UTF-8 characters split across output chunks | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 592 | should expose local bash operations for extension reuse | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
