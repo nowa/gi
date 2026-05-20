@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `410`
-- `待实现`: `334`
+- `已有`: `413`
+- `待实现`: `331`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -94,7 +94,7 @@ Status meanings:
 | `print-mode.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `prompt-templates.test.ts` | 82 | 已有 | gi-coding-agent/prompt_templates_test.go |
 | `resource-loader.test.ts` | 19 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `restore-sandbox-env.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `restore-sandbox-env.test.ts` | 3 | 已有 | gi-coding-agent/restore_sandbox_env_test.go |
 | `rpc-client-clone.test.ts` | 1 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `rpc-jsonl.test.ts` | 4 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `rpc-prompt-response-semantics.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -1479,15 +1479,15 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 
 ## `restore-sandbox-env.test.ts`
 
-Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `3`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/restore_sandbox_env_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 12 | does nothing when not running under bun | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 28 | does nothing when process.env already has entries | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 46 | restores environment from /proc/self/environ when bun env is empty | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 12 | does nothing when not running under bun | 已有 | gi-coding-agent/restore_sandbox_env_test.go |
+| 28 | does nothing when process.env already has entries | 已有 | gi-coding-agent/restore_sandbox_env_test.go |
+| 46 | restores environment from /proc/self/environ when bun env is empty | 已有 | gi-coding-agent/restore_sandbox_env_test.go |
 
 ## `rpc-client-clone.test.ts`
 
