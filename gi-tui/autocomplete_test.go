@@ -171,7 +171,7 @@ func TestCombinedAutocompleteFileSuggestions(t *testing.T) {
 	mustWrite(t, filepath.Join(base, "README.md"), "readme")
 	mustWrite(t, filepath.Join(base, "src", "index.ts"), "export {}")
 	mustWrite(t, filepath.Join(base, "src.txt"), "text")
-	mustWrite(t, filepath.Join(base, ".pi", "config.json"), "{}")
+	mustWrite(t, filepath.Join(base, ".gi", "config.json"), "{}")
 	mustWrite(t, filepath.Join(base, ".git", "config"), "ignore")
 	provider := NewCombinedAutocompleteProviderWithCommands(base, nil)
 
@@ -180,7 +180,7 @@ func TestCombinedAutocompleteFileSuggestions(t *testing.T) {
 		t.Fatal(err)
 	}
 	values := suggestionValues(result)
-	for _, want := range []string{"@README.md", "@src/", "@src.txt", "@.pi/"} {
+	for _, want := range []string{"@README.md", "@src/", "@src.txt", "@.gi/"} {
 		if !contains(values, want) {
 			t.Fatalf("root @ suggestions missing %q in %#v", want, values)
 		}

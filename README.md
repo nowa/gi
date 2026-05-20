@@ -45,8 +45,9 @@ protocol for a future full coding-agent runtime is described in
 [protocol/README.md](protocol/README.md), with machine-readable schemas,
 registries, and replay examples under [protocol/spec/](protocol/spec/).
 Gi uses `.gi` for project-local coding-agent settings, resources, sessions, and
-package stores. Pi case names that mention `.pi` are treated as `.gi`
-equivalents in Gi's parity table.
+package stores. Default auto-discovery does not read `.pi`; Pi case names that
+mention `.pi` are preserved verbatim but treated as `.gi` equivalents in Gi's
+parity table.
 
 ## Installation
 

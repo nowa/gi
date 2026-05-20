@@ -11,9 +11,9 @@ Status meanings:
 - `需要协议 runtime`: the Pi case touches extensions, packages, dynamic registration, RPC, or custom TUI contribution surfaces; implement through `protocol/spec` boundaries instead of private core branches.
 - `不适用`: intentionally excluded from the Go port, with the reason in the row.
 
-Pi test case names are preserved verbatim. When a Pi case names `.pi`, Gi
-coverage means the equivalent `.gi` path unless the row explicitly says
-otherwise.
+Pi test case names are preserved verbatim. Gi default auto-discovery uses `.gi`,
+not `.pi`; when a Pi case names `.pi`, Gi coverage means the equivalent `.gi`
+path unless the row explicitly says otherwise.
 
 ## Summary
 
