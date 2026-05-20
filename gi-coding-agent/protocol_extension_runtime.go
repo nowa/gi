@@ -6,10 +6,12 @@ import (
 )
 
 const CapabilityCommandsRegister = "commands.register"
+const CapabilityLifecycleEvents = "lifecycle.events"
 
 type ProtocolExtensionRuntime struct {
 	capabilities map[string]bool
 	commands     []ProtocolCommandRegistration
+	handlers     map[string][]ProtocolEventHandler
 }
 
 type ProtocolExtensionFactory struct {
@@ -39,6 +41,21 @@ type ProtocolCommandRegistration struct {
 	Handler        func(args string) error
 }
 
+type ProtocolSessionEvent struct {
+	Type                string
+	Reason              string
+	TargetSessionFile   string
+	PreviousSessionFile string
+	EntryID             string
+	Position            string
+}
+
+type ProtocolEventResult struct {
+	Cancel bool
+}
+
+type ProtocolEventHandler func(ProtocolSessionEvent) (ProtocolEventResult, error)
+
 type ProtocolRuntimeError struct {
 	Code    string
 	Message string
@@ -49,11 +66,43 @@ func (e ProtocolRuntimeError) Error() string {
 }
 
 func NewProtocolExtensionRuntime(capabilities ...string) *ProtocolExtensionRuntime {
-	runtime := &ProtocolExtensionRuntime{capabilities: map[string]bool{}}
+	runtime := &ProtocolExtensionRuntime{capabilities: map[string]bool{}, handlers: map[string][]ProtocolEventHandler{}}
 	for _, capability := range capabilities {
 		runtime.capabilities[capability] = true
 	}
 	return runtime
+}
+
+func (c *ProtocolExtensionContext) On(eventType string, handler ProtocolEventHandler) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	if !c.runtime.capabilities[CapabilityLifecycleEvents] {
+		return ProtocolRuntimeError{Code: "missing_capability", Message: CapabilityLifecycleEvents}
+	}
+	if handler == nil {
+		return nil
+	}
+	c.runtime.handlers[eventType] = append(c.runtime.handlers[eventType], handler)
+	return nil
+}
+
+func (r *ProtocolExtensionRuntime) EmitSessionEvent(event ProtocolSessionEvent) (ProtocolEventResult, error) {
+	if r == nil {
+		return ProtocolEventResult{}, nil
+	}
+	var combined ProtocolEventResult
+	for _, handler := range r.handlers[event.Type] {
+		result, err := handler(event)
+		if err != nil {
+			return ProtocolEventResult{}, err
+		}
+		if result.Cancel {
+			combined.Cancel = true
+			return combined, nil
+		}
+	}
+	return combined, nil
 }
 
 func (r *ProtocolExtensionRuntime) LoadFactories(factories []ProtocolExtensionFactory) error {

@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `785`
+- `已有`: `789`
 - `待实现`: `0`
-- `需要协议 runtime`: `252`
+- `需要协议 runtime`: `248`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -38,7 +38,7 @@ Status meanings:
 | `agent-session-dynamic-provider.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `agent-session-dynamic-tools.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `agent-session-retry.test.ts` | 5 | 已有 | gi-coding-agent/agent_session_retry_test.go |
-| `agent-session-runtime-events.test.ts` | 4 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `agent-session-runtime-events.test.ts` | 4 | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
 | `agent-session-stats.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_stats_test.go |
 | `agent-session-tree-navigation.test.ts` | 10 | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
 | `ansi-utils.test.ts` | 5 | 已有 | gi-coding-agent/utils_test.go |
@@ -221,15 +221,15 @@ Gi coverage / implementation target: `gi-coding-agent/agent_session_retry_test.g
 ## `agent-session-runtime-events.test.ts`
 
 Pi cases: `4`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_runtime_events_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 92 | emits session_before_switch and session_start for new and resume flows | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 136 | honors session_before_switch cancellation | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 160 | runs beforeSessionInvalidate after session_shutdown and before rebindSession | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 186 | emits session_before_fork and session_start and honors cancellation | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 92 | emits session_before_switch and session_start for new and resume flows | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
+| 136 | honors session_before_switch cancellation | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
+| 160 | runs beforeSessionInvalidate after session_shutdown and before rebindSession | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
+| 186 | emits session_before_fork and session_start and honors cancellation | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
 
 ## `agent-session-stats.test.ts`
 
