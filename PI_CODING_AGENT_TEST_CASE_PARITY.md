@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `259`
-- `待实现`: `485`
+- `已有`: `272`
+- `待实现`: `472`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -56,7 +56,7 @@ Status meanings:
 | `compaction-serialization.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `compaction-summary-reasoning.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `compaction.test.ts` | 23 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `config.test.ts` | 13 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `config.test.ts` | 13 | 已有 | gi-coding-agent/config_test.go |
 | `edit-tool-legacy-input.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `edit-tool-no-full-redraw.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `export-html-skill-block.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -554,24 +554,24 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `config.test.ts`
 
 Pi cases: `13`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/config_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 143 | detects pnpm from Windows .pnpm install paths | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 154 | does not self-update unknown wrapper installs | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 164 | self-updates npm installs from custom prefixes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 177 | self-updates renamed packages from the current install prefix | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 201 | self-update respects configured npmCommand | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 213 | self-update treats empty npmCommand as unset | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 221 | quotes npm self-update display paths | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 229 | does not infer Windows npm custom prefixes from package paths | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 240 | self-updates bun global installs from bun pm bin | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 253 | self-updates renamed pnpm global installs by removing the old package first | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 278 | self-updates renamed yarn global installs by removing the old package first | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 303 | self-updates renamed bun global installs by removing the old package first | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 328 | does not self-update when npm install path is not writable | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 143 | detects pnpm from Windows .pnpm install paths | 已有 | gi-coding-agent/config_test.go |
+| 154 | does not self-update unknown wrapper installs | 已有 | gi-coding-agent/config_test.go |
+| 164 | self-updates npm installs from custom prefixes | 已有 | gi-coding-agent/config_test.go |
+| 177 | self-updates renamed packages from the current install prefix | 已有 | gi-coding-agent/config_test.go |
+| 201 | self-update respects configured npmCommand | 已有 | gi-coding-agent/config_test.go |
+| 213 | self-update treats empty npmCommand as unset | 已有 | gi-coding-agent/config_test.go |
+| 221 | quotes npm self-update display paths | 已有 | gi-coding-agent/config_test.go |
+| 229 | does not infer Windows npm custom prefixes from package paths | 已有 | gi-coding-agent/config_test.go |
+| 240 | self-updates bun global installs from bun pm bin | 已有 | gi-coding-agent/config_test.go |
+| 253 | self-updates renamed pnpm global installs by removing the old package first | 已有 | gi-coding-agent/config_test.go |
+| 278 | self-updates renamed yarn global installs by removing the old package first | 已有 | gi-coding-agent/config_test.go |
+| 303 | self-updates renamed bun global installs by removing the old package first | 已有 | gi-coding-agent/config_test.go |
+| 328 | does not self-update when npm install path is not writable | 已有 | gi-coding-agent/config_test.go |
 
 ## `edit-tool-legacy-input.test.ts`
 
