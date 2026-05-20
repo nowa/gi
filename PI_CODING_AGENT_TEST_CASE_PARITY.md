@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `275`
-- `待实现`: `469`
+- `已有`: `280`
+- `待实现`: `464`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -121,7 +121,7 @@ Status meanings:
 | `trigger-compact-extension.test.ts` | 1 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `truncate-to-width.test.ts` | 6 | 已有 | gi-tui/utils_test.go |
 | `user-message.test.ts` | 1 | 已有 | gi-coding-agent/message_components_test.go |
-| `version-check.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `version-check.test.ts` | 5 | 已有 | gi-coding-agent/version_check_test.go |
 
 ## `agent-session-auto-compaction-queue.test.ts`
 
@@ -1968,13 +1968,13 @@ Gi coverage / implementation target: `gi-coding-agent/message_components_test.go
 ## `version-check.test.ts`
 
 Pi cases: `5`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/version_check_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 28 | compares package versions | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 36 | returns only newer versions | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 44 | uses the pi.dev version check api with a pi user agent | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 60 | returns the active package name from the version check api | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 67 | skips api calls when version checks are disabled | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 28 | compares package versions | 已有 | gi-coding-agent/version_check_test.go |
+| 36 | returns only newer versions | 已有 | gi-coding-agent/version_check_test.go |
+| 44 | uses the pi.dev version check api with a pi user agent | 已有 | gi-coding-agent/version_check_test.go |
+| 60 | returns the active package name from the version check api | 已有 | gi-coding-agent/version_check_test.go |
+| 67 | skips api calls when version checks are disabled | 已有 | gi-coding-agent/version_check_test.go |
