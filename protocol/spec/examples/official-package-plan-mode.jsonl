@@ -1,0 +1,8 @@
+{"type":"hello","protocols":["gi-ext-rpc@1","gi-viewtree@1"],"sdk":{"language":"typescript","version":"0.1.0"},"extension":{"id":"plan-mode","version":"1.0.0"},"requestedCapabilities":["commands.register","tools.set_active","session.write","tui.status","tui.widget","tui.dialog","tui.editor"]}
+{"type":"hello_result","sessionId":"sess_plan","protocols":{"gi-ext-rpc":"1.0.0","gi-viewtree":"1.0.0"},"grantedCapabilities":["commands.register","tools.set_active","session.write","tui.status","tui.widget","tui.dialog","tui.editor"],"host":{"id":"ri","name":"ri","version":"0.1.0","platform":"linux-amd64"}}
+{"type":"request","protocol":"gi-ext-rpc@1","id":"tools_1","method":"host.tools.set_active","params":{"mode":"replace","toolNames":["read","grep","find","ls"]}}
+{"type":"response","protocol":"gi-ext-rpc@1","id":"tools_1","result":{"activeToolNames":["read","grep","find","ls"]}}
+{"type":"request","protocol":"gi-ext-rpc@1","id":"status_1","method":"host.tui.status","params":{"key":"plan-mode","text":"Plan mode","priority":50}}
+{"type":"response","protocol":"gi-ext-rpc@1","id":"status_1","result":{"updated":true}}
+{"type":"request","protocol":"gi-ext-rpc@1","id":"state_1","method":"host.session.append_custom","params":{"owner":"gi-plan-mode","type":"plan_state","data":{"mode":"planning","tools":["read","grep","find","ls"]}}}
+{"type":"response","protocol":"gi-ext-rpc@1","id":"state_1","result":{"entryId":"entry_plan_state_1"}}

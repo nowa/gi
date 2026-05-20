@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gi.dev/protocol/spec/schemas/host-action.schema.json",
+  "title": "Gi Host Action v1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/response"
+    }
+  ],
+  "$defs": {
+    "id": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "required": ["type", "id", "method", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "request"
+        },
+        "protocol": {
+          "const": "gi-ext-rpc@1"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "method": {
+          "enum": [
+            "host.tools.list",
+            "host.tools.set_active",
+            "host.commands.list",
+            "host.session.entries",
+            "host.session.append_custom",
+            "host.session.set_label",
+            "host.session.set_name",
+            "host.session.action",
+            "host.agent.send_user_message",
+            "host.agent.run",
+            "host.agent.spawn",
+            "host.agent.abort",
+            "host.model.list",
+            "host.model.select",
+            "host.thinking.get",
+            "host.thinking.set",
+            "host.tui.mount",
+            "host.tui.patch",
+            "host.tui.unmount",
+            "host.tui.dialog",
+            "host.tui.editor",
+            "host.tui.status",
+            "host.policy.request",
+            "host.process.exec",
+            "host.fs.read",
+            "host.fs.write"
+          ]
+        },
+        "params": {
+          "type": "object"
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": ["type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "response"
+        },
+        "protocol": {
+          "const": "gi-ext-rpc@1"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "result": {},
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "additionalProperties": true,
+          "properties": {
+            "code": {
+              "enum": [
+                "unsupported_method",
+                "missing_capability",
+                "invalid_params",
+                "stale_context",
+                "busy",
+                "cancelled",
+                "timeout",
+                "policy_denied",
+                "internal_error"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {}
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["result"]
+        },
+        {
+          "required": ["error"]
+        }
+      ]
+    }
+  }
+}

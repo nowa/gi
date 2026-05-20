@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "nodes": [
+    {"type": "text", "description": "Styled text with wrapping or truncation."},
+    {"type": "markdown", "description": "Gi/Pi-compatible markdown rendering."},
+    {"type": "box", "description": "Padding, border, background, title, and children."},
+    {"type": "row", "description": "Horizontal layout."},
+    {"type": "column", "description": "Vertical layout."},
+    {"type": "spacer", "description": "Fixed blank space."},
+    {"type": "list", "description": "Selectable or static list."},
+    {"type": "table", "description": "Width-aware tabular data."},
+    {"type": "tree", "description": "Session, file, or tree selector."},
+    {"type": "input", "description": "Single-line input."},
+    {"type": "textarea", "description": "Multi-line input or editor fragment."},
+    {"type": "select", "description": "Filterable selection list."},
+    {"type": "button", "description": "Command target for keyboard or mouse-capable UIs."},
+    {"type": "progress", "description": "Progress bar."},
+    {"type": "spinner", "description": "Animated working indicator."},
+    {"type": "diff", "description": "File or tool diff rendering."},
+    {"type": "image", "description": "Terminal image with fallback."},
+    {"type": "toolCall", "description": "Standard tool call display."},
+    {"type": "message", "description": "Standard chat or session message display."},
+    {"type": "keyHint", "description": "Resolved keybinding hint."},
+    {"type": "portal", "description": "Internal target for overlay composition."}
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "name": "gi-package-host@1",
+      "description": "Manifest parsing, package source normalization, resource precedence, lock metadata, and resource filtering."
+    },
+    {
+      "name": "gi-extension-host@1",
+      "description": "Out-of-process extension supervision, protocol negotiation, capabilities, lifecycle, registrations, diagnostics, cancellation, and shutdown."
+    },
+    {
+      "name": "gi-tui-host@1",
+      "description": "TUI slots, focus, keyboard events, editor bridge, status, dialogs, autocomplete, and renderer registration."
+    },
+    {
+      "name": "gi-viewtree-renderer@1",
+      "description": "Deterministic ViewTree render, patch application, unknown-node fallback, and snapshot fixtures."
+    },
+    {
+      "name": "gi-inprocess-host@1",
+      "description": "Trusted compiled-in extension registration with panic recovery, dispose boundaries, and diagnostics."
+    },
+    {
+      "name": "gi-extension-process@1",
+      "description": "Package extension process handshake, registration, event handling, cancellation, and shutdown."
+    },
+    {
+      "name": "gi-sdk@1",
+      "description": "Language SDK compatibility for manifests, RPC messages, host actions, and ViewTrees."
+    },
+    {
+      "name": "gi-coding-agent-compatible@1",
+      "description": "Aggregate package, extension, TUI, ViewTree, and Pi ecosystem fixture compatibility."
+    }
+  ]
+}

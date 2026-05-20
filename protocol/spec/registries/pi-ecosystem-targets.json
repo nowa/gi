@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "targets": [
+    {
+      "name": "permission-gates-and-path-protection",
+      "features": ["tool_call", "host.tui.dialog", "fs.read:<scope>", "fs.write:<scope>", "policy_denied"],
+      "description": "Block, confirm, or rewrite sensitive file and command operations."
+    },
+    {
+      "name": "git-checkpoint-and-dirty-repo-guard",
+      "features": ["host.session.action", "host.process.exec", "host.tui.dialog", "session.write"],
+      "description": "Detect unsafe session actions and require explicit confirmation around dirty repositories."
+    },
+    {
+      "name": "plan-mode",
+      "features": ["commands.register", "host.tools.set_active", "host.tui.status", "host.tui.mount", "host.tui.editor"],
+      "description": "Switch into planning behavior, constrain tools, show progress, and refine plans."
+    },
+    {
+      "name": "todo-tools-and-widgets",
+      "features": ["tools.register", "host.session.append_custom", "tui.message_renderer", "tui.tool_renderer", "host.tui.mount"],
+      "description": "Register todo tools, render state, and persist todos across sessions."
+    },
+    {
+      "name": "subagents",
+      "features": ["host.agent.spawn", "host.agent.abort", "host.session.entries", "tool.update", "host.tui.status"],
+      "description": "Run isolated child agents with progress, cancellation, and bounded parent context."
+    },
+    {
+      "name": "mcp-adapter",
+      "features": ["host.process.exec", "tools.register", "tool.update", "network:<scope>", "diagnostic"],
+      "description": "Bridge external MCP servers into Gi tools with schema and streaming support."
+    },
+    {
+      "name": "remote-execution",
+      "features": ["process.exec:<scope>", "network:<scope>", "tui.tool_renderer", "host.tui.status"],
+      "description": "Wrap SSH or remote command execution with policy prompts and custom rendering."
+    },
+    {
+      "name": "sandbox-execution",
+      "features": ["process.exec:<scope>", "host.policy.request", "host.tui.status", "audit-log"],
+      "description": "Run tools under host policy and surface sandbox status."
+    },
+    {
+      "name": "custom-providers",
+      "features": ["providers.register", "host.model.list", "host.model.select", "host.tui.dialog"],
+      "description": "Add model providers, auth prompts, and model-selection behavior."
+    },
+    {
+      "name": "presets-and-model-workflows",
+      "features": ["register_flag", "register_command", "host.model.select", "host.thinking.set", "host.tools.set_active"],
+      "description": "Bundle model, thinking, tool, and command presets."
+    },
+    {
+      "name": "issue-autocomplete",
+      "features": ["tui.autocomplete", "network:<scope>", "host.process.exec", "diagnostic"],
+      "description": "Provide GitHub or issue-tracker completions in editor context."
+    },
+    {
+      "name": "custom-header-footer",
+      "features": ["tui.header", "tui.footer", "host.tui.mount", "theme_change", "resize"],
+      "description": "Render themed status, model, branch, and context indicators."
+    },
+    {
+      "name": "custom-editor",
+      "features": ["tui.editor", "host.tui.editor", "tui.autocomplete", "key", "textInput"],
+      "description": "Replace or wrap the editor while the host owns final submit semantics."
+    },
+    {
+      "name": "overlays-and-wizards",
+      "features": ["tui.overlay", "host.tui.mount", "focus", "submit", "cancel"],
+      "description": "Run modal or non-capturing overlays with keyboard and text events."
+    },
+    {
+      "name": "games-and-animated-demos",
+      "features": ["tui.overlay", "tick", "key", "host.tui.patch"],
+      "description": "Support high-interaction demos while hosts may cap frame rate."
+    },
+    {
+      "name": "dynamic-resources",
+      "features": ["resources.discover", "source-metadata", "package-local-paths"],
+      "description": "Discover skills, prompts, themes, and assets at runtime."
+    },
+    {
+      "name": "system-prompt-and-compaction",
+      "features": ["system_prompt.modify", "compaction.custom", "model_select", "session.read"],
+      "description": "Customize prompt and compaction behavior without host-private APIs."
+    }
+  ]
+}

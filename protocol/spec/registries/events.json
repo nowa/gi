@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "events": [
+    "extension_start",
+    "session_start",
+    "session_switch",
+    "session_shutdown",
+    "before_agent_start",
+    "agent_start",
+    "message_start",
+    "message_update",
+    "message_end",
+    "agent_end",
+    "turn_start",
+    "turn_end",
+    "tool_call",
+    "tool_result",
+    "tool_execution_start",
+    "tool_execution_end",
+    "model_select",
+    "thinking_level_select",
+    "input",
+    "resources_discover",
+    "shutdown",
+    "tui.event"
+  ]
+}

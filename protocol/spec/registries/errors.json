@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "errors": [
+    {"code": "unsupported_method", "description": "The host or extension does not implement the method."},
+    {"code": "missing_capability", "description": "The requested operation requires a capability that was not granted."},
+    {"code": "invalid_params", "description": "The payload does not satisfy the method contract."},
+    {"code": "stale_context", "description": "The request refers to an invalidated session, mount, turn, or event sequence."},
+    {"code": "busy", "description": "The host cannot perform the operation until current work finishes."},
+    {"code": "cancelled", "description": "The operation was cancelled."},
+    {"code": "timeout", "description": "The operation exceeded its deadline."},
+    {"code": "policy_denied", "description": "Host or organization policy denied the operation."},
+    {"code": "internal_error", "description": "The implementation failed unexpectedly."}
+  ]
+}

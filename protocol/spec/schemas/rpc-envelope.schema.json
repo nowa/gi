@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gi.dev/protocol/spec/schemas/rpc-envelope.schema.json",
+  "title": "Gi Extension RPC Envelope v1",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/hello"
+    },
+    {
+      "$ref": "#/$defs/helloResult"
+    },
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/response"
+    },
+    {
+      "$ref": "#/$defs/notification"
+    },
+    {
+      "$ref": "#/$defs/event"
+    },
+    {
+      "$ref": "#/$defs/diagnostic"
+    }
+  ],
+  "$defs": {
+    "id": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "additionalProperties": true,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {}
+      }
+    },
+    "hello": {
+      "type": "object",
+      "required": ["type", "protocols", "extension", "requestedCapabilities"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "hello"
+        },
+        "protocols": {
+          "type": "array",
+          "items": {
+            "enum": ["gi-ext-rpc@1", "gi-viewtree@1"]
+          }
+        },
+        "sdk": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "language": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        "extension": {
+          "$ref": "#/$defs/identity"
+        },
+        "requestedCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "helloResult": {
+      "type": "object",
+      "required": ["type", "sessionId", "protocols", "grantedCapabilities", "host"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "hello_result"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "protocols": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "gi-ext-rpc": {
+              "type": "string"
+            },
+            "gi-viewtree": {
+              "type": "string"
+            }
+          }
+        },
+        "grantedCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "host": {
+          "$ref": "#/$defs/identity"
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "required": ["id", "version"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "required": ["type", "id", "method", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "request"
+        },
+        "protocol": {
+          "const": "gi-ext-rpc@1"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        },
+        "params": {
+          "type": "object"
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": ["type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "response"
+        },
+        "protocol": {
+          "const": "gi-ext-rpc@1"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "result": {},
+        "error": {
+          "$ref": "#/$defs/error"
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["result"]
+        },
+        {
+          "required": ["error"]
+        }
+      ]
+    },
+    "notification": {
+      "type": "object",
+      "required": ["type", "method", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "notification"
+        },
+        "protocol": {
+          "const": "gi-ext-rpc@1"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object"
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["type", "method", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "event"
+        },
+        "protocol": {
+          "const": "gi-ext-rpc@1"
+        },
+        "eventSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object"
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["type", "severity", "code", "message"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "const": "diagnostic"
+        },
+        "protocol": {
+          "const": "gi-ext-rpc@1"
+        },
+        "severity": {
+          "enum": ["info", "warning", "error"]
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "source": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

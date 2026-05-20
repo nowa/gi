@@ -1,0 +1,4 @@
+{"type":"hello","protocols":["gi-ext-rpc@1","gi-viewtree@1"],"sdk":{"language":"rust","version":"0.1.0"},"extension":{"id":"plan-mode","version":"1.0.0"},"requestedCapabilities":["commands.register","tools.set_active","session.write","tui.widget","tui.dialog","tui.editor"]}
+{"type":"hello_result","sessionId":"sess_123","protocols":{"gi-ext-rpc":"1.0.0","gi-viewtree":"1.0.0"},"grantedCapabilities":["commands.register","tools.set_active","session.write","tui.widget","tui.dialog","tui.editor"],"host":{"id":"gi","name":"gi","version":"0.3.0","platform":"darwin-arm64"}}
+{"type":"request","protocol":"gi-ext-rpc@1","id":"cmd_1","method":"register_command","params":{"name":"plan","description":"Enter plan mode","source":{"package":"gi-plan-mode","extension":"plan-mode"}}}
+{"type":"response","protocol":"gi-ext-rpc@1","id":"cmd_1","result":{"registered":true,"name":"plan"}}

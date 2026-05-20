@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "actions": [
+    {"name": "host.tools.list", "capability": "tools.register", "description": "Return built-in, package, and SDK tools with source info and active state."},
+    {"name": "host.tools.set_active", "capability": "tools.set_active", "description": "Replace or patch the active tool set."},
+    {"name": "host.commands.list", "capability": "commands.register", "description": "Return slash commands from core, prompts, skills, and extensions."},
+    {"name": "host.session.entries", "capability": "session.read", "description": "Return session entries by cursor and range."},
+    {"name": "host.session.append_custom", "capability": "session.write", "description": "Append extension-owned custom state."},
+    {"name": "host.session.set_label", "capability": "session.write", "description": "Label a session entry."},
+    {"name": "host.session.set_name", "capability": "session.write", "description": "Set a human-readable session name."},
+    {"name": "host.session.action", "capability": "session.write", "description": "Request new, fork, switch, reload, clear, or navigate_tree."},
+    {"name": "host.agent.send_user_message", "capability": "agent.send_user_message", "description": "Queue a user message with a delivery mode."},
+    {"name": "host.agent.run", "capability": "agent.run", "description": "Run a bounded child turn in the current host."},
+    {"name": "host.agent.spawn", "capability": "agent.spawn", "description": "Create a subagent session with isolated context and progress events."},
+    {"name": "host.agent.abort", "capability": "agent.abort", "description": "Abort current or child work."},
+    {"name": "host.model.list", "capability": "providers.register", "description": "List configured models and auth state."},
+    {"name": "host.model.select", "capability": "providers.register", "description": "Select a model after auth and policy checks."},
+    {"name": "host.thinking.get", "capability": "session.read", "description": "Read the current thinking level."},
+    {"name": "host.thinking.set", "capability": "session.write", "description": "Change the thinking level."},
+    {"name": "host.tui.mount", "capability": "tui.widget", "description": "Mount a ViewTree into a host slot."},
+    {"name": "host.tui.patch", "capability": "tui.widget", "description": "Apply JSON Patch style changes to a mounted ViewTree."},
+    {"name": "host.tui.unmount", "capability": "tui.widget", "description": "Unmount a previously mounted ViewTree."},
+    {"name": "host.tui.dialog", "capability": "tui.dialog", "description": "Run select, confirm, input, editor, and notification UI."},
+    {"name": "host.tui.editor", "capability": "tui.editor", "description": "Read, write, insert text, and submit the editor."},
+    {"name": "host.tui.status", "capability": "tui.status", "description": "Update status text by key."},
+    {"name": "host.policy.request", "capability": "session.read", "description": "Request an additional runtime capability grant."},
+    {"name": "host.process.exec", "capability": "process.exec:<scope>", "description": "Run a command under host policy and stream output."},
+    {"name": "host.fs.read", "capability": "fs.read:<scope>", "description": "Read scoped filesystem content."},
+    {"name": "host.fs.write", "capability": "fs.write:<scope>", "description": "Write scoped filesystem content."}
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "tokens": [
+    "default",
+    "muted",
+    "accent",
+    "success",
+    "warning",
+    "error",
+    "dim",
+    "border",
+    "surface",
+    "surfaceAlt",
+    "tool",
+    "customMessage"
+  ]
+}

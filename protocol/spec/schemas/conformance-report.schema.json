@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gi.dev/protocol/spec/schemas/conformance-report.schema.json",
+  "title": "Gi Conformance Report v1",
+  "type": "object",
+  "required": ["implementation", "profiles", "features", "testResults"],
+  "additionalProperties": true,
+  "properties": {
+    "implementation": {
+      "type": "object",
+      "required": ["name", "version", "language"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        }
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "gi-package-host@1",
+          "gi-extension-host@1",
+          "gi-tui-host@1",
+          "gi-viewtree-renderer@1",
+          "gi-inprocess-host@1",
+          "gi-extension-process@1",
+          "gi-sdk@1",
+          "gi-coding-agent-compatible@1"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "transports": {
+          "type": "array",
+          "items": {
+            "enum": ["stdio-ndjson"]
+          }
+        },
+        "packageSources": {
+          "type": "array",
+          "items": {
+            "enum": ["npm", "git", "local", "oci", "tarball"]
+          }
+        },
+        "viewNodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "testResults": {
+      "type": "object",
+      "required": ["suite", "fixtureVersion", "passed", "failed", "cases"],
+      "additionalProperties": true,
+      "properties": {
+        "suite": {
+          "const": "gi-conformance@1"
+        },
+        "fixtureVersion": {
+          "type": "string"
+        },
+        "passed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "profile", "status"],
+            "additionalProperties": true,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "profile": {
+                "type": "string"
+              },
+              "status": {
+                "enum": ["pass", "fail", "skip"]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

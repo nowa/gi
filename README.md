@@ -36,6 +36,11 @@ Per-case provider/agent mapping is tracked in
 [PI_AI_AGENT_TEST_CASE_PARITY.md](PI_AI_AGENT_TEST_CASE_PARITY.md), and per-case
 TUI mapping is tracked in [PI_TUI_TEST_CASE_PARITY.md](PI_TUI_TEST_CASE_PARITY.md).
 
+The proposed cross-language package, extension, and custom TUI component
+protocol for a future full coding-agent runtime is described in
+[protocol/README.md](protocol/README.md), with machine-readable schemas,
+registries, and replay examples under [protocol/spec/](protocol/spec/).
+
 ## Installation
 
 This module targets Go 1.26.

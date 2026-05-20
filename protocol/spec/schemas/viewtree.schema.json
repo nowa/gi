@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gi.dev/protocol/spec/schemas/viewtree.schema.json",
+  "title": "Gi ViewTree v1",
+  "$ref": "#/$defs/node",
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "pattern": "^(text|markdown|box|row|column|spacer|list|table|tree|input|textarea|select|button|progress|spinner|diff|image|toolCall|message|keyHint|portal|x-[A-Za-z0-9_.-]+)$"
+        },
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/node"
+              },
+              {
+                "$ref": "#/$defs/listItem"
+              }
+            ]
+          }
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "title"],
+            "additionalProperties": true,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "align": {
+                "enum": ["left", "center", "right"]
+              }
+            }
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        },
+        "fallback": {
+          "$ref": "#/$defs/node"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "mount",
+              "unmount",
+              "focus",
+              "blur",
+              "key",
+              "textInput",
+              "submit",
+              "cancel",
+              "select",
+              "change",
+              "resize",
+              "theme_change",
+              "visibility_change",
+              "tick"
+            ]
+          }
+        }
+      }
+    },
+    "listItem": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "checked": {
+          "type": "boolean"
+        },
+        "disabled": {
+          "type": "boolean"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/listItem"
+          }
+        }
+      }
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fg": {
+          "$ref": "#/$defs/color"
+        },
+        "bg": {
+          "$ref": "#/$defs/color"
+        },
+        "bold": {
+          "type": "boolean"
+        },
+        "italic": {
+          "type": "boolean"
+        },
+        "underline": {
+          "type": "boolean"
+        },
+        "dim": {
+          "type": "boolean"
+        }
+      }
+    },
+    "color": {
+      "enum": [
+        "default",
+        "muted",
+        "accent",
+        "success",
+        "warning",
+        "error",
+        "dim",
+        "border",
+        "surface",
+        "surfaceAlt",
+        "tool",
+        "customMessage"
+      ]
+    }
+  }
+}

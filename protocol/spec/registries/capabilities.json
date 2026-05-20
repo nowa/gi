@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "capabilities": [
+    {"name": "tools.register", "profile": "gi-extension-host@1", "description": "Register LLM-callable tools."},
+    {"name": "tools.set_active", "profile": "gi-extension-host@1", "description": "Change the active tool set."},
+    {"name": "commands.register", "profile": "gi-extension-host@1", "description": "Register slash commands."},
+    {"name": "shortcuts.register", "profile": "gi-tui-host@1", "description": "Register keyboard shortcuts."},
+    {"name": "providers.register", "profile": "gi-extension-host@1", "description": "Register model providers."},
+    {"name": "session.read", "profile": "gi-extension-host@1", "description": "Read session entries, branch, and metadata."},
+    {"name": "session.write", "profile": "gi-extension-host@1", "description": "Append custom entries or labels."},
+    {"name": "agent.send_user_message", "profile": "gi-extension-host@1", "description": "Queue or send user messages."},
+    {"name": "agent.run", "profile": "gi-extension-host@1", "description": "Run bounded child turns in the current host."},
+    {"name": "agent.spawn", "profile": "gi-extension-host@1", "description": "Create isolated subagent sessions."},
+    {"name": "agent.abort", "profile": "gi-extension-host@1", "description": "Abort current or child work."},
+    {"name": "resources.discover", "profile": "gi-package-host@1", "description": "Add skills, prompts, themes, and assets at runtime."},
+    {"name": "system_prompt.modify", "profile": "gi-extension-host@1", "description": "Append or replace system prompt sections."},
+    {"name": "compaction.custom", "profile": "gi-extension-host@1", "description": "Provide custom compaction behavior."},
+    {"name": "tui.status", "profile": "gi-tui-host@1", "description": "Set status or footer text."},
+    {"name": "tui.dialog", "profile": "gi-tui-host@1", "description": "Use select, confirm, input, editor, and notification dialogs."},
+    {"name": "tui.widget", "profile": "gi-tui-host@1", "description": "Mount above or below editor widgets."},
+    {"name": "tui.header", "profile": "gi-tui-host@1", "description": "Mount header contributions."},
+    {"name": "tui.footer", "profile": "gi-tui-host@1", "description": "Mount footer contributions."},
+    {"name": "tui.overlay", "profile": "gi-tui-host@1", "description": "Mount focused or non-capturing overlays."},
+    {"name": "tui.editor", "profile": "gi-tui-host@1", "description": "Replace or wrap the editor."},
+    {"name": "tui.message_renderer", "profile": "gi-tui-host@1", "description": "Render custom session message types."},
+    {"name": "tui.tool_renderer", "profile": "gi-tui-host@1", "description": "Render tool calls and results."},
+    {"name": "tui.autocomplete", "profile": "gi-tui-host@1", "description": "Provide autocomplete suggestions."},
+    {"name": "fs.read:<scope>", "profile": "gi-extension-host@1", "description": "Read files in an allowed scope."},
+    {"name": "fs.write:<scope>", "profile": "gi-extension-host@1", "description": "Write files in an allowed scope."},
+    {"name": "process.exec:<scope>", "profile": "gi-extension-host@1", "description": "Execute commands in an allowed scope."},
+    {"name": "network:<scope>", "profile": "gi-extension-host@1", "description": "Make outbound network requests in an allowed scope."}
+  ]
+}
