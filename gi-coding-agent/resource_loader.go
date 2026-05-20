@@ -176,6 +176,9 @@ func (l *DefaultResourceLoader) loadExtensions() ResourceExtensionsResult {
 	for _, source := range l.extendedExtPaths {
 		combined.Extensions = append(combined.Extensions, ProtocolExtensionSource{Path: source.Path, BaseDir: filepath.Dir(source.Path)})
 	}
+	for _, source := range l.settingsExtensionSources() {
+		combined.Extensions = append(combined.Extensions, source)
+	}
 	explicit := LoadProtocolExtensionSources(l.additionalExtensionPaths, l.cwd)
 	combined.Extensions = append(combined.Extensions, explicit.Extensions...)
 	combined.Errors = append(combined.Errors, explicit.Errors...)
@@ -198,6 +201,11 @@ func (l *DefaultResourceLoader) loadSkills() ResourceSkillsResult {
 	}
 	var result ResourceSkillsResult
 	if !l.noSkills {
+		for _, dir := range l.settingsResourcePaths("skills") {
+			loaded := agentharness.LoadSkills(dir)
+			result.Skills = append(result.Skills, loaded.Skills...)
+			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
+		}
 		for _, dir := range []string{filepath.Join(l.agentDir, "skills"), filepath.Join(l.cwd, ConfigDirName, "skills")} {
 			loaded := agentharness.LoadSkills(dir)
 			result.Skills = append(result.Skills, loaded.Skills...)
@@ -221,6 +229,9 @@ func (l *DefaultResourceLoader) loadSkills() ResourceSkillsResult {
 
 func (l *DefaultResourceLoader) loadPrompts() []PromptTemplate {
 	var prompts []PromptTemplate
+	for _, path := range l.settingsResourcePaths("prompts") {
+		prompts = append(prompts, LoadPromptTemplates(LoadPromptTemplatesOptions{Cwd: l.cwd, PromptPaths: []string{path}})...)
+	}
 	prompts = append(prompts, loadPromptTemplatesFromDir(filepath.Join(l.agentDir, "prompts"), sourceInfoForPromptPath(filepath.Join(l.agentDir, "prompts"), filepath.Join(l.agentDir, "prompts"), filepath.Join(l.cwd, ConfigDirName, "prompts")))...)
 	prompts = append(prompts, loadPromptTemplatesFromDir(filepath.Join(l.cwd, ConfigDirName, "prompts"), sourceInfoForPromptPath(filepath.Join(l.cwd, ConfigDirName, "prompts"), filepath.Join(l.agentDir, "prompts"), filepath.Join(l.cwd, ConfigDirName, "prompts")))...)
 	for _, path := range l.additionalPromptPaths {
@@ -271,6 +282,39 @@ func (l *DefaultResourceLoader) resourceFilters(key string) []string {
 	return settingsStringSlice(l.settingsManager.merged, key)
 }
 
+func (l *DefaultResourceLoader) settingsExtensionSources() []ProtocolExtensionSource {
+	var sources []ProtocolExtensionSource
+	for _, path := range l.settingsResourcePathsByScope("extensions", l.settingsManager.global, l.agentDir) {
+		loaded := LoadProtocolExtensionSources([]string{path}, l.agentDir)
+		sources = append(sources, loaded.Extensions...)
+	}
+	projectBase := filepath.Join(l.cwd, ConfigDirName)
+	for _, path := range l.settingsResourcePathsByScope("extensions", l.settingsManager.project, projectBase) {
+		loaded := LoadProtocolExtensionSources([]string{path}, projectBase)
+		sources = append(sources, loaded.Extensions...)
+	}
+	return sources
+}
+
+func (l *DefaultResourceLoader) settingsResourcePaths(key string) []string {
+	var paths []string
+	paths = append(paths, l.settingsResourcePathsByScope(key, l.settingsManager.global, l.agentDir)...)
+	paths = append(paths, l.settingsResourcePathsByScope(key, l.settingsManager.project, filepath.Join(l.cwd, ConfigDirName))...)
+	return paths
+}
+
+func (l *DefaultResourceLoader) settingsResourcePathsByScope(key string, settings map[string]any, baseDir string) []string {
+	var paths []string
+	for _, entry := range settingsStringSlice(settings, key) {
+		entry = strings.TrimSpace(entry)
+		if entry == "" || strings.HasPrefix(entry, "!") || strings.HasPrefix(entry, "-") || strings.HasPrefix(entry, "+") {
+			continue
+		}
+		paths = append(paths, ResolveToCwd(entry, baseDir))
+	}
+	return paths
+}
+
 func filterProtocolExtensions(extensions []ProtocolExtensionSource, filters []string, cwd, agentDir string) []ProtocolExtensionSource {
 	var result []ProtocolExtensionSource
 	for _, extension := range extensions {
@@ -318,10 +362,10 @@ func filterThemes(themes []ResourceTheme, filters []string, cwd, agentDir string
 func resourceExcluded(path string, filters []string, cwd, agentDir string) bool {
 	for _, filter := range filters {
 		filter = strings.TrimSpace(filter)
-		if !strings.HasPrefix(filter, "-") {
+		if !strings.HasPrefix(filter, "-") && !strings.HasPrefix(filter, "!") {
 			continue
 		}
-		pattern := strings.TrimPrefix(filter, "-")
+		pattern := strings.TrimLeft(filter, "-!")
 		for _, base := range []string{cwd, filepath.Join(cwd, ConfigDirName), agentDir} {
 			if resourceMatchesFilter(path, pattern, base) {
 				return true
@@ -341,7 +385,7 @@ func resourceMatchesFilter(path, pattern, base string) bool {
 	}
 	rel = filepath.ToSlash(rel)
 	pattern = filepath.ToSlash(filepath.Clean(pattern))
-	return rel == pattern || strings.HasPrefix(rel, strings.TrimSuffix(pattern, "/")+"/")
+	return rel == pattern || strings.HasPrefix(rel, strings.TrimSuffix(pattern, "/")+"/") || protocolPackagePatternMatches(base, path, pattern)
 }
 
 func dedupeSkillsByName(skills []agentharness.Skill) []agentharness.Skill {

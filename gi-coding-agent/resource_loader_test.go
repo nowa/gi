@@ -54,6 +54,49 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("resolves local extension paths from settings", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		extensionPath := filepath.Join(agentDir, "extensions", "my-extension.gi.json")
+		writeGiProtocolExtensionDescriptor(t, extensionPath)
+		settings := NewInMemorySettingsManager(map[string]any{"extensions": []any{"extensions/my-extension.gi.json"}})
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings})
+		loader.Reload()
+
+		if len(loader.GetExtensions().Extensions) != 1 || loader.GetExtensions().Extensions[0].Path != extensionPath {
+			t.Fatalf("extensions = %#v", loader.GetExtensions().Extensions)
+		}
+	})
+
+	t.Run("resolves skill paths from settings", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		skillPath := filepath.Join(agentDir, "custom-skills", "my-skill", "SKILL.md")
+		writeResourceSkill(t, skillPath, "my-skill", "A test skill", "Content")
+		settings := NewInMemorySettingsManager(map[string]any{"skills": []any{"custom-skills"}})
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings})
+		loader.Reload()
+
+		if !resourceHasSkill(loader.GetSkills().Skills, "my-skill") {
+			t.Fatalf("skills = %#v", loader.GetSkills().Skills)
+		}
+	})
+
+	t.Run("resolves project extension paths relative to .pi", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		extensionPath := filepath.Join(cwd, ConfigDirName, "extensions", "project-ext.gi.json")
+		writeGiProtocolExtensionDescriptor(t, extensionPath)
+		settings := NewSettingsManager(cwd, agentDir)
+		settings.SetProjectExtensionPaths([]string{"extensions/project-ext.gi.json"})
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings})
+		loader.Reload()
+
+		if len(loader.GetExtensions().Extensions) != 1 || loader.GetExtensions().Extensions[0].Path != extensionPath {
+			t.Fatalf("extensions = %#v", loader.GetExtensions().Extensions)
+		}
+	})
+
 	t.Run("prefers project resources over user on name collisions", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		userPrompt := filepath.Join(agentDir, "prompts", "commit.md")

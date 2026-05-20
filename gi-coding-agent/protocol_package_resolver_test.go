@@ -6,6 +6,18 @@ import (
 )
 
 func TestProtocolPackageResolverLocalResources(t *testing.T) {
+	t.Run("returns no package-sourced paths when no sources configured", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+
+		result, err := manager.ResolveConfiguredProtocolPackageResources()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Extensions) != 0 || len(result.Skills) != 0 || len(result.Prompts) != 0 || len(result.Themes) != 0 {
+			t.Fatalf("resources = %#v", result)
+		}
+	})
+
 	t.Run("resolves local protocol extension paths", func(t *testing.T) {
 		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
 		extensionPath := filepath.Join(manager.cwd, "ext.gi.json")

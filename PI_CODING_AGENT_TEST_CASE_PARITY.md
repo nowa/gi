@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `961`
+- `已有`: `965`
 - `待实现`: `0`
-- `需要协议 runtime`: `76`
+- `需要协议 runtime`: `72`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -1150,11 +1150,11 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 81 | should return no package-sourced paths when no sources configured | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 91 | should resolve local extension paths from settings | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 102 | should resolve skill paths from settings | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 81 | should return no package-sourced paths when no sources configured | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
+| 91 | should resolve local extension paths from settings | 已有 | gi-coding-agent/resource_loader_test.go (Gi protocol descriptor equivalent) |
+| 102 | should resolve skill paths from settings | 已有 | gi-coding-agent/resource_loader_test.go |
 | 122 | should auto-discover root markdown skills from .pi skill dirs | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 138 | should resolve project paths relative to .pi | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 138 | should resolve project paths relative to .pi | 已有 | gi-coding-agent/resource_loader_test.go (Gi protocol descriptor equivalent) |
 | 150 | should auto-discover user prompts with overrides | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 162 | should resolve symlinked user and project resources once | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 230 | should auto-discover project prompts with overrides | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
