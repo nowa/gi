@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `926`
+- `已有`: `931`
 - `待实现`: `0`
-- `需要协议 runtime`: `111`
+- `需要协议 runtime`: `106`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -1189,9 +1189,9 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 920 | should recognize github URLs without git: prefix | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 945 | should parse package source types from docs examples | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 959 | should never parse dot-relative paths as git | 已有 | gi-coding-agent/package_manager_source_test.go |
-| 971 | should store global local packages relative to agent settings base | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 985 | should store project local packages relative to .pi settings base | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 999 | should remove local package entries using equivalent path forms | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 971 | should store global local packages relative to agent settings base | 已有 | gi-coding-agent/package_manager_settings_test.go |
+| 985 | should store project local packages relative to .pi settings base | 已有 | gi-coding-agent/package_manager_settings_test.go |
+| 999 | should remove local package entries using equivalent path forms | 已有 | gi-coding-agent/package_manager_settings_test.go |
 | 1012 | should parse HTTPS GitHub URLs correctly | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 1020 | should parse HTTPS URLs with git: prefix | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 1027 | should parse HTTPS URLs with ref | 已有 | gi-coding-agent/package_manager_source_test.go |
@@ -1240,8 +1240,8 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1790 | should update project npm packages using @latest when newer version is available | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1813 | should skip project npm update when installed version matches latest | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1832 | should batch npm updates per scope and run git updates in parallel while skipping pinned and current packages | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1941 | should suggest npm source prefixes for update lookups | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1949 | should suggest git source prefixes for update lookups | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1941 | should suggest npm source prefixes for update lookups | 已有 | gi-coding-agent/package_manager_settings_test.go |
+| 1949 | should suggest git source prefixes for update lookups | 已有 | gi-coding-agent/package_manager_settings_test.go |
 | 1957 | should skip installing missing package sources when offline | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1969 | should skip refreshing temporary git sources when offline | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1985 | should not run npm view during resolve for installed unpinned packages | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |

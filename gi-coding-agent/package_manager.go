@@ -52,7 +52,7 @@ type PackageUpdateSuggestionError struct {
 }
 
 func (e PackageUpdateSuggestionError) Error() string {
-	return "Did you mean " + e.Suggestion + "?"
+	return "No matching package found for " + e.Input + ". Did you mean " + e.Suggestion + "?"
 }
 
 type PackageSource struct {
@@ -95,15 +95,22 @@ func (m *DefaultPackageManager) GetPackageIdentity(source string) string {
 }
 
 func (m *DefaultPackageManager) Install(source string, project bool) error {
+	_, err := m.addSourceToSettings(source, project)
+	return err
+}
+
+func (m *DefaultPackageManager) addSourceToSettings(source string, project bool) (bool, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
-		return fmt.Errorf("missing install source")
+		return false, fmt.Errorf("missing install source")
 	}
 	baseDir := m.settingsBaseDir(project)
 	stored := m.packageSettingsValue(source, baseDir)
 	packages := m.settingsPackages(project)
 	if !packageSettingsContains(packages, stored, source, m.cwd, baseDir) {
 		packages = append(packages, stored)
+	} else {
+		return false, nil
 	}
 	values := make([]any, len(packages))
 	for i, value := range packages {
@@ -114,22 +121,32 @@ func (m *DefaultPackageManager) Install(source string, project bool) error {
 	} else {
 		m.settingsManager.SetPackages(values)
 	}
-	return nil
+	return true, nil
 }
 
 func (m *DefaultPackageManager) Remove(source string, project bool) error {
+	_, err := m.removeSourceFromSettings(source, project)
+	return err
+}
+
+func (m *DefaultPackageManager) removeSourceFromSettings(source string, project bool) (bool, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
-		return fmt.Errorf("missing remove source")
+		return false, fmt.Errorf("missing remove source")
 	}
 	baseDir := m.settingsBaseDir(project)
 	packages := m.settingsPackages(project)
 	filtered := make([]string, 0, len(packages))
+	removed := false
 	for _, existing := range packages {
 		if packageSettingsMatch(existing, source, m.cwd, baseDir) {
+			removed = true
 			continue
 		}
 		filtered = append(filtered, existing)
+	}
+	if !removed {
+		return false, nil
 	}
 	values := make([]any, len(filtered))
 	for i, value := range filtered {
@@ -140,7 +157,7 @@ func (m *DefaultPackageManager) Remove(source string, project bool) error {
 	} else {
 		m.settingsManager.SetPackages(values)
 	}
-	return nil
+	return true, nil
 }
 
 func (m *DefaultPackageManager) settingsPackages(project bool) []string {
@@ -163,6 +180,9 @@ func (m *DefaultPackageManager) packageUpdateSuggestion(source string) string {
 	for _, existing := range settingsPackagesToStrings(m.settingsManager.GetPackages()) {
 		parsed := ParsePackageSource(existing)
 		if parsed.Type == "npm" && parsed.Path == source {
+			return existing
+		}
+		if parsed.Type == "git" && parsed.Host+"/"+parsed.Path == source {
 			return existing
 		}
 	}
@@ -360,7 +380,11 @@ func (m *DefaultPackageManager) packageSettingsValue(source, baseDir string) str
 	}
 	absolute := ResolveToCwd(parsed.Path, m.cwd)
 	if relative, err := filepath.Rel(baseDir, absolute); err == nil {
-		return filepath.Clean(relative)
+		cleaned := filepath.Clean(relative)
+		if cleaned != "." && !strings.HasPrefix(cleaned, ".") {
+			return "." + string(filepath.Separator) + cleaned
+		}
+		return cleaned
 	}
 	return absolute
 }
