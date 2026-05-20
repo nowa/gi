@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -44,6 +45,13 @@ type SelfUpdateOptions struct {
 type SelfUpdateResult struct {
 	Updated     bool
 	PackageName string
+}
+
+type PackageUpdateInfo struct {
+	Source      string
+	DisplayName string
+	Type        string
+	Scope       string
 }
 
 type PackageUpdateSuggestionError struct {
@@ -300,6 +308,34 @@ func (m *DefaultPackageManager) GetLatestNPMVersion(packageName string) (string,
 	return strings.Trim(strings.TrimSpace(output), `"`), nil
 }
 
+func (m *DefaultPackageManager) CheckForAvailablePackageUpdates() ([]PackageUpdateInfo, error) {
+	if packageManagerOffline() {
+		return nil, nil
+	}
+	var updates []PackageUpdateInfo
+	for _, item := range m.configuredNPMUpdateSources() {
+		ref := parseNPMPackageRef(item.source)
+		if ref.Name == "" || ref.Pinned {
+			continue
+		}
+		installedVersion := readInstalledNPMVersion(filepath.Join(m.npmNodeModulesDir(item.scope), filepath.FromSlash(ref.Name), "package.json"))
+		if installedVersion == "" {
+			continue
+		}
+		latestVersion, err := m.GetLatestNPMVersion(ref.Name)
+		if err != nil || latestVersion == "" || latestVersion == installedVersion {
+			continue
+		}
+		updates = append(updates, PackageUpdateInfo{
+			Source:      item.source,
+			DisplayName: ref.Name,
+			Type:        "npm",
+			Scope:       item.scope,
+		})
+	}
+	return updates, nil
+}
+
 func (m *DefaultPackageManager) ResolveExtensionSources(sources []string, options ResolveExtensionSourcesOptions) ([]string, error) {
 	resolved := make([]string, 0, len(sources))
 	for _, sourceText := range sources {
@@ -331,6 +367,85 @@ func packageManagerOffline() bool {
 		value = strings.TrimSpace(os.Getenv("PI_OFFLINE"))
 	}
 	return value == "1" || strings.EqualFold(value, "true")
+}
+
+type configuredNPMUpdateSource struct {
+	source string
+	scope  string
+}
+
+func (m *DefaultPackageManager) configuredNPMUpdateSources() []configuredNPMUpdateSource {
+	var sources []configuredNPMUpdateSource
+	add := func(values []any, scope string) {
+		for _, value := range values {
+			source := ""
+			if text, ok := value.(string); ok {
+				source = strings.TrimSpace(text)
+			} else if object, ok := value.(map[string]any); ok {
+				source, _ = object["source"].(string)
+				source = strings.TrimSpace(source)
+			}
+			if ParsePackageSource(source).Type == "npm" {
+				sources = append(sources, configuredNPMUpdateSource{source: source, scope: scope})
+			}
+		}
+	}
+	add(settingsSlice(m.settingsManager.global, "packages"), "user")
+	add(settingsSlice(m.settingsManager.project, "packages"), "project")
+	return sources
+}
+
+type npmPackageRef struct {
+	Name    string
+	Version string
+	Pinned  bool
+}
+
+func parseNPMPackageRef(source string) npmPackageRef {
+	parsed := ParsePackageSource(source)
+	if parsed.Type != "npm" {
+		return npmPackageRef{}
+	}
+	value := strings.TrimSpace(parsed.Path)
+	if value == "" {
+		return npmPackageRef{}
+	}
+	versionIndex := -1
+	if strings.HasPrefix(value, "@") {
+		if slash := strings.Index(value, "/"); slash >= 0 {
+			versionIndex = strings.LastIndex(value[slash+1:], "@")
+			if versionIndex >= 0 {
+				versionIndex += slash + 1
+			}
+		}
+	} else {
+		versionIndex = strings.LastIndex(value, "@")
+	}
+	if versionIndex > 0 {
+		return npmPackageRef{Name: value[:versionIndex], Version: value[versionIndex+1:], Pinned: true}
+	}
+	return npmPackageRef{Name: value}
+}
+
+func (m *DefaultPackageManager) npmNodeModulesDir(scope string) string {
+	if scope == "project" {
+		return filepath.Join(m.cwd, ConfigDirName, "npm", "node_modules")
+	}
+	return filepath.Join(m.agentDir, "node_modules")
+}
+
+func readInstalledNPMVersion(packageJSONPath string) string {
+	content, err := os.ReadFile(packageJSONPath)
+	if err != nil {
+		return ""
+	}
+	var payload struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(content, &payload); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.Version)
 }
 
 func (m *DefaultPackageManager) refreshGitPackage(packageDir string) error {

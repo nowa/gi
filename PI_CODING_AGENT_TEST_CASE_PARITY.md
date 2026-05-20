@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `973`
+- `已有`: `976`
 - `待实现`: `0`
-- `需要协议 runtime`: `64`
+- `需要协议 runtime`: `61`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -1246,9 +1246,9 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1969 | should skip refreshing temporary git sources when offline | 已有 | gi-coding-agent/package_manager_git_update_test.go |
 | 1985 | should not run npm view during resolve for installed unpinned packages | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1999 | should reinstall pinned npm packages when installed version does not match | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 2013 | should not check package updates when offline | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 2022 | should report updates for installed unpinned npm packages | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 2041 | should skip pinned packages when checking for updates | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 2013 | should not check package updates when offline | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
+| 2022 | should report updates for installed unpinned npm packages | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
+| 2041 | should skip pinned packages when checking for updates | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
 | 2060 | should use npm view to fetch latest version | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
 | 2073 | should use npmCommand argv for npm update checks | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
 | 2094 | should wait for close before resolving captured stdout | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
