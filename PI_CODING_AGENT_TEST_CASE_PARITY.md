@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `297`
-- `待实现`: `447`
+- `已有`: `299`
+- `待实现`: `445`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -114,7 +114,7 @@ Status meanings:
 | `syntax-highlight.test.ts` | 5 | 已有 | gi-coding-agent/syntax_highlight_test.go |
 | `system-prompt.test.ts` | 7 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `test-harness.test.ts` | 15 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `theme-export.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `theme-export.test.ts` | 2 | 已有 | gi-coding-agent/theme_export_test.go |
 | `tool-execution-component.test.ts` | 16 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `tools.test.ts` | 68 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `tree-selector.test.ts` | 15 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -1796,13 +1796,13 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `theme-export.test.ts`
 
 Pi cases: `2`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/theme_export_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 38 | resolves export variable references using the same syntax as colors | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 72 | resolves recursive vars and converts 256-color export values to hex | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 38 | resolves export variable references using the same syntax as colors | 已有 | gi-coding-agent/theme_export_test.go |
+| 72 | resolves recursive vars and converts 256-color export values to hex | 已有 | gi-coding-agent/theme_export_test.go |
 
 ## `tool-execution-component.test.ts`
 
