@@ -96,6 +96,59 @@ func TestPackageManagerSourceParsingPiDocsAndHTTPSMatrix(t *testing.T) {
 	}
 }
 
+func TestPackageManagerPackageIdentityDedupePiParity(t *testing.T) {
+	manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+
+	t.Run("dedupes SSH and HTTPS URLs for same repo", func(t *testing.T) {
+		httpsIdentity := manager.GetPackageIdentity("https://github.com/user/repo")
+		sshIdentity := manager.GetPackageIdentity("git:git@github.com:user/repo")
+		if httpsIdentity != "git:github.com/user/repo" || httpsIdentity != sshIdentity {
+			t.Fatalf("identities = %q %q", httpsIdentity, sshIdentity)
+		}
+	})
+
+	t.Run("dedupes SSH and HTTPS with refs", func(t *testing.T) {
+		httpsIdentity := manager.GetPackageIdentity("https://github.com/user/repo@v1.0.0")
+		sshIdentity := manager.GetPackageIdentity("git:git@github.com:user/repo@v1.0.0")
+		if httpsIdentity != "git:github.com/user/repo" || httpsIdentity != sshIdentity {
+			t.Fatalf("identities = %q %q", httpsIdentity, sshIdentity)
+		}
+	})
+
+	t.Run("dedupes SSH URL with ssh protocol and git@ format", func(t *testing.T) {
+		sshProtocolIdentity := manager.GetPackageIdentity("ssh://git@github.com/user/repo")
+		gitAtIdentity := manager.GetPackageIdentity("git:git@github.com:user/repo")
+		if sshProtocolIdentity != "git:github.com/user/repo" || sshProtocolIdentity != gitAtIdentity {
+			t.Fatalf("identities = %q %q", sshProtocolIdentity, gitAtIdentity)
+		}
+	})
+
+	t.Run("dedupes all supported URL formats for same repo", func(t *testing.T) {
+		sources := []string{
+			"https://github.com/user/repo",
+			"https://github.com/user/repo.git",
+			"ssh://git@github.com/user/repo",
+			"git:https://github.com/user/repo",
+			"git:github.com/user/repo",
+			"git:git@github.com:user/repo",
+			"git:git@github.com:user/repo.git",
+		}
+		for _, source := range sources {
+			if identity := manager.GetPackageIdentity(source); identity != "git:github.com/user/repo" {
+				t.Fatalf("identity for %q = %q", source, identity)
+			}
+		}
+	})
+
+	t.Run("keeps different repos separate", func(t *testing.T) {
+		repo1 := manager.GetPackageIdentity("https://github.com/user/repo1")
+		repo2 := manager.GetPackageIdentity("git:git@github.com:user/repo2")
+		if repo1 != "git:github.com/user/repo1" || repo2 != "git:github.com/user/repo2" || repo1 == repo2 {
+			t.Fatalf("identities = %q %q", repo1, repo2)
+		}
+	})
+}
+
 func assertGitSource(t *testing.T, source PackageSource, host, path, repo, ref string, pinned bool) {
 	t.Helper()
 	if source.Type != "git" || source.Host != host || source.Path != path || source.Repo != repo || source.Ref != ref || source.Pinned != pinned {

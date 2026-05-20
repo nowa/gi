@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `931`
+- `已有`: `940`
 - `待实现`: `0`
-- `需要协议 runtime`: `106`
+- `需要协议 runtime`: `97`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -1228,15 +1228,15 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1551 | should force-exclude in package filters | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1574 | should dedupe same local package in global and project (project wins) | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1596 | should keep both if different packages | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1612 | should dedupe SSH and HTTPS URLs for same repo | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1626 | should dedupe SSH and HTTPS with refs | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1639 | should dedupe SSH URL with ssh:// protocol and git@ format | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1652 | should dedupe all supported URL formats for same repo | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1671 | should keep different repos separate (HTTPS vs SSH) | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1686 | should only load index.ts from subdirectories, not helper modules | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1716 | should respect package.json pi.extensions manifest in subdirectories | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1741 | should handle mixed top-level files and subdirectories | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1770 | should skip subdirectories without index.ts or manifest | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1612 | should dedupe SSH and HTTPS URLs for same repo | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1626 | should dedupe SSH and HTTPS with refs | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1639 | should dedupe SSH URL with ssh:// protocol and git@ format | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1652 | should dedupe all supported URL formats for same repo | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1671 | should keep different repos separate (HTTPS vs SSH) | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1686 | should only load index.ts from subdirectories, not helper modules | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 1716 | should respect package.json pi.extensions manifest in subdirectories | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 1741 | should handle mixed top-level files and subdirectories | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 1770 | should skip subdirectories without index.ts or manifest | 已有 | gi-coding-agent/extension_discovery_test.go |
 | 1790 | should update project npm packages using @latest when newer version is available | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1813 | should skip project npm update when installed version matches latest | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1832 | should batch npm updates per scope and run git updates in parallel while skipping pinned and current packages | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |

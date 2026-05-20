@@ -109,7 +109,7 @@ func resolveProtocolExtensionDir(dir string) []ProtocolExtensionSource {
 	if manifestSources := protocolExtensionManifestSources(dir); len(manifestSources) > 0 {
 		return manifestSources
 	}
-	for _, name := range []string{"index.ts", "index.js"} {
+	for _, name := range []string{"index.gi.json"} {
 		path := filepath.Join(dir, name)
 		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
 			return []ProtocolExtensionSource{{Path: filepath.Clean(path), BaseDir: dir}}
@@ -124,15 +124,15 @@ func protocolExtensionManifestSources(dir string) []ProtocolExtensionSource {
 		return nil
 	}
 	var manifest struct {
-		Pi *struct {
+		Gi *struct {
 			Extensions []string `json:"extensions"`
-		} `json:"pi"`
+		} `json:"gi"`
 	}
-	if err := json.Unmarshal(content, &manifest); err != nil || manifest.Pi == nil {
+	if err := json.Unmarshal(content, &manifest); err != nil || manifest.Gi == nil {
 		return nil
 	}
 	var sources []ProtocolExtensionSource
-	for _, entry := range manifest.Pi.Extensions {
+	for _, entry := range manifest.Gi.Extensions {
 		path := ResolveToCwd(entry, dir)
 		info, err := os.Stat(path)
 		if err != nil || !info.Mode().IsRegular() || !isProtocolExtensionFile(path) {
@@ -144,8 +144,7 @@ func protocolExtensionManifestSources(dir string) []ProtocolExtensionSource {
 }
 
 func isProtocolExtensionFile(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	return ext == ".ts" || ext == ".js"
+	return strings.HasSuffix(strings.ToLower(filepath.Base(path)), ".gi.json")
 }
 
 func dedupeProtocolExtensionSources(sources []ProtocolExtensionSource) []ProtocolExtensionSource {

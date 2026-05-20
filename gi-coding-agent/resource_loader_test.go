@@ -85,12 +85,12 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 
 	t.Run("honors settings exclusions for auto-discovered resources", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
-		writeProtocolExtensionFile(t, filepath.Join(agentDir, "extensions", "disabled.ts"))
+		writeGiProtocolExtensionDescriptor(t, filepath.Join(agentDir, "extensions", "disabled.gi.json"))
 		writeResourceSkill(t, filepath.Join(agentDir, "skills", "skip-skill", "SKILL.md"), "skip-skill", "Skip me", "Content")
 		writeResourceFile(t, filepath.Join(agentDir, "prompts", "skip.md"), "Skip prompt")
 		writeJSON(t, filepath.Join(agentDir, "themes", "skip.json"), map[string]any{"name": "skip-theme"})
 		settings := NewInMemorySettingsManager(map[string]any{
-			"extensions": []any{"-extensions/disabled.ts"},
+			"extensions": []any{"-extensions/disabled.gi.json"},
 			"skills":     []any{"-skills/skip-skill"},
 			"prompts":    []any{"-prompts/skip.md"},
 			"themes":     []any{"-themes/skip.json"},
@@ -109,7 +109,7 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 	t.Run("dedupes symlinked user and project extensions with project path winning", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		shared := filepath.Join(filepath.Dir(agentDir), "shared-extensions")
-		writeProtocolExtensionFile(t, filepath.Join(shared, "shared.ts"))
+		writeGiProtocolExtensionDescriptor(t, filepath.Join(shared, "shared.gi.json"))
 		if err := os.Symlink(shared, filepath.Join(agentDir, "extensions")); err != nil {
 			t.Fatal(err)
 		}
@@ -127,7 +127,7 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		if len(extensions.Extensions) != 1 || len(extensions.Errors) != 0 {
 			t.Fatalf("extensions = %#v", extensions)
 		}
-		want := filepath.Join(cwd, ConfigDirName, "extensions", "shared.ts")
+		want := filepath.Join(cwd, ConfigDirName, "extensions", "shared.gi.json")
 		if extensions.Extensions[0].Path != want {
 			t.Fatalf("extension path = %q, want %q", extensions.Extensions[0].Path, want)
 		}
