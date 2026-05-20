@@ -30,6 +30,31 @@ type ResolveExtensionSourcesOptions struct {
 	Temporary bool
 }
 
+type VersionReleaseChecker func(currentVersion string, options VersionCheckOptions) (LatestPiRelease, bool)
+
+type SelfUpdateOptions struct {
+	PackageName         string
+	CurrentVersion      string
+	Force               bool
+	Environment         InstallEnvironment
+	VersionCheck        VersionReleaseChecker
+	VersionCheckOptions VersionCheckOptions
+}
+
+type SelfUpdateResult struct {
+	Updated     bool
+	PackageName string
+}
+
+type PackageUpdateSuggestionError struct {
+	Input      string
+	Suggestion string
+}
+
+func (e PackageUpdateSuggestionError) Error() string {
+	return "Did you mean " + e.Suggestion + "?"
+}
+
 type PackageSource struct {
 	Type   string
 	Source string
@@ -126,6 +151,24 @@ func (m *DefaultPackageManager) settingsPackages(project bool) []string {
 	return settingsPackagesToStrings(settingsSlice(settings, "packages"))
 }
 
+func (m *DefaultPackageManager) globalNPMCommand() []string {
+	return settingsStringSlice(m.settingsManager.global, "npmCommand")
+}
+
+func (m *DefaultPackageManager) packageUpdateSuggestion(source string) string {
+	source = strings.TrimSpace(source)
+	if source == "" || strings.Contains(source, ":") {
+		return ""
+	}
+	for _, existing := range settingsPackagesToStrings(m.settingsManager.GetPackages()) {
+		parsed := ParsePackageSource(existing)
+		if parsed.Type == "npm" && parsed.Path == source {
+			return existing
+		}
+	}
+	return ""
+}
+
 func ParsePackageSource(source string) PackageSource {
 	trimmed := strings.TrimSpace(source)
 	if strings.HasPrefix(trimmed, "npm:") {
@@ -158,6 +201,12 @@ func PackageSourceIdentity(source PackageSource) string {
 func (m *DefaultPackageManager) Update(sources ...string) error {
 	if len(sources) == 0 {
 		sources = settingsPackagesToStrings(m.settingsManager.GetPackages())
+	} else {
+		for _, sourceText := range sources {
+			if suggestion := m.packageUpdateSuggestion(sourceText); suggestion != "" {
+				return PackageUpdateSuggestionError{Input: sourceText, Suggestion: suggestion}
+			}
+		}
 	}
 	for _, sourceText := range sources {
 		source, ok := ParseGitURL(sourceText)
@@ -176,6 +225,41 @@ func (m *DefaultPackageManager) Update(sources ...string) error {
 		}
 	}
 	return nil
+}
+
+func (m *DefaultPackageManager) RunSelfUpdate(options SelfUpdateOptions) (SelfUpdateResult, error) {
+	packageName := firstNonEmptyString(options.PackageName, DefaultCodingAgentPackageName)
+	currentVersion := firstNonEmptyString(options.CurrentVersion, DefaultCodingAgentVersion)
+	updatePackageName := packageName
+	if !options.Force {
+		checker := options.VersionCheck
+		if checker == nil {
+			checker = GetLatestPiRelease
+		}
+		release, ok := checker(currentVersion, options.VersionCheckOptions)
+		if !ok || !IsNewerPackageVersion(release.Version, currentVersion) {
+			return SelfUpdateResult{}, nil
+		}
+		if release.PackageName != "" {
+			updatePackageName = release.PackageName
+		}
+	}
+
+	npmCommand := m.globalNPMCommand()
+	command := GetSelfUpdateCommand(packageName, options.Environment, npmCommand, updatePackageName)
+	if command == nil {
+		return SelfUpdateResult{}, fmt.Errorf("%s", GetSelfUpdateUnavailableInstruction(packageName, options.Environment, npmCommand, updatePackageName))
+	}
+	steps := command.Steps
+	if len(steps) == 0 {
+		steps = []SelfUpdateCommandStep{{Command: command.Command, Args: command.Args, Display: command.Display}}
+	}
+	for _, step := range steps {
+		if err := m.operations.RunCommand(step.Command, step.Args, PackageCommandOptions{}); err != nil {
+			return SelfUpdateResult{}, err
+		}
+	}
+	return SelfUpdateResult{Updated: true, PackageName: updatePackageName}, nil
 }
 
 func (m *DefaultPackageManager) ResolveExtensionSources(sources []string, options ResolveExtensionSourcesOptions) ([]string, error) {

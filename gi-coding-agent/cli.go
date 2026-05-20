@@ -9,11 +9,16 @@ import (
 )
 
 type CLIOptions struct {
-	Args           []string
-	Stdout         io.Writer
-	Stderr         io.Writer
-	Startup        func(stderr io.Writer) error
-	PackageManager *DefaultPackageManager
+	Args                []string
+	Stdout              io.Writer
+	Stderr              io.Writer
+	Startup             func(stderr io.Writer) error
+	PackageManager      *DefaultPackageManager
+	PackageName         string
+	Version             string
+	InstallEnvironment  InstallEnvironment
+	VersionCheck        VersionReleaseChecker
+	VersionCheckOptions VersionCheckOptions
 }
 
 func RunCLI(options CLIOptions) int {
@@ -52,6 +57,7 @@ func WriteCLIUsage(writer io.Writer) {
 	_, _ = fmt.Fprintln(writer, "Commands:")
 	_, _ = fmt.Fprintln(writer, "  install <source> [-l]  Install a package or extension source")
 	_, _ = fmt.Fprintln(writer, "  remove <source> [-l]   Remove a package or extension source")
+	_, _ = fmt.Fprintln(writer, "  update [source]        Update packages or the current CLI")
 }
 
 func cliHelpWriter(args Args, options CLIOptions) io.Writer {
@@ -80,6 +86,9 @@ func runPackageSubcommand(options CLIOptions) (int, bool) {
 		return 0, false
 	}
 	command := options.Args[0]
+	if command == "update" {
+		return runUpdateSubcommand(options)
+	}
 	if command != "install" && command != "remove" {
 		return 0, false
 	}
@@ -126,12 +135,87 @@ func runPackageSubcommand(options CLIOptions) (int, bool) {
 	return 0, true
 }
 
+func runUpdateSubcommand(options CLIOptions) (int, bool) {
+	var self bool
+	var force bool
+	var sources []string
+	for _, arg := range options.Args[1:] {
+		switch {
+		case arg == "--help" || arg == "-h":
+			writeUpdateCommandUsage(nonNilWriter(options.Stdout))
+			return 0, true
+		case arg == "--self":
+			self = true
+		case arg == "--force":
+			force = true
+		case strings.HasPrefix(arg, "-"):
+			writer := nonNilWriter(options.Stderr)
+			_, _ = fmt.Fprintf(writer, "Unknown option %s for %q.\n", arg, "update")
+			_, _ = fmt.Fprintln(writer, `Use "gi --help" or "gi update [source]".`)
+			return 1, true
+		default:
+			sources = append(sources, arg)
+		}
+	}
+
+	manager := options.PackageManager
+	if manager == nil {
+		manager = defaultCLIPackageManager()
+	}
+	if self {
+		environment := options.InstallEnvironment
+		if isZeroInstallEnvironment(environment) {
+			environment = DefaultInstallEnvironment()
+		}
+		result, err := manager.RunSelfUpdate(SelfUpdateOptions{
+			PackageName:         options.PackageName,
+			CurrentVersion:      options.Version,
+			Force:               force,
+			Environment:         environment,
+			VersionCheck:        options.VersionCheck,
+			VersionCheckOptions: options.VersionCheckOptions,
+		})
+		if err != nil {
+			writeCLIError(options.Stderr, err.Error())
+			return 1, true
+		}
+		if result.Updated {
+			_, _ = fmt.Fprintf(nonNilWriter(options.Stdout), "Updated %s\n", result.PackageName)
+		}
+		return 0, true
+	}
+	if err := manager.Update(sources...); err != nil {
+		writeCLIError(options.Stderr, err.Error())
+		return 1, true
+	}
+	return 0, true
+}
+
 func writePackageCommandUsage(writer io.Writer, command string) {
 	if writer == nil {
 		return
 	}
 	_, _ = fmt.Fprintln(writer, "Usage:")
 	_, _ = fmt.Fprintf(writer, "  gi %s <source> [-l]\n", command)
+}
+
+func writeUpdateCommandUsage(writer io.Writer) {
+	if writer == nil {
+		return
+	}
+	_, _ = fmt.Fprintln(writer, "Usage:")
+	_, _ = fmt.Fprintln(writer, "  gi update [source]")
+	_, _ = fmt.Fprintln(writer, "  gi update --self [--force]")
+}
+
+func isZeroInstallEnvironment(env InstallEnvironment) bool {
+	return env.ExecPath == "" &&
+		env.PackageDir == "" &&
+		env.Platform == "" &&
+		env.HomeDir == "" &&
+		!env.BunBinary &&
+		!env.BunRuntime &&
+		env.CommandOutput == nil
 }
 
 func defaultCLIPackageManager() *DefaultPackageManager {

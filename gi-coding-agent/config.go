@@ -11,6 +11,9 @@ import (
 type InstallMethod string
 
 const (
+	DefaultCodingAgentPackageName = "gi"
+	DefaultCodingAgentVersion     = "0.0.0"
+
 	InstallMethodBunBinary InstallMethod = "bun-binary"
 	InstallMethodNPM       InstallMethod = "npm"
 	InstallMethodPNPM      InstallMethod = "pnpm"

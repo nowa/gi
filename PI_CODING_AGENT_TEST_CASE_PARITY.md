@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `897`
+- `已有`: `902`
 - `待实现`: `0`
-- `需要协议 runtime`: `140`
+- `需要协议 runtime`: `135`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -84,7 +84,7 @@ Status meanings:
 | `model-registry.test.ts` | 64 | 已有 | gi-coding-agent/model_registry_test.go |
 | `model-resolver.test.ts` | 31 | 已有 | gi-coding-agent/model_resolver_test.go |
 | `oauth-selector.test.ts` | 6 | 已有 | gi-coding-agent/oauth_selector_test.go |
-| `package-command-paths.test.ts` | 10 | 需要协议 runtime | gi-coding-agent/package_command_paths_test.go for command path basics; remaining self-update cases through protocol/package manager runtime |
+| `package-command-paths.test.ts` | 10 | 已有 | gi-coding-agent/package_command_paths_test.go |
 | `package-manager-ssh.test.ts` | 8 | 已有 | gi-coding-agent/package_manager_source_test.go |
 | `package-manager.test.ts` | 102 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `path-utils.test.ts` | 11 | 已有 | gi-coding-agent/utils_test.go |
@@ -1108,9 +1108,9 @@ Gi coverage / implementation target: `gi-coding-agent/oauth_selector_test.go`
 
 ## `package-command-paths.test.ts`
 
-Pi cases: `10`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `gi-coding-agent/package_command_paths_test.go covers command path basics; remaining self-update cases need package manager runtime`
+Pi cases: `10`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/package_command_paths_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -1119,11 +1119,11 @@ Gi coverage / implementation target: `gi-coding-agent/package_command_paths_test
 | 88 | shows install subcommand help | 已有 | gi-coding-agent/package_command_paths_test.go |
 | 106 | shows a friendly error for unknown install options | 已有 | gi-coding-agent/package_command_paths_test.go |
 | 121 | shows a friendly error for missing install source | 已有 | gi-coding-agent/package_command_paths_test.go |
-| 137 | uses global npmCommand and current package name for forced self updates without checking the api | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 187 | uses the current package name when the update check omits packageName | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 229 | installs the active package name from the update check during self-update | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 280 | fails self-update when renamed npm package installation fails | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 336 | suggests the configured source when update input omits the npm prefix | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 137 | uses global npmCommand and current package name for forced self updates without checking the api | 已有 | gi-coding-agent/package_command_paths_test.go |
+| 187 | uses the current package name when the update check omits packageName | 已有 | gi-coding-agent/package_command_paths_test.go |
+| 229 | installs the active package name from the update check during self-update | 已有 | gi-coding-agent/package_command_paths_test.go |
+| 280 | fails self-update when renamed npm package installation fails | 已有 | gi-coding-agent/package_command_paths_test.go |
+| 336 | suggests the configured source when update input omits the npm prefix | 已有 | gi-coding-agent/package_command_paths_test.go |
 
 ## `package-manager-ssh.test.ts`
 

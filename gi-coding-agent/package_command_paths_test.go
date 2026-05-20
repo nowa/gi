@@ -2,8 +2,10 @@ package gicodingagent
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -99,6 +101,158 @@ func TestPackageCommandPathsPiBasics(t *testing.T) {
 			t.Fatalf("stderr contains stack-looking text: %q", stderr)
 		}
 	})
+
+	t.Run("uses global npmCommand and current package name for forced self updates without checking the api", func(t *testing.T) {
+		agentDir, projectDir := createPackageCommandPathDirs(t)
+		globalPrefix := filepath.Join(filepath.Dir(agentDir), "global-prefix")
+		projectPrefix := filepath.Join(filepath.Dir(agentDir), "project-prefix")
+		selfPackageDir := packageCommandSelfPackageDir(t, globalPrefix, DefaultCodingAgentPackageName)
+		writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+			"npmCommand": []any{"fake-npm", "--prefix", globalPrefix},
+		})
+		writeSettingsJSON(t, filepath.Join(projectDir, ConfigDirName, "settings.json"), map[string]any{
+			"npmCommand": []any{"fake-npm", "--prefix", projectPrefix},
+		})
+		ops := newPackageCommandOps(globalPrefix)
+		versionChecked := false
+
+		_, stderr, code := runPackageCommandCLIWithOptions(t, []string{"update", "--self", "--force"}, projectDir, agentDir, func(options *CLIOptions) {
+			options.PackageManager = packageCommandManager(projectDir, agentDir, ops.operations())
+			options.InstallEnvironment = packageCommandInstallEnvironment(selfPackageDir, globalPrefix)
+			options.PackageName = DefaultCodingAgentPackageName
+			options.VersionCheck = func(string, VersionCheckOptions) (LatestPiRelease, bool) {
+				versionChecked = true
+				return LatestPiRelease{}, false
+			}
+		})
+		if code != 0 || stderr != "" {
+			t.Fatalf("code=%d stderr=%q", code, stderr)
+		}
+		if versionChecked {
+			t.Fatal("forced self-update should not check latest version")
+		}
+		if len(ops.calls) != 1 {
+			t.Fatalf("calls = %#v", ops.calls)
+		}
+		args := ops.calls[0].Args
+		if !containsString(args, globalPrefix) || !containsString(args, DefaultCodingAgentPackageName) || containsString(args, projectPrefix) {
+			t.Fatalf("args = %#v", args)
+		}
+	})
+
+	t.Run("uses the current package name when the update check omits packageName", func(t *testing.T) {
+		agentDir, projectDir := createPackageCommandPathDirs(t)
+		globalPrefix := filepath.Join(filepath.Dir(agentDir), "global-prefix")
+		selfPackageDir := packageCommandSelfPackageDir(t, globalPrefix, "@mariozechner/pi-coding-agent")
+		writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+			"npmCommand": []any{"fake-npm", "--prefix", globalPrefix},
+		})
+		ops := newPackageCommandOps(globalPrefix)
+		versionChecks := 0
+
+		_, stderr, code := runPackageCommandCLIWithOptions(t, []string{"update", "--self"}, projectDir, agentDir, func(options *CLIOptions) {
+			options.PackageManager = packageCommandManager(projectDir, agentDir, ops.operations())
+			options.InstallEnvironment = packageCommandInstallEnvironment(selfPackageDir, globalPrefix)
+			options.PackageName = DefaultCodingAgentPackageName
+			options.Version = "0.72.0"
+			options.VersionCheck = func(string, VersionCheckOptions) (LatestPiRelease, bool) {
+				versionChecks++
+				return LatestPiRelease{Version: "0.73.0"}, true
+			}
+		})
+		if code != 0 || stderr != "" {
+			t.Fatalf("code=%d stderr=%q", code, stderr)
+		}
+		if versionChecks != 1 {
+			t.Fatalf("version checks = %d", versionChecks)
+		}
+		if len(ops.calls) != 1 || !containsString(ops.calls[0].Args, DefaultCodingAgentPackageName) {
+			t.Fatalf("calls = %#v", ops.calls)
+		}
+	})
+
+	t.Run("installs the active package name from the update check during self-update", func(t *testing.T) {
+		agentDir, projectDir := createPackageCommandPathDirs(t)
+		globalPrefix := filepath.Join(filepath.Dir(agentDir), "global-prefix")
+		selfPackageDir := packageCommandSelfPackageDir(t, globalPrefix, "@mariozechner/pi-coding-agent")
+		activePackageName := "@new-scope/pi"
+		writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+			"npmCommand": []any{"fake-npm", "--prefix", globalPrefix},
+		})
+		ops := newPackageCommandOps(globalPrefix)
+
+		_, stderr, code := runPackageCommandCLIWithOptions(t, []string{"update", "--self"}, projectDir, agentDir, func(options *CLIOptions) {
+			options.PackageManager = packageCommandManager(projectDir, agentDir, ops.operations())
+			options.InstallEnvironment = packageCommandInstallEnvironment(selfPackageDir, globalPrefix)
+			options.PackageName = DefaultCodingAgentPackageName
+			options.Version = "0.72.0"
+			options.VersionCheck = func(string, VersionCheckOptions) (LatestPiRelease, bool) {
+				return LatestPiRelease{PackageName: activePackageName, Version: "0.73.0"}, true
+			}
+		})
+		if code != 0 || stderr != "" {
+			t.Fatalf("code=%d stderr=%q", code, stderr)
+		}
+		want := []packageCommandCall{
+			{Command: "fake-npm", Args: []string{"--prefix", globalPrefix, "uninstall", "-g", DefaultCodingAgentPackageName}},
+			{Command: "fake-npm", Args: []string{"--prefix", globalPrefix, "install", "-g", activePackageName}},
+		}
+		if !reflect.DeepEqual(ops.calls, want) {
+			t.Fatalf("calls = %#v, want %#v", ops.calls, want)
+		}
+	})
+
+	t.Run("fails self-update when renamed npm package installation fails", func(t *testing.T) {
+		agentDir, projectDir := createPackageCommandPathDirs(t)
+		globalPrefix := filepath.Join(filepath.Dir(agentDir), "global-prefix")
+		selfPackageDir := packageCommandSelfPackageDir(t, globalPrefix, "@mariozechner/pi-coding-agent")
+		activePackageName := "@new-scope/pi"
+		writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+			"npmCommand": []any{"fake-npm", "--prefix", globalPrefix},
+		})
+		ops := newPackageCommandOps(globalPrefix)
+		ops.failInstall = true
+
+		stdout, stderr, code := runPackageCommandCLIWithOptions(t, []string{"update", "--self"}, projectDir, agentDir, func(options *CLIOptions) {
+			options.PackageManager = packageCommandManager(projectDir, agentDir, ops.operations())
+			options.InstallEnvironment = packageCommandInstallEnvironment(selfPackageDir, globalPrefix)
+			options.PackageName = DefaultCodingAgentPackageName
+			options.Version = "0.72.0"
+			options.VersionCheck = func(string, VersionCheckOptions) (LatestPiRelease, bool) {
+				return LatestPiRelease{PackageName: activePackageName, Version: "0.73.0"}, true
+			}
+		})
+		if code != 1 {
+			t.Fatalf("code=%d stderr=%q", code, stderr)
+		}
+		if strings.Contains(stdout, "Updated") || !strings.Contains(stderr, "exited with code 23") {
+			t.Fatalf("stdout=%q stderr=%q", stdout, stderr)
+		}
+		want := []packageCommandCall{
+			{Command: "fake-npm", Args: []string{"--prefix", globalPrefix, "uninstall", "-g", DefaultCodingAgentPackageName}},
+			{Command: "fake-npm", Args: []string{"--prefix", globalPrefix, "install", "-g", activePackageName}},
+		}
+		if !reflect.DeepEqual(ops.calls, want) {
+			t.Fatalf("calls = %#v, want %#v", ops.calls, want)
+		}
+	})
+
+	t.Run("suggests the configured source when update input omits the npm prefix", func(t *testing.T) {
+		agentDir, projectDir := createPackageCommandPathDirs(t)
+		settingsPath := filepath.Join(agentDir, "settings.json")
+		writeSettingsJSON(t, settingsPath, map[string]any{"packages": []any{"npm:pi-formatter"}})
+
+		stdout, stderr, code := runPackageCommandCLI(t, []string{"update", "pi-formatter"}, projectDir, agentDir)
+		if code != 1 {
+			t.Fatalf("code=%d stderr=%q", code, stderr)
+		}
+		if !strings.Contains(stderr, "Did you mean npm:pi-formatter?") || strings.Contains(stdout, "Updated pi-formatter") {
+			t.Fatalf("stdout=%q stderr=%q", stdout, stderr)
+		}
+		if packages := packageCommandSettingsPackages(t, settingsPath); !reflect.DeepEqual(packages, []string{"npm:pi-formatter"}) {
+			t.Fatalf("packages = %#v", packages)
+		}
+	})
 }
 
 func createPackageCommandPathDirs(t *testing.T) (string, string) {
@@ -115,10 +269,14 @@ func createPackageCommandPathDirs(t *testing.T) (string, string) {
 }
 
 func runPackageCommandCLI(t *testing.T, args []string, projectDir, agentDir string) (string, string, int) {
+	return runPackageCommandCLIWithOptions(t, args, projectDir, agentDir, nil)
+}
+
+func runPackageCommandCLIWithOptions(t *testing.T, args []string, projectDir, agentDir string, configure func(*CLIOptions)) (string, string, int) {
 	t.Helper()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	code := RunCLI(CLIOptions{
+	options := CLIOptions{
 		Args:   args,
 		Stdout: &stdout,
 		Stderr: &stderr,
@@ -126,7 +284,11 @@ func runPackageCommandCLI(t *testing.T, args []string, projectDir, agentDir stri
 			CWD:      projectDir,
 			AgentDir: agentDir,
 		}),
-	})
+	}
+	if configure != nil {
+		configure(&options)
+	}
+	code := RunCLI(options)
 	return stdout.String(), stderr.String(), code
 }
 
@@ -144,4 +306,77 @@ func realPackageCommandPath(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return filepath.Clean(realPath)
+}
+
+func packageCommandManager(projectDir, agentDir string, operations PackageManagerOperations) *DefaultPackageManager {
+	return NewDefaultPackageManager(PackageManagerOptions{CWD: projectDir, AgentDir: agentDir, Operations: operations})
+}
+
+func packageCommandSelfPackageDir(t *testing.T, prefix, packageName string) string {
+	t.Helper()
+	scope, name, ok := strings.Cut(strings.TrimPrefix(packageName, "@"), "/")
+	if !ok {
+		scope = ""
+		name = packageName
+	}
+	elements := []string{prefix, "lib", "node_modules"}
+	if scope != "" {
+		elements = append(elements, "@"+scope, name)
+	} else {
+		elements = append(elements, name)
+	}
+	packageDir := filepath.Join(elements...)
+	if err := os.MkdirAll(packageDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return packageDir
+}
+
+func packageCommandInstallEnvironment(selfPackageDir, globalPrefix string) InstallEnvironment {
+	root := filepath.Join(globalPrefix, "lib", "node_modules")
+	return InstallEnvironment{
+		PackageDir: selfPackageDir,
+		ExecPath:   filepath.Join(selfPackageDir, "dist", "cli.js"),
+		HomeDir:    filepath.Dir(globalPrefix),
+		CommandOutput: func(command string, args []string, requireSuccess bool) (string, bool, error) {
+			if command == "fake-npm" && containsString(args, "root") && containsString(args, "-g") {
+				return root, true, nil
+			}
+			if requireSuccess {
+				return "", false, errors.New("unexpected package command")
+			}
+			return "", false, nil
+		},
+	}
+}
+
+type packageCommandCall struct {
+	Command string
+	Args    []string
+}
+
+type packageCommandOps struct {
+	globalPrefix string
+	failInstall  bool
+	calls        []packageCommandCall
+}
+
+func newPackageCommandOps(globalPrefix string) *packageCommandOps {
+	return &packageCommandOps{globalPrefix: globalPrefix}
+}
+
+func (o *packageCommandOps) operations() PackageManagerOperations {
+	return PackageManagerOperations{
+		RunCommand: func(command string, args []string, _ PackageCommandOptions) error {
+			copied := append([]string(nil), args...)
+			o.calls = append(o.calls, packageCommandCall{Command: command, Args: copied})
+			if o.failInstall && containsString(args, "install") {
+				return errors.New("exited with code 23")
+			}
+			return nil
+		},
+		RunCommandCapture: func(string, []string, PackageCommandOptions) (string, error) {
+			return "", nil
+		},
+	}
 }
