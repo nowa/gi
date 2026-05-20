@@ -19,10 +19,10 @@ otherwise.
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `1001`
+- `已有`: `1015`
 - `待实现`: `0`
-- `需要协议 runtime`: `15`
-- `不适用`: `21`
+- `需要协议 runtime`: `0`
+- `不适用`: `22`
 
 ## Commit Plan
 
@@ -66,9 +66,9 @@ otherwise.
 | `export-html-skill-block.test.ts` | 4 | 已有 | gi-coding-agent/export_html_skill_block_test.go |
 | `export-html-whitespace.test.ts` | 3 | 已有 | gi-coding-agent/export_html_whitespace_test.go |
 | `export-html-xss.test.ts` | 8 | 已有 | gi-coding-agent/export_html_xss_test.go |
-| `extensions-discovery.test.ts` | 27 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `extensions-discovery.test.ts` | 27 | 已有 | Gi descriptor runtime covers applicable registrations; TS node_modules resolution is not applicable |
 | `extensions-input-event.test.ts` | 8 | 已有 | gi-coding-agent/protocol_input_event_test.go |
-| `extensions-runner.test.ts` | 27 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `extensions-runner.test.ts` | 27 | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | `file-mutation-queue.test.ts` | 5 | 已有 | gi-coding-agent/file_mutation_queue_test.go |
 | `footer-data-provider.test.ts` | 8 | 已有 | gi-coding-agent/footer_data_provider_test.go |
 | `footer-width.test.ts` | 2 | 已有 | gi-coding-agent/footer_test.go |
@@ -90,14 +90,14 @@ otherwise.
 | `oauth-selector.test.ts` | 6 | 已有 | gi-coding-agent/oauth_selector_test.go |
 | `package-command-paths.test.ts` | 10 | 已有 | gi-coding-agent/package_command_paths_test.go |
 | `package-manager-ssh.test.ts` | 8 | 已有 | gi-coding-agent/package_manager_source_test.go |
-| `package-manager.test.ts` | 102 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `package-manager.test.ts` | 102 | 已有 | gi-coding-agent/package_manager_*_test.go |
 | `path-utils.test.ts` | 11 | 已有 | gi-coding-agent/utils_test.go |
 | `paths.test.ts` | 12 | 已有 | gi-coding-agent/utils_test.go |
 | `pi-user-agent.test.ts` | 1 | 已有 | gi-coding-agent/utils_test.go |
 | `plan-mode-utils.test.ts` | 33 | 已有 | gi-coding-agent/plan_mode_utils_test.go |
 | `print-mode.test.ts` | 3 | 已有 | gi-coding-agent/print_mode_test.go |
 | `prompt-templates.test.ts` | 82 | 已有 | gi-coding-agent/prompt_templates_test.go |
-| `resource-loader.test.ts` | 19 | 需要协议 runtime | gi-coding-agent/resource_loader_test.go for host resource discovery; remaining extension execution/conflict cases need protocol runtime |
+| `resource-loader.test.ts` | 19 | 已有 | gi-coding-agent/resource_loader_test.go |
 | `restore-sandbox-env.test.ts` | 3 | 已有 | gi-coding-agent/restore_sandbox_env_test.go |
 | `rpc-client-clone.test.ts` | 1 | 已有 | gi-coding-agent/rpc_client_test.go |
 | `rpc-jsonl.test.ts` | 4 | 已有 | gi-coding-agent/rpc_jsonl_test.go |
@@ -283,7 +283,7 @@ Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 ## `args.test.ts`
 
 Pi cases: `60`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/args_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -352,7 +352,7 @@ Gi coverage / implementation target: `gi-coding-agent/args_test.go`
 ## `assistant-message.test.ts`
 
 Pi cases: `2`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/message_components_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -363,7 +363,7 @@ Gi coverage / implementation target: `gi-coding-agent/message_components_test.go
 ## `auth-storage.test.ts`
 
 Pi cases: `24`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/auth_storage_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -558,7 +558,7 @@ Gi coverage / implementation target: `gi-agent-core/harness/compaction_test.go, 
 ## `config.test.ts`
 
 Pi cases: `13`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/config_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -609,8 +609,8 @@ Gi coverage / implementation target: `gi-coding-agent/edit_tool_no_full_redraw_t
 ## `export-html-skill-block.test.ts`
 
 Pi cases: `4`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/export_html_skill_block_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -622,8 +622,8 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `export-html-whitespace.test.ts`
 
 Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/export_html_whitespace_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -651,7 +651,7 @@ Gi coverage / implementation target: `gi-coding-agent/export_html_xss_test.go`
 ## `extensions-discovery.test.ts`
 
 Pi cases: `27`  
-Status: `需要协议 runtime`  
+Status: `已有`
 Gi coverage / implementation target: `Pi 的 TS/JS extension discovery 只做协议等价移植：Gi core 发现 .gi.json descriptor 和 gi.package.json gi.extensions，不发现或执行 .ts/.js 入口。`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -669,18 +669,18 @@ Gi coverage / implementation target: `Pi 的 TS/JS extension discovery 只做协
 | 203 | does not recurse beyond one level | 已有 | gi-coding-agent/extension_discovery_test.go |
 | 217 | handles mixed direct files and subdirectories | 已有 | gi-coding-agent/extension_discovery_test.go |
 | 238 | skips non-existent paths declared in package.json | 已有 | Gi 协议等价：skips non-existent paths declared in gi.package.json |
-| 258 | loads extensions and registers commands | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 268 | loads extensions and registers tools | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 278 | reports errors for invalid extension code | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 258 | loads extensions and registers commands | 已有 | gi-coding-agent/protocol_extension_descriptor_test.go |
+| 268 | loads extensions and registers tools | 已有 | gi-coding-agent/protocol_extension_descriptor_test.go |
+| 278 | reports errors for invalid extension code | 已有 | gi-coding-agent/protocol_extension_descriptor_test.go |
 | 288 | handles explicitly configured paths | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 300 | resolves dependencies from extension's own node_modules | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 313 | registers message renderers | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 330 | reports error when extension throws during initialization | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 345 | reports error when extension has no default export | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 360 | allows multiple extensions to register different tools | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 379 | loads extension with event handlers | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 398 | loads extension with shortcuts | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 416 | loads extension with flags | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 300 | resolves dependencies from extension's own node_modules | 不适用 | Gi extension/package protocol does not resolve Node module dependencies in core |
+| 313 | registers message renderers | 已有 | gi-coding-agent/protocol_extension_descriptor_test.go |
+| 330 | reports error when extension throws during initialization | 已有 | gi-coding-agent/protocol_extension_descriptor_test.go |
+| 345 | reports error when extension has no default export | 已有 | gi-coding-agent/protocol_extension_descriptor_test.go |
+| 360 | allows multiple extensions to register different tools | 已有 | gi-coding-agent/protocol_extension_descriptor_test.go |
+| 379 | loads extension with event handlers | 已有 | gi-coding-agent/protocol_extension_descriptor_test.go |
+| 398 | loads extension with shortcuts | 已有 | gi-coding-agent/protocol_extension_descriptor_test.go |
+| 416 | loads extension with flags | 已有 | gi-coding-agent/protocol_extension_descriptor_test.go |
 | 434 | loadExtensions only loads explicit paths without discovery | 已有 | gi-coding-agent/extension_discovery_test.go |
 | 452 | loadExtensions with no paths loads nothing | 已有 | gi-coding-agent/extension_discovery_test.go |
 
@@ -704,7 +704,7 @@ Gi coverage / implementation target: `gi-coding-agent/protocol_input_event_test.
 ## `extensions-runner.test.ts`
 
 Pi cases: `27`  
-Status: `需要协议 runtime`  
+Status: `已有`
 Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -782,7 +782,7 @@ Gi coverage / implementation target: `gi-coding-agent/footer_test.go`
 ## `frontmatter.test.ts`
 
 Pi cases: `8`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -799,7 +799,7 @@ Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 ## `git-ssh-url.test.ts`
 
 Pi cases: `9`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/git_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -866,7 +866,7 @@ Gi coverage / implementation target: `gi-coding-agent/image_resize_test.go`
 ## `initial-message.test.ts`
 
 Pi cases: `3`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/initial_message_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -973,7 +973,7 @@ Gi coverage / implementation target: `gi-coding-agent/interactive_mode_test.go`
 ## `keybindings-migration.test.ts`
 
 Pi cases: `3`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/keybindings_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1149,7 +1149,7 @@ Gi coverage / implementation target: `gi-coding-agent/package_manager_source_tes
 ## `package-manager.test.ts`
 
 Pi cases: `102`  
-Status: `需要协议 runtime`  
+Status: `已有`
 Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1260,7 +1260,7 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 ## `path-utils.test.ts`
 
 Pi cases: `11`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1280,7 +1280,7 @@ Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 ## `paths.test.ts`
 
 Pi cases: `12`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1301,7 +1301,7 @@ Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 ## `pi-user-agent.test.ts`
 
 Pi cases: `1`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1353,8 +1353,8 @@ Gi coverage / implementation target: `gi-coding-agent/plan_mode_utils_test.go`
 ## `print-mode.test.ts`
 
 Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/print_mode_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -1365,7 +1365,7 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `prompt-templates.test.ts`
 
 Pi cases: `82`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/prompt_templates_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1456,7 +1456,7 @@ Gi coverage / implementation target: `gi-coding-agent/prompt_templates_test.go`
 ## `resource-loader.test.ts`
 
 Pi cases: `19`  
-Status: `需要协议 runtime`  
+Status: `已有`
 Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1467,19 +1467,19 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 81 | should discover prompts from agentDir | 已有 | gi-coding-agent/resource_loader_test.go |
 | 99 | should prefer project resources over user on name collisions | 已有 | gi-coding-agent/resource_loader_test.go |
 | 159 | should load symlinked user and project extensions once | 已有 | gi-coding-agent/resource_loader_test.go |
-| 189 | should keep both extensions loaded when command names collide | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 189 | should keep both extensions loaded when command names collide | 已有 | gi-coding-agent/resource_loader_test.go |
 | 255 | should honor overrides for auto-discovered resources | 已有 | gi-coding-agent/resource_loader_test.go |
 | 299 | should discover AGENTS.md context files | 已有 | gi-coding-agent/resource_loader_test.go |
 | 309 | should skip AGENTS.md and CLAUDE.md discovery when noContextFiles is true | 已有 | gi-coding-agent/resource_loader_test.go |
 | 320 | should discover SYSTEM.md from cwd/.pi | 已有 | gi-coding-agent/resource_loader_test.go (Gi .gi equivalent) |
 | 331 | should discover APPEND_SYSTEM.md | 已有 | gi-coding-agent/resource_loader_test.go |
-| 344 | should load skills and prompts with extension metadata | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 344 | should load skills and prompts with extension metadata | 已有 | gi-coding-agent/resource_loader_test.go |
 | 411 | should skip skill discovery when noSkills is true | 已有 | gi-coding-agent/resource_loader_test.go |
 | 430 | should still load additional skill paths when noSkills is true | 已有 | gi-coding-agent/resource_loader_test.go |
 | 456 | should apply skillsOverride | 已有 | gi-coding-agent/resource_loader_test.go |
 | 480 | should apply systemPromptOverride | 已有 | gi-coding-agent/resource_loader_test.go |
-| 493 | should detect tool conflicts between extensions | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 537 | should prefer explicit CLI extensions over discovered extensions when commands and tools conflict | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 493 | should detect tool conflicts between extensions | 已有 | gi-coding-agent/resource_loader_test.go |
+| 537 | should prefer explicit CLI extensions over discovered extensions when commands and tools conflict | 已有 | gi-coding-agent/resource_loader_test.go |
 
 ## `restore-sandbox-env.test.ts`
 
@@ -1603,7 +1603,7 @@ Gi coverage / implementation target: `gi-coding-agent/session_cwd_test.go`
 ## `session-info-modified-timestamp.test.ts`
 
 Pi cases: `1`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/session_manager_migration_list_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1659,7 +1659,7 @@ Gi coverage / implementation target: `gi-coding-agent/session_selector_search_te
 ## `settings-manager-bug.test.ts`
 
 Pi cases: `4`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/settings_manager_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1672,7 +1672,7 @@ Gi coverage / implementation target: `gi-coding-agent/settings_manager_test.go`
 ## `settings-manager.test.ts`
 
 Pi cases: `17`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/settings_manager_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1698,7 +1698,7 @@ Gi coverage / implementation target: `gi-coding-agent/settings_manager_test.go`
 ## `skills.test.ts`
 
 Pi cases: `28`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-agent-core/harness/skills_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1746,7 +1746,7 @@ Gi coverage / implementation target: `gi-coding-agent/stdout_cleanliness_test.go
 ## `syntax-highlight.test.ts`
 
 Pi cases: `5`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/syntax_highlight_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1800,7 +1800,7 @@ Gi coverage / implementation target: `gi-coding-agent/test_harness_test.go`
 ## `theme-export.test.ts`
 
 Pi cases: `2`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/theme_export_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1836,7 +1836,7 @@ Gi coverage / implementation target: `gi-coding-agent/tool_execution_component_t
 ## `tools.test.ts`
 
 Pi cases: `68`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/tools_read_test.go, gi-coding-agent/tools_bash_advanced_test.go, gi-coding-agent/tools_search_test.go, gi-coding-agent/tools_edit_fuzzy_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1947,7 +1947,7 @@ Gi coverage / implementation target: `gi-coding-agent/trigger_compact_extension_
 ## `truncate-to-width.test.ts`
 
 Pi cases: `6`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-tui/utils_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1962,7 +1962,7 @@ Gi coverage / implementation target: `gi-tui/utils_test.go`
 ## `user-message.test.ts`
 
 Pi cases: `1`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/message_components_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1972,7 +1972,7 @@ Gi coverage / implementation target: `gi-coding-agent/message_components_test.go
 ## `version-check.test.ts`
 
 Pi cases: `5`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/version_check_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |

@@ -5,8 +5,8 @@ This directory defines how an implementation proves compatibility with
 
 ## Runner Modes
 
-- `schema`: validate manifests, RPC envelopes, host actions, ViewTrees, and
-  reports against `../schemas/*.schema.json`.
+- `schema`: validate manifests, extension descriptors, RPC envelopes, host
+  actions, ViewTrees, and reports against `../schemas/*.schema.json`.
 - `transcript`: replay `../examples/*.jsonl` and compare message ordering,
   result payloads, errors, capability denials, and diagnostics.
 - `render`: mount ViewTree fixtures at deterministic terminal sizes and compare

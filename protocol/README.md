@@ -19,8 +19,9 @@ The protocol is now split into implementation artifacts under `spec/`:
 
 - [`spec/gi-extension-protocol.md`](spec/gi-extension-protocol.md) is the
   concise normative v1 entry point.
-- [`spec/schemas/`](spec/schemas/) contains JSON Schemas for manifests, RPC
-  envelopes, host actions, ViewTree nodes, and conformance reports.
+- [`spec/schemas/`](spec/schemas/) contains JSON Schemas for manifests,
+  extension descriptors, RPC envelopes, host actions, ViewTree nodes, and
+  conformance reports.
 - [`spec/registries/`](spec/registries/) contains stable names for profiles,
   capabilities, actions, events, errors, style tokens, nodes, and official
   package derivations.
@@ -282,6 +283,11 @@ For `entry.kind = "process"`, the host spawns the declared command with the
 package root as `cwd`, connects stdio NDJSON, and requires a `hello` handshake
 before accepting registrations. The process receives only granted capabilities
 and can mutate host state only through RPC methods and `host.*` actions.
+
+For `extensionProtocol: "descriptor.v1"`, the host reads a `.gi.json`
+descriptor and applies static contributions through the same registries used by
+process extensions. Descriptor resources carry extension metadata; duplicate
+tools are diagnosed and the first registration wins.
 
 ### Shutdown
 

@@ -95,6 +95,8 @@ type DefaultResourceLoader struct {
 	agentsFiles      ResourceAgentsFilesResult
 	systemPrompt     string
 	appendSystem     string
+	extensionSkills  []ResourceSkillPath
+	extensionPrompts []ResourcePromptPath
 	extendedSkills   []ResourceSkillPath
 	extendedPrompts  []ResourcePromptPath
 	extendedExtPaths []ResourceExtensionPath
@@ -120,7 +122,7 @@ func NewDefaultResourceLoader(options DefaultResourceLoaderOptions) *DefaultReso
 		additionalPromptPaths:    append([]string(nil), options.AdditionalPromptPaths...),
 		skillsOverride:           options.SkillsOverride,
 		systemPromptOverride:     options.SystemPromptOverride,
-		extensions:               ResourceExtensionsResult{Runtime: NewProtocolExtensionRuntime()},
+		extensions:               ResourceExtensionsResult{Runtime: NewDefaultProtocolExtensionRuntime()},
 	}
 }
 
@@ -188,10 +190,15 @@ func (l *DefaultResourceLoader) loadExtensions() ResourceExtensionsResult {
 		combined.Errors = append(combined.Errors, discovered.Errors...)
 	}
 	filtered := filterProtocolExtensions(combined.Extensions, l.resourceFilters("extensions"), l.cwd, l.agentDir)
+	extensions := dedupeProtocolExtensionSources(filtered)
+	runtime := NewDefaultProtocolExtensionRuntime()
+	loaded := LoadProtocolExtensionDescriptors(extensions, runtime)
+	l.extensionSkills = loaded.Resources.SkillPaths
+	l.extensionPrompts = loaded.Resources.PromptPaths
 	return ResourceExtensionsResult{
-		Extensions: dedupeProtocolExtensionSources(filtered),
-		Errors:     combined.Errors,
-		Runtime:    NewProtocolExtensionRuntime(),
+		Extensions: extensions,
+		Errors:     append(combined.Errors, loaded.Errors...),
+		Runtime:    runtime,
 	}
 }
 
@@ -232,7 +239,12 @@ func (l *DefaultResourceLoader) loadSkills() ResourceSkillsResult {
 		result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 	}
 	for _, path := range l.extendedSkills {
-		loaded := agentharness.LoadSkills(ResolveToCwd(path.Path, l.cwd))
+		loaded := loadResourceSkillsWithMetadata(ResolveToCwd(path.Path, l.cwd), path.Metadata)
+		result.Skills = append(result.Skills, loaded.Skills...)
+		result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
+	}
+	for _, path := range l.extensionSkills {
+		loaded := loadResourceSkillsWithMetadata(ResolveToCwd(path.Path, l.cwd), path.Metadata)
 		result.Skills = append(result.Skills, loaded.Skills...)
 		result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 	}
@@ -301,10 +313,59 @@ func (l *DefaultResourceLoader) loadPrompts() []PromptTemplate {
 		prompts = append(prompts, LoadPromptTemplates(LoadPromptTemplatesOptions{Cwd: l.cwd, PromptPaths: []string{path}})...)
 	}
 	for _, path := range l.extendedPrompts {
-		prompts = append(prompts, LoadPromptTemplates(LoadPromptTemplatesOptions{Cwd: l.cwd, PromptPaths: []string{path.Path}})...)
+		prompts = append(prompts, loadResourcePromptsWithMetadata(ResolveToCwd(path.Path, l.cwd), path.Metadata)...)
+	}
+	for _, path := range l.extensionPrompts {
+		prompts = append(prompts, loadResourcePromptsWithMetadata(ResolveToCwd(path.Path, l.cwd), path.Metadata)...)
 	}
 	prompts = filterPrompts(prompts, l.resourceFilters("prompts"), l.cwd, l.agentDir)
 	return dedupePromptsByName(prompts)
+}
+
+func loadResourceSkillsWithMetadata(path string, metadata ProtocolSourceInfo) agentharness.SkillResult {
+	loaded := agentharness.LoadSkills(path)
+	for index := range loaded.Skills {
+		info := metadata
+		info.Path = loaded.Skills[index].FilePath
+		loaded.Skills[index].SourceInfo = info
+	}
+	for index := range loaded.Diagnostics {
+		loaded.Diagnostics[index].Source = metadata
+	}
+	return loaded
+}
+
+func loadResourcePromptsWithMetadata(path string, metadata ProtocolSourceInfo) []PromptTemplate {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil
+	}
+	sourceInfo := sourceInfoFromProtocolMetadata(metadata)
+	if info.IsDir() {
+		return loadPromptTemplatesFromDir(path, func(filePath string) SourceInfo {
+			fileInfo := sourceInfo
+			fileInfo.Path = filePath
+			return fileInfo
+		})
+	}
+	if !info.Mode().IsRegular() {
+		return nil
+	}
+	sourceInfo.Path = path
+	template, ok := loadPromptTemplateFromFile(path, sourceInfo)
+	if !ok {
+		return nil
+	}
+	return []PromptTemplate{template}
+}
+
+func sourceInfoFromProtocolMetadata(metadata ProtocolSourceInfo) SourceInfo {
+	return SourceInfo{
+		Path:   metadata.Path,
+		Source: metadata.Source,
+		Scope:  metadata.Scope,
+		Origin: metadata.Origin,
+	}
 }
 
 func (l *DefaultResourceLoader) loadThemes() []ResourceTheme {

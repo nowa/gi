@@ -11,6 +11,7 @@ type Skill struct {
 	Description            string
 	Content                string
 	FilePath               string
+	SourceInfo             any
 	DisableModelInvocation bool
 }
 

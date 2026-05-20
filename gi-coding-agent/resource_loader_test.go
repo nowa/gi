@@ -373,6 +373,103 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("keeps both extensions loaded when command names collide", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		projectExt := filepath.Join(cwd, ConfigDirName, "extensions", "project.gi.json")
+		userExt := filepath.Join(agentDir, "extensions", "user.gi.json")
+		writeJSON(t, projectExt, map[string]any{"gi": map[string]any{
+			"extensionProtocol": "descriptor.v1",
+			"commands": []any{
+				map[string]any{"name": "deploy", "description": "project deploy"},
+				map[string]any{"name": "project-only", "description": "project only"},
+			},
+		}})
+		writeJSON(t, userExt, map[string]any{"gi": map[string]any{
+			"extensionProtocol": "descriptor.v1",
+			"commands": []any{
+				map[string]any{"name": "deploy", "description": "user deploy"},
+				map[string]any{"name": "user-only", "description": "user only"},
+			},
+		}})
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+
+		extensions := loader.GetExtensions()
+		if len(extensions.Extensions) != 2 || len(extensions.Errors) != 0 {
+			t.Fatalf("extensions = %#v", extensions)
+		}
+		if got := extensions.Runtime.CommandInvocationNames(); !reflect.DeepEqual(got, []string{"deploy:1", "deploy:2", "project-only", "user-only"}) {
+			t.Fatalf("commands = %#v", got)
+		}
+	})
+
+	t.Run("loads extended skills and prompts with extension metadata", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		skillDir := filepath.Join(t.TempDir(), "extra-skills", "extra-skill")
+		skillPath := filepath.Join(skillDir, "SKILL.md")
+		writeResourceSkill(t, skillPath, "extra-skill", "Extra skill", "Extra content")
+		promptPath := filepath.Join(t.TempDir(), "extra-prompts", "extra.md")
+		writeResourceFile(t, promptPath, "---\ndescription: Extra prompt\n---\nExtra prompt content")
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+		loader.ExtendResources(ResourceExtension{
+			SkillPaths: []ResourceSkillPath{{
+				Path:     skillDir,
+				Metadata: ProtocolSourceInfo{Source: "extension:extra", Scope: "temporary", Origin: "top-level"},
+			}},
+			PromptPaths: []ResourcePromptPath{{
+				Path:     promptPath,
+				Metadata: ProtocolSourceInfo{Source: "extension:extra", Scope: "temporary", Origin: "top-level"},
+			}},
+		})
+
+		skill := resourceFindSkill(loader.GetSkills().Skills, "extra-skill")
+		if skill == nil {
+			t.Fatalf("skills = %#v", loader.GetSkills().Skills)
+		}
+		sourceInfo, _ := skill.SourceInfo.(ProtocolSourceInfo)
+		if sourceInfo.Source != "extension:extra" || sourceInfo.Path != skillPath {
+			t.Fatalf("skill = %#v source = %#v", skill, sourceInfo)
+		}
+		prompt := resourceFindPrompt(loader.GetPrompts().Prompts, "extra")
+		if prompt == nil || prompt.SourceInfo.Source != "extension:extra" || prompt.SourceInfo.Path != promptPath {
+			t.Fatalf("prompt = %#v", prompt)
+		}
+	})
+
+	t.Run("detects tool conflicts and keeps explicit extension first", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		globalExt := filepath.Join(agentDir, "extensions", "global.gi.json")
+		explicitExt := filepath.Join(t.TempDir(), "explicit.gi.json")
+		writeJSON(t, globalExt, map[string]any{"gi": map[string]any{
+			"extensionProtocol": "descriptor.v1",
+			"commands":          []any{map[string]any{"name": "deploy", "description": "global deploy"}},
+			"tools":             []any{map[string]any{"name": "duplicate-tool", "description": "global tool"}},
+		}})
+		writeJSON(t, explicitExt, map[string]any{"gi": map[string]any{
+			"extensionProtocol": "descriptor.v1",
+			"commands":          []any{map[string]any{"name": "deploy", "description": "explicit deploy"}},
+			"tools":             []any{map[string]any{"name": "duplicate-tool", "description": "explicit tool"}},
+		}})
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir, AdditionalExtensionPaths: []string{explicitExt}})
+		loader.Reload()
+
+		extensions := loader.GetExtensions()
+		if !resourceExtensionErrorsContain(extensions.Errors, "duplicate-tool") || !resourceExtensionErrorsContain(extensions.Errors, "conflicts") {
+			t.Fatalf("errors = %#v", extensions.Errors)
+		}
+		tool := findDynamicSDKTool(extensions.Runtime.RegisteredTools(), "duplicate-tool")
+		if tool == nil || tool.Description != "explicit tool" {
+			t.Fatalf("tool = %#v", tool)
+		}
+		if got := extensions.Runtime.CommandInvocationNames(); !reflect.DeepEqual(got, []string{"deploy:1", "deploy:2"}) {
+			t.Fatalf("commands = %#v", got)
+		}
+	})
+
 	t.Run("discovers context and system prompt files", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		writeResourceFile(t, filepath.Join(cwd, "AGENTS.md"), "# Project Guidelines")
@@ -513,6 +610,15 @@ func resourceFindPrompt(prompts []PromptTemplate, name string) *PromptTemplate {
 		}
 	}
 	return nil
+}
+
+func resourceExtensionErrorsContain(errors []ProtocolExtensionDiscoveryError, text string) bool {
+	for _, err := range errors {
+		if strings.Contains(err.Error, text) {
+			return true
+		}
+	}
+	return false
 }
 
 func resourcePromptCount(prompts []PromptTemplate, name string) int {

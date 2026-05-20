@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gi.dev/protocol/spec/schemas/extension-descriptor.schema.json",
+  "title": "Gi Extension Descriptor v1",
+  "type": "object",
+  "required": ["gi"],
+  "additionalProperties": true,
+  "properties": {
+    "gi": {
+      "type": "object",
+      "required": ["extensionProtocol"],
+      "additionalProperties": false,
+      "properties": {
+        "extensionProtocol": {
+          "enum": ["descriptor.v1", "jsonl-rpc.v1"]
+        },
+        "id": {
+          "type": "string"
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "description": {"type": "string"}
+            }
+          }
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "label": {"type": "string"},
+              "description": {"type": "string"},
+              "promptSnippet": {"type": "string"}
+            }
+          }
+        },
+        "messageRenderers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type"],
+            "additionalProperties": false,
+            "properties": {
+              "type": {"type": "string"}
+            }
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "shortcuts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key"],
+            "additionalProperties": false,
+            "properties": {
+              "key": {"type": "string"},
+              "description": {"type": "string"}
+            }
+          }
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "description": {"type": "string"},
+              "type": {"type": "string"},
+              "default": {}
+            }
+          }
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "skills": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "prompts": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

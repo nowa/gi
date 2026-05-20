@@ -17,6 +17,7 @@ RFC 2119 meaning when written in uppercase.
 The v1 standard is split into machine-checkable artifacts:
 
 - `schemas/package-manifest.schema.json`: package resource manifest.
+- `schemas/extension-descriptor.schema.json`: `.gi.json` extension descriptor.
 - `schemas/rpc-envelope.schema.json`: extension RPC envelope.
 - `schemas/host-action.schema.json`: host action request and response.
 - `schemas/viewtree.schema.json`: custom TUI ViewTree.
@@ -97,6 +98,13 @@ An extension is executable behavior. The portable default is an out-of-process
 stdio NDJSON RPC process. Trusted in-process extensions are allowed only for
 core, official compiled-in packages, enterprise forks, or SDK embeddings where
 the host owner accepts the memory-safety and crash-risk tradeoff.
+
+For simple static contributions, a `.gi.json` file MAY use
+`extensionProtocol: "descriptor.v1"`. Descriptor extensions can register
+commands, tools, message renderers, lifecycle event subscriptions, shortcuts,
+flags, skills, and prompt resources without starting a process. Descriptor
+resources inherit extension metadata, and duplicate tools are diagnosed with
+the first registration winning.
 
 Extension processes MUST perform a `hello` handshake before registration. The
 host MUST respond with compatible protocol versions and granted capabilities.
