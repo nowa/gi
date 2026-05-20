@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `407`
-- `待实现`: `337`
+- `已有`: `410`
+- `待实现`: `334`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -102,7 +102,7 @@ Status meanings:
 | `sdk-openrouter-attribution.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `sdk-session-manager.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `sdk-skills.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `session-cwd.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `session-cwd.test.ts` | 3 | 已有 | gi-coding-agent/session_cwd_test.go |
 | `session-info-modified-timestamp.test.ts` | 1 | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
 | `session-selector-path-delete.test.ts` | 7 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `session-selector-rename.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -1586,15 +1586,15 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 
 ## `session-cwd.test.ts`
 
-Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `3`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/session_cwd_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 37 | detects missing session cwd from persisted sessions | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 54 | supports overriding the effective cwd when opening a session | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 67 | throws a controlled error before runtime creation when the stored cwd is missing | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 37 | detects missing session cwd from persisted sessions | 已有 | gi-coding-agent/session_cwd_test.go |
+| 54 | supports overriding the effective cwd when opening a session | 已有 | gi-coding-agent/session_cwd_test.go |
+| 67 | throws a controlled error before runtime creation when the stored cwd is missing | 已有 | gi-coding-agent/session_cwd_test.go |
 
 ## `session-info-modified-timestamp.test.ts`
 
