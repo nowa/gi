@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `441`
-- `待实现`: `303`
+- `已有`: `447`
+- `待实现`: `297`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -100,8 +100,8 @@ Status meanings:
 | `rpc-prompt-response-semantics.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `rpc.test.ts` | 14 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `sdk-openrouter-attribution.test.ts` | 4 | 已有 | gi-coding-agent/sdk_attribution_test.go |
-| `sdk-session-manager.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `sdk-skills.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `sdk-session-manager.test.ts` | 3 | 已有 | gi-coding-agent/sdk_session_test.go |
+| `sdk-skills.test.ts` | 3 | 已有 | gi-coding-agent/sdk_session_test.go |
 | `session-cwd.test.ts` | 3 | 已有 | gi-coding-agent/session_cwd_test.go |
 | `session-info-modified-timestamp.test.ts` | 1 | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
 | `session-selector-path-delete.test.ts` | 7 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -1563,26 +1563,26 @@ Gi coverage / implementation target: `gi-coding-agent/sdk_attribution_test.go`
 ## `sdk-session-manager.test.ts`
 
 Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/sdk_session_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 28 | uses agentDir for the default persisted session path | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 49 | keeps an explicit sessionManager override | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 67 | derives cwd from an explicit sessionManager when cwd is omitted | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 28 | uses agentDir for the default persisted session path | 已有 | gi-coding-agent/sdk_session_test.go |
+| 49 | keeps an explicit sessionManager override | 已有 | gi-coding-agent/sdk_session_test.go |
+| 67 | derives cwd from an explicit sessionManager when cwd is omitted | 已有 | gi-coding-agent/sdk_session_test.go |
 
 ## `sdk-skills.test.ts`
 
 Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/sdk_session_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 41 | should discover skills by default and expose them on session.skills | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 53 | should have empty skills when resource loader returns none (--no-skills) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 77 | should use provided skills when resource loader supplies them | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 41 | should discover skills by default and expose them on session.skills | 已有 | gi-coding-agent/sdk_session_test.go |
+| 53 | should have empty skills when resource loader returns none (--no-skills) | 已有 | gi-coding-agent/sdk_session_test.go |
+| 77 | should use provided skills when resource loader supplies them | 已有 | gi-coding-agent/sdk_session_test.go |
 
 ## `session-cwd.test.ts`
 
