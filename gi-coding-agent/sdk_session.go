@@ -3,7 +3,6 @@ package gicodingagent
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -167,10 +166,8 @@ func defaultSDKTools(cwd string) []SDKTool {
 				if strings.TrimSpace(command) == "" {
 					return SDKToolResult{}, fmt.Errorf("bash command is required")
 				}
-				cmd := exec.Command("sh", "-c", command)
-				cmd.Dir = cwd
-				output, err := cmd.CombinedOutput()
-				return SDKToolResult{Content: []SDKContentPart{{Type: "text", Text: string(output)}}}, err
+				result, err := ExecuteBash(command, cwd)
+				return SDKToolResult{Content: []SDKContentPart{{Type: "text", Text: result.Output}}}, err
 			},
 		},
 		{Name: "edit"},
