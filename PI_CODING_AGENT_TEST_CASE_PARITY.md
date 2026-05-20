@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `809`
+- `已有`: `842`
 - `待实现`: `0`
-- `需要协议 runtime`: `228`
+- `需要协议 runtime`: `195`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -90,7 +90,7 @@ Status meanings:
 | `path-utils.test.ts` | 11 | 已有 | gi-coding-agent/utils_test.go |
 | `paths.test.ts` | 12 | 已有 | gi-coding-agent/utils_test.go |
 | `pi-user-agent.test.ts` | 1 | 已有 | gi-coding-agent/utils_test.go |
-| `plan-mode-utils.test.ts` | 33 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `plan-mode-utils.test.ts` | 33 | 已有 | gi-coding-agent/plan_mode_utils_test.go |
 | `print-mode.test.ts` | 3 | 已有 | gi-coding-agent/print_mode_test.go |
 | `prompt-templates.test.ts` | 82 | 已有 | gi-coding-agent/prompt_templates_test.go |
 | `resource-loader.test.ts` | 19 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -1307,44 +1307,44 @@ Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 ## `plan-mode-utils.test.ts`
 
 Pi cases: `33`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/plan_mode_utils_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 13 | allows basic read commands | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 22 | allows git read commands | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 29 | allows npm/yarn read commands | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 35 | allows other safe commands | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 45 | blocks file modification commands | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 54 | blocks git write commands | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 62 | blocks package manager installs | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 69 | blocks redirects | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 75 | blocks dangerous commands | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 81 | blocks editors | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 89 | requires command to be in safe list (not just non-destructive) | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 94 | handles commands with leading whitespace | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 102 | removes markdown bold/italic | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 107 | removes markdown code | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 112 | removes leading action words | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 118 | capitalizes first letter | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 122 | truncates long text | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 129 | normalizes whitespace | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 135 | extracts numbered items after Plan: header | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 150 | handles bold Plan header | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 158 | handles parenthesis-style numbering | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 167 | returns empty array without Plan header | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 176 | filters out short items | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 186 | filters out code-like items | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 197 | extracts single DONE marker | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 202 | extracts multiple DONE markers | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 207 | handles case insensitivity | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 212 | returns empty array with no markers | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 217 | ignores malformed markers | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 224 | marks matching items as completed | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 239 | returns count of completed items | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 246 | ignores markers for non-existent steps | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 255 | doesn't double-complete already completed items | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 13 | allows basic read commands | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 22 | allows git read commands | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 29 | allows npm/yarn read commands | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 35 | allows other safe commands | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 45 | blocks file modification commands | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 54 | blocks git write commands | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 62 | blocks package manager installs | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 69 | blocks redirects | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 75 | blocks dangerous commands | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 81 | blocks editors | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 89 | requires command to be in safe list (not just non-destructive) | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 94 | handles commands with leading whitespace | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 102 | removes markdown bold/italic | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 107 | removes markdown code | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 112 | removes leading action words | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 118 | capitalizes first letter | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 122 | truncates long text | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 129 | normalizes whitespace | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 135 | extracts numbered items after Plan: header | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 150 | handles bold Plan header | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 158 | handles parenthesis-style numbering | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 167 | returns empty array without Plan header | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 176 | filters out short items | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 186 | filters out code-like items | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 197 | extracts single DONE marker | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 202 | extracts multiple DONE markers | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 207 | handles case insensitivity | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 212 | returns empty array with no markers | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 217 | ignores malformed markers | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 224 | marks matching items as completed | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 239 | returns count of completed items | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 246 | ignores markers for non-existent steps | 已有 | gi-coding-agent/plan_mode_utils_test.go |
+| 255 | doesn't double-complete already completed items | 已有 | gi-coding-agent/plan_mode_utils_test.go |
 
 ## `print-mode.test.ts`
 
