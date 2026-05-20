@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `292`
-- `待实现`: `452`
+- `已有`: `297`
+- `待实现`: `447`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -111,7 +111,7 @@ Status meanings:
 | `settings-manager.test.ts` | 17 | 已有 | gi-coding-agent/settings_manager_test.go |
 | `skills.test.ts` | 28 | 已有 | gi-agent-core/harness/skills_test.go |
 | `stdout-cleanliness.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `syntax-highlight.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `syntax-highlight.test.ts` | 5 | 已有 | gi-coding-agent/syntax_highlight_test.go |
 | `system-prompt.test.ts` | 7 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `test-harness.test.ts` | 15 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `theme-export.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -1742,16 +1742,16 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `syntax-highlight.test.ts`
 
 Pi cases: `5`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/syntax_highlight_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 5 | renders highlighted spans with the provided theme | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 12 | decodes HTML entities emitted by highlight.js | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 17 | inherits parent formatting for unmapped nested scopes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 28 | keeps parent formatting across unscoped nested spans | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 35 | highlights code through highlight.js | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 5 | renders highlighted spans with the provided theme | 已有 | gi-coding-agent/syntax_highlight_test.go |
+| 12 | decodes HTML entities emitted by highlight.js | 已有 | gi-coding-agent/syntax_highlight_test.go |
+| 17 | inherits parent formatting for unmapped nested scopes | 已有 | gi-coding-agent/syntax_highlight_test.go |
+| 28 | keeps parent formatting across unscoped nested spans | 已有 | gi-coding-agent/syntax_highlight_test.go |
+| 35 | highlights code through highlight.js | 已有 | gi-coding-agent/syntax_highlight_test.go |
 
 ## `system-prompt.test.ts`
 
