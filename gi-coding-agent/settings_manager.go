@@ -16,6 +16,7 @@ type SettingsManager struct {
 	agentDir    string
 	globalPath  string
 	projectPath string
+	inMemory    bool
 
 	global  map[string]any
 	project map[string]any
@@ -45,6 +46,18 @@ func NewSettingsManager(cwd, agentDir string) *SettingsManager {
 	}
 	if manager.projectLoadErr != nil {
 		manager.errors = append(manager.errors, SettingsError{Scope: "project", Err: manager.projectLoadErr})
+	}
+	manager.refreshMerged()
+	return manager
+}
+
+func NewInMemorySettingsManager(settings map[string]any) *SettingsManager {
+	manager := &SettingsManager{
+		inMemory:        true,
+		global:          migrateSettings(cloneSettingsMap(settings)),
+		project:         map[string]any{},
+		modifiedGlobal:  map[string]struct{}{},
+		modifiedProject: map[string]struct{}{},
 	}
 	manager.refreshMerged()
 	return manager
@@ -194,6 +207,22 @@ func (s *SettingsManager) GetSessionDir() string {
 	return ExpandPath(sessionDir)
 }
 
+func (s *SettingsManager) GetImageAutoResize() bool {
+	return settingsNestedBool(s.merged, "images", "autoResize", true)
+}
+
+func (s *SettingsManager) SetImageAutoResize(enabled bool) {
+	s.setGlobalNested("images", "autoResize", enabled)
+}
+
+func (s *SettingsManager) GetBlockImages() bool {
+	return settingsNestedBool(s.merged, "images", "blockImages", false)
+}
+
+func (s *SettingsManager) SetBlockImages(blocked bool) {
+	s.setGlobalNested("images", "blockImages", blocked)
+}
+
 func (s *SettingsManager) GetPackages() []any {
 	return settingsSlice(s.merged, "packages")
 }
@@ -221,6 +250,18 @@ func (s *SettingsManager) setGlobal(key string, value any) {
 	s.saveGlobal()
 }
 
+func (s *SettingsManager) setGlobalNested(key, nestedKey string, value any) {
+	nested, _ := s.global[key].(map[string]any)
+	if nested == nil {
+		nested = map[string]any{}
+		s.global[key] = nested
+	}
+	nested[nestedKey] = cloneSettingsValue(value)
+	s.modifiedGlobal[key] = struct{}{}
+	s.refreshMerged()
+	s.saveGlobal()
+}
+
 func (s *SettingsManager) setProject(key string, value any) {
 	s.project[key] = cloneSettingsValue(value)
 	s.modifiedProject[key] = struct{}{}
@@ -229,6 +270,10 @@ func (s *SettingsManager) setProject(key string, value any) {
 }
 
 func (s *SettingsManager) saveGlobal() {
+	if s.inMemory {
+		clear(s.modifiedGlobal)
+		return
+	}
 	if s.globalLoadErr != nil {
 		return
 	}
@@ -240,6 +285,10 @@ func (s *SettingsManager) saveGlobal() {
 }
 
 func (s *SettingsManager) saveProject() {
+	if s.inMemory {
+		clear(s.modifiedProject)
+		return
+	}
 	if s.projectLoadErr != nil {
 		return
 	}
@@ -272,6 +321,18 @@ func saveModifiedSettings(path string, inMemory map[string]any, modified map[str
 
 func settingsString(settings map[string]any, key string) string {
 	value, _ := settings[key].(string)
+	return value
+}
+
+func settingsNestedBool(settings map[string]any, key, nestedKey string, defaultValue bool) bool {
+	nested, ok := settings[key].(map[string]any)
+	if !ok {
+		return defaultValue
+	}
+	value, ok := nested[nestedKey].(bool)
+	if !ok {
+		return defaultValue
+	}
 	return value
 }
 

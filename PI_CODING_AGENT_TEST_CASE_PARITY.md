@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `460`
-- `待实现`: `284`
+- `已有`: `468`
+- `待实现`: `276`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -47,7 +47,7 @@ Status meanings:
 | `auth-storage.test.ts` | 24 | 已有 | gi-coding-agent/auth_storage_test.go |
 | `bash-close-hang-windows.test.ts` | 2 | 已有 | gi-coding-agent/bash_executor_test.go |
 | `bash-execution-width.test.ts` | 2 | 已有 | gi-coding-agent/bash_execution_test.go |
-| `block-images.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `block-images.test.ts` | 8 | 已有 | gi-coding-agent/block_images_test.go |
 | `clipboard-image-bmp-conversion.test.ts` | 1 | 已有 | gi-coding-agent/clipboard_image_test.go |
 | `clipboard-image.test.ts` | 5 | 已有 | gi-coding-agent/clipboard_image_test.go |
 | `clipboard.test.ts` | 5 | 已有 | gi-coding-agent/clipboard_test.go |
@@ -414,19 +414,19 @@ Gi coverage / implementation target: `gi-coding-agent/bash_execution_test.go`
 ## `block-images.test.ts`
 
 Pi cases: `8`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/block_images_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 15 | should default blockImages to false | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 20 | should return true when blockImages is set to true | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 25 | should persist blockImages setting via setBlockImages | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 36 | should handle blockImages alongside autoResize | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 57 | should always read images (filtering happens at convertToLlm layer) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 71 | should read text files normally | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 98 | should always process images (filtering happens at convertToLlm layer) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 109 | should process text files normally | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 15 | should default blockImages to false | 已有 | gi-coding-agent/block_images_test.go |
+| 20 | should return true when blockImages is set to true | 已有 | gi-coding-agent/block_images_test.go |
+| 25 | should persist blockImages setting via setBlockImages | 已有 | gi-coding-agent/block_images_test.go |
+| 36 | should handle blockImages alongside autoResize | 已有 | gi-coding-agent/block_images_test.go |
+| 57 | should always read images (filtering happens at convertToLlm layer) | 已有 | gi-coding-agent/block_images_test.go |
+| 71 | should read text files normally | 已有 | gi-coding-agent/block_images_test.go |
+| 98 | should always process images (filtering happens at convertToLlm layer) | 已有 | gi-coding-agent/block_images_test.go |
+| 109 | should process text files normally | 已有 | gi-coding-agent/block_images_test.go |
 
 ## `clipboard-image-bmp-conversion.test.ts`
 
