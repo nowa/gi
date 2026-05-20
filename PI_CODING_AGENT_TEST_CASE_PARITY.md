@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `417`
-- `待实现`: `327`
+- `已有`: `425`
+- `待实现`: `319`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -66,7 +66,7 @@ Status meanings:
 | `extensions-input-event.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `extensions-runner.test.ts` | 27 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `file-mutation-queue.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `footer-data-provider.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `footer-data-provider.test.ts` | 8 | 已有 | gi-coding-agent/footer_data_provider_test.go |
 | `footer-width.test.ts` | 2 | 已有 | gi-coding-agent/footer_test.go |
 | `frontmatter.test.ts` | 8 | 已有 | gi-coding-agent/utils_test.go |
 | `git-ssh-url.test.ts` | 9 | 已有 | gi-coding-agent/git_test.go |
@@ -750,19 +750,19 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `footer-data-provider.test.ts`
 
 Pi cases: `8`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/footer_data_provider_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 109 | uses HEAD directly in a regular repo from a nested directory | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 124 | resolves the branch via git when HEAD is .invalid in a reftable repo | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 145 | resolves the branch via git in a reftable-backed worktree | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 157 | treats an unresolved .invalid reftable HEAD as detached | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 170 | does not notify listeners when reftable updates keep the same branch | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 193 | debounces rapid reftable updates into a single async refresh | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 214 | updates the cached branch when the reftable directory changes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 237 | retries git watchers 5 seconds after an async fs.watch error | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 109 | uses HEAD directly in a regular repo from a nested directory | 已有 | gi-coding-agent/footer_data_provider_test.go |
+| 124 | resolves the branch via git when HEAD is .invalid in a reftable repo | 已有 | gi-coding-agent/footer_data_provider_test.go |
+| 145 | resolves the branch via git in a reftable-backed worktree | 已有 | gi-coding-agent/footer_data_provider_test.go |
+| 157 | treats an unresolved .invalid reftable HEAD as detached | 已有 | gi-coding-agent/footer_data_provider_test.go |
+| 170 | does not notify listeners when reftable updates keep the same branch | 已有 | gi-coding-agent/footer_data_provider_test.go |
+| 193 | debounces rapid reftable updates into a single async refresh | 已有 | gi-coding-agent/footer_data_provider_test.go |
+| 214 | updates the cached branch when the reftable directory changes | 已有 | gi-coding-agent/footer_data_provider_test.go |
+| 237 | retries git watchers 5 seconds after an async fs.watch error | 已有 | gi-coding-agent/footer_data_provider_test.go |
 
 ## `footer-width.test.ts`
 
