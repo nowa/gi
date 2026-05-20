@@ -363,6 +363,98 @@ func TestProtocolExtensionRunnerRegistryProtocolContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("bind model registry ignores invalid queued provider registrations and reports errors", func(t *testing.T) {
+		runtime := NewProtocolExtensionRuntime(CapabilityProvidersRegister)
+		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "broken-provider.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
+			return ctx.RegisterProvider("broken-provider", ProtocolProviderOverride{
+				Models: []ProviderModelDefinition{{ID: "broken-model", Name: "Broken Model"}},
+			})
+		}})
+		if len(runtime.PendingProviderRegistrations()) != 1 {
+			t.Fatalf("pending providers = %#v", runtime.PendingProviderRegistrations())
+		}
+
+		var got []ProtocolExtensionError
+		runtime.OnError(func(event ProtocolExtensionError) {
+			got = append(got, event)
+		})
+		registry := NewInMemoryModelRegistry(nil)
+		runtime.BindModelRegistry(registry)
+
+		if len(runtime.PendingProviderRegistrations()) != 0 {
+			t.Fatalf("pending providers after bind = %#v", runtime.PendingProviderRegistrations())
+		}
+		if _, ok := registry.Find("broken-provider", "broken-model"); ok {
+			t.Fatal("invalid queued provider should not be registered")
+		}
+		if len(got) != 1 || got[0].ExtensionPath != "broken-provider.gi.json" || got[0].Event != "register_provider" || !strings.Contains(got[0].Error, "baseUrl") {
+			t.Fatalf("errors = %#v", got)
+		}
+	})
+
+	t.Run("pre-bind unregister removes all queued provider registrations", func(t *testing.T) {
+		runtime := NewProtocolExtensionRuntime(CapabilityProvidersRegister)
+		mustLoadProtocolFactories(t, runtime,
+			protocolProviderFactory("queued-1.gi.json", "queued-provider", protocolProviderConfig("queued-model-1")),
+			protocolProviderFactory("queued-2.gi.json", "queued-provider", protocolProviderConfig("queued-model-2")),
+		)
+		if len(runtime.PendingProviderRegistrations()) != 2 {
+			t.Fatalf("pending providers before unregister = %#v", runtime.PendingProviderRegistrations())
+		}
+		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "unregister.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
+			return ctx.UnregisterProvider("queued-provider")
+		}})
+		if len(runtime.PendingProviderRegistrations()) != 0 {
+			t.Fatalf("pending providers after unregister = %#v", runtime.PendingProviderRegistrations())
+		}
+	})
+
+	t.Run("post-bind provider register and unregister take effect immediately", func(t *testing.T) {
+		runtime := NewProtocolExtensionRuntime(CapabilityProvidersRegister)
+		registry := NewInMemoryModelRegistry(nil)
+		runtime.BindModelRegistry(registry)
+
+		mustLoadProtocolFactories(t, runtime, protocolProviderFactory("instant.gi.json", "instant-provider", protocolProviderConfig("instant-model")))
+		if len(runtime.PendingProviderRegistrations()) != 0 {
+			t.Fatalf("pending providers = %#v", runtime.PendingProviderRegistrations())
+		}
+		if _, ok := registry.Find("instant-provider", "instant-model"); !ok {
+			t.Fatal("instant provider model was not registered")
+		}
+
+		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "unregister.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
+			return ctx.UnregisterProvider("instant-provider")
+		}})
+		if _, ok := registry.Find("instant-provider", "instant-model"); ok {
+			t.Fatal("instant provider model should be unregistered")
+		}
+	})
+
+	t.Run("passes fork options through command context handler", func(t *testing.T) {
+		runtime := NewProtocolExtensionRuntime()
+		type forkCall struct {
+			entryID string
+			options ProtocolForkOptions
+		}
+		var calls []forkCall
+		runtime.BindCommandContext(ProtocolCommandContextActions{Fork: func(entryID string, options ProtocolForkOptions) (ProtocolCommandForkResult, error) {
+			calls = append(calls, forkCall{entryID: entryID, options: options})
+			return ProtocolCommandForkResult{}, nil
+		}})
+
+		commandContext := runtime.CreateCommandContext()
+		if _, err := commandContext.Fork("entry-1"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := commandContext.Fork("entry-2", ProtocolForkOptions{Position: "at"}); err != nil {
+			t.Fatal(err)
+		}
+		want := []forkCall{{entryID: "entry-1"}, {entryID: "entry-2", options: ProtocolForkOptions{Position: "at"}}}
+		if !reflect.DeepEqual(calls, want) {
+			t.Fatalf("calls = %#v", calls)
+		}
+	})
+
 	t.Run("calls error listeners when handler throws", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime(CapabilityLifecycleEvents)
 		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "throws.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
@@ -401,6 +493,26 @@ func protocolFlagFactory(path, name, description string, defaultValue any) Proto
 	return ProtocolExtensionFactory{Path: path, Factory: func(ctx *ProtocolExtensionContext) error {
 		return ctx.RegisterFlag(name, ProtocolFlagDefinition{Description: description, Default: defaultValue})
 	}}
+}
+
+func protocolProviderFactory(path, name string, config ProtocolProviderOverride) ProtocolExtensionFactory {
+	return ProtocolExtensionFactory{Path: path, Factory: func(ctx *ProtocolExtensionContext) error {
+		return ctx.RegisterProvider(name, config)
+	}}
+}
+
+func protocolProviderConfig(modelID string) ProtocolProviderOverride {
+	return ProtocolProviderOverride{
+		BaseURL: "https://provider.test/v1",
+		APIKey:  "TEST_KEY",
+		API:     "openai-completions",
+		Models: []ProviderModelDefinition{{
+			ID:            modelID,
+			Name:          "Test " + modelID,
+			ContextWindow: 128000,
+			MaxTokens:     4096,
+		}},
+	}
 }
 
 func protocolShortcutFactory(path, key, description string) ProtocolExtensionFactory {

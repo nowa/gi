@@ -19,9 +19,9 @@ otherwise.
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `993`
+- `已有`: `997`
 - `待实现`: `0`
-- `需要协议 runtime`: `23`
+- `需要协议 runtime`: `19`
 - `不适用`: `21`
 
 ## Commit Plan
@@ -731,10 +731,10 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 566 | keeps ctx.getSystemPrompt() in sync with chained system prompt updates | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 610 | chains content modifications across handlers | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 657 | preserves previous modifications when later handlers return partial patches | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
-| 702 | bindCore ignores invalid queued registrations and reports extension error | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 725 | pre-bind unregister removes all queued registrations for a provider | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 749 | post-bind register and unregister take effect immediately | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 766 | passes fork options through to the bound handler | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 702 | bindCore ignores invalid queued registrations and reports extension error | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 725 | pre-bind unregister removes all queued registrations for a provider | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 749 | post-bind register and unregister take effect immediately | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 766 | passes fork options through to the bound handler | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 790 | returns true when handlers exist for event type | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 
 ## `file-mutation-queue.test.ts`

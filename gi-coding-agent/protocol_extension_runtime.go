@@ -25,12 +25,15 @@ type ProtocolExtensionRuntime struct {
 	inputHandlers     []protocolInputHandlerRegistration
 	errorListeners    []ProtocolErrorListener
 	providerOverrides map[string]ProtocolProviderOverride
+	pendingProviders  []protocolProviderRegistration
+	modelRegistry     *ModelRegistry
 	tools             []SDKTool
 	messageRenderers  map[string]ProtocolMessageRenderer
 	flags             []ProtocolFlagRegistration
 	flagValues        map[string]any
 	shortcuts         []ProtocolShortcutRegistration
 	boundSession      *AgentSession
+	commandContext    ProtocolCommandContextActions
 	abortSignal       *ProtocolAbortSignal
 	eventSystemPrompt string
 	hasEventPrompt    bool
@@ -67,7 +70,11 @@ type ProtocolCommandRegistration struct {
 }
 
 type ProtocolProviderOverride struct {
-	BaseURL string
+	BaseURL      string
+	APIKey       string
+	API          string
+	Models       []ProviderModelDefinition
+	StreamSimple func(llm.Model, llm.Context, llm.SimpleStreamOptions) (*llm.AssistantMessageEventStream, error)
 }
 
 type ProtocolToolDefinition struct {
@@ -105,6 +112,12 @@ type ProtocolShortcutRegistration struct {
 	Description string
 	SourceInfo  ProtocolSourceInfo
 	Handler     func() error
+}
+
+type ProtocolProviderRegistration struct {
+	Name       string
+	Config     ProtocolProviderOverride
+	SourceInfo ProtocolSourceInfo
 }
 
 type ProtocolShortcutWarning struct {
@@ -173,6 +186,28 @@ type protocolInputHandlerRegistration struct {
 type protocolEventHandlerRegistration struct {
 	source  ProtocolSourceInfo
 	handler ProtocolEventHandler
+}
+
+type protocolProviderRegistration struct {
+	source ProtocolSourceInfo
+	name   string
+	config ProtocolProviderOverride
+}
+
+type ProtocolForkOptions struct {
+	Position string
+}
+
+type ProtocolCommandForkResult struct {
+	Cancelled bool
+}
+
+type ProtocolCommandContextActions struct {
+	Fork func(entryID string, options ProtocolForkOptions) (ProtocolCommandForkResult, error)
+}
+
+type ProtocolCommandContext struct {
+	runtime *ProtocolExtensionRuntime
 }
 
 type ProtocolInputEvent struct {
@@ -260,6 +295,35 @@ func (r *ProtocolExtensionRuntime) BindSession(session *AgentSession) {
 	r.ApplyToSession(session)
 }
 
+func (r *ProtocolExtensionRuntime) BindModelRegistry(registry *ModelRegistry) {
+	if r == nil {
+		return
+	}
+	r.modelRegistry = registry
+	pending := append([]protocolProviderRegistration(nil), r.pendingProviders...)
+	r.pendingProviders = nil
+	for _, registration := range pending {
+		if err := r.applyProviderRegistration(registration); err != nil {
+			r.emitExtensionError(ProtocolExtensionError{
+				ExtensionPath: registration.source.Path,
+				Event:         "register_provider",
+				Error:         err.Error(),
+			})
+		}
+	}
+}
+
+func (r *ProtocolExtensionRuntime) BindCommandContext(actions ProtocolCommandContextActions) {
+	if r == nil {
+		return
+	}
+	r.commandContext = actions
+}
+
+func (r *ProtocolExtensionRuntime) CreateCommandContext() ProtocolCommandContext {
+	return ProtocolCommandContext{runtime: r}
+}
+
 func (r *ProtocolExtensionRuntime) SetAbortSignal(done <-chan struct{}) {
 	if r == nil {
 		return
@@ -292,6 +356,17 @@ func (r *ProtocolExtensionRuntime) GetSystemPrompt() string {
 		return r.boundSession.SystemPrompt
 	}
 	return ""
+}
+
+func (c ProtocolCommandContext) Fork(entryID string, options ...ProtocolForkOptions) (ProtocolCommandForkResult, error) {
+	if c.runtime == nil || c.runtime.commandContext.Fork == nil {
+		return ProtocolCommandForkResult{Cancelled: false}, nil
+	}
+	option := ProtocolForkOptions{}
+	if len(options) > 0 {
+		option = options[0]
+	}
+	return c.runtime.commandContext.Fork(entryID, option)
 }
 
 func (c *ProtocolExtensionContext) On(eventType string, handler ProtocolEventHandler) error {
@@ -572,9 +647,94 @@ func (c *ProtocolExtensionContext) RegisterProvider(provider string, override Pr
 	if !c.runtime.capabilities[CapabilityProvidersRegister] {
 		return ProtocolRuntimeError{Code: "missing_capability", Message: CapabilityProvidersRegister}
 	}
-	c.runtime.providerOverrides[provider] = override
-	c.runtime.ApplyToSession(c.runtime.boundSession)
+	return c.runtime.registerProvider(c.source, provider, override)
+}
+
+func (c *ProtocolExtensionContext) UnregisterProvider(provider string) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	if !c.runtime.capabilities[CapabilityProvidersRegister] {
+		return ProtocolRuntimeError{Code: "missing_capability", Message: CapabilityProvidersRegister}
+	}
+	c.runtime.unregisterProvider(provider)
 	return nil
+}
+
+func (r *ProtocolExtensionRuntime) registerProvider(source ProtocolSourceInfo, provider string, override ProtocolProviderOverride) error {
+	if r == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return nil
+	}
+	r.providerOverrides[provider] = override
+	registration := protocolProviderRegistration{source: source, name: provider, config: override}
+	if r.modelRegistry == nil {
+		r.pendingProviders = append(r.pendingProviders, registration)
+		r.ApplyToSession(r.boundSession)
+		return nil
+	}
+	if err := r.applyProviderRegistration(registration); err != nil {
+		return err
+	}
+	r.ApplyToSession(r.boundSession)
+	return nil
+}
+
+func (r *ProtocolExtensionRuntime) unregisterProvider(provider string) {
+	if r == nil {
+		return
+	}
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return
+	}
+	delete(r.providerOverrides, provider)
+	filtered := r.pendingProviders[:0]
+	for _, registration := range r.pendingProviders {
+		if registration.name != provider {
+			filtered = append(filtered, registration)
+		}
+	}
+	r.pendingProviders = filtered
+	if r.modelRegistry != nil {
+		r.modelRegistry.UnregisterProvider(provider)
+	}
+	r.ApplyToSession(r.boundSession)
+}
+
+func (r *ProtocolExtensionRuntime) applyProviderRegistration(registration protocolProviderRegistration) error {
+	if r == nil || r.modelRegistry == nil {
+		return nil
+	}
+	return r.modelRegistry.RegisterProvider(registration.name, registration.config.toProviderConfigInput())
+}
+
+func (o ProtocolProviderOverride) toProviderConfigInput() ProviderConfigInput {
+	return ProviderConfigInput{
+		BaseURL:      o.BaseURL,
+		APIKey:       o.APIKey,
+		API:          o.API,
+		Models:       append([]ProviderModelDefinition(nil), o.Models...),
+		StreamSimple: o.StreamSimple,
+	}
+}
+
+func (r *ProtocolExtensionRuntime) PendingProviderRegistrations() []ProtocolProviderRegistration {
+	if r == nil {
+		return nil
+	}
+	result := make([]ProtocolProviderRegistration, 0, len(r.pendingProviders))
+	for _, registration := range r.pendingProviders {
+		result = append(result, ProtocolProviderRegistration{
+			Name:       registration.name,
+			Config:     registration.config,
+			SourceInfo: registration.source,
+		})
+	}
+	return result
 }
 
 func (c *ProtocolExtensionContext) RegisterTool(definition ProtocolToolDefinition) error {
