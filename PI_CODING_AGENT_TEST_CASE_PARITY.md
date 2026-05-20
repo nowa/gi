@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `588`
-- `待实现`: `178`
+- `已有`: `591`
+- `待实现`: `175`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -91,7 +91,7 @@ Status meanings:
 | `paths.test.ts` | 12 | 已有 | gi-coding-agent/utils_test.go |
 | `pi-user-agent.test.ts` | 1 | 已有 | gi-coding-agent/utils_test.go |
 | `plan-mode-utils.test.ts` | 33 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `print-mode.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `print-mode.test.ts` | 3 | 已有 | gi-coding-agent/print_mode_test.go |
 | `prompt-templates.test.ts` | 82 | 已有 | gi-coding-agent/prompt_templates_test.go |
 | `resource-loader.test.ts` | 19 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `restore-sandbox-env.test.ts` | 3 | 已有 | gi-coding-agent/restore_sandbox_env_test.go |
@@ -141,8 +141,8 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `agent-session-branching.test.ts`
 
 Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/print_mode_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -1354,9 +1354,9 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 94 | emits session_shutdown in text mode | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 111 | emits session_shutdown in json mode | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 126 | emits session_shutdown and returns non-zero on assistant error | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 94 | emits session_shutdown in text mode | 已有 | gi-coding-agent/print_mode_test.go |
+| 111 | emits session_shutdown in json mode | 已有 | gi-coding-agent/print_mode_test.go |
+| 126 | emits session_shutdown and returns non-zero on assistant error | 已有 | gi-coding-agent/print_mode_test.go |
 
 ## `prompt-templates.test.ts`
 
