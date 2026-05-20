@@ -293,7 +293,7 @@ func (m *DefaultPackageManager) ResolveExtensionSources(sources []string, option
 		if options.Temporary {
 			packageDir = temporaryGitPackagePath(source)
 		}
-		if options.Temporary && !source.Pinned {
+		if options.Temporary && !source.Pinned && !packageManagerOffline() {
 			if _, err := os.Stat(packageDir); err == nil {
 				if err := m.refreshGitPackage(packageDir); err != nil {
 					return nil, err
@@ -305,6 +305,14 @@ func (m *DefaultPackageManager) ResolveExtensionSources(sources []string, option
 		resolved = append(resolved, packageDir)
 	}
 	return resolved, nil
+}
+
+func packageManagerOffline() bool {
+	value := strings.TrimSpace(os.Getenv("GI_OFFLINE"))
+	if value == "" {
+		value = strings.TrimSpace(os.Getenv("PI_OFFLINE"))
+	}
+	return value == "1" || strings.EqualFold(value, "true")
 }
 
 func (m *DefaultPackageManager) refreshGitPackage(packageDir string) error {

@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `970`
+- `已有`: `971`
 - `待实现`: `0`
-- `需要协议 runtime`: `67`
+- `需要协议 runtime`: `66`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -1243,7 +1243,7 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1941 | should suggest npm source prefixes for update lookups | 已有 | gi-coding-agent/package_manager_settings_test.go |
 | 1949 | should suggest git source prefixes for update lookups | 已有 | gi-coding-agent/package_manager_settings_test.go |
 | 1957 | should skip installing missing package sources when offline | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1969 | should skip refreshing temporary git sources when offline | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1969 | should skip refreshing temporary git sources when offline | 已有 | gi-coding-agent/package_manager_git_update_test.go |
 | 1985 | should not run npm view during resolve for installed unpinned packages | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1999 | should reinstall pinned npm packages when installed version does not match | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 2013 | should not check package updates when offline | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |

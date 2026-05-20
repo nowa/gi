@@ -259,6 +259,30 @@ func TestDefaultPackageManagerGitUpdatePiPinnedTemporaryAndScope(t *testing.T) {
 		}
 	})
 
+	t.Run("skips refreshing temporary git sources when offline", func(t *testing.T) {
+		env.reset(t)
+		t.Setenv("GI_OFFLINE", "1")
+		cachedDir := packageManagerTemporaryGitDir("github.com", "test/extension")
+		removeAll(t, cachedDir)
+		mkdirAll(t, filepath.Join(cachedDir, "extensions"))
+		writeFile(t, filepath.Join(cachedDir, "extensions", "index.gi.json"), `{"gi":{"extensionProtocol":"jsonl-rpc.v1"}}`)
+		t.Cleanup(func() { _ = os.RemoveAll(cachedDir) })
+
+		manager := env.managerWithOperations(PackageManagerOperations{
+			RunCommand: func(command string, args []string, _ PackageCommandOptions) error {
+				t.Fatalf("unexpected command while offline: %s %v", command, args)
+				return nil
+			},
+		})
+		resolved, err := manager.ResolveExtensionSources([]string{packageManagerGitSource}, ResolveExtensionSourcesOptions{Temporary: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(resolved) != 1 || resolved[0] != cachedDir {
+			t.Fatalf("resolved = %#v, want %q", resolved, cachedDir)
+		}
+	})
+
 	t.Run("does not install locally when source is only registered globally", func(t *testing.T) {
 		env.reset(t)
 		env.setupRemoteAndInstall(t, "")
