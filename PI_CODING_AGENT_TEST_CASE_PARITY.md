@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `858`
+- `已有`: `866`
 - `待实现`: `0`
-- `需要协议 runtime`: `179`
+- `需要协议 runtime`: `171`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -63,7 +63,7 @@ Status meanings:
 | `export-html-whitespace.test.ts` | 3 | 已有 | gi-coding-agent/export_html_whitespace_test.go |
 | `export-html-xss.test.ts` | 8 | 已有 | gi-coding-agent/export_html_xss_test.go |
 | `extensions-discovery.test.ts` | 27 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `extensions-input-event.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `extensions-input-event.test.ts` | 8 | 已有 | gi-coding-agent/protocol_input_event_test.go |
 | `extensions-runner.test.ts` | 27 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `file-mutation-queue.test.ts` | 5 | 已有 | gi-coding-agent/file_mutation_queue_test.go |
 | `footer-data-provider.test.ts` | 8 | 已有 | gi-coding-agent/footer_data_provider_test.go |
@@ -682,20 +682,20 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 
 ## `extensions-input-event.test.ts`
 
-Pi cases: `8`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Pi cases: `8`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/protocol_input_event_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 36 | returns continue when no handlers, undefined return, or explicit continue | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 47 | transforms text and preserves images when omitted | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 56 | transforms and replaces images when provided | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 68 | chains transforms across multiple handlers | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 77 | short-circuits on handled and skips subsequent handlers | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 87 | passes source correctly for all source types | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 97 | catches handler errors and continues | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 106 | hasHandlers returns correct value | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 36 | returns continue when no handlers, undefined return, or explicit continue | 已有 | gi-coding-agent/protocol_input_event_test.go |
+| 47 | transforms text and preserves images when omitted | 已有 | gi-coding-agent/protocol_input_event_test.go |
+| 56 | transforms and replaces images when provided | 已有 | gi-coding-agent/protocol_input_event_test.go |
+| 68 | chains transforms across multiple handlers | 已有 | gi-coding-agent/protocol_input_event_test.go |
+| 77 | short-circuits on handled and skips subsequent handlers | 已有 | gi-coding-agent/protocol_input_event_test.go |
+| 87 | passes source correctly for all source types | 已有 | gi-coding-agent/protocol_input_event_test.go |
+| 97 | catches handler errors and continues | 已有 | gi-coding-agent/protocol_input_event_test.go |
+| 106 | hasHandlers returns correct value | 已有 | gi-coding-agent/protocol_input_event_test.go |
 
 ## `extensions-runner.test.ts`
 

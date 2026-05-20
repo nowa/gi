@@ -2,20 +2,25 @@ package gicodingagent
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
+	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
 const CapabilityCommandsRegister = "commands.register"
 const CapabilityLifecycleEvents = "lifecycle.events"
 const CapabilityProvidersRegister = "providers.register"
 const CapabilityToolsRegister = "tools.register"
+const CapabilityInputEvents = "input.events"
 
 type ProtocolExtensionRuntime struct {
 	capabilities      map[string]bool
 	commands          []ProtocolCommandRegistration
 	handlers          map[string][]ProtocolEventHandler
+	inputHandlers     []protocolInputHandlerRegistration
+	errorListeners    []ProtocolErrorListener
 	providerOverrides map[string]ProtocolProviderOverride
 	tools             []SDKTool
 	boundSession      *AgentSession
@@ -90,6 +95,35 @@ type ProtocolEventResult struct {
 
 type ProtocolEventHandler func(ProtocolSessionEvent) (ProtocolEventResult, error)
 
+type ProtocolInputHandler func(ProtocolInputEvent) (ProtocolInputResult, error)
+
+type ProtocolErrorListener func(ProtocolExtensionError)
+
+type protocolInputHandlerRegistration struct {
+	source  ProtocolSourceInfo
+	handler ProtocolInputHandler
+}
+
+type ProtocolInputEvent struct {
+	Type   string
+	Text   string
+	Images []llm.ContentPart
+	Source string
+}
+
+type ProtocolInputResult struct {
+	Action    string
+	Text      string
+	Images    []llm.ContentPart
+	ImagesSet bool
+}
+
+type ProtocolExtensionError struct {
+	ExtensionPath string
+	Event         string
+	Error         string
+}
+
 type ProtocolSendUserMessageOptions struct {
 	DeliverAs string
 }
@@ -137,6 +171,23 @@ func (c *ProtocolExtensionContext) On(eventType string, handler ProtocolEventHan
 	return nil
 }
 
+func (c *ProtocolExtensionContext) OnInput(handler ProtocolInputHandler) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	if !c.runtime.capabilities[CapabilityInputEvents] {
+		return ProtocolRuntimeError{Code: "missing_capability", Message: CapabilityInputEvents}
+	}
+	if handler == nil {
+		return nil
+	}
+	c.runtime.inputHandlers = append(c.runtime.inputHandlers, protocolInputHandlerRegistration{
+		source:  c.source,
+		handler: handler,
+	})
+	return nil
+}
+
 func (r *ProtocolExtensionRuntime) EmitSessionEvent(event ProtocolSessionEvent) (ProtocolEventResult, error) {
 	if r == nil {
 		return ProtocolEventResult{}, nil
@@ -156,6 +207,98 @@ func (r *ProtocolExtensionRuntime) EmitSessionEvent(event ProtocolSessionEvent) 
 		}
 	}
 	return combined, nil
+}
+
+func (r *ProtocolExtensionRuntime) EmitInput(text string, images []llm.ContentPart, source string) ProtocolInputResult {
+	if r == nil || len(r.inputHandlers) == 0 {
+		return ProtocolInputResult{Action: "continue"}
+	}
+	currentText := text
+	currentImages := images
+	changed := false
+	for _, registration := range r.inputHandlers {
+		result, err := registration.handler(ProtocolInputEvent{
+			Type:   "input",
+			Text:   currentText,
+			Images: currentImages,
+			Source: source,
+		})
+		if err != nil {
+			r.emitExtensionError(ProtocolExtensionError{
+				ExtensionPath: registration.source.Path,
+				Event:         "input",
+				Error:         err.Error(),
+			})
+			continue
+		}
+		switch result.Action {
+		case "handled":
+			return ProtocolInputResult{Action: "handled"}
+		case "transform":
+			currentText = result.Text
+			if result.ImagesSet {
+				currentImages = append([]llm.ContentPart(nil), result.Images...)
+			}
+			changed = true
+		}
+	}
+	if changed {
+		return ProtocolInputResult{Action: "transform", Text: currentText, Images: currentImages, ImagesSet: true}
+	}
+	return ProtocolInputResult{Action: "continue"}
+}
+
+func (r *ProtocolExtensionRuntime) HasHandlers(eventType string) bool {
+	if r == nil {
+		return false
+	}
+	if eventType == "input" {
+		return len(r.inputHandlers) > 0
+	}
+	return len(r.handlers[eventType]) > 0
+}
+
+func (r *ProtocolExtensionRuntime) OnError(listener ProtocolErrorListener) func() {
+	if r == nil || listener == nil {
+		return func() {}
+	}
+	r.errorListeners = append(r.errorListeners, listener)
+	return func() {
+		target := reflect.ValueOf(listener).Pointer()
+		for index, candidate := range r.errorListeners {
+			if reflect.ValueOf(candidate).Pointer() != target {
+				continue
+			}
+			r.errorListeners = append(r.errorListeners[:index], r.errorListeners[index+1:]...)
+			return
+		}
+	}
+}
+
+func (r *ProtocolExtensionRuntime) emitExtensionError(event ProtocolExtensionError) {
+	if r == nil {
+		return
+	}
+	listeners := append([]ProtocolErrorListener(nil), r.errorListeners...)
+	for _, listener := range listeners {
+		listener(event)
+	}
+}
+
+func ProtocolInputContinue() ProtocolInputResult {
+	return ProtocolInputResult{Action: "continue"}
+}
+
+func ProtocolInputHandled() ProtocolInputResult {
+	return ProtocolInputResult{Action: "handled"}
+}
+
+func ProtocolInputTransform(text string) ProtocolInputResult {
+	return ProtocolInputResult{Action: "transform", Text: text}
+}
+
+func ProtocolInputTransformWithImages(text string, images []llm.ContentPart) ProtocolInputResult {
+	return ProtocolInputResult{Action: "transform", Text: text, Images: append([]llm.ContentPart(nil), images...), ImagesSet: true}
 }
 
 func (c *ProtocolExtensionContext) SendUserMessage(text string, options ProtocolSendUserMessageOptions) error {
