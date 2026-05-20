@@ -52,6 +52,11 @@ type FileToolDetails struct {
 	Diff       string
 }
 
+type EditDiffResult struct {
+	Diff  string
+	Error string
+}
+
 type ReadToolTruncation struct {
 	Truncated   bool
 	TruncatedBy string
@@ -120,7 +125,7 @@ func (t EditTool) Execute(_ string, input EditToolInput) (FileToolResult, error)
 		}
 		content, err := t.ops.ReadFile(absolutePath)
 		if err != nil {
-			return err
+			return formatEditAccessError(input.Path, err)
 		}
 		editResult, err := applyEditsAgainstOriginal(string(content), input.Edits)
 		if err != nil {
@@ -159,6 +164,29 @@ func (t WriteTool) Execute(_ string, input WriteToolInput) (FileToolResult, erro
 	}
 	text := fmt.Sprintf("Successfully wrote %d bytes to %s", len(input.Content), input.Path)
 	return FileToolResult{Text: text, Content: []llm.ContentPart{llm.Text(text)}}, nil
+}
+
+func ComputeEditsDiff(path string, edits []Edit, cwd string, operations ...FileToolOperations) EditDiffResult {
+	if strings.TrimSpace(path) == "" {
+		return EditDiffResult{Error: "edit path is required"}
+	}
+	if len(edits) == 0 {
+		return EditDiffResult{Error: "edits must contain at least one replacement"}
+	}
+	ops := normalizeFileToolOperations(operations...)
+	absolutePath := ResolveToCwd(path, cwd)
+	if err := ops.Access(absolutePath); err != nil {
+		return EditDiffResult{Error: formatEditAccessError(path, err).Error()}
+	}
+	content, err := ops.ReadFile(absolutePath)
+	if err != nil {
+		return EditDiffResult{Error: formatEditAccessError(path, err).Error()}
+	}
+	editResult, err := applyEditsAgainstOriginal(string(content), edits)
+	if err != nil {
+		return EditDiffResult{Error: err.Error()}
+	}
+	return EditDiffResult{Diff: editResult.Diff}
 }
 
 func (t ReadTool) Execute(_ string, input ReadToolInput) (FileToolResult, error) {

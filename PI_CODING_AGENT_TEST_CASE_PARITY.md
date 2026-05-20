@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `534`
-- `待实现`: `210`
+- `已有`: `538`
+- `待实现`: `206`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -116,7 +116,7 @@ Status meanings:
 | `test-harness.test.ts` | 15 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `theme-export.test.ts` | 2 | 已有 | gi-coding-agent/theme_export_test.go |
 | `tool-execution-component.test.ts` | 16 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `tools.test.ts` | 68 | 待实现 | 部分已有: gi-coding-agent/tools_read_test.go；其余工具行为继续补齐 |
+| `tools.test.ts` | 68 | 待实现 | 部分已有: gi-coding-agent/tools_read_test.go, gi-coding-agent/tools_edit_errors_test.go；其余工具行为继续补齐 |
 | `tree-selector.test.ts` | 15 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `trigger-compact-extension.test.ts` | 1 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `truncate-to-width.test.ts` | 6 | 已有 | gi-tui/utils_test.go |
@@ -1860,10 +1860,10 @@ Gi coverage / implementation target: `部分已有: gi-coding-agent/tools_read_t
 | 337 | should fail when edits is empty | 已有 | gi-coding-agent/tools_write_edit_test.go |
 | 349 | should fail when multi-edit regions overlap | 已有 | gi-coding-agent/tools_edit_test.go |
 | 364 | should not partially apply edits when one edit fails | 已有 | gi-coding-agent/tools_edit_test.go |
-| 382 | should include EACCES for read-only files | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 395 | should include the original error message for unknown edit access errors | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 414 | should include ENOENT in diff preview for missing files | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 421 | should include EACCES in diff preview for unreadable files | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 382 | should include EACCES for read-only files | 已有 | gi-coding-agent/tools_edit_errors_test.go |
+| 395 | should include the original error message for unknown edit access errors | 已有 | gi-coding-agent/tools_edit_errors_test.go |
+| 414 | should include ENOENT in diff preview for missing files | 已有 | gi-coding-agent/tools_edit_errors_test.go |
+| 421 | should include EACCES in diff preview for unreadable files | 已有 | gi-coding-agent/tools_edit_errors_test.go |
 | 433 | should execute simple commands | 已有 | gi-coding-agent/tools_bash_test.go |
 | 440 | should handle command errors | 已有 | gi-coding-agent/tools_bash_test.go |
 | 446 | should respect timeout | 已有 | gi-coding-agent/tools_bash_test.go |
