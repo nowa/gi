@@ -1,12 +1,100 @@
 package gicodingagent
 
 import (
+	"errors"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
 func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
+	t.Run("handles shortcut conflicts against reserved and non-reserved built-ins", func(t *testing.T) {
+		t.Run("warns when extension shortcut conflicts with built-in", func(t *testing.T) {
+			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("conflict.ts", "ctrl+c", "Conflicts"))
+			result := runtime.Shortcuts(DefaultProtocolKeybindings())
+			if len(result.Shortcuts) != 0 || !protocolWarningsContain(result.Warnings, "conflicts with built-in") {
+				t.Fatalf("result = %#v", result)
+			}
+		})
+
+		t.Run("allows a shortcut when the reserved set no longer contains the default key", func(t *testing.T) {
+			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("rebinding.ts", "ctrl+p", "Uses freed default"))
+			keybindings := DefaultProtocolKeybindings()
+			keybindings["app.model.cycleForward"] = "ctrl+n"
+			keybindings["app.message.followUp"] = "ctrl+shift+p"
+			result := runtime.Shortcuts(keybindings)
+			if _, ok := result.Shortcuts["ctrl+p"]; !ok || protocolWarningsContain(result.Warnings, "conflicts with built-in") {
+				t.Fatalf("result = %#v", result)
+			}
+		})
+
+		t.Run("warns but allows when extension uses non-reserved built-in shortcut", func(t *testing.T) {
+			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("non-reserved.ts", "ctrl+v", "Overrides non-reserved"))
+			result := runtime.Shortcuts(DefaultProtocolKeybindings())
+			if _, ok := result.Shortcuts["ctrl+v"]; !ok || !protocolWarningsContain(result.Warnings, "built-in shortcut for app.clipboard.pasteImage") {
+				t.Fatalf("result = %#v", result)
+			}
+		})
+
+		t.Run("blocks shortcuts for reserved actions even when rebound", func(t *testing.T) {
+			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("rebound-reserved.ts", "ctrl+x", "Conflicts"))
+			keybindings := DefaultProtocolKeybindings()
+			keybindings["app.interrupt"] = "ctrl+x"
+			result := runtime.Shortcuts(keybindings)
+			if len(result.Shortcuts) != 0 || !protocolWarningsContain(result.Warnings, "conflicts with built-in") {
+				t.Fatalf("result = %#v", result)
+			}
+		})
+
+		t.Run("blocks shortcuts when reserved key is also bound to non-reserved actions", func(t *testing.T) {
+			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("shared-reserved.ts", "ctrl+p", "Conflicts"))
+			result := runtime.Shortcuts(DefaultProtocolKeybindings())
+			if len(result.Shortcuts) != 0 || !protocolWarningsContain(result.Warnings, "conflicts with built-in") {
+				t.Fatalf("result = %#v", result)
+			}
+		})
+
+		t.Run("blocks shortcuts when reserved action has multiple keys", func(t *testing.T) {
+			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("multi-reserved.ts", "ctrl+y", "Conflicts"))
+			keybindings := DefaultProtocolKeybindings()
+			keybindings["app.clear"] = []any{"ctrl+x", "ctrl+y"}
+			result := runtime.Shortcuts(keybindings)
+			if len(result.Shortcuts) != 0 || !protocolWarningsContain(result.Warnings, "conflicts with built-in") {
+				t.Fatalf("result = %#v", result)
+			}
+		})
+
+		t.Run("warns but allows when non-reserved action has multiple keys", func(t *testing.T) {
+			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("multi-non-reserved.ts", "ctrl+y", "Overrides"))
+			keybindings := DefaultProtocolKeybindings()
+			keybindings["app.clipboard.pasteImage"] = []any{"ctrl+x", "ctrl+y"}
+			result := runtime.Shortcuts(keybindings)
+			if _, ok := result.Shortcuts["ctrl+y"]; !ok || !protocolWarningsContain(result.Warnings, "built-in shortcut for app.clipboard.pasteImage") {
+				t.Fatalf("result = %#v", result)
+			}
+		})
+
+		t.Run("warns when two extensions register same shortcut", func(t *testing.T) {
+			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
+			mustLoadProtocolFactories(t, runtime,
+				protocolShortcutFactory("ext1.ts", "ctrl+shift+x", "First extension"),
+				protocolShortcutFactory("ext2.ts", "ctrl+shift+x", "Second extension"),
+			)
+			result := runtime.Shortcuts(DefaultProtocolKeybindings())
+			if got := result.Shortcuts["ctrl+shift+x"].Description; got != "Second extension" || !protocolWarningsContain(result.Warnings, "shortcut conflict") {
+				t.Fatalf("result = %#v", result)
+			}
+		})
+	})
+
 	t.Run("collects tools from multiple extensions", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime(CapabilityToolsRegister)
 		mustLoadProtocolFactories(t, runtime,
@@ -137,6 +225,25 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 			t.Fatalf("handler presence: tool_call=%v agent_end=%v", runtime.HasHandlers("tool_call"), runtime.HasHandlers("agent_end"))
 		}
 	})
+
+	t.Run("calls error listeners when handler throws", func(t *testing.T) {
+		runtime := NewProtocolExtensionRuntime(CapabilityLifecycleEvents)
+		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "throws.ts", Factory: func(ctx *ProtocolExtensionContext) error {
+			return ctx.On("context", func(ProtocolSessionEvent) (ProtocolEventResult, error) {
+				return ProtocolEventResult{}, errors.New("Handler error!")
+			})
+		}})
+		var got []ProtocolExtensionError
+		runtime.OnError(func(event ProtocolExtensionError) {
+			got = append(got, event)
+		})
+		if _, err := runtime.EmitSessionEvent(ProtocolSessionEvent{Type: "context"}); err == nil {
+			t.Fatal("expected context handler error")
+		}
+		if len(got) != 1 || got[0].ExtensionPath != "throws.ts" || got[0].Event != "context" || !strings.Contains(got[0].Error, "Handler error!") {
+			t.Fatalf("errors = %#v", got)
+		}
+	})
 }
 
 func protocolToolFactory(path, name, description string) ProtocolExtensionFactory {
@@ -157,4 +264,19 @@ func protocolFlagFactory(path, name, description string, defaultValue any) Proto
 	return ProtocolExtensionFactory{Path: path, Factory: func(ctx *ProtocolExtensionContext) error {
 		return ctx.RegisterFlag(name, ProtocolFlagDefinition{Description: description, Default: defaultValue})
 	}}
+}
+
+func protocolShortcutFactory(path, key, description string) ProtocolExtensionFactory {
+	return ProtocolExtensionFactory{Path: path, Factory: func(ctx *ProtocolExtensionContext) error {
+		return ctx.RegisterShortcut(key, ProtocolShortcutDefinition{Description: description})
+	}}
+}
+
+func protocolWarningsContain(warnings []ProtocolShortcutWarning, text string) bool {
+	for _, warning := range warnings {
+		if strings.Contains(warning.Message, text) {
+			return true
+		}
+	}
+	return false
 }

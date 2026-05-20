@@ -15,11 +15,12 @@ const CapabilityLifecycleEvents = "lifecycle.events"
 const CapabilityProvidersRegister = "providers.register"
 const CapabilityToolsRegister = "tools.register"
 const CapabilityInputEvents = "input.events"
+const CapabilityShortcutsRegister = "shortcuts.register"
 
 type ProtocolExtensionRuntime struct {
 	capabilities      map[string]bool
 	commands          []ProtocolCommandRegistration
-	handlers          map[string][]ProtocolEventHandler
+	handlers          map[string][]protocolEventHandlerRegistration
 	inputHandlers     []protocolInputHandlerRegistration
 	errorListeners    []ProtocolErrorListener
 	providerOverrides map[string]ProtocolProviderOverride
@@ -27,6 +28,7 @@ type ProtocolExtensionRuntime struct {
 	messageRenderers  map[string]ProtocolMessageRenderer
 	flags             []ProtocolFlagRegistration
 	flagValues        map[string]any
+	shortcuts         []ProtocolShortcutRegistration
 	boundSession      *AgentSession
 }
 
@@ -89,6 +91,28 @@ type ProtocolFlagRegistration struct {
 	SourceInfo  ProtocolSourceInfo
 }
 
+type ProtocolShortcutDefinition struct {
+	Description string
+	Handler     func() error
+}
+
+type ProtocolShortcutRegistration struct {
+	Key         string
+	Description string
+	SourceInfo  ProtocolSourceInfo
+	Handler     func() error
+}
+
+type ProtocolShortcutWarning struct {
+	Key     string
+	Message string
+}
+
+type ProtocolShortcutsResult struct {
+	Shortcuts map[string]ProtocolShortcutRegistration
+	Warnings  []ProtocolShortcutWarning
+}
+
 type ProtocolSessionEvent struct {
 	Type                string
 	Reason              string
@@ -122,6 +146,11 @@ type ProtocolErrorListener func(ProtocolExtensionError)
 type protocolInputHandlerRegistration struct {
 	source  ProtocolSourceInfo
 	handler ProtocolInputHandler
+}
+
+type protocolEventHandlerRegistration struct {
+	source  ProtocolSourceInfo
+	handler ProtocolEventHandler
 }
 
 type ProtocolInputEvent struct {
@@ -160,7 +189,7 @@ func (e ProtocolRuntimeError) Error() string {
 func NewProtocolExtensionRuntime(capabilities ...string) *ProtocolExtensionRuntime {
 	runtime := &ProtocolExtensionRuntime{
 		capabilities:      map[string]bool{},
-		handlers:          map[string][]ProtocolEventHandler{},
+		handlers:          map[string][]protocolEventHandlerRegistration{},
 		providerOverrides: map[string]ProtocolProviderOverride{},
 		messageRenderers:  map[string]ProtocolMessageRenderer{},
 		flagValues:        map[string]any{},
@@ -189,7 +218,7 @@ func (c *ProtocolExtensionContext) On(eventType string, handler ProtocolEventHan
 	if handler == nil {
 		return nil
 	}
-	c.runtime.handlers[eventType] = append(c.runtime.handlers[eventType], handler)
+	c.runtime.handlers[eventType] = append(c.runtime.handlers[eventType], protocolEventHandlerRegistration{source: c.source, handler: handler})
 	return nil
 }
 
@@ -215,9 +244,14 @@ func (r *ProtocolExtensionRuntime) EmitSessionEvent(event ProtocolSessionEvent) 
 		return ProtocolEventResult{}, nil
 	}
 	var combined ProtocolEventResult
-	for _, handler := range r.handlers[event.Type] {
-		result, err := handler(event)
+	for _, registration := range r.handlers[event.Type] {
+		result, err := registration.handler(event)
 		if err != nil {
+			r.emitExtensionError(ProtocolExtensionError{
+				ExtensionPath: registration.source.Path,
+				Event:         event.Type,
+				Error:         err.Error(),
+			})
 			return ProtocolEventResult{}, err
 		}
 		if result.Cancel {
@@ -453,6 +487,26 @@ func (c *ProtocolExtensionContext) RegisterFlag(name string, definition Protocol
 	return nil
 }
 
+func (c *ProtocolExtensionContext) RegisterShortcut(key string, definition ProtocolShortcutDefinition) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	if !c.runtime.capabilities[CapabilityShortcutsRegister] {
+		return ProtocolRuntimeError{Code: "missing_capability", Message: CapabilityShortcutsRegister}
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil
+	}
+	c.runtime.shortcuts = append(c.runtime.shortcuts, ProtocolShortcutRegistration{
+		Key:         key,
+		Description: definition.Description,
+		SourceInfo:  c.source,
+		Handler:     definition.Handler,
+	})
+	return nil
+}
+
 func (r *ProtocolExtensionRuntime) RegisteredCommands() []ProtocolCommandRegistration {
 	if r == nil {
 		return nil
@@ -555,4 +609,108 @@ func (r *ProtocolExtensionRuntime) CommandInvocationNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func (r *ProtocolExtensionRuntime) Shortcuts(keybindings KeybindingsConfig) ProtocolShortcutsResult {
+	result := ProtocolShortcutsResult{Shortcuts: map[string]ProtocolShortcutRegistration{}}
+	if r == nil {
+		return result
+	}
+	builtIns := protocolKeybindingActions(keybindings)
+	reservedKeys := protocolReservedShortcutKeys(keybindings)
+	for _, shortcut := range r.shortcuts {
+		if _, reserved := reservedKeys[shortcut.Key]; reserved {
+			result.Warnings = append(result.Warnings, ProtocolShortcutWarning{
+				Key:     shortcut.Key,
+				Message: "shortcut " + shortcut.Key + " conflicts with built-in reserved action",
+			})
+			continue
+		}
+		if actions := builtIns[shortcut.Key]; len(actions) > 0 {
+			result.Warnings = append(result.Warnings, ProtocolShortcutWarning{
+				Key:     shortcut.Key,
+				Message: "shortcut " + shortcut.Key + " overrides built-in shortcut for " + strings.Join(actions, ", "),
+			})
+		}
+		if _, exists := result.Shortcuts[shortcut.Key]; exists {
+			result.Warnings = append(result.Warnings, ProtocolShortcutWarning{
+				Key:     shortcut.Key,
+				Message: "shortcut conflict for " + shortcut.Key,
+			})
+		}
+		result.Shortcuts[shortcut.Key] = shortcut
+	}
+	return result
+}
+
+var protocolReservedShortcutActions = map[string]bool{
+	"app.interrupt":          true,
+	"app.clear":              true,
+	"app.exit":               true,
+	"app.suspend":            true,
+	"app.model.cycleForward": true,
+}
+
+func DefaultProtocolKeybindings() KeybindingsConfig {
+	return KeybindingsConfig{
+		"app.interrupt":            "ctrl+c",
+		"app.clear":                "ctrl+l",
+		"app.model.cycleForward":   "ctrl+p",
+		"app.clipboard.pasteImage": "ctrl+v",
+		"app.message.followUp":     "ctrl+p",
+	}
+}
+
+func protocolReservedShortcutKeys(keybindings KeybindingsConfig) map[string]bool {
+	keys := map[string]bool{}
+	for action, value := range keybindings {
+		if !protocolReservedShortcutActions[action] {
+			continue
+		}
+		for _, key := range keybindingValueKeys(value) {
+			keys[key] = true
+		}
+	}
+	return keys
+}
+
+func protocolKeybindingActions(keybindings KeybindingsConfig) map[string][]string {
+	actions := map[string][]string{}
+	for action, value := range keybindings {
+		for _, key := range keybindingValueKeys(value) {
+			actions[key] = append(actions[key], action)
+		}
+	}
+	for key := range actions {
+		sort.Strings(actions[key])
+	}
+	return actions
+}
+
+func keybindingValueKeys(value any) []string {
+	switch typed := value.(type) {
+	case string:
+		if strings.TrimSpace(typed) == "" {
+			return nil
+		}
+		return []string{typed}
+	case []string:
+		keys := make([]string, 0, len(typed))
+		for _, key := range typed {
+			if strings.TrimSpace(key) != "" {
+				keys = append(keys, key)
+			}
+		}
+		return keys
+	case []any:
+		keys := make([]string, 0, len(typed))
+		for _, value := range typed {
+			if key, ok := value.(string); ok && strings.TrimSpace(key) != "" {
+				keys = append(keys, key)
+			}
+		}
+		return keys
+	default:
+		return nil
+	}
 }

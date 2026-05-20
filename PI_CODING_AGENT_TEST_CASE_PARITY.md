@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `917`
+- `已有`: `926`
 - `待实现`: `0`
-- `需要协议 runtime`: `120`
+- `需要协议 runtime`: `111`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -705,21 +705,21 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 84 | warns when extension shortcut conflicts with built-in | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 107 | allows a shortcut when the reserved set no longer contains the default key | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 131 | warns but allows when extension uses non-reserved built-in shortcut | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 159 | blocks shortcuts for reserved actions even when rebound | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 183 | blocks shortcuts when reserved key is also bound to non-reserved actions | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 206 | blocks shortcuts when reserved action has multiple keys | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 230 | warns but allows when non-reserved action has multiple keys | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 256 | warns when two extensions register same shortcut | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 84 | warns when extension shortcut conflicts with built-in | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 107 | allows a shortcut when the reserved set no longer contains the default key | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 131 | warns but allows when extension uses non-reserved built-in shortcut | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 159 | blocks shortcuts for reserved actions even when rebound | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 183 | blocks shortcuts when reserved key is also bound to non-reserved actions | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 206 | blocks shortcuts when reserved action has multiple keys | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 230 | warns but allows when non-reserved action has multiple keys | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 256 | warns when two extensions register same shortcut | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 292 | collects tools from multiple extensions | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 316 | keeps first tool when two extensions register the same name | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 354 | collects commands from multiple extensions | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 375 | gets command by invocation name | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 399 | suffixes duplicate extension commands in insertion order | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 427 | exposes the current abort signal on ExtensionContext | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 447 | calls error listeners when handler throws | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 447 | calls error listeners when handler throws | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 475 | gets message renderer by type | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 495 | collects flags from extensions | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 513 | keeps first flag when two extensions register the same name | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
