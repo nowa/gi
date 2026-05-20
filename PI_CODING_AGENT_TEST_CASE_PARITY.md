@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `636`
-- `待实现`: `130`
+- `已有`: `639`
+- `待实现`: `127`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -32,7 +32,7 @@ Status meanings:
 | Pi file | Cases | Status | Gi coverage / next step |
 |---|---:|---|---|
 | `agent-session-auto-compaction-queue.test.ts` | 6 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `agent-session-branching.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `agent-session-branching.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_branching_test.go |
 | `agent-session-compaction.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `agent-session-concurrent.test.ts` | 7 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `agent-session-dynamic-provider.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -142,13 +142,13 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 
 Pi cases: `3`  
 Status: `已有`
-Gi coverage / implementation target: `gi-coding-agent/print_mode_test.go`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_branching_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 90 | should allow forking from single message | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 110 | should support in-memory forking in --no-session mode | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 131 | should fork from middle of conversation | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 90 | should allow forking from single message | 已有 | gi-coding-agent/agent_session_branching_test.go |
+| 110 | should support in-memory forking in --no-session mode | 已有 | gi-coding-agent/agent_session_branching_test.go |
+| 131 | should fork from middle of conversation | 已有 | gi-coding-agent/agent_session_branching_test.go |
 
 ## `agent-session-compaction.test.ts`
 
