@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `609`
-- `待实现`: `157`
+- `已有`: `612`
+- `待实现`: `154`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -105,7 +105,7 @@ Status meanings:
 | `session-cwd.test.ts` | 3 | 已有 | gi-coding-agent/session_cwd_test.go |
 | `session-info-modified-timestamp.test.ts` | 1 | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
 | `session-selector-path-delete.test.ts` | 7 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `session-selector-rename.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `session-selector-rename.test.ts` | 3 | 已有 | gi-coding-agent/session_selector_rename_test.go |
 | `session-selector-search.test.ts` | 9 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `settings-manager-bug.test.ts` | 4 | 已有 | gi-coding-agent/settings_manager_test.go |
 | `settings-manager.test.ts` | 17 | 已有 | gi-coding-agent/settings_manager_test.go |
@@ -593,8 +593,8 @@ Gi coverage / implementation target: `gi-coding-agent/edit_tool_definition_test.
 ## `edit-tool-no-full-redraw.test.ts`
 
 Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/session_selector_rename_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -1630,9 +1630,9 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 41 | shows rename hint in interactive /resume picker configuration | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 60 | does not show rename hint in --resume picker configuration | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 79 | enters rename mode on Ctrl+R and submits with Enter | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 41 | shows rename hint in interactive /resume picker configuration | 已有 | gi-coding-agent/session_selector_rename_test.go |
+| 60 | does not show rename hint in --resume picker configuration | 已有 | gi-coding-agent/session_selector_rename_test.go |
+| 79 | enters rename mode on Ctrl+R and submits with Enter | 已有 | gi-coding-agent/session_selector_rename_test.go |
 
 ## `session-selector-search.test.ts`
 
