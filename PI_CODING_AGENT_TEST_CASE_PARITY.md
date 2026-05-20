@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `591`
-- `待实现`: `175`
+- `已有`: `594`
+- `待实现`: `172`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -53,7 +53,7 @@ Status meanings:
 | `clipboard.test.ts` | 5 | 已有 | gi-coding-agent/clipboard_test.go |
 | `compaction-extensions-example.test.ts` | 2 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `compaction-extensions.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `compaction-serialization.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `compaction-serialization.test.ts` | 3 | 已有 | gi-agent-core/harness/compaction_test.go |
 | `compaction-summary-reasoning.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `compaction.test.ts` | 23 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `config.test.ts` | 13 | 已有 | gi-coding-agent/config_test.go |
@@ -234,8 +234,8 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 ## `agent-session-stats.test.ts`
 
 Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-agent-core/harness/compaction_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -502,9 +502,9 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 6 | should truncate long tool results | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 28 | should not truncate short tool results | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 47 | should not truncate assistant or user messages | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 6 | should truncate long tool results | 已有 | gi-agent-core/harness/compaction_test.go |
+| 28 | should not truncate short tool results | 已有 | gi-agent-core/harness/compaction_test.go |
+| 47 | should not truncate assistant or user messages | 已有 | gi-agent-core/harness/compaction_test.go |
 
 ## `compaction-summary-reasoning.test.ts`
 

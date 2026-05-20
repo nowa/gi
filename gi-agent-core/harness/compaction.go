@@ -261,18 +261,18 @@ func PrepareCompaction(pathEntries []Entry, settings CompactionSettings) (*Compa
 }
 
 func SerializeConversation(messages []llm.Message) string {
-	var out strings.Builder
+	entries := make([]string, 0, len(messages))
 	for _, message := range messages {
+		label := "[" + message.Role + "]:"
 		switch message.Role {
 		case llm.RoleUser:
-			out.WriteString("[User]:\n")
+			label = "[User]:"
 		case llm.RoleAssistant:
-			out.WriteString("[Assistant]:\n")
+			label = "[Assistant]:"
 		case llm.RoleToolResult:
-			out.WriteString("[Tool result]:\n")
-		default:
-			out.WriteString("[" + message.Role + "]:\n")
+			label = "[Tool result]:"
 		}
+		var content strings.Builder
 		for _, part := range message.Content {
 			if part.Type == llm.ContentText {
 				text := part.Text
@@ -280,15 +280,23 @@ func SerializeConversation(messages []llm.Message) string {
 					remaining := len([]rune(text)) - 2000
 					text = string([]rune(text)[:2000]) + fmt.Sprintf("\n[... %d more characters truncated]", remaining)
 				}
-				out.WriteString(text)
-				out.WriteString("\n")
+				content.WriteString(text)
 			}
 			if part.Type == llm.ContentToolCall {
-				out.WriteString(fmt.Sprintf("[Tool call %s]: %v\n", part.Name, part.Arguments))
+				if content.Len() > 0 {
+					content.WriteString("\n")
+				}
+				content.WriteString(fmt.Sprintf("[Tool call %s]: %v", part.Name, part.Arguments))
 			}
 		}
+		text := strings.TrimSuffix(content.String(), "\n")
+		if text == "" {
+			entries = append(entries, label)
+		} else {
+			entries = append(entries, label+" "+text)
+		}
 	}
-	return out.String()
+	return strings.Join(entries, "\n")
 }
 
 func GenerateSummary(ctx context.Context, messages []llm.Message, model llm.Model, maxTokens int, apiKey string, previousSummary, focus, thinkingLevel string) (string, error) {

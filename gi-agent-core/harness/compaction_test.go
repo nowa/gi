@@ -169,8 +169,24 @@ func TestPrepareCompactionSkipsEmptyOrAlreadyCompactedBranches(t *testing.T) {
 func TestSerializeConversationTruncatesToolResults(t *testing.T) {
 	longContent := strings.Repeat("x", 5000)
 	result := SerializeConversation([]llm.Message{{Role: llm.RoleToolResult, Content: []llm.ContentPart{llm.Text(longContent)}}})
-	if !strings.Contains(result, "[Tool result]:") || !strings.Contains(result, "[... 3000 more characters truncated]") {
+	if !strings.Contains(result, "[Tool result]:") || !strings.Contains(result, "[... 3000 more characters truncated]") || strings.Contains(result, strings.Repeat("x", 3000)) || !strings.Contains(result, strings.Repeat("x", 2000)) {
 		t.Fatalf("serialized = %s", result)
+	}
+}
+
+func TestSerializeConversationPiCompactionSerialization(t *testing.T) {
+	shortContent := strings.Repeat("x", 1500)
+	if result := SerializeConversation([]llm.Message{{Role: llm.RoleToolResult, Content: []llm.ContentPart{llm.Text(shortContent)}}}); result != "[Tool result]: "+shortContent {
+		t.Fatalf("short serialized = %q", result)
+	}
+
+	longText := strings.Repeat("y", 5000)
+	result := SerializeConversation([]llm.Message{
+		{Role: llm.RoleUser, Content: []llm.ContentPart{llm.Text(longText)}},
+		{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text(longText)}, StopReason: llm.StopReasonStop},
+	})
+	if strings.Contains(result, "truncated") || !strings.Contains(result, longText) {
+		t.Fatalf("user/assistant serialized = %q", result)
 	}
 }
 
