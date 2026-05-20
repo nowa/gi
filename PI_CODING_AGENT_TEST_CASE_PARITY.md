@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `302`
-- `待实现`: `442`
+- `已有`: `333`
+- `待实现`: `411`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -82,7 +82,7 @@ Status meanings:
 | `interactive-mode-suspend.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `keybindings-migration.test.ts` | 3 | 已有 | gi-coding-agent/keybindings_test.go |
 | `model-registry.test.ts` | 64 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `model-resolver.test.ts` | 31 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `model-resolver.test.ts` | 31 | 已有 | gi-coding-agent/model_resolver_test.go |
 | `oauth-selector.test.ts` | 6 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `package-command-paths.test.ts` | 10 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `package-manager-ssh.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -265,7 +265,7 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `ansi-utils.test.ts`
 
 Pi cases: `5`  
-Status: `已有`  
+Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1053,43 +1053,43 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 
 ## `model-resolver.test.ts`
 
-Pi cases: `31`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `31`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/model_resolver_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 70 | exact match returns model with undefined thinking level | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 77 | partial match returns best model with undefined thinking level | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 84 | no match returns undefined model and thinking level | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 93 | sonnet:high returns sonnet with high thinking level | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 100 | gpt-4o:medium returns gpt-4o with medium thinking level | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 107 | all valid thinking levels work | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 118 | sonnet:random returns sonnet with undefined thinking level and warning | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 126 | gpt-4o:invalid returns gpt-4o with undefined thinking level and warning | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 135 | qwen3-coder:exacto matches the model with undefined thinking level | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 142 | openrouter/qwen/qwen3-coder:exacto matches with provider prefix | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 150 | qwen3-coder:exacto:high matches model with high thinking level | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 157 | openrouter/qwen/qwen3-coder:exacto:high matches with provider and thinking level | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 165 | gpt-4o:extended matches the extended model with undefined thinking level | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 174 | qwen3-coder:exacto:random returns model with undefined thinking level and warning | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 182 | qwen3-coder:exacto:high:random returns model with undefined thinking level and warning | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 192 | empty pattern matches via partial matching | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 199 | pattern ending with colon treats empty suffix as invalid | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 210 | resolves --model provider/id without --provider | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 225 | resolves fuzzy patterns within an explicit provider | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 241 | supports --model <pattern>:<thinking> (without explicit --thinking) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 256 | prefers exact model id match over provider inference (OpenRouter-style ids) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 271 | does not strip invalid :suffix as thinking level in --model (treat as raw id) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 287 | allows custom model ids for explicit providers without double prefixing | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 303 | returns a clear error when there are no models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 318 | prefers provider/model split over gateway model with matching id | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 359 | resolves provider-prefixed fuzzy patterns (openrouter/qwen -> openrouter model) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 376 | openai defaults track current models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 381 | zai, minimax, and cerebras defaults track current models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 388 | ai-gateway default tracks current model | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 392 | findInitialModel accepts explicit provider custom model ids | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 409 | findInitialModel selects ai-gateway default when available | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 70 | exact match returns model with undefined thinking level | 已有 | gi-coding-agent/model_resolver_test.go |
+| 77 | partial match returns best model with undefined thinking level | 已有 | gi-coding-agent/model_resolver_test.go |
+| 84 | no match returns undefined model and thinking level | 已有 | gi-coding-agent/model_resolver_test.go |
+| 93 | sonnet:high returns sonnet with high thinking level | 已有 | gi-coding-agent/model_resolver_test.go |
+| 100 | gpt-4o:medium returns gpt-4o with medium thinking level | 已有 | gi-coding-agent/model_resolver_test.go |
+| 107 | all valid thinking levels work | 已有 | gi-coding-agent/model_resolver_test.go |
+| 118 | sonnet:random returns sonnet with undefined thinking level and warning | 已有 | gi-coding-agent/model_resolver_test.go |
+| 126 | gpt-4o:invalid returns gpt-4o with undefined thinking level and warning | 已有 | gi-coding-agent/model_resolver_test.go |
+| 135 | qwen3-coder:exacto matches the model with undefined thinking level | 已有 | gi-coding-agent/model_resolver_test.go |
+| 142 | openrouter/qwen/qwen3-coder:exacto matches with provider prefix | 已有 | gi-coding-agent/model_resolver_test.go |
+| 150 | qwen3-coder:exacto:high matches model with high thinking level | 已有 | gi-coding-agent/model_resolver_test.go |
+| 157 | openrouter/qwen/qwen3-coder:exacto:high matches with provider and thinking level | 已有 | gi-coding-agent/model_resolver_test.go |
+| 165 | gpt-4o:extended matches the extended model with undefined thinking level | 已有 | gi-coding-agent/model_resolver_test.go |
+| 174 | qwen3-coder:exacto:random returns model with undefined thinking level and warning | 已有 | gi-coding-agent/model_resolver_test.go |
+| 182 | qwen3-coder:exacto:high:random returns model with undefined thinking level and warning | 已有 | gi-coding-agent/model_resolver_test.go |
+| 192 | empty pattern matches via partial matching | 已有 | gi-coding-agent/model_resolver_test.go |
+| 199 | pattern ending with colon treats empty suffix as invalid | 已有 | gi-coding-agent/model_resolver_test.go |
+| 210 | resolves --model provider/id without --provider | 已有 | gi-coding-agent/model_resolver_test.go |
+| 225 | resolves fuzzy patterns within an explicit provider | 已有 | gi-coding-agent/model_resolver_test.go |
+| 241 | supports --model <pattern>:<thinking> (without explicit --thinking) | 已有 | gi-coding-agent/model_resolver_test.go |
+| 256 | prefers exact model id match over provider inference (OpenRouter-style ids) | 已有 | gi-coding-agent/model_resolver_test.go |
+| 271 | does not strip invalid :suffix as thinking level in --model (treat as raw id) | 已有 | gi-coding-agent/model_resolver_test.go |
+| 287 | allows custom model ids for explicit providers without double prefixing | 已有 | gi-coding-agent/model_resolver_test.go |
+| 303 | returns a clear error when there are no models | 已有 | gi-coding-agent/model_resolver_test.go |
+| 318 | prefers provider/model split over gateway model with matching id | 已有 | gi-coding-agent/model_resolver_test.go |
+| 359 | resolves provider-prefixed fuzzy patterns (openrouter/qwen -> openrouter model) | 已有 | gi-coding-agent/model_resolver_test.go |
+| 376 | openai defaults track current models | 已有 | gi-coding-agent/model_resolver_test.go |
+| 381 | zai, minimax, and cerebras defaults track current models | 已有 | gi-coding-agent/model_resolver_test.go |
+| 388 | ai-gateway default tracks current model | 已有 | gi-coding-agent/model_resolver_test.go |
+| 392 | findInitialModel accepts explicit provider custom model ids | 已有 | gi-coding-agent/model_resolver_test.go |
+| 409 | findInitialModel selects ai-gateway default when available | 已有 | gi-coding-agent/model_resolver_test.go |
 
 ## `oauth-selector.test.ts`
 
