@@ -182,6 +182,38 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("force-includes top-level extensions after broad exclusion", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		writeGiProtocolExtensionDescriptor(t, filepath.Join(agentDir, "extensions", "keep.gi.json"))
+		writeGiProtocolExtensionDescriptor(t, filepath.Join(agentDir, "extensions", "remove.gi.json"))
+		settings := NewInMemorySettingsManager(map[string]any{
+			"extensions": []any{"!extensions/*.gi.json", "+extensions/keep.gi.json"},
+		})
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings})
+		loader.Reload()
+
+		if !protocolExtensionHasSuffix(loader.GetExtensions().Extensions, "keep.gi.json") ||
+			protocolExtensionHasSuffix(loader.GetExtensions().Extensions, "remove.gi.json") {
+			t.Fatalf("extensions = %#v", loader.GetExtensions().Extensions)
+		}
+	})
+
+	t.Run("force-excludes top-level resources after force-include", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		writeGiProtocolExtensionDescriptor(t, filepath.Join(agentDir, "extensions", "keep.gi.json"))
+		settings := NewInMemorySettingsManager(map[string]any{
+			"extensions": []any{"!extensions/*.gi.json", "+extensions/keep.gi.json", "-extensions/keep.gi.json"},
+		})
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings})
+		loader.Reload()
+
+		if len(loader.GetExtensions().Extensions) != 0 {
+			t.Fatalf("extensions = %#v", loader.GetExtensions().Extensions)
+		}
+	})
+
 	t.Run("dedupes symlinked user and project extensions with project path winning", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		shared := filepath.Join(filepath.Dir(agentDir), "shared-extensions")

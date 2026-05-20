@@ -318,10 +318,9 @@ func (l *DefaultResourceLoader) settingsResourcePathsByScope(key string, setting
 func filterProtocolExtensions(extensions []ProtocolExtensionSource, filters []string, cwd, agentDir string) []ProtocolExtensionSource {
 	var result []ProtocolExtensionSource
 	for _, extension := range extensions {
-		if resourceExcluded(extension.Path, filters, cwd, agentDir) {
-			continue
+		if resourceEnabled(extension.Path, filters, cwd, agentDir) {
+			result = append(result, extension)
 		}
-		result = append(result, extension)
 	}
 	return result
 }
@@ -329,10 +328,9 @@ func filterProtocolExtensions(extensions []ProtocolExtensionSource, filters []st
 func filterSkills(skills []agentharness.Skill, filters []string, cwd, agentDir string) []agentharness.Skill {
 	var result []agentharness.Skill
 	for _, skill := range skills {
-		if resourceExcluded(skill.FilePath, filters, cwd, agentDir) {
-			continue
+		if resourceEnabled(skill.FilePath, filters, cwd, agentDir) {
+			result = append(result, skill)
 		}
-		result = append(result, skill)
 	}
 	return result
 }
@@ -340,10 +338,9 @@ func filterSkills(skills []agentharness.Skill, filters []string, cwd, agentDir s
 func filterPrompts(prompts []PromptTemplate, filters []string, cwd, agentDir string) []PromptTemplate {
 	var result []PromptTemplate
 	for _, prompt := range prompts {
-		if resourceExcluded(prompt.FilePath, filters, cwd, agentDir) {
-			continue
+		if resourceEnabled(prompt.FilePath, filters, cwd, agentDir) {
+			result = append(result, prompt)
 		}
-		result = append(result, prompt)
 	}
 	return result
 }
@@ -351,28 +348,33 @@ func filterPrompts(prompts []PromptTemplate, filters []string, cwd, agentDir str
 func filterThemes(themes []ResourceTheme, filters []string, cwd, agentDir string) []ResourceTheme {
 	var result []ResourceTheme
 	for _, theme := range themes {
-		if resourceExcluded(theme.SourcePath, filters, cwd, agentDir) {
-			continue
+		if resourceEnabled(theme.SourcePath, filters, cwd, agentDir) {
+			result = append(result, theme)
 		}
-		result = append(result, theme)
 	}
 	return result
 }
 
-func resourceExcluded(path string, filters []string, cwd, agentDir string) bool {
+func resourceEnabled(path string, filters []string, cwd, agentDir string) bool {
+	enabled := true
 	for _, filter := range filters {
 		filter = strings.TrimSpace(filter)
-		if !strings.HasPrefix(filter, "-") && !strings.HasPrefix(filter, "!") {
+		if filter == "" {
 			continue
 		}
-		pattern := strings.TrimLeft(filter, "-!")
+		action := filter[0]
+		if action != '-' && action != '!' && action != '+' {
+			continue
+		}
+		pattern := strings.TrimSpace(filter[1:])
 		for _, base := range []string{cwd, filepath.Join(cwd, ConfigDirName), agentDir} {
 			if resourceMatchesFilter(path, pattern, base) {
-				return true
+				enabled = action == '+'
+				break
 			}
 		}
 	}
-	return false
+	return enabled
 }
 
 func resourceMatchesFilter(path, pattern, base string) bool {
