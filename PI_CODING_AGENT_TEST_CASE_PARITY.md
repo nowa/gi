@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `633`
-- `待实现`: `133`
+- `已有`: `636`
+- `待实现`: `130`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -39,7 +39,7 @@ Status meanings:
 | `agent-session-dynamic-tools.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `agent-session-retry.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `agent-session-runtime-events.test.ts` | 4 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `agent-session-stats.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `agent-session-stats.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_stats_test.go |
 | `agent-session-tree-navigation.test.ts` | 10 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `ansi-utils.test.ts` | 5 | 已有 | gi-coding-agent/utils_test.go |
 | `args.test.ts` | 60 | 已有 | gi-coding-agent/args_test.go |
@@ -233,15 +233,15 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 
 ## `agent-session-stats.test.ts`
 
-Pi cases: `3`  
+Pi cases: `3`
 Status: `已有`
-Gi coverage / implementation target: `gi-agent-core/harness/compaction_test.go`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_stats_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 81 | exposes the current context usage alongside token totals | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 99 | reports unknown current context usage immediately after compaction | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 121 | uses post-compaction usage for current context instead of stale kept usage | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 81 | exposes the current context usage alongside token totals | 已有 | gi-coding-agent/agent_session_stats_test.go |
+| 99 | reports unknown current context usage immediately after compaction | 已有 | gi-coding-agent/agent_session_stats_test.go |
+| 121 | uses post-compaction usage for current context instead of stale kept usage | 已有 | gi-coding-agent/agent_session_stats_test.go |
 
 ## `agent-session-tree-navigation.test.ts`
 
