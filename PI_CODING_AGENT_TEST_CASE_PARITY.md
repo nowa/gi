@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `681`
-- `待实现`: `85`
+- `已有`: `686`
+- `待实现`: `80`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -37,7 +37,7 @@ Status meanings:
 | `agent-session-concurrent.test.ts` | 7 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `agent-session-dynamic-provider.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `agent-session-dynamic-tools.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `agent-session-retry.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `agent-session-retry.test.ts` | 5 | 已有 | gi-coding-agent/agent_session_retry_test.go |
 | `agent-session-runtime-events.test.ts` | 4 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `agent-session-stats.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_stats_test.go |
 | `agent-session-tree-navigation.test.ts` | 10 | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
@@ -207,16 +207,16 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 ## `agent-session-retry.test.ts`
 
 Pi cases: `5`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_retry_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 132 | retries after a transient error and succeeds | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 147 | exhausts max retries and emits failure | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 164 | prompt waits for retry completion even when assistant message_end handling is delayed | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 173 | retries provider network_error failures | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 231 | prompt waits for full agent loop when retry produces tool calls | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 132 | retries after a transient error and succeeds | 已有 | gi-coding-agent/agent_session_retry_test.go |
+| 147 | exhausts max retries and emits failure | 已有 | gi-coding-agent/agent_session_retry_test.go |
+| 164 | prompt waits for retry completion even when assistant message_end handling is delayed | 已有 | gi-coding-agent/agent_session_retry_test.go |
+| 173 | retries provider network_error failures | 已有 | gi-coding-agent/agent_session_retry_test.go |
+| 231 | prompt waits for full agent loop when retry produces tool calls | 已有 | gi-coding-agent/agent_session_retry_test.go |
 
 ## `agent-session-runtime-events.test.ts`
 

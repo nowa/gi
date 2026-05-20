@@ -19,6 +19,7 @@ type AgentSessionOptions struct {
 	CompactionSettings   *agentharness.CompactionSettings
 	CompactionSummarizer AgentSessionCompactionSummarizer
 	BranchSummarizer     AgentSessionBranchSummarizer
+	RetrySettings        *AgentSessionRetrySettings
 	Responder            AgentSessionResponder
 }
 
@@ -30,10 +31,12 @@ type AgentSession struct {
 	CompactionSettings   agentharness.CompactionSettings
 	CompactionSummarizer AgentSessionCompactionSummarizer
 	BranchSummarizer     AgentSessionBranchSummarizer
+	RetrySettings        AgentSessionRetrySettings
 	Responder            AgentSessionResponder
 	eventListeners       []AgentSessionEventListener
 	branchSummaryAbort   chan struct{}
 	isCompacting         bool
+	isRetrying           bool
 }
 
 type AgentSessionStats struct {
@@ -127,6 +130,10 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 	if branchSummarizer == nil {
 		branchSummarizer = DefaultAgentSessionBranchSummarizer
 	}
+	retrySettings := DefaultAgentSessionRetrySettings()
+	if options.RetrySettings != nil {
+		retrySettings = *options.RetrySettings
+	}
 	responder := options.Responder
 	if responder == nil {
 		responder = DefaultAgentSessionResponder
@@ -153,6 +160,7 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		CompactionSettings:   compactionSettings,
 		CompactionSummarizer: compactionSummarizer,
 		BranchSummarizer:     branchSummarizer,
+		RetrySettings:        retrySettings,
 		Responder:            responder,
 	}, nil
 }

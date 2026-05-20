@@ -18,6 +18,11 @@ type AgentSessionEvent struct {
 	WillRetry    bool
 	ErrorMessage string
 	Message      *llm.Message
+	Attempt      int
+	MaxAttempts  int
+	DelayMs      int
+	Success      bool
+	FinalError   string
 }
 
 type AgentSessionEventListener func(AgentSessionEvent)
@@ -25,6 +30,16 @@ type AgentSessionEventListener func(AgentSessionEvent)
 type AgentSessionResponder func(prompt string, context []llm.Message, model llm.Model) (llm.Message, error)
 
 type AgentSessionCompactionSummarizer func(preparation agentharness.CompactionPreparation, customInstructions string) (agentharness.CompactionResult, error)
+
+type AgentSessionRetrySettings struct {
+	Enabled     bool
+	MaxRetries  int
+	BaseDelayMs int
+}
+
+func DefaultAgentSessionRetrySettings() AgentSessionRetrySettings {
+	return AgentSessionRetrySettings{Enabled: false, MaxRetries: 0, BaseDelayMs: 0}
+}
 
 func (s *AgentSession) Subscribe(listener AgentSessionEventListener) func() {
 	if s == nil || listener == nil {
@@ -62,35 +77,130 @@ func (s *AgentSession) Prompt(text string) error {
 		return errors.New("prompt is required")
 	}
 	s.SessionManager.AppendMessage(sessionUserMessageValue(prompt))
+	return s.runPromptLoop(prompt)
+}
+
+func (s *AgentSession) runPromptLoop(prompt string) error {
 	responder := s.Responder
 	if responder == nil {
 		responder = DefaultAgentSessionResponder
 	}
-	assistant, err := responder(prompt, s.Messages(), s.Agent.State.Model)
-	if err != nil {
-		return err
+	attempt := 0
+	retried := false
+	for {
+		assistant, err := responder(prompt, s.Messages(), s.Agent.State.Model)
+		if err != nil {
+			assistant = llm.Message{Role: llm.RoleAssistant, StopReason: llm.StopReasonError, ErrorMessage: err.Error()}
+		}
+		assistant = s.normalizeAssistantMessage(assistant)
+		if isRetryableAssistantError(assistant) && s.RetrySettings.Enabled && attempt < s.RetrySettings.MaxRetries {
+			attempt++
+			retried = true
+			s.isRetrying = true
+			s.emit(AgentSessionEvent{Type: "auto_retry_start", Attempt: attempt, MaxAttempts: s.RetrySettings.MaxRetries, DelayMs: s.RetrySettings.BaseDelayMs, ErrorMessage: assistant.ErrorMessage})
+			continue
+		}
+		s.SessionManager.AppendMessage(sessionMessageValue(assistant))
+		s.emit(AgentSessionEvent{Type: "message_end", Message: &assistant})
+		if isRetryableAssistantError(assistant) {
+			if retried {
+				s.emit(AgentSessionEvent{Type: "auto_retry_end", Success: false, Attempt: attempt, FinalError: assistant.ErrorMessage})
+			}
+			s.isRetrying = false
+			return nil
+		}
+		if retried {
+			s.emit(AgentSessionEvent{Type: "auto_retry_end", Success: true, Attempt: attempt})
+			s.isRetrying = false
+		}
+		if assistant.StopReason != "toolUse" {
+			return nil
+		}
+		if err := s.executeAssistantToolCalls(assistant); err != nil {
+			return err
+		}
 	}
-	if assistant.Role == "" {
-		assistant.Role = llm.RoleAssistant
+}
+
+func (s *AgentSession) normalizeAssistantMessage(message llm.Message) llm.Message {
+	if message.Role == "" {
+		message.Role = llm.RoleAssistant
 	}
-	if assistant.Timestamp == 0 {
-		assistant.Timestamp = llm.NowMillis()
+	if message.Timestamp == 0 {
+		message.Timestamp = llm.NowMillis()
 	}
-	if assistant.Provider == "" {
-		assistant.Provider = s.Agent.State.Model.Provider
+	if message.Provider == "" {
+		message.Provider = s.Agent.State.Model.Provider
 	}
-	if assistant.Model == "" {
-		assistant.Model = s.Agent.State.Model.ID
+	if message.Model == "" {
+		message.Model = s.Agent.State.Model.ID
 	}
-	if assistant.API == "" {
-		assistant.API = s.Agent.State.Model.API
+	if message.API == "" {
+		message.API = s.Agent.State.Model.API
 	}
-	if assistant.StopReason == "" {
-		assistant.StopReason = llm.StopReasonStop
+	if message.StopReason == "" {
+		message.StopReason = llm.StopReasonStop
 	}
-	s.SessionManager.AppendMessage(sessionMessageValue(assistant))
-	s.emit(AgentSessionEvent{Type: "message_end", Message: &assistant})
+	return message
+}
+
+func (s *AgentSession) executeAssistantToolCalls(message llm.Message) error {
+	for _, part := range message.Content {
+		if part.Type != llm.ContentToolCall {
+			continue
+		}
+		tool := s.sdkTool(part.Name)
+		if tool == nil || tool.Execute == nil {
+			continue
+		}
+		result, err := tool.Execute(part.ID, part.Arguments)
+		text := ""
+		for _, content := range result.Content {
+			if content.Type == "text" {
+				text += content.Text
+			}
+		}
+		toolResult := llm.Message{
+			Role:       llm.RoleToolResult,
+			Content:    []llm.ContentPart{llm.Text(text)},
+			ToolCallID: part.ID,
+			ToolName:   part.Name,
+			Timestamp:  llm.NowMillis(),
+			IsError:    err != nil,
+		}
+		if err != nil {
+			toolResult.Content = []llm.ContentPart{llm.Text(err.Error())}
+		}
+		s.SessionManager.AppendMessage(sessionMessageValue(toolResult))
+	}
 	return nil
+}
+
+func (s *AgentSession) sdkTool(name string) *SDKTool {
+	if s == nil || s.Agent == nil {
+		return nil
+	}
+	for index := range s.Agent.State.Tools {
+		if s.Agent.State.Tools[index].Name == name {
+			return &s.Agent.State.Tools[index]
+		}
+	}
+	return nil
+}
+
+func (s *AgentSession) IsRetrying() bool {
+	if s == nil {
+		return false
+	}
+	return s.isRetrying
+}
+
+func isRetryableAssistantError(message llm.Message) bool {
+	if message.StopReason != llm.StopReasonError {
+		return false
+	}
+	text := strings.ToLower(message.ErrorMessage)
+	return strings.Contains(text, "overloaded") || strings.Contains(text, "network_error")
 }
 
 func DefaultAgentSessionResponder(prompt string, context []llm.Message, model llm.Model) (llm.Message, error) {
