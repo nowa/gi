@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `866`
+- `已有`: `876`
 - `待实现`: `0`
-- `需要协议 runtime`: `171`
+- `需要协议 runtime`: `161`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -713,17 +713,17 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 206 | blocks shortcuts when reserved action has multiple keys | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 230 | warns but allows when non-reserved action has multiple keys | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 256 | warns when two extensions register same shortcut | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 292 | collects tools from multiple extensions | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 316 | keeps first tool when two extensions register the same name | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 354 | collects commands from multiple extensions | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 375 | gets command by invocation name | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 399 | suffixes duplicate extension commands in insertion order | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 292 | collects tools from multiple extensions | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 316 | keeps first tool when two extensions register the same name | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 354 | collects commands from multiple extensions | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 375 | gets command by invocation name | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 399 | suffixes duplicate extension commands in insertion order | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 427 | exposes the current abort signal on ExtensionContext | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 447 | calls error listeners when handler throws | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 475 | gets message renderer by type | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 495 | collects flags from extensions | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 513 | keeps first flag when two extensions register the same name | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 543 | can set flag values | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 475 | gets message renderer by type | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 495 | collects flags from extensions | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 513 | keeps first flag when two extensions register the same name | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 543 | can set flag values | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 566 | keeps ctx.getSystemPrompt() in sync with chained system prompt updates | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 610 | chains content modifications across handlers | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 657 | preserves previous modifications when later handlers return partial patches | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -731,7 +731,7 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 725 | pre-bind unregister removes all queued registrations for a provider | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 749 | post-bind register and unregister take effect immediately | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 766 | passes fork options through to the bound handler | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 790 | returns true when handlers exist for event type | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 790 | returns true when handlers exist for event type | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 
 ## `file-mutation-queue.test.ts`
 

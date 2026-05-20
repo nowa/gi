@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 	llm "github.com/nowa/gi/gi-llm-provider"
@@ -23,6 +24,9 @@ type ProtocolExtensionRuntime struct {
 	errorListeners    []ProtocolErrorListener
 	providerOverrides map[string]ProtocolProviderOverride
 	tools             []SDKTool
+	messageRenderers  map[string]ProtocolMessageRenderer
+	flags             []ProtocolFlagRegistration
+	flagValues        map[string]any
 	boundSession      *AgentSession
 }
 
@@ -67,6 +71,22 @@ type ProtocolToolDefinition struct {
 	PromptSnippet    string
 	PromptGuidelines []string
 	Execute          func(toolCallID string, input map[string]any) (SDKToolResult, error)
+}
+
+type ProtocolMessageRenderer func(message any, options any) []string
+
+type ProtocolFlagDefinition struct {
+	Description string
+	Type        string
+	Default     any
+}
+
+type ProtocolFlagRegistration struct {
+	Name        string
+	Description string
+	Type        string
+	Default     any
+	SourceInfo  ProtocolSourceInfo
 }
 
 type ProtocolSessionEvent struct {
@@ -142,6 +162,8 @@ func NewProtocolExtensionRuntime(capabilities ...string) *ProtocolExtensionRunti
 		capabilities:      map[string]bool{},
 		handlers:          map[string][]ProtocolEventHandler{},
 		providerOverrides: map[string]ProtocolProviderOverride{},
+		messageRenderers:  map[string]ProtocolMessageRenderer{},
+		flagValues:        map[string]any{},
 	}
 	for _, capability := range capabilities {
 		runtime.capabilities[capability] = true
@@ -390,6 +412,47 @@ func (c *ProtocolExtensionContext) RegisterTool(definition ProtocolToolDefinitio
 	return nil
 }
 
+func (c *ProtocolExtensionContext) RegisterMessageRenderer(customType string, renderer ProtocolMessageRenderer) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	if strings.TrimSpace(customType) == "" || renderer == nil {
+		return nil
+	}
+	if _, exists := c.runtime.messageRenderers[customType]; exists {
+		return nil
+	}
+	c.runtime.messageRenderers[customType] = renderer
+	return nil
+}
+
+func (c *ProtocolExtensionContext) RegisterFlag(name string, definition ProtocolFlagDefinition) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	name = strings.TrimSpace(strings.TrimPrefix(name, "--"))
+	if name == "" {
+		return nil
+	}
+	for _, existing := range c.runtime.flags {
+		if existing.Name == name {
+			return nil
+		}
+	}
+	registration := ProtocolFlagRegistration{
+		Name:        name,
+		Description: definition.Description,
+		Type:        definition.Type,
+		Default:     definition.Default,
+		SourceInfo:  c.source,
+	}
+	c.runtime.flags = append(c.runtime.flags, registration)
+	if definition.Default != nil {
+		c.runtime.flagValues[name] = definition.Default
+	}
+	return nil
+}
+
 func (r *ProtocolExtensionRuntime) RegisteredCommands() []ProtocolCommandRegistration {
 	if r == nil {
 		return nil
@@ -411,6 +474,55 @@ func (r *ProtocolExtensionRuntime) RegisteredCommands() []ProtocolCommandRegistr
 	return result
 }
 
+func (r *ProtocolExtensionRuntime) RegisteredTools() []SDKTool {
+	if r == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	result := make([]SDKTool, 0, len(r.tools))
+	for _, tool := range r.tools {
+		if tool.Name == "" || seen[tool.Name] {
+			continue
+		}
+		seen[tool.Name] = true
+		result = append(result, tool)
+	}
+	return result
+}
+
+func (r *ProtocolExtensionRuntime) GetMessageRenderer(customType string) ProtocolMessageRenderer {
+	if r == nil {
+		return nil
+	}
+	return r.messageRenderers[customType]
+}
+
+func (r *ProtocolExtensionRuntime) Flags() []ProtocolFlagRegistration {
+	if r == nil {
+		return nil
+	}
+	return append([]ProtocolFlagRegistration(nil), r.flags...)
+}
+
+func (r *ProtocolExtensionRuntime) SetFlagValue(name string, value any) {
+	if r == nil {
+		return
+	}
+	name = strings.TrimSpace(strings.TrimPrefix(name, "--"))
+	if name == "" {
+		return
+	}
+	r.flagValues[name] = value
+}
+
+func (r *ProtocolExtensionRuntime) FlagValue(name string) any {
+	if r == nil {
+		return nil
+	}
+	name = strings.TrimSpace(strings.TrimPrefix(name, "--"))
+	return r.flagValues[name]
+}
+
 func (r *ProtocolExtensionRuntime) ApplyToSession(session *AgentSession) {
 	if r == nil || session == nil || session.Agent == nil {
 		return
@@ -421,7 +533,7 @@ func (r *ProtocolExtensionRuntime) ApplyToSession(session *AgentSession) {
 		}
 	}
 	session.ExtensionRuntime = r
-	session.DynamicTools = append([]SDKTool(nil), r.tools...)
+	session.DynamicTools = r.RegisteredTools()
 	session.RefreshSystemPrompt()
 }
 
