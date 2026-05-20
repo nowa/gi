@@ -135,10 +135,7 @@ func (t EditTool) Execute(_ string, input EditToolInput) (FileToolResult, error)
 		if err := t.ops.WriteFile(absolutePath, []byte(editResult.Content)); err != nil {
 			return formatEditAccessError(input.Path, err)
 		}
-		text := "Successfully replaced"
-		if len(input.Edits) > 1 {
-			text = fmt.Sprintf("Successfully replaced %d block(s)", len(input.Edits))
-		}
+		text := fmt.Sprintf("Successfully replaced %d block(s) in %s.", len(input.Edits), input.Path)
 		result = FileToolResult{
 			Text:    text,
 			Content: []llm.ContentPart{llm.Text(text)},

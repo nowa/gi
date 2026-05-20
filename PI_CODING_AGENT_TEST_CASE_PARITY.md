@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `580`
-- `待实现`: `186`
+- `已有`: `588`
+- `待实现`: `178`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -57,7 +57,7 @@ Status meanings:
 | `compaction-summary-reasoning.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `compaction.test.ts` | 23 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `config.test.ts` | 13 | 已有 | gi-coding-agent/config_test.go |
-| `edit-tool-legacy-input.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `edit-tool-legacy-input.test.ts` | 8 | 已有 | gi-coding-agent/edit_tool_definition_test.go |
 | `edit-tool-no-full-redraw.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `export-html-skill-block.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `export-html-whitespace.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -576,19 +576,19 @@ Gi coverage / implementation target: `gi-coding-agent/config_test.go`
 ## `edit-tool-legacy-input.test.ts`
 
 Pi cases: `8`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/edit_tool_definition_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 21 | keeps legacy fields out of the public schema | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 27 | folds top-level oldText/newText into edits | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 40 | appends legacy replacement to existing edits | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 57 | passes through valid input unchanged | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 67 | passes through non-object input unchanged | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 74 | prepared args execute correctly | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 93 | parses edits from a JSON string | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 105 | leaves edits alone when the string is not valid JSON | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 21 | keeps legacy fields out of the public schema | 已有 | gi-coding-agent/edit_tool_definition_test.go |
+| 27 | folds top-level oldText/newText into edits | 已有 | gi-coding-agent/edit_tool_definition_test.go |
+| 40 | appends legacy replacement to existing edits | 已有 | gi-coding-agent/edit_tool_definition_test.go |
+| 57 | passes through valid input unchanged | 已有 | gi-coding-agent/edit_tool_definition_test.go |
+| 67 | passes through non-object input unchanged | 已有 | gi-coding-agent/edit_tool_definition_test.go |
+| 74 | prepared args execute correctly | 已有 | gi-coding-agent/edit_tool_definition_test.go |
+| 93 | parses edits from a JSON string | 已有 | gi-coding-agent/edit_tool_definition_test.go |
+| 105 | leaves edits alone when the string is not valid JSON | 已有 | gi-coding-agent/edit_tool_definition_test.go |
 
 ## `edit-tool-no-full-redraw.test.ts`
 
