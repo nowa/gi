@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `493`
-- `待实现`: `251`
+- `已有`: `502`
+- `待实现`: `242`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -1850,16 +1850,16 @@ Gi coverage / implementation target: `部分已有: gi-coding-agent/tools_read_t
 | 192 | should treat files with image extension but non-image content as text | 已有 | gi-coding-agent/tools_read_test.go |
 | 205 | should write file contents | 已有 | gi-coding-agent/tools_write_edit_test.go |
 | 216 | should create parent directories | 已有 | gi-coding-agent/tools_write_edit_test.go |
-| 227 | should replace text in file | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 244 | should fail if text not found | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 257 | should include ENOENT when the edit target does not exist | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 268 | should fail if text appears multiple times | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 281 | should replace multiple disjoint regions in one call | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 299 | should collapse large unchanged gaps in multi-edit diffs | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 322 | should match edits against the original file, not incrementally | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 227 | should replace text in file | 已有 | gi-coding-agent/tools_edit_test.go |
+| 244 | should fail if text not found | 已有 | gi-coding-agent/tools_edit_test.go |
+| 257 | should include ENOENT when the edit target does not exist | 已有 | gi-coding-agent/tools_edit_test.go |
+| 268 | should fail if text appears multiple times | 已有 | gi-coding-agent/tools_edit_test.go |
+| 281 | should replace multiple disjoint regions in one call | 已有 | gi-coding-agent/tools_edit_test.go |
+| 299 | should collapse large unchanged gaps in multi-edit diffs | 已有 | gi-coding-agent/tools_edit_test.go |
+| 322 | should match edits against the original file, not incrementally | 已有 | gi-coding-agent/tools_edit_test.go |
 | 337 | should fail when edits is empty | 已有 | gi-coding-agent/tools_write_edit_test.go |
-| 349 | should fail when multi-edit regions overlap | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 364 | should not partially apply edits when one edit fails | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 349 | should fail when multi-edit regions overlap | 已有 | gi-coding-agent/tools_edit_test.go |
+| 364 | should not partially apply edits when one edit fails | 已有 | gi-coding-agent/tools_edit_test.go |
 | 382 | should include EACCES for read-only files | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 395 | should include the original error message for unknown edit access errors | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 414 | should include ENOENT in diff preview for missing files | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |

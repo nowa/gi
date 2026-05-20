@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
@@ -47,6 +48,7 @@ type FileToolResult struct {
 
 type FileToolDetails struct {
 	Truncation *ReadToolTruncation
+	Diff       string
 }
 
 type ReadToolTruncation struct {
@@ -113,21 +115,28 @@ func (t EditTool) Execute(_ string, input EditToolInput) (FileToolResult, error)
 	var result FileToolResult
 	err := WithFileMutationQueue(absolutePath, func() error {
 		if err := t.ops.Access(absolutePath); err != nil {
-			return fmt.Errorf("could not edit file: %s: %w", input.Path, err)
+			return formatEditAccessError(input.Path, err)
 		}
 		content, err := t.ops.ReadFile(absolutePath)
 		if err != nil {
 			return err
 		}
-		nextContent, err := applySimpleEdits(string(content), input.Edits)
+		editResult, err := applyEditsAgainstOriginal(string(content), input.Edits)
 		if err != nil {
 			return err
 		}
-		if err := t.ops.WriteFile(absolutePath, []byte(nextContent)); err != nil {
-			return err
+		if err := t.ops.WriteFile(absolutePath, []byte(editResult.Content)); err != nil {
+			return formatEditAccessError(input.Path, err)
 		}
-		text := fmt.Sprintf("Successfully edited %s", input.Path)
-		result = FileToolResult{Text: text, Content: []llm.ContentPart{llm.Text(text)}}
+		text := "Successfully replaced"
+		if len(input.Edits) > 1 {
+			text = fmt.Sprintf("Successfully replaced %d block(s)", len(input.Edits))
+		}
+		result = FileToolResult{
+			Text:    text,
+			Content: []llm.ContentPart{llm.Text(text)},
+			Details: &FileToolDetails{Diff: editResult.Diff},
+		}
 		return nil
 	})
 	return result, err
@@ -227,18 +236,104 @@ func normalizeFileToolOperations(operations ...FileToolOperations) FileToolOpera
 	return ops
 }
 
-func applySimpleEdits(content string, edits []Edit) (string, error) {
-	next := content
+type editApplyResult struct {
+	Content string
+	Diff    string
+}
+
+type editRange struct {
+	start int
+	end   int
+	edit  Edit
+}
+
+func applyEditsAgainstOriginal(content string, edits []Edit) (editApplyResult, error) {
+	ranges := make([]editRange, 0, len(edits))
 	for _, edit := range edits {
 		if edit.OldText == "" {
-			return "", fmt.Errorf("oldText must not be empty")
+			return editApplyResult{}, fmt.Errorf("oldText must not be empty")
 		}
-		if count := strings.Count(next, edit.OldText); count != 1 {
-			return "", fmt.Errorf("oldText must match exactly once, got %d matches", count)
+		occurrences := findEditOccurrences(content, edit.OldText)
+		if len(occurrences) == 0 {
+			return editApplyResult{}, fmt.Errorf("Could not find the exact text to replace")
 		}
-		next = strings.Replace(next, edit.OldText, edit.NewText, 1)
+		if len(occurrences) > 1 {
+			return editApplyResult{}, fmt.Errorf("Found %d occurrences of oldText; expected exactly one", len(occurrences))
+		}
+		ranges = append(ranges, editRange{start: occurrences[0], end: occurrences[0] + len(edit.OldText), edit: edit})
 	}
-	return next, nil
+	sortEditRanges(ranges)
+	for i := 1; i < len(ranges); i++ {
+		if ranges[i].start < ranges[i-1].end {
+			return editApplyResult{}, fmt.Errorf("edit regions overlap")
+		}
+	}
+
+	var builder strings.Builder
+	cursor := 0
+	for _, r := range ranges {
+		builder.WriteString(content[cursor:r.start])
+		builder.WriteString(r.edit.NewText)
+		cursor = r.end
+	}
+	builder.WriteString(content[cursor:])
+	return editApplyResult{Content: builder.String(), Diff: buildEditDiff(content, ranges)}, nil
+}
+
+func findEditOccurrences(content, oldText string) []int {
+	var result []int
+	searchFrom := 0
+	for {
+		index := strings.Index(content[searchFrom:], oldText)
+		if index < 0 {
+			return result
+		}
+		start := searchFrom + index
+		result = append(result, start)
+		searchFrom = start + len(oldText)
+	}
+}
+
+func sortEditRanges(ranges []editRange) {
+	sort.Slice(ranges, func(i, j int) bool {
+		return ranges[i].start < ranges[j].start
+	})
+}
+
+func buildEditDiff(content string, ranges []editRange) string {
+	var lines []string
+	previousEnd := 0
+	for index, r := range ranges {
+		if index > 0 && r.start-previousEnd > 200 {
+			lines = append(lines, "...")
+		}
+		lines = append(lines, prefixEditDiffLines("-", content[r.start:r.end])...)
+		lines = append(lines, prefixEditDiffLines("+", r.edit.NewText)...)
+		previousEnd = r.end
+	}
+	return strings.Join(lines, "\n")
+}
+
+func prefixEditDiffLines(prefix, value string) []string {
+	value = strings.TrimSuffix(value, "\n")
+	if value == "" {
+		return []string{prefix}
+	}
+	lines := strings.Split(value, "\n")
+	for i, line := range lines {
+		lines[i] = prefix + " " + line
+	}
+	return lines
+}
+
+func formatEditAccessError(path string, err error) error {
+	if os.IsNotExist(err) {
+		return fmt.Errorf("Could not edit file: %s. Error code: ENOENT.", path)
+	}
+	if os.IsPermission(err) {
+		return fmt.Errorf("Could not edit file: %s. Error code: EACCES.", path)
+	}
+	return fmt.Errorf("Could not edit file: %s. Error: %s.", path, err.Error())
 }
 
 func formatReadToolTextContent(content string, offset, limit int) (string, *FileToolDetails, error) {
