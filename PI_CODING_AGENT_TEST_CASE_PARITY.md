@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `299`
-- `待实现`: `445`
+- `已有`: `302`
+- `待实现`: `442`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -73,7 +73,7 @@ Status meanings:
 | `git-update.test.ts` | 11 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `image-processing.test.ts` | 9 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `image-resize-callers.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `initial-message.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `initial-message.test.ts` | 3 | 已有 | gi-coding-agent/initial_message_test.go |
 | `interactive-mode-anthropic-warning.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `interactive-mode-clone-command.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `interactive-mode-compaction.test.ts` | 1 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -862,14 +862,14 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `initial-message.test.ts`
 
 Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/initial_message_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 15 | merges piped stdin with the first CLI message into one prompt | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 26 | uses stdin as the initial prompt when no CLI message is present | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 37 | combines stdin, file text, and first CLI message in one prompt | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 15 | merges piped stdin with the first CLI message into one prompt | 已有 | gi-coding-agent/initial_message_test.go |
+| 26 | uses stdin as the initial prompt when no CLI message is present | 已有 | gi-coding-agent/initial_message_test.go |
+| 37 | combines stdin, file text, and first CLI message in one prompt | 已有 | gi-coding-agent/initial_message_test.go |
 
 ## `interactive-mode-anthropic-warning.test.ts`
 
