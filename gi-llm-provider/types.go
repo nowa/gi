@@ -179,6 +179,8 @@ type ModelCompat struct {
 	RequiresReasoningContentOnAssistantTurns  *bool
 	RequiresReasoningContentOnAssistantEvents *bool
 	ZAIToolStream                             *bool
+	OpenRouterRouting                         map[string]any
+	VercelGatewayRouting                      map[string]any
 	MaxTokensField                            string
 	ThinkingFormat                            string
 	CacheControlFormat                        string

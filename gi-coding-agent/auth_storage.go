@@ -484,6 +484,12 @@ func RegisterOAuthProvider(provider OAuthProvider) {
 	oauthProviders[provider.ID] = provider
 }
 
+func UnregisterOAuthProvider(providerID string) {
+	oauthProvidersMu.Lock()
+	defer oauthProvidersMu.Unlock()
+	delete(oauthProviders, providerID)
+}
+
 func GetOAuthProvider(providerID string) (OAuthProvider, bool) {
 	oauthProvidersMu.Lock()
 	defer oauthProvidersMu.Unlock()

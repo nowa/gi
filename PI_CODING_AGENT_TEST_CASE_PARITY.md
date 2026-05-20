@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `333`
-- `待实现`: `411`
+- `已有`: `397`
+- `待实现`: `347`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -81,7 +81,7 @@ Status meanings:
 | `interactive-mode-status.test.ts` | 25 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `interactive-mode-suspend.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `keybindings-migration.test.ts` | 3 | 已有 | gi-coding-agent/keybindings_test.go |
-| `model-registry.test.ts` | 64 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `model-registry.test.ts` | 64 | 已有 | gi-coding-agent/model_registry_test.go |
 | `model-resolver.test.ts` | 31 | 已有 | gi-coding-agent/model_resolver_test.go |
 | `oauth-selector.test.ts` | 6 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `package-command-paths.test.ts` | 10 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -980,76 +980,76 @@ Gi coverage / implementation target: `gi-coding-agent/keybindings_test.go`
 
 ## `model-registry.test.ts`
 
-Pi cases: `64`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `64`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/model_registry_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 92 | overriding baseUrl keeps all built-in models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 105 | overriding baseUrl changes URL on all built-in models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 119 | overriding headers resolves at request time | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 138 | headers-only override resolves at request time | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 160 | baseUrl-only override does not affect other providers | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 173 | can mix baseUrl override and models merge | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 198 | refresh() picks up baseUrl override changes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 217 | built-in provider custom models inherit api and baseUrl without explicit fields | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 242 | non-built-in provider custom models still require baseUrl and apiKey | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 260 | custom provider with same name as built-in merges with built-in models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 273 | custom model with same id replaces built-in model by id | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 290 | custom provider with same name as built-in does not affect other built-in providers | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 301 | provider-level baseUrl applies to both built-in and custom models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 314 | provider-level compat applies to custom models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 344 | model-level compat overrides provider-level compat for custom models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 378 | provider-level compat applies to built-in models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 399 | model schema accepts thinkingLevelMap and compat schema accepts supportsStrictMode and cacheControlFormat | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 436 | compat schema accepts Anthropic eager tool input streaming flag | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 465 | compat schema accepts long cache retention flag | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 494 | model-level baseUrl overrides provider-level baseUrl for custom models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 531 | modelOverrides still apply when provider also defines models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 565 | refresh() reloads merged custom models from disk | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 584 | removing custom models from models.json keeps built-in provider models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 602 | model override applies to a single built-in model | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 624 | model override with compat.openRouterRouting | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 645 | model override deep merges compat settings | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 667 | multiple model overrides on same provider | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 693 | model override combined with baseUrl override | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 719 | model override for non-existent model ID is ignored | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 739 | model override can change cost fields partially | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 760 | model override can add headers at request time | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 783 | refresh() picks up model override changes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 816 | removing model override restores built-in values | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 845 | getProviderDisplayName resolves registered, OAuth, built-in, and fallback names | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 895 | failed registerProvider does not persist invalid streamSimple config | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 909 | failed registerProvider does not remove existing provider models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 954 | unregisterProvider removes custom OAuth provider and restores built-in OAuth provider | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 977 | unregisterProvider removes custom streamSimple override and restores built-in API stream handler | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1008 | baseUrl-only override keeps built-in provider models after refresh | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1019 | models-only override replaces built-in provider models after refresh | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1032 | models plus baseUrl override replaces built-in provider models after refresh | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1046 | models-only custom provider registration survives refresh | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1061 | baseUrl-only override keeps custom provider models after refresh | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1082 | headers-only override keeps custom provider models after refresh | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1124 | apiKey with ! prefix executes command and uses stdout | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1135 | apiKey with ! prefix trims whitespace from command output | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1146 | apiKey with ! prefix handles multiline output (uses trimmed result) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1157 | apiKey with ! prefix returns undefined on command failure | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1168 | apiKey with ! prefix returns undefined on nonexistent command | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1179 | apiKey with ! prefix returns undefined on empty output | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1190 | apiKey as environment variable name resolves to env value | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1212 | apiKey as literal value is used directly when not an env var | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1226 | apiKey command can use shell features like pipes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1238 | command is executed on every provider lookup | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1257 | commands are re-executed across registry instances | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1277 | different commands resolve independently | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1292 | failed commands are retried | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1313 | provider auth status reports apiKey environment variables from models.json | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1340 | provider auth status reports non-env apiKey values from models.json as a config key | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1353 | provider auth status reports command apiKey values from models.json without executing them | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1371 | environment variables are not cached (changes are picked up) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1400 | getAvailable does not execute command-backed apiKey resolution | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1418 | getApiKeyAndHeaders resolves authHeader on every request | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1451 | getApiKeyAndHeaders returns an error for failed authHeader resolution | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 92 | overriding baseUrl keeps all built-in models | 已有 | gi-coding-agent/model_registry_test.go |
+| 105 | overriding baseUrl changes URL on all built-in models | 已有 | gi-coding-agent/model_registry_test.go |
+| 119 | overriding headers resolves at request time | 已有 | gi-coding-agent/model_registry_test.go |
+| 138 | headers-only override resolves at request time | 已有 | gi-coding-agent/model_registry_test.go |
+| 160 | baseUrl-only override does not affect other providers | 已有 | gi-coding-agent/model_registry_test.go |
+| 173 | can mix baseUrl override and models merge | 已有 | gi-coding-agent/model_registry_test.go |
+| 198 | refresh() picks up baseUrl override changes | 已有 | gi-coding-agent/model_registry_test.go |
+| 217 | built-in provider custom models inherit api and baseUrl without explicit fields | 已有 | gi-coding-agent/model_registry_test.go |
+| 242 | non-built-in provider custom models still require baseUrl and apiKey | 已有 | gi-coding-agent/model_registry_test.go |
+| 260 | custom provider with same name as built-in merges with built-in models | 已有 | gi-coding-agent/model_registry_test.go |
+| 273 | custom model with same id replaces built-in model by id | 已有 | gi-coding-agent/model_registry_test.go |
+| 290 | custom provider with same name as built-in does not affect other built-in providers | 已有 | gi-coding-agent/model_registry_test.go |
+| 301 | provider-level baseUrl applies to both built-in and custom models | 已有 | gi-coding-agent/model_registry_test.go |
+| 314 | provider-level compat applies to custom models | 已有 | gi-coding-agent/model_registry_test.go |
+| 344 | model-level compat overrides provider-level compat for custom models | 已有 | gi-coding-agent/model_registry_test.go |
+| 378 | provider-level compat applies to built-in models | 已有 | gi-coding-agent/model_registry_test.go |
+| 399 | model schema accepts thinkingLevelMap and compat schema accepts supportsStrictMode and cacheControlFormat | 已有 | gi-coding-agent/model_registry_test.go |
+| 436 | compat schema accepts Anthropic eager tool input streaming flag | 已有 | gi-coding-agent/model_registry_test.go |
+| 465 | compat schema accepts long cache retention flag | 已有 | gi-coding-agent/model_registry_test.go |
+| 494 | model-level baseUrl overrides provider-level baseUrl for custom models | 已有 | gi-coding-agent/model_registry_test.go |
+| 531 | modelOverrides still apply when provider also defines models | 已有 | gi-coding-agent/model_registry_test.go |
+| 565 | refresh() reloads merged custom models from disk | 已有 | gi-coding-agent/model_registry_test.go |
+| 584 | removing custom models from models.json keeps built-in provider models | 已有 | gi-coding-agent/model_registry_test.go |
+| 602 | model override applies to a single built-in model | 已有 | gi-coding-agent/model_registry_test.go |
+| 624 | model override with compat.openRouterRouting | 已有 | gi-coding-agent/model_registry_test.go |
+| 645 | model override deep merges compat settings | 已有 | gi-coding-agent/model_registry_test.go |
+| 667 | multiple model overrides on same provider | 已有 | gi-coding-agent/model_registry_test.go |
+| 693 | model override combined with baseUrl override | 已有 | gi-coding-agent/model_registry_test.go |
+| 719 | model override for non-existent model ID is ignored | 已有 | gi-coding-agent/model_registry_test.go |
+| 739 | model override can change cost fields partially | 已有 | gi-coding-agent/model_registry_test.go |
+| 760 | model override can add headers at request time | 已有 | gi-coding-agent/model_registry_test.go |
+| 783 | refresh() picks up model override changes | 已有 | gi-coding-agent/model_registry_test.go |
+| 816 | removing model override restores built-in values | 已有 | gi-coding-agent/model_registry_test.go |
+| 845 | getProviderDisplayName resolves registered, OAuth, built-in, and fallback names | 已有 | gi-coding-agent/model_registry_test.go |
+| 895 | failed registerProvider does not persist invalid streamSimple config | 已有 | gi-coding-agent/model_registry_test.go |
+| 909 | failed registerProvider does not remove existing provider models | 已有 | gi-coding-agent/model_registry_test.go |
+| 954 | unregisterProvider removes custom OAuth provider and restores built-in OAuth provider | 已有 | gi-coding-agent/model_registry_test.go |
+| 977 | unregisterProvider removes custom streamSimple override and restores built-in API stream handler | 已有 | gi-coding-agent/model_registry_test.go |
+| 1008 | baseUrl-only override keeps built-in provider models after refresh | 已有 | gi-coding-agent/model_registry_test.go |
+| 1019 | models-only override replaces built-in provider models after refresh | 已有 | gi-coding-agent/model_registry_test.go |
+| 1032 | models plus baseUrl override replaces built-in provider models after refresh | 已有 | gi-coding-agent/model_registry_test.go |
+| 1046 | models-only custom provider registration survives refresh | 已有 | gi-coding-agent/model_registry_test.go |
+| 1061 | baseUrl-only override keeps custom provider models after refresh | 已有 | gi-coding-agent/model_registry_test.go |
+| 1082 | headers-only override keeps custom provider models after refresh | 已有 | gi-coding-agent/model_registry_test.go |
+| 1124 | apiKey with ! prefix executes command and uses stdout | 已有 | gi-coding-agent/model_registry_test.go |
+| 1135 | apiKey with ! prefix trims whitespace from command output | 已有 | gi-coding-agent/model_registry_test.go |
+| 1146 | apiKey with ! prefix handles multiline output (uses trimmed result) | 已有 | gi-coding-agent/model_registry_test.go |
+| 1157 | apiKey with ! prefix returns undefined on command failure | 已有 | gi-coding-agent/model_registry_test.go |
+| 1168 | apiKey with ! prefix returns undefined on nonexistent command | 已有 | gi-coding-agent/model_registry_test.go |
+| 1179 | apiKey with ! prefix returns undefined on empty output | 已有 | gi-coding-agent/model_registry_test.go |
+| 1190 | apiKey as environment variable name resolves to env value | 已有 | gi-coding-agent/model_registry_test.go |
+| 1212 | apiKey as literal value is used directly when not an env var | 已有 | gi-coding-agent/model_registry_test.go |
+| 1226 | apiKey command can use shell features like pipes | 已有 | gi-coding-agent/model_registry_test.go |
+| 1238 | command is executed on every provider lookup | 已有 | gi-coding-agent/model_registry_test.go |
+| 1257 | commands are re-executed across registry instances | 已有 | gi-coding-agent/model_registry_test.go |
+| 1277 | different commands resolve independently | 已有 | gi-coding-agent/model_registry_test.go |
+| 1292 | failed commands are retried | 已有 | gi-coding-agent/model_registry_test.go |
+| 1313 | provider auth status reports apiKey environment variables from models.json | 已有 | gi-coding-agent/model_registry_test.go |
+| 1340 | provider auth status reports non-env apiKey values from models.json as a config key | 已有 | gi-coding-agent/model_registry_test.go |
+| 1353 | provider auth status reports command apiKey values from models.json without executing them | 已有 | gi-coding-agent/model_registry_test.go |
+| 1371 | environment variables are not cached (changes are picked up) | 已有 | gi-coding-agent/model_registry_test.go |
+| 1400 | getAvailable does not execute command-backed apiKey resolution | 已有 | gi-coding-agent/model_registry_test.go |
+| 1418 | getApiKeyAndHeaders resolves authHeader on every request | 已有 | gi-coding-agent/model_registry_test.go |
+| 1451 | getApiKeyAndHeaders returns an error for failed authHeader resolution | 已有 | gi-coding-agent/model_registry_test.go |
 
 ## `model-resolver.test.ts`
 
