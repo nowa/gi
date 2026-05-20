@@ -59,11 +59,12 @@ type CodingAgentFauxState struct {
 }
 
 type CodingAgentTestHarness struct {
-	Session        *AgentSession
-	SessionManager *SessionManager
-	Faux           *CodingAgentFauxState
-	Events         []AgentSessionEvent
-	TempDir        string
+	Session          *AgentSession
+	SessionManager   *SessionManager
+	Faux             *CodingAgentFauxState
+	Events           []AgentSessionEvent
+	TempDir          string
+	ExtensionRuntime *ProtocolExtensionRuntime
 }
 
 func NewCodingAgentTestHarness(options CodingAgentTestHarnessOptions) (*CodingAgentTestHarness, error) {
@@ -109,6 +110,20 @@ func NewCodingAgentTestHarness(options CodingAgentTestHarnessOptions) (*CodingAg
 	session.Subscribe(func(event AgentSessionEvent) {
 		harness.Events = append(harness.Events, event)
 	})
+	return harness, nil
+}
+
+func NewCodingAgentTestHarnessWithProtocolExtensions(options CodingAgentTestHarnessOptions, factories []ProtocolExtensionFactory) (*CodingAgentTestHarness, error) {
+	harness, err := NewCodingAgentTestHarness(options)
+	if err != nil {
+		return nil, err
+	}
+	runtime := NewProtocolExtensionRuntime(CapabilityCommandsRegister)
+	if err := runtime.LoadFactories(factories); err != nil {
+		harness.Cleanup()
+		return nil, err
+	}
+	harness.ExtensionRuntime = runtime
 	return harness, nil
 }
 

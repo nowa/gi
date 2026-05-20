@@ -293,6 +293,85 @@ func TestCodingAgentTestHarnessStreamsThinkingTextToolCallInOrder(t *testing.T) 
 	}
 }
 
+func TestCodingAgentTestHarnessLoadsProtocolExtensionCommands(t *testing.T) {
+	calls := []string{}
+	harness, err := NewCodingAgentTestHarnessWithProtocolExtensions(CodingAgentTestHarnessOptions{}, []ProtocolExtensionFactory{
+		{
+			Path: "<alpha>",
+			Factory: func(ctx *ProtocolExtensionContext) error {
+				return ctx.RegisterCommand("shared-cmd", ProtocolCommandDefinition{
+					Description: "Alpha command",
+					Handler: func(args string) error {
+						calls = append(calls, "alpha:"+args)
+						return nil
+					},
+				})
+			},
+		},
+		{
+			Path: "<beta>",
+			Factory: func(ctx *ProtocolExtensionContext) error {
+				return ctx.RegisterCommand("shared-cmd", ProtocolCommandDefinition{
+					Description: "Beta command",
+					Handler: func(args string) error {
+						calls = append(calls, "beta:"+args)
+						return nil
+					},
+				})
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer harness.Cleanup()
+
+	commands := harness.ExtensionRuntime.RegisteredCommands()
+	got := make([]map[string]string, 0, len(commands))
+	for _, command := range commands {
+		got = append(got, map[string]string{
+			"name":           command.Name,
+			"invocationName": command.InvocationName,
+			"description":    command.Description,
+			"path":           command.SourceInfo.Path,
+		})
+	}
+	want := []map[string]string{
+		{"name": "shared-cmd", "invocationName": "shared-cmd:1", "description": "Alpha command", "path": "<alpha>"},
+		{"name": "shared-cmd", "invocationName": "shared-cmd:2", "description": "Beta command", "path": "<beta>"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("commands = %#v, want %#v", got, want)
+	}
+
+	if err := harness.ExtensionRuntime.GetCommand("shared-cmd:1").Handler("first"); err != nil {
+		t.Fatal(err)
+	}
+	if err := harness.ExtensionRuntime.GetCommand("shared-cmd:2").Handler("second"); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(calls, []string{"alpha:first", "beta:second"}) {
+		t.Fatalf("calls = %#v", calls)
+	}
+}
+
+func TestProtocolExtensionCommandRegistrationRequiresCapability(t *testing.T) {
+	runtime := NewProtocolExtensionRuntime()
+	err := runtime.LoadFactories([]ProtocolExtensionFactory{{
+		Path: "<missing-capability>",
+		Factory: func(ctx *ProtocolExtensionContext) error {
+			return ctx.RegisterCommand("blocked", ProtocolCommandDefinition{Description: "Blocked"})
+		},
+	}})
+	if err == nil {
+		t.Fatal("expected missing capability error")
+	}
+	protocolErr, ok := err.(ProtocolRuntimeError)
+	if !ok || protocolErr.Code != "missing_capability" {
+		t.Fatalf("err = %#v, want missing_capability", err)
+	}
+}
+
 func TestCodingAgentTestHarnessSessionPersistence(t *testing.T) {
 	harness := mustNewCodingAgentHarness(t, CodingAgentTestHarnessOptions{
 		Responses: []CodingAgentTestHarnessResponse{TextHarnessResponse("persisted")},

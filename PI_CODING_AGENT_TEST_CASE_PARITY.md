@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `762`
+- `已有`: `763`
 - `待实现`: `0`
-- `需要协议 runtime`: `275`
+- `需要协议 runtime`: `274`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -113,7 +113,7 @@ Status meanings:
 | `stdout-cleanliness.test.ts` | 2 | 已有 | gi-coding-agent/stdout_cleanliness_test.go |
 | `syntax-highlight.test.ts` | 5 | 已有 | gi-coding-agent/syntax_highlight_test.go |
 | `system-prompt.test.ts` | 7 | 已有 | gi-coding-agent/system_prompt_test.go |
-| `test-harness.test.ts` | 15 | 部分已有 / 需要协议 runtime | gi-coding-agent/test_harness_test.go; inline extension factory case waits for protocol runtime |
+| `test-harness.test.ts` | 15 | 已有 | gi-coding-agent/test_harness_test.go |
 | `theme-export.test.ts` | 2 | 已有 | gi-coding-agent/theme_export_test.go |
 | `tool-execution-component.test.ts` | 16 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `tools.test.ts` | 68 | 已有 | gi-coding-agent/tools_read_test.go, gi-coding-agent/tools_bash_advanced_test.go, gi-coding-agent/tools_search_test.go, gi-coding-agent/tools_edit_fuzzy_test.go |
@@ -1772,8 +1772,8 @@ Gi coverage / implementation target: `gi-coding-agent/system_prompt_test.go`
 ## `test-harness.test.ts`
 
 Pi cases: `15`  
-Status: `部分已有 / 需要协议 runtime`
-Gi coverage / implementation target: `gi-coding-agent/test_harness_test.go; inline extension factory case waits for protocol runtime`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/test_harness_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -1790,7 +1790,7 @@ Gi coverage / implementation target: `gi-coding-agent/test_harness_test.go; inli
 | 177 | streams thinking deltas | 已有 | gi-coding-agent/test_harness_test.go |
 | 197 | streams tool call deltas | 已有 | gi-coding-agent/test_harness_test.go |
 | 224 | streams thinking then text then tool call in order | 已有 | gi-coding-agent/test_harness_test.go |
-| 260 | loads inline extension factories and disambiguates duplicate commands | 需要协议 runtime | 按 protocol/spec 的 extension command registry 和 invocation disambiguation 落地 |
+| 260 | loads inline extension factories and disambiguates duplicate commands | 已有 | gi-coding-agent/test_harness_test.go |
 | 312 | session persistence works | 已有 | gi-coding-agent/test_harness_test.go |
 
 ## `theme-export.test.ts`
