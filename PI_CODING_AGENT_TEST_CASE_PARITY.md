@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `737`
-- `待实现`: `25`
+- `已有`: `762`
+- `待实现`: `0`
 - `需要协议 runtime`: `275`
 - `不适用`: `0`
 
@@ -78,7 +78,7 @@ Status meanings:
 | `interactive-mode-clone-command.test.ts` | 2 | 已有 | gi-coding-agent/interactive_mode_test.go |
 | `interactive-mode-compaction.test.ts` | 1 | 已有 | gi-coding-agent/interactive_mode_test.go |
 | `interactive-mode-import-command.test.ts` | 6 | 已有 | gi-coding-agent/interactive_mode_test.go |
-| `interactive-mode-status.test.ts` | 25 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `interactive-mode-status.test.ts` | 25 | 已有 | gi-coding-agent/interactive_status_test.go |
 | `interactive-mode-suspend.test.ts` | 3 | 已有 | gi-coding-agent/interactive_mode_test.go |
 | `keybindings-migration.test.ts` | 3 | 已有 | gi-coding-agent/keybindings_test.go |
 | `model-registry.test.ts` | 64 | 已有 | gi-coding-agent/model_registry_test.go |
@@ -923,36 +923,36 @@ Gi coverage / implementation target: `gi-coding-agent/interactive_mode_test.go`
 ## `interactive-mode-status.test.ts`
 
 Pi cases: `25`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/interactive_status_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 41 | coalesces immediately-sequential status messages | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 60 | appends a new status line if something else was added in between | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 83 | applies expansion state to the active header and chat entries | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 104 | persists theme changes to settings manager | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 129 | does not persist invalid theme names | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 152 | stores wrapper factories and rebuilds autocomplete immediately | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 168 | stacks wrapper factories over a fresh base provider | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 407 | shows a compact resource listing by default | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 423 | shows full resource listing when expanded | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 440 | shows full resource listing on verbose startup even when tool output is collapsed | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 458 | abbreviates extensions in compact listing | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 474 | captures mixed extension layouts in compact output | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 490 | adds more parent folders until local extension labels are unique | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 536 | strips index.ts from local extension label, showing parent dir | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 564 | strips index.js from local extension label, showing parent dir | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 592 | mixed single-file and subdirectory index.ts extensions strip index.ts | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 629 | multiple index.ts with unique parent dirs need no disambiguation | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 666 | multiple index.ts with same parent dir name disambiguated with grandparent | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 703 | non-index file in subdirectory stays as filename | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 731 | package extensions still strip index.ts correctly (regression guard) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 758 | captures mixed extension layouts in expanded output | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 788 | shows context paths relative to cwd while preserving full external paths | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 807 | shows full context paths when expanded | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 828 | does not show verbose listing on quiet startup during reload | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 843 | still shows diagnostics on quiet startup when requested | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 41 | coalesces immediately-sequential status messages | 已有 | gi-coding-agent/interactive_status_test.go |
+| 60 | appends a new status line if something else was added in between | 已有 | gi-coding-agent/interactive_status_test.go |
+| 83 | applies expansion state to the active header and chat entries | 已有 | gi-coding-agent/interactive_status_test.go |
+| 104 | persists theme changes to settings manager | 已有 | gi-coding-agent/interactive_status_test.go |
+| 129 | does not persist invalid theme names | 已有 | gi-coding-agent/interactive_status_test.go |
+| 152 | stores wrapper factories and rebuilds autocomplete immediately | 已有 | gi-coding-agent/interactive_status_test.go |
+| 168 | stacks wrapper factories over a fresh base provider | 已有 | gi-coding-agent/interactive_status_test.go |
+| 407 | shows a compact resource listing by default | 已有 | gi-coding-agent/interactive_status_test.go |
+| 423 | shows full resource listing when expanded | 已有 | gi-coding-agent/interactive_status_test.go |
+| 440 | shows full resource listing on verbose startup even when tool output is collapsed | 已有 | gi-coding-agent/interactive_status_test.go |
+| 458 | abbreviates extensions in compact listing | 已有 | gi-coding-agent/interactive_status_test.go |
+| 474 | captures mixed extension layouts in compact output | 已有 | gi-coding-agent/interactive_status_test.go |
+| 490 | adds more parent folders until local extension labels are unique | 已有 | gi-coding-agent/interactive_status_test.go |
+| 536 | strips index.ts from local extension label, showing parent dir | 已有 | gi-coding-agent/interactive_status_test.go |
+| 564 | strips index.js from local extension label, showing parent dir | 已有 | gi-coding-agent/interactive_status_test.go |
+| 592 | mixed single-file and subdirectory index.ts extensions strip index.ts | 已有 | gi-coding-agent/interactive_status_test.go |
+| 629 | multiple index.ts with unique parent dirs need no disambiguation | 已有 | gi-coding-agent/interactive_status_test.go |
+| 666 | multiple index.ts with same parent dir name disambiguated with grandparent | 已有 | gi-coding-agent/interactive_status_test.go |
+| 703 | non-index file in subdirectory stays as filename | 已有 | gi-coding-agent/interactive_status_test.go |
+| 731 | package extensions still strip index.ts correctly (regression guard) | 已有 | gi-coding-agent/interactive_status_test.go |
+| 758 | captures mixed extension layouts in expanded output | 已有 | gi-coding-agent/interactive_status_test.go |
+| 788 | shows context paths relative to cwd while preserving full external paths | 已有 | gi-coding-agent/interactive_status_test.go |
+| 807 | shows full context paths when expanded | 已有 | gi-coding-agent/interactive_status_test.go |
+| 828 | does not show verbose listing on quiet startup during reload | 已有 | gi-coding-agent/interactive_status_test.go |
+| 843 | still shows diagnostics on quiet startup when requested | 已有 | gi-coding-agent/interactive_status_test.go |
 
 ## `interactive-mode-suspend.test.ts`
 

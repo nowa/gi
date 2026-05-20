@@ -20,11 +20,23 @@ type InteractiveMode struct {
 	Footer         InteractiveFooter
 	Settings       InteractiveSettings
 
-	LoadingAnimation            InteractiveStopper
-	AutoCompactionLoader        InteractiveStopper
-	DefaultEditor               *InteractiveDefaultEditor
-	AutoCompactionEscapeHandler func()
-	Suspend                     InteractiveSuspendOperations
+	LoadingAnimation               InteractiveStopper
+	AutoCompactionLoader           InteractiveStopper
+	DefaultEditor                  *InteractiveDefaultEditor
+	AutoCompactionEscapeHandler    func()
+	Suspend                        InteractiveSuspendOperations
+	lastStatusIndex                int
+	lastStatusValid                bool
+	ToolOutputExpanded             bool
+	CustomHeader                   InteractiveExpandable
+	BuiltInHeader                  InteractiveExpandable
+	ChatExpandables                []InteractiveExpandable
+	ThemeSettings                  InteractiveThemeSettings
+	AutocompleteProviderWrappers   []AutocompleteProviderFactory
+	CreateBaseAutocompleteProvider func() AutocompleteProvider
+	DefaultAutocompleteEditor      AutocompleteEditor
+	AutocompleteEditor             AutocompleteEditor
+	LoadedResources                InteractiveLoadedResources
 
 	RenderCurrentSessionState  func()
 	RebuildChatFromMessages    func()
