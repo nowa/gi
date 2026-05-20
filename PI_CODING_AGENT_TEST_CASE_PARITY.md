@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `690`
-- `待实现`: `73`
+- `已有`: `696`
+- `待实现`: `67`
 - `需要协议 runtime`: `274`
 - `不适用`: `0`
 
@@ -31,7 +31,7 @@ Status meanings:
 
 | Pi file | Cases | Status | Gi coverage / next step |
 |---|---:|---|---|
-| `agent-session-auto-compaction-queue.test.ts` | 6 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `agent-session-auto-compaction-queue.test.ts` | 6 | 已有 | gi-coding-agent/agent_session_auto_compaction_test.go |
 | `agent-session-branching.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_branching_test.go |
 | `agent-session-compaction.test.ts` | 5 | 已有 | gi-coding-agent/agent_session_compaction_test.go |
 | `agent-session-concurrent.test.ts` | 7 | 部分已有 / 需要协议 runtime | gi-coding-agent/agent_session_concurrent_test.go; extension event-order cases wait for protocol runtime |
@@ -126,17 +126,17 @@ Status meanings:
 ## `agent-session-auto-compaction-queue.test.ts`
 
 Pi cases: `6`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_auto_compaction_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 100 | should resume after threshold compaction when only agent-level queued messages exist | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 126 | should not compact repeatedly after overflow recovery already attempted | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 181 | should ignore stale pre-compaction assistant usage on pre-prompt compaction checks | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 238 | should trigger threshold compaction for error messages using last successful usage | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 308 | should not trigger threshold compaction for error messages when no prior usage exists | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 356 | should not trigger threshold compaction for error messages when only kept pre-compaction usage exists | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 100 | should resume after threshold compaction when only agent-level queued messages exist | 已有 | gi-coding-agent/agent_session_auto_compaction_test.go |
+| 126 | should not compact repeatedly after overflow recovery already attempted | 已有 | gi-coding-agent/agent_session_auto_compaction_test.go |
+| 181 | should ignore stale pre-compaction assistant usage on pre-prompt compaction checks | 已有 | gi-coding-agent/agent_session_auto_compaction_test.go |
+| 238 | should trigger threshold compaction for error messages using last successful usage | 已有 | gi-coding-agent/agent_session_auto_compaction_test.go |
+| 308 | should not trigger threshold compaction for error messages when no prior usage exists | 已有 | gi-coding-agent/agent_session_auto_compaction_test.go |
+| 356 | should not trigger threshold compaction for error messages when only kept pre-compaction usage exists | 已有 | gi-coding-agent/agent_session_auto_compaction_test.go |
 
 ## `agent-session-branching.test.ts`
 

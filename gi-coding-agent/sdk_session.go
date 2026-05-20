@@ -20,6 +20,8 @@ type AgentSessionOptions struct {
 	CompactionSummarizer AgentSessionCompactionSummarizer
 	BranchSummarizer     AgentSessionBranchSummarizer
 	RetrySettings        *AgentSessionRetrySettings
+	AutoCompactionRunner AgentSessionAutoCompactionRunner
+	AgentContinue        func() error
 	Responder            AgentSessionResponder
 }
 
@@ -32,12 +34,16 @@ type AgentSession struct {
 	CompactionSummarizer AgentSessionCompactionSummarizer
 	BranchSummarizer     AgentSessionBranchSummarizer
 	RetrySettings        AgentSessionRetrySettings
+	AutoCompactionRunner AgentSessionAutoCompactionRunner
+	AgentContinue        func() error
 	Responder            AgentSessionResponder
 	eventListeners       []AgentSessionEventListener
 	branchSummaryAbort   chan struct{}
 	isCompacting         bool
 	isRetrying           bool
 	isStreaming          bool
+	overflowRecovered    bool
+	agentQueuedMessages  []llm.Message
 	steeringMessages     []string
 	followUpMessages     []string
 }
@@ -164,6 +170,8 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		CompactionSummarizer: compactionSummarizer,
 		BranchSummarizer:     branchSummarizer,
 		RetrySettings:        retrySettings,
+		AutoCompactionRunner: options.AutoCompactionRunner,
+		AgentContinue:        options.AgentContinue,
 		Responder:            responder,
 	}, nil
 }
