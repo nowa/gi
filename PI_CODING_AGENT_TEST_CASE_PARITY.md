@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `965`
+- `已有`: `970`
 - `待实现`: `0`
-- `需要协议 runtime`: `72`
+- `需要协议 runtime`: `67`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -1204,11 +1204,11 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1076 | should generate correct package identity for protocol and git:-prefixed URLs | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 1089 | should deduplicate git URLs with different supported formats | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 1112 | should handle HTTPS URLs with refs in resolve | 已有 | gi-coding-agent/package_manager_source_test.go |
-| 1124 | should exclude extensions with ! pattern | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1137 | should filter themes with glob patterns | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1152 | should filter prompts with exclusion pattern | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1165 | should filter skills with exclusion pattern | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1185 | should work without patterns (backward compatible) | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1124 | should exclude extensions with ! pattern | 已有 | gi-coding-agent/resource_loader_test.go (Gi protocol descriptor equivalent) |
+| 1137 | should filter themes with glob patterns | 已有 | gi-coding-agent/resource_loader_test.go |
+| 1152 | should filter prompts with exclusion pattern | 已有 | gi-coding-agent/resource_loader_test.go |
+| 1165 | should filter skills with exclusion pattern | 已有 | gi-coding-agent/resource_loader_test.go |
+| 1185 | should work without patterns (backward compatible) | 已有 | gi-coding-agent/resource_loader_test.go |
 | 1199 | should support glob patterns in manifest extensions | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
 | 1222 | should support glob patterns in manifest skills | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
 | 1249 | should expand positive glob manifest entries before collecting skills | 已有 | gi-coding-agent/protocol_package_resolver_test.go |

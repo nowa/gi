@@ -149,6 +149,39 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("applies bang filters for top-level settings resources", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		writeGiProtocolExtensionDescriptor(t, filepath.Join(agentDir, "extensions", "keep.gi.json"))
+		writeGiProtocolExtensionDescriptor(t, filepath.Join(agentDir, "extensions", "remove.gi.json"))
+		writeResourceSkill(t, filepath.Join(agentDir, "skills", "good-skill", "SKILL.md"), "good-skill", "Good", "Content")
+		writeResourceSkill(t, filepath.Join(agentDir, "skills", "bad-skill", "SKILL.md"), "bad-skill", "Bad", "Content")
+		writeResourceFile(t, filepath.Join(agentDir, "prompts", "review.md"), "Review code")
+		writeResourceFile(t, filepath.Join(agentDir, "prompts", "explain.md"), "Explain code")
+		writeJSON(t, filepath.Join(agentDir, "themes", "dark.json"), map[string]any{"name": "dark"})
+		writeJSON(t, filepath.Join(agentDir, "themes", "funky.json"), map[string]any{"name": "funky"})
+		settings := NewInMemorySettingsManager(map[string]any{
+			"extensions": []any{"!**/remove.gi.json"},
+			"skills":     []any{"!**/bad-skill"},
+			"prompts":    []any{"!explain.md"},
+			"themes":     []any{"!funky.json"},
+		})
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings})
+		loader.Reload()
+
+		if !protocolExtensionHasSuffix(loader.GetExtensions().Extensions, "keep.gi.json") ||
+			protocolExtensionHasSuffix(loader.GetExtensions().Extensions, "remove.gi.json") ||
+			!resourceHasSkill(loader.GetSkills().Skills, "good-skill") ||
+			resourceHasSkill(loader.GetSkills().Skills, "bad-skill") ||
+			!resourceHasPrompt(loader.GetPrompts().Prompts, "review") ||
+			resourceHasPrompt(loader.GetPrompts().Prompts, "explain") ||
+			resourceFindTheme(loader.GetThemes().Themes, "dark") == nil ||
+			resourceFindTheme(loader.GetThemes().Themes, "funky") != nil {
+			t.Fatalf("resources not filtered: extensions=%#v skills=%#v prompts=%#v themes=%#v",
+				loader.GetExtensions(), loader.GetSkills(), loader.GetPrompts(), loader.GetThemes())
+		}
+	})
+
 	t.Run("dedupes symlinked user and project extensions with project path winning", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		shared := filepath.Join(filepath.Dir(agentDir), "shared-extensions")
