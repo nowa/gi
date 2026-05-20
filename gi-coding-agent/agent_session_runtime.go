@@ -412,11 +412,7 @@ func (s *AgentSession) compactManual(customInstructions string) (agentharness.Co
 	if preparation == nil {
 		return agentharness.CompactionResult{}, errors.New("Nothing to compact (session too small)")
 	}
-	summarizer := s.CompactionSummarizer
-	if summarizer == nil {
-		summarizer = DefaultAgentSessionCompactionSummarizer
-	}
-	result, err := summarizer(*preparation, customInstructions)
+	result, fromExtension, err := s.resolveCompactionResult(*preparation, branch, customInstructions)
 	if err != nil {
 		return agentharness.CompactionResult{}, err
 	}
@@ -429,8 +425,36 @@ func (s *AgentSession) compactManual(customInstructions string) (agentharness.Co
 	if result.TokensBefore == 0 {
 		result.TokensBefore = preparation.TokensBefore
 	}
-	s.SessionManager.AppendCompaction(result.Summary, result.FirstKeptEntryID, result.TokensBefore)
+	entryID := s.SessionManager.AppendCompaction(result.Summary, result.FirstKeptEntryID, result.TokensBefore)
+	if entry := s.SessionManager.GetEntry(entryID); entry != nil {
+		_ = s.emitExtensionEvent(ProtocolSessionEvent{Type: "session_compact", CompactionEntry: entry, FromExtension: fromExtension})
+	}
 	return result, nil
+}
+
+func (s *AgentSession) resolveCompactionResult(preparation agentharness.CompactionPreparation, branch []FileEntry, customInstructions string) (agentharness.CompactionResult, bool, error) {
+	if s.ExtensionRuntime != nil {
+		event := ProtocolSessionEvent{
+			Type:          "session_before_compact",
+			Preparation:   &preparation,
+			BranchEntries: append([]FileEntry(nil), branch...),
+		}
+		result, err := s.ExtensionRuntime.EmitSessionEvent(event)
+		if err == nil {
+			if result.Cancel {
+				return agentharness.CompactionResult{}, false, errors.New("Compaction cancelled")
+			}
+			if result.Compaction != nil {
+				return *result.Compaction, true, nil
+			}
+		}
+	}
+	summarizer := s.CompactionSummarizer
+	if summarizer == nil {
+		summarizer = DefaultAgentSessionCompactionSummarizer
+	}
+	result, err := summarizer(preparation, customInstructions)
+	return result, false, err
 }
 
 func DefaultAgentSessionCompactionSummarizer(preparation agentharness.CompactionPreparation, customInstructions string) (agentharness.CompactionResult, error) {

@@ -3,6 +3,8 @@ package gicodingagent
 import (
 	"fmt"
 	"sort"
+
+	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 )
 
 const CapabilityCommandsRegister = "commands.register"
@@ -75,10 +77,15 @@ type ProtocolSessionEvent struct {
 	Text                string
 	Steering            []string
 	FollowUp            []string
+	Preparation         *agentharness.CompactionPreparation
+	BranchEntries       []FileEntry
+	CompactionEntry     *FileEntry
+	FromExtension       bool
 }
 
 type ProtocolEventResult struct {
-	Cancel bool
+	Cancel     bool
+	Compaction *agentharness.CompactionResult
 }
 
 type ProtocolEventHandler func(ProtocolSessionEvent) (ProtocolEventResult, error)
@@ -143,6 +150,9 @@ func (r *ProtocolExtensionRuntime) EmitSessionEvent(event ProtocolSessionEvent) 
 		if result.Cancel {
 			combined.Cancel = true
 			return combined, nil
+		}
+		if result.Compaction != nil && combined.Compaction == nil {
+			combined.Compaction = result.Compaction
 		}
 	}
 	return combined, nil

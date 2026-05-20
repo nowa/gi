@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `798`
+- `已有`: `809`
 - `待实现`: `0`
-- `需要协议 runtime`: `239`
+- `需要协议 runtime`: `228`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -51,8 +51,8 @@ Status meanings:
 | `clipboard-image-bmp-conversion.test.ts` | 1 | 已有 | gi-coding-agent/clipboard_image_test.go |
 | `clipboard-image.test.ts` | 5 | 已有 | gi-coding-agent/clipboard_image_test.go |
 | `clipboard.test.ts` | 5 | 已有 | gi-coding-agent/clipboard_test.go |
-| `compaction-extensions-example.test.ts` | 2 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `compaction-extensions.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `compaction-extensions-example.test.ts` | 2 | 已有 | gi-coding-agent/agent_session_compaction_extensions_test.go |
+| `compaction-extensions.test.ts` | 8 | 已有 | gi-coding-agent/agent_session_compaction_extensions_test.go |
 | `compaction-serialization.test.ts` | 3 | 已有 | gi-agent-core/harness/compaction_test.go |
 | `compaction-summary-reasoning.test.ts` | 4 | 已有 | gi-agent-core/harness/compaction_summary_reasoning_test.go |
 | `compaction.test.ts` | 23 | 已有 | gi-agent-core/harness/compaction_test.go, gi-agent-core/harness/compaction_pi_parity_test.go |
@@ -118,7 +118,7 @@ Status meanings:
 | `tool-execution-component.test.ts` | 16 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `tools.test.ts` | 68 | 已有 | gi-coding-agent/tools_read_test.go, gi-coding-agent/tools_bash_advanced_test.go, gi-coding-agent/tools_search_test.go, gi-coding-agent/tools_edit_fuzzy_test.go |
 | `tree-selector.test.ts` | 15 | 已有 | gi-coding-agent/tree_selector_test.go |
-| `trigger-compact-extension.test.ts` | 1 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `trigger-compact-extension.test.ts` | 1 | 已有 | gi-coding-agent/trigger_compact_extension_test.go |
 | `truncate-to-width.test.ts` | 6 | 已有 | gi-tui/utils_test.go |
 | `user-message.test.ts` | 1 | 已有 | gi-coding-agent/message_components_test.go |
 | `version-check.test.ts` | 5 | 已有 | gi-coding-agent/version_check_test.go |
@@ -469,30 +469,30 @@ Gi coverage / implementation target: `gi-coding-agent/clipboard_test.go`
 ## `compaction-extensions-example.test.ts`
 
 Pi cases: `2`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_compaction_extensions_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 9 | custom compaction example should type-check correctly | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 50 | compact event should have correct fields | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 9 | custom compaction example should type-check correctly | 已有 | gi-coding-agent/agent_session_compaction_extensions_test.go |
+| 50 | compact event should have correct fields | 已有 | gi-coding-agent/agent_session_compaction_extensions_test.go |
 
 ## `compaction-extensions.test.ts`
 
 Pi cases: `8`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_compaction_extensions_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 122 | should emit before_compact and compact events | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 158 | should allow extensions to cancel compaction | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 171 | should allow extensions to provide custom compaction | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 208 | should include entries in compact event after compaction is saved | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 229 | should continue with default compaction if extension throws error | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 276 | should call multiple extensions in order | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 351 | should pass correct data in before_compact event | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 390 | should use extension compaction even with different values | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 122 | should emit before_compact and compact events | 已有 | gi-coding-agent/agent_session_compaction_extensions_test.go |
+| 158 | should allow extensions to cancel compaction | 已有 | gi-coding-agent/agent_session_compaction_extensions_test.go |
+| 171 | should allow extensions to provide custom compaction | 已有 | gi-coding-agent/agent_session_compaction_extensions_test.go |
+| 208 | should include entries in compact event after compaction is saved | 已有 | gi-coding-agent/agent_session_compaction_extensions_test.go |
+| 229 | should continue with default compaction if extension throws error | 已有 | gi-coding-agent/agent_session_compaction_extensions_test.go |
+| 276 | should call multiple extensions in order | 已有 | gi-coding-agent/agent_session_compaction_extensions_test.go |
+| 351 | should pass correct data in before_compact event | 已有 | gi-coding-agent/agent_session_compaction_extensions_test.go |
+| 390 | should use extension compaction even with different values | 已有 | gi-coding-agent/agent_session_compaction_extensions_test.go |
 
 ## `compaction-serialization.test.ts`
 
@@ -1933,12 +1933,12 @@ Gi coverage / implementation target: `gi-coding-agent/tree_selector_test.go`
 ## `trigger-compact-extension.test.ts`
 
 Pi cases: `1`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/trigger_compact_extension_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 25 | only auto-compacts when context usage crosses the threshold | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 25 | only auto-compacts when context usage crosses the threshold | 已有 | gi-coding-agent/trigger_compact_extension_test.go |
 
 ## `truncate-to-width.test.ts`
 
