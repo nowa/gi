@@ -126,7 +126,8 @@ func (t EditTool) Execute(_ string, input EditToolInput) (FileToolResult, error)
 		if err := t.ops.WriteFile(absolutePath, []byte(nextContent)); err != nil {
 			return err
 		}
-		result = FileToolResult{Text: fmt.Sprintf("Successfully edited %s", input.Path)}
+		text := fmt.Sprintf("Successfully edited %s", input.Path)
+		result = FileToolResult{Text: text, Content: []llm.ContentPart{llm.Text(text)}}
 		return nil
 	})
 	return result, err
@@ -146,7 +147,8 @@ func (t WriteTool) Execute(_ string, input WriteToolInput) (FileToolResult, erro
 	if err != nil {
 		return FileToolResult{}, err
 	}
-	return FileToolResult{Text: fmt.Sprintf("Successfully wrote %d bytes to %s", len(input.Content), input.Path)}, nil
+	text := fmt.Sprintf("Successfully wrote %d bytes to %s", len(input.Content), input.Path)
+	return FileToolResult{Text: text, Content: []llm.ContentPart{llm.Text(text)}}, nil
 }
 
 func (t ReadTool) Execute(_ string, input ReadToolInput) (FileToolResult, error) {

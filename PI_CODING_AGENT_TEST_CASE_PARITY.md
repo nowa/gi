@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `490`
-- `待实现`: `254`
+- `已有`: `493`
+- `待实现`: `251`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -1848,8 +1848,8 @@ Gi coverage / implementation target: `部分已有: gi-coding-agent/tools_read_t
 | 155 | should include truncation details when truncated | 已有 | gi-coding-agent/tools_read_test.go |
 | 170 | should detect image MIME type from file magic (not extension) | 已有 | gi-coding-agent/tools_read_test.go |
 | 192 | should treat files with image extension but non-image content as text | 已有 | gi-coding-agent/tools_read_test.go |
-| 205 | should write file contents | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 216 | should create parent directories | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 205 | should write file contents | 已有 | gi-coding-agent/tools_write_edit_test.go |
+| 216 | should create parent directories | 已有 | gi-coding-agent/tools_write_edit_test.go |
 | 227 | should replace text in file | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 244 | should fail if text not found | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 257 | should include ENOENT when the edit target does not exist | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -1857,7 +1857,7 @@ Gi coverage / implementation target: `部分已有: gi-coding-agent/tools_read_t
 | 281 | should replace multiple disjoint regions in one call | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 299 | should collapse large unchanged gaps in multi-edit diffs | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 322 | should match edits against the original file, not incrementally | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 337 | should fail when edits is empty | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 337 | should fail when edits is empty | 已有 | gi-coding-agent/tools_write_edit_test.go |
 | 349 | should fail when multi-edit regions overlap | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 364 | should not partially apply edits when one edit fails | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 382 | should include EACCES for read-only files | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
