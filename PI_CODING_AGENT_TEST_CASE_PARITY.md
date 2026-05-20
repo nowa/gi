@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `723`
-- `待实现`: `40`
-- `需要协议 runtime`: `274`
+- `已有`: `737`
+- `待实现`: `25`
+- `需要协议 runtime`: `275`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -113,7 +113,7 @@ Status meanings:
 | `stdout-cleanliness.test.ts` | 2 | 已有 | gi-coding-agent/stdout_cleanliness_test.go |
 | `syntax-highlight.test.ts` | 5 | 已有 | gi-coding-agent/syntax_highlight_test.go |
 | `system-prompt.test.ts` | 7 | 已有 | gi-coding-agent/system_prompt_test.go |
-| `test-harness.test.ts` | 15 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `test-harness.test.ts` | 15 | 部分已有 / 需要协议 runtime | gi-coding-agent/test_harness_test.go; inline extension factory case waits for protocol runtime |
 | `theme-export.test.ts` | 2 | 已有 | gi-coding-agent/theme_export_test.go |
 | `tool-execution-component.test.ts` | 16 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `tools.test.ts` | 68 | 已有 | gi-coding-agent/tools_read_test.go, gi-coding-agent/tools_bash_advanced_test.go, gi-coding-agent/tools_search_test.go, gi-coding-agent/tools_edit_fuzzy_test.go |
@@ -1772,26 +1772,26 @@ Gi coverage / implementation target: `gi-coding-agent/system_prompt_test.go`
 ## `test-harness.test.ts`
 
 Pi cases: `15`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `部分已有 / 需要协议 runtime`
+Gi coverage / implementation target: `gi-coding-agent/test_harness_test.go; inline extension factory case waits for protocol runtime`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 19 | simple text response | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 34 | response sequence | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 50 | tool call response triggers tool execution | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 78 | error response | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 91 | retry on transient error | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 109 | custom usage numbers | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 121 | event capture | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 136 | context capture | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 147 | wraps around when more calls than responses | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 163 | streams text deltas | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 177 | streams thinking deltas | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 197 | streams tool call deltas | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 224 | streams thinking then text then tool call in order | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 260 | loads inline extension factories and disambiguates duplicate commands | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 312 | session persistence works | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 19 | simple text response | 已有 | gi-coding-agent/test_harness_test.go |
+| 34 | response sequence | 已有 | gi-coding-agent/test_harness_test.go |
+| 50 | tool call response triggers tool execution | 已有 | gi-coding-agent/test_harness_test.go |
+| 78 | error response | 已有 | gi-coding-agent/test_harness_test.go |
+| 91 | retry on transient error | 已有 | gi-coding-agent/test_harness_test.go |
+| 109 | custom usage numbers | 已有 | gi-coding-agent/test_harness_test.go |
+| 121 | event capture | 已有 | gi-coding-agent/test_harness_test.go |
+| 136 | context capture | 已有 | gi-coding-agent/test_harness_test.go |
+| 147 | wraps around when more calls than responses | 已有 | gi-coding-agent/test_harness_test.go |
+| 163 | streams text deltas | 已有 | gi-coding-agent/test_harness_test.go |
+| 177 | streams thinking deltas | 已有 | gi-coding-agent/test_harness_test.go |
+| 197 | streams tool call deltas | 已有 | gi-coding-agent/test_harness_test.go |
+| 224 | streams thinking then text then tool call in order | 已有 | gi-coding-agent/test_harness_test.go |
+| 260 | loads inline extension factories and disambiguates duplicate commands | 需要协议 runtime | 按 protocol/spec 的 extension command registry 和 invocation disambiguation 落地 |
+| 312 | session persistence works | 已有 | gi-coding-agent/test_harness_test.go |
 
 ## `theme-export.test.ts`
 

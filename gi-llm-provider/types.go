@@ -214,11 +214,15 @@ type StreamOptions struct {
 type SimpleStreamOptions = StreamOptions
 
 type AssistantMessageEvent struct {
-	Type    string
-	Partial Message
-	Message Message
-	Error   Message
-	Reason  string
+	Type         string
+	Partial      Message
+	Message      Message
+	Error        Message
+	Reason       string
+	ContentIndex int
+	Delta        string
+	Content      string
+	ToolCall     ContentPart
 }
 
 type Tool struct {

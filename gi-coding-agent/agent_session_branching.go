@@ -152,8 +152,76 @@ func sessionMessageToLLM(message any) (llm.Message, bool) {
 		if role == "" {
 			return llm.Message{}, false
 		}
-		return llm.Message{Role: role, Content: []llm.ContentPart{llm.Text(extractMessageText(typed))}}, true
+		message := llm.Message{
+			Role:         role,
+			Content:      sessionMessageContentToLLM(typed["content"]),
+			API:          stringFromSessionMessageValue(typed["api"]),
+			Provider:     stringFromSessionMessageValue(typed["provider"]),
+			Model:        stringFromSessionMessageValue(typed["model"]),
+			StopReason:   stringFromSessionMessageValue(typed["stopReason"]),
+			ErrorMessage: stringFromSessionMessageValue(typed["errorMessage"]),
+			ToolCallID:   stringFromSessionMessageValue(typed["toolCallID"]),
+			ToolName:     stringFromSessionMessageValue(typed["toolName"]),
+		}
+		if timestamp, ok := messageTimestampMillis(typed); ok {
+			message.Timestamp = timestamp
+		}
+		if usage, ok := usageFromSessionMessageValue(typed["usage"]); ok {
+			message.Usage = usage
+		}
+		if len(message.Content) == 0 {
+			message.Content = []llm.ContentPart{llm.Text(extractMessageText(typed))}
+		}
+		return message, true
 	default:
 		return llm.Message{}, false
 	}
+}
+
+func sessionMessageContentToLLM(value any) []llm.ContentPart {
+	switch content := value.(type) {
+	case []llm.ContentPart:
+		return append([]llm.ContentPart(nil), content...)
+	case string:
+		return []llm.ContentPart{llm.Text(content)}
+	case []any:
+		parts := make([]llm.ContentPart, 0, len(content))
+		for _, item := range content {
+			block, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			blockType, _ := block["type"].(string)
+			switch blockType {
+			case llm.ContentText:
+				parts = append(parts, llm.Text(stringFromSessionMessageValue(block["text"])))
+			case llm.ContentThinking:
+				parts = append(parts, llm.Thinking(stringFromSessionMessageValue(block["thinking"])))
+			case llm.ContentToolCall:
+				parts = append(parts, llm.ToolCall(
+					stringFromSessionMessageValue(block["id"]),
+					stringFromSessionMessageValue(block["name"]),
+					mapFromSessionMessageValue(block["arguments"]),
+				))
+			}
+		}
+		return parts
+	default:
+		return nil
+	}
+}
+
+func stringFromSessionMessageValue(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func mapFromSessionMessageValue(value any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	if result, ok := value.(map[string]any); ok {
+		return result
+	}
+	return nil
 }

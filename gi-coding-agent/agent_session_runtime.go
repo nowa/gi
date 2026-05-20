@@ -1,6 +1,7 @@
 package gicodingagent
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"sort"
@@ -11,20 +12,21 @@ import (
 )
 
 type AgentSessionEvent struct {
-	Type         string
-	Reason       string
-	Result       *agentharness.CompactionResult
-	Aborted      bool
-	WillRetry    bool
-	ErrorMessage string
-	Message      *llm.Message
-	Attempt      int
-	MaxAttempts  int
-	DelayMs      int
-	Success      bool
-	FinalError   string
-	Steering     []string
-	FollowUp     []string
+	Type                  string
+	Reason                string
+	Result                *agentharness.CompactionResult
+	Aborted               bool
+	WillRetry             bool
+	ErrorMessage          string
+	Message               *llm.Message
+	Attempt               int
+	MaxAttempts           int
+	DelayMs               int
+	Success               bool
+	FinalError            string
+	Steering              []string
+	FollowUp              []string
+	AssistantMessageEvent *llm.AssistantMessageEvent
 }
 
 type AgentSessionEventListener func(AgentSessionEvent)
@@ -85,8 +87,13 @@ func (s *AgentSession) Prompt(text string) error {
 	defer func() {
 		s.isStreaming = false
 	}()
-	s.SessionManager.AppendMessage(sessionUserMessageValue(prompt))
-	return s.runPromptLoop(prompt)
+	userMessage := llm.UserMessageText(prompt)
+	s.SessionManager.AppendMessage(sessionMessageValue(userMessage))
+	s.emit(AgentSessionEvent{Type: "message_end", Message: &userMessage})
+	s.emit(AgentSessionEvent{Type: "agent_start"})
+	err := s.runPromptLoop(prompt)
+	s.emit(AgentSessionEvent{Type: "agent_end"})
+	return err
 }
 
 func (s *AgentSession) runPromptLoop(prompt string) error {
@@ -102,6 +109,7 @@ func (s *AgentSession) runPromptLoop(prompt string) error {
 			assistant = llm.Message{Role: llm.RoleAssistant, StopReason: llm.StopReasonError, ErrorMessage: err.Error()}
 		}
 		assistant = s.normalizeAssistantMessage(assistant)
+		s.emitAssistantMessageUpdates(assistant)
 		if isRetryableAssistantError(assistant) && s.RetrySettings.Enabled && attempt < s.RetrySettings.MaxRetries {
 			attempt++
 			retried = true
@@ -129,6 +137,44 @@ func (s *AgentSession) runPromptLoop(prompt string) error {
 			return err
 		}
 	}
+}
+
+func (s *AgentSession) emitAssistantMessageUpdates(message llm.Message) {
+	partial := message
+	partial.Content = nil
+	s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "start", Partial: partial})
+	for index, part := range message.Content {
+		switch part.Type {
+		case llm.ContentThinking:
+			partial.Content = append(partial.Content, llm.Thinking(""))
+			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "thinking_start", ContentIndex: index, Partial: partial})
+			partial.Content[index].Thinking = part.Thinking
+			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "thinking_delta", ContentIndex: index, Delta: part.Thinking, Partial: partial})
+			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "thinking_end", ContentIndex: index, Content: part.Thinking, Partial: partial})
+		case llm.ContentText:
+			partial.Content = append(partial.Content, llm.Text(""))
+			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "text_start", ContentIndex: index, Partial: partial})
+			partial.Content[index].Text = part.Text
+			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "text_delta", ContentIndex: index, Delta: part.Text, Partial: partial})
+			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "text_end", ContentIndex: index, Content: part.Text, Partial: partial})
+		case llm.ContentToolCall:
+			partial.Content = append(partial.Content, llm.ToolCall(part.ID, part.Name, map[string]any{}))
+			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "toolcall_start", ContentIndex: index, Partial: partial})
+			argsJSON, _ := json.Marshal(part.Arguments)
+			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "toolcall_delta", ContentIndex: index, Delta: string(argsJSON), Partial: partial})
+			partial.Content[index] = part
+			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "toolcall_end", ContentIndex: index, ToolCall: part, Partial: partial})
+		}
+	}
+	if message.StopReason == llm.StopReasonError || message.StopReason == llm.StopReasonAborted {
+		s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "error", Reason: message.StopReason, Error: message})
+		return
+	}
+	s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "done", Reason: message.StopReason, Message: message})
+}
+
+func (s *AgentSession) emitAssistantMessageEvent(event llm.AssistantMessageEvent) {
+	s.emit(AgentSessionEvent{Type: "message_update", AssistantMessageEvent: &event})
 }
 
 func (s *AgentSession) normalizeAssistantMessage(message llm.Message) llm.Message {
@@ -449,7 +495,7 @@ func sessionMessageValue(message llm.Message) map[string]any {
 	if message.Timestamp == 0 {
 		message.Timestamp = llm.NowMillis()
 	}
-	return map[string]any{
+	value := map[string]any{
 		"role":       message.Role,
 		"content":    content,
 		"timestamp":  message.Timestamp,
@@ -459,6 +505,19 @@ func sessionMessageValue(message llm.Message) map[string]any {
 		"usage":      sessionUsageValue(message.Usage),
 		"stopReason": message.StopReason,
 	}
+	if message.ErrorMessage != "" {
+		value["errorMessage"] = message.ErrorMessage
+	}
+	if message.ToolCallID != "" {
+		value["toolCallID"] = message.ToolCallID
+	}
+	if message.ToolName != "" {
+		value["toolName"] = message.ToolName
+	}
+	if message.IsError {
+		value["isError"] = message.IsError
+	}
+	return value
 }
 
 func sessionUsageValue(usage llm.Usage) map[string]any {
