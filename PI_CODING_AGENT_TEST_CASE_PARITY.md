@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `955`
+- `已有`: `957`
 - `待实现`: `0`
-- `需要协议 runtime`: `82`
+- `需要协议 runtime`: `80`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -1226,8 +1226,8 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1521 | should force-include prompts | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1538 | should force-exclude top-level resources | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1551 | should force-exclude in package filters | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1574 | should dedupe same local package in global and project (project wins) | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1596 | should keep both if different packages | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1574 | should dedupe same local package in global and project (project wins) | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
+| 1596 | should keep both if different packages | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 1612 | should dedupe SSH and HTTPS URLs for same repo | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 1626 | should dedupe SSH and HTTPS with refs | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 1639 | should dedupe SSH URL with ssh:// protocol and git@ format | 已有 | gi-coding-agent/package_manager_source_test.go |

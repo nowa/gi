@@ -24,6 +24,7 @@ type ProtocolPackageResources struct {
 
 type ProtocolPackageSourceSpec struct {
 	Source  string
+	Scope   string
 	Filters ProtocolPackageResourceFilters
 }
 
@@ -52,7 +53,7 @@ func (m *DefaultPackageManager) ResolveProtocolPackageResources(sources []string
 func (m *DefaultPackageManager) ResolveProtocolPackageSourceSpecs(specs []ProtocolPackageSourceSpec) (ProtocolPackageResources, error) {
 	var result ProtocolPackageResources
 	for _, spec := range specs {
-		resolved, packageDir, err := m.resolveProtocolPackageSource(spec.Source)
+		resolved, packageDir, err := m.resolveProtocolPackageSource(spec.Source, spec.Scope)
 		if err != nil {
 			return ProtocolPackageResources{}, err
 		}
@@ -71,7 +72,75 @@ func (m *DefaultPackageManager) ResolveProtocolPackageSourceSpecs(specs []Protoc
 	return result, nil
 }
 
-func (m *DefaultPackageManager) resolveProtocolPackageSource(sourceText string) (ProtocolPackageResources, string, error) {
+func (m *DefaultPackageManager) ResolveConfiguredProtocolPackageResources() (ProtocolPackageResources, error) {
+	specs := m.configuredProtocolPackageSourceSpecs()
+	return m.ResolveProtocolPackageSourceSpecs(specs)
+}
+
+func (m *DefaultPackageManager) configuredProtocolPackageSourceSpecs() []ProtocolPackageSourceSpec {
+	type keyedSpec struct {
+		key  string
+		spec ProtocolPackageSourceSpec
+	}
+	var order []keyedSpec
+	index := map[string]int{}
+	addSpecs := func(values []any, scope, baseDir string) {
+		for _, value := range values {
+			spec, ok := protocolPackageSourceSpecFromSettings(value, scope)
+			if !ok {
+				continue
+			}
+			key := protocolPackageSettingsIdentity(spec.Source, baseDir)
+			if existing, ok := index[key]; ok {
+				order[existing].spec = spec
+				continue
+			}
+			index[key] = len(order)
+			order = append(order, keyedSpec{key: key, spec: spec})
+		}
+	}
+	addSpecs(settingsSlice(m.settingsManager.global, "packages"), "user", m.agentDir)
+	addSpecs(settingsSlice(m.settingsManager.project, "packages"), "project", filepath.Join(m.cwd, ConfigDirName))
+	specs := make([]ProtocolPackageSourceSpec, 0, len(order))
+	for _, item := range order {
+		specs = append(specs, item.spec)
+	}
+	return specs
+}
+
+func protocolPackageSourceSpecFromSettings(value any, scope string) (ProtocolPackageSourceSpec, bool) {
+	if source, ok := value.(string); ok && strings.TrimSpace(source) != "" {
+		return ProtocolPackageSourceSpec{Source: source, Scope: scope}, true
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return ProtocolPackageSourceSpec{}, false
+	}
+	source, _ := object["source"].(string)
+	if strings.TrimSpace(source) == "" {
+		return ProtocolPackageSourceSpec{}, false
+	}
+	return ProtocolPackageSourceSpec{
+		Source: strings.TrimSpace(source),
+		Scope:  scope,
+		Filters: ProtocolPackageResourceFilters{
+			Extensions: settingsStringSlice(object, "extensions"),
+			Skills:     settingsStringSlice(object, "skills"),
+			Prompts:    settingsStringSlice(object, "prompts"),
+			Themes:     settingsStringSlice(object, "themes"),
+		},
+	}, true
+}
+
+func protocolPackageSettingsIdentity(source, baseDir string) string {
+	parsed := ParsePackageSource(source)
+	if parsed.Type == "local" {
+		return "local:" + packageLocalIdentity(parsed.Path, baseDir)
+	}
+	return PackageSourceIdentity(parsed)
+}
+
+func (m *DefaultPackageManager) resolveProtocolPackageSource(sourceText, scope string) (ProtocolPackageResources, string, error) {
 	sourceText = strings.TrimSpace(sourceText)
 	if sourceText == "" {
 		return ProtocolPackageResources{}, "", nil
@@ -86,7 +155,7 @@ func (m *DefaultPackageManager) resolveProtocolPackageSource(sourceText string) 
 	}
 	metadata := ProtocolSourceInfo{
 		Source: m.GetPackageIdentity(sourceText),
-		Scope:  "temporary",
+		Scope:  firstNonEmptyString(scope, "temporary"),
 		Origin: "package",
 	}
 	if !info.IsDir() {

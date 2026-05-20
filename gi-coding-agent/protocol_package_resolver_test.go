@@ -335,6 +335,49 @@ func TestProtocolPackageResourceFilterRules(t *testing.T) {
 	})
 }
 
+func TestProtocolPackageConfiguredSourceDedupe(t *testing.T) {
+	t.Run("dedupes same local package in global and project with project winning", func(t *testing.T) {
+		agentDir, projectDir := createPackageManagerSettingsDirs(t)
+		pkgDir := filepath.Join(projectDir, "shared-pkg")
+		extensionPath := filepath.Join(pkgDir, "extensions", "shared.gi.json")
+		writeGiProtocolExtensionDescriptor(t, extensionPath)
+		settings := NewSettingsManager(projectDir, agentDir)
+		settings.SetPackages([]any{pkgDir})
+		settings.SetProjectPackages([]any{pkgDir})
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: projectDir, AgentDir: agentDir, SettingsManager: settings})
+
+		result, err := manager.ResolveConfiguredProtocolPackageResources()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Extensions) != 1 || result.Extensions[0].Path != extensionPath || result.Extensions[0].Metadata.Scope != "project" {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+	})
+
+	t.Run("keeps different packages", func(t *testing.T) {
+		agentDir, projectDir := createPackageManagerSettingsDirs(t)
+		pkg1 := filepath.Join(projectDir, "pkg1")
+		pkg2 := filepath.Join(projectDir, "pkg2")
+		ext1 := filepath.Join(pkg1, "extensions", "from-pkg1.gi.json")
+		ext2 := filepath.Join(pkg2, "extensions", "from-pkg2.gi.json")
+		writeGiProtocolExtensionDescriptor(t, ext1)
+		writeGiProtocolExtensionDescriptor(t, ext2)
+		settings := NewSettingsManager(projectDir, agentDir)
+		settings.SetPackages([]any{pkg1})
+		settings.SetProjectPackages([]any{pkg2})
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: projectDir, AgentDir: agentDir, SettingsManager: settings})
+
+		result, err := manager.ResolveConfiguredProtocolPackageResources()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathEnabled(result.Extensions, ext1) || !protocolPackagePathEnabled(result.Extensions, ext2) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+	})
+}
+
 func writeProtocolPackageManifest(t *testing.T, path string, fields map[string]any) {
 	t.Helper()
 	gi := map[string]any{"manifestVersion": 1}
