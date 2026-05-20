@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `612`
-- `待实现`: `154`
+- `已有`: `619`
+- `待实现`: `147`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -104,7 +104,7 @@ Status meanings:
 | `sdk-skills.test.ts` | 3 | 已有 | gi-coding-agent/sdk_session_test.go |
 | `session-cwd.test.ts` | 3 | 已有 | gi-coding-agent/session_cwd_test.go |
 | `session-info-modified-timestamp.test.ts` | 1 | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
-| `session-selector-path-delete.test.ts` | 7 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `session-selector-path-delete.test.ts` | 7 | 已有 | gi-coding-agent/session_selector_path_delete_test.go |
 | `session-selector-rename.test.ts` | 3 | 已有 | gi-coding-agent/session_selector_rename_test.go |
 | `session-selector-search.test.ts` | 9 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `settings-manager-bug.test.ts` | 4 | 已有 | gi-coding-agent/settings_manager_test.go |
@@ -166,8 +166,8 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 
 ## `agent-session-concurrent.test.ts`
 
-Pi cases: `7`  
-Status: `待实现`  
+Pi cases: `7`
+Status: `待实现`
 Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1608,25 +1608,25 @@ Gi coverage / implementation target: `gi-coding-agent/session_manager_migration_
 
 ## `session-selector-path-delete.test.ts`
 
-Pi cases: `7`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `7`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/session_selector_path_delete_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 108 | does not treat Ctrl+Backspace as delete when search query is non-empty | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 132 | enters confirmation mode on Ctrl+D even with a non-empty search query | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 156 | enters confirmation mode on Ctrl+Backspace when search query is empty | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 187 | does not switch scope back to All when All load resolves after toggling back to Current | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 219 | does not start redundant All loads when toggling scopes while All is already loading | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 249 | threads sessions when parent and child paths use different symlink aliases | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 285 | treats the current session as active across symlink aliases | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 108 | does not treat Ctrl+Backspace as delete when search query is non-empty | 已有 | gi-coding-agent/session_selector_path_delete_test.go |
+| 132 | enters confirmation mode on Ctrl+D even with a non-empty search query | 已有 | gi-coding-agent/session_selector_path_delete_test.go |
+| 156 | enters confirmation mode on Ctrl+Backspace when search query is empty | 已有 | gi-coding-agent/session_selector_path_delete_test.go |
+| 187 | does not switch scope back to All when All load resolves after toggling back to Current | 已有 | gi-coding-agent/session_selector_path_delete_test.go |
+| 219 | does not start redundant All loads when toggling scopes while All is already loading | 已有 | gi-coding-agent/session_selector_path_delete_test.go |
+| 249 | threads sessions when parent and child paths use different symlink aliases | 已有 | gi-coding-agent/session_selector_path_delete_test.go |
+| 285 | treats the current session as active across symlink aliases | 已有 | gi-coding-agent/session_selector_path_delete_test.go |
 
 ## `session-selector-rename.test.ts`
 
-Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `3`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/session_selector_rename_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
