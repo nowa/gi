@@ -283,6 +283,73 @@ func TestDefaultPackageManagerGitUpdatePiPinnedTemporaryAndScope(t *testing.T) {
 		}
 	})
 
+	t.Run("skips missing package sources when offline", func(t *testing.T) {
+		env.reset(t)
+		t.Setenv("GI_OFFLINE", "1")
+		cachedDir := packageManagerTemporaryGitDir("github.com", "test/extension")
+		removeAll(t, cachedDir)
+		t.Cleanup(func() { _ = os.RemoveAll(cachedDir) })
+
+		manager := env.managerWithOperations(PackageManagerOperations{
+			RunCommand: func(command string, args []string, _ PackageCommandOptions) error {
+				t.Fatalf("unexpected command while offline: %s %v", command, args)
+				return nil
+			},
+		})
+		resolved, err := manager.ResolveExtensionSources([]string{packageManagerGitSource}, ResolveExtensionSourcesOptions{Temporary: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(resolved) != 0 {
+			t.Fatalf("resolved = %#v, want empty", resolved)
+		}
+	})
+
+	t.Run("passes git commands as argv with cwd containing spaces", func(t *testing.T) {
+		env.reset(t)
+		packageDir := filepath.Join(env.tempDir, "repo with spaces")
+		mkdirAll(t, packageDir)
+		type call struct {
+			command string
+			args    []string
+			cwd     string
+		}
+		var calls []call
+		manager := env.managerWithOperations(PackageManagerOperations{
+			RunCommand: func(command string, args []string, options PackageCommandOptions) error {
+				calls = append(calls, call{command: command, args: append([]string(nil), args...), cwd: options.CWD})
+				return nil
+			},
+			RunCommandCapture: func(command string, args []string, options PackageCommandOptions) (string, error) {
+				calls = append(calls, call{command: command, args: append([]string(nil), args...), cwd: options.CWD})
+				if reflect.DeepEqual(args, []string{"rev-parse", "HEAD"}) {
+					return "local-head", nil
+				}
+				if reflect.DeepEqual(args, []string{"rev-parse", "origin/main"}) {
+					return "remote-head", nil
+				}
+				return "", nil
+			},
+		})
+
+		if err := manager.refreshGitPackage(packageDir); err != nil {
+			t.Fatal(err)
+		}
+		if len(calls) == 0 {
+			t.Fatal("expected git calls")
+		}
+		for _, got := range calls {
+			if got.command != "git" || got.cwd != packageDir {
+				t.Fatalf("call = %#v, want command git with cwd %q", got, packageDir)
+			}
+			for _, arg := range got.args {
+				if strings.Contains(arg, packageDir) {
+					t.Fatalf("package dir should be passed via cwd, not shell args: %#v", got)
+				}
+			}
+		}
+	})
+
 	t.Run("does not install locally when source is only registered globally", func(t *testing.T) {
 		env.reset(t)
 		env.setupRemoteAndInstall(t, "")

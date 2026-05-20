@@ -19,10 +19,10 @@ otherwise.
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `987`
+- `已有`: `989`
 - `待实现`: `0`
-- `需要协议 runtime`: `31`
-- `不适用`: `19`
+- `需要协议 runtime`: `27`
+- `不适用`: `21`
 
 ## Commit Plan
 
@@ -1179,11 +1179,11 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 578 | should handle directories with auto-discovery layout | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 590 | should stop recursing when a package skill directory contains SKILL.md | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 605 | should emit progress events | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 621 | should avoid the shell for git so Windows paths with spaces stay single arguments | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 621 | should avoid the shell for git so Windows paths with spaces stay single arguments | 已有 | gi-coding-agent/package_manager_git_update_test.go |
 | 632 | should use npmCommand argv for npm installs | 不适用 | Gi package v1 不支持 npm source 或隐式 npm install |
-| 653 | should install git package dependencies with --omit=dev | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 653 | should install git package dependencies with --omit=dev | 不适用 | Gi package install 不默认执行 dependency install/postinstall |
 | 671 | should use plain install for git package dependencies when npmCommand is configured | 不适用 | Gi package install 不默认执行 dependency install/postinstall |
-| 698 | should update git package dependencies with --omit=dev | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 698 | should update git package dependencies with --omit=dev | 不适用 | Gi package update 不默认执行 dependency install/postinstall |
 | 725 | should use plain install through npmCommand argv when updating git package dependencies | 不适用 | Gi package update 不默认执行 npm dependency install |
 | 763 | should use npmCommand argv for npm root lookup and invalidate cached root when npmCommand changes | 不适用 | Gi package v1 无 npm global root lookup |
 | 802 | should resolve pnpm global package paths from pnpm list output | 不适用 | Gi package v1 无 pnpm global package source |
@@ -1246,7 +1246,7 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1832 | should batch npm updates per scope and run git updates in parallel while skipping pinned and current packages | 不适用 | Gi package v1 不支持 npm source/update |
 | 1941 | should suggest npm source prefixes for update lookups | 不适用 | npm source 已被移除；显式拒绝 npm: |
 | 1949 | should suggest git source prefixes for update lookups | 已有 | gi-coding-agent/package_manager_settings_test.go |
-| 1957 | should skip installing missing package sources when offline | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1957 | should skip installing missing package sources when offline | 已有 | gi-coding-agent/package_manager_git_update_test.go |
 | 1969 | should skip refreshing temporary git sources when offline | 已有 | gi-coding-agent/package_manager_git_update_test.go |
 | 1985 | should not run npm view during resolve for installed unpinned packages | 不适用 | Gi package v1 不支持 npm source/update |
 | 1999 | should reinstall pinned npm packages when installed version does not match | 不适用 | Gi package v1 不支持 npm source/update |
