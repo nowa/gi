@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `468`
-- `待实现`: `276`
+- `已有`: `479`
+- `待实现`: `265`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -71,8 +71,8 @@ Status meanings:
 | `frontmatter.test.ts` | 8 | 已有 | gi-coding-agent/utils_test.go |
 | `git-ssh-url.test.ts` | 9 | 已有 | gi-coding-agent/git_test.go |
 | `git-update.test.ts` | 11 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `image-processing.test.ts` | 9 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `image-resize-callers.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `image-processing.test.ts` | 9 | 已有 | gi-coding-agent/image_resize_test.go |
+| `image-resize-callers.test.ts` | 2 | 已有 | gi-coding-agent/image_resize_test.go |
 | `initial-message.test.ts` | 3 | 已有 | gi-coding-agent/initial_message_test.go |
 | `interactive-mode-anthropic-warning.test.ts` | 4 | 已有 | gi-coding-agent/anthropic_warning_test.go |
 | `interactive-mode-clone-command.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -833,31 +833,31 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `image-processing.test.ts`
 
 Pi cases: `9`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/image_resize_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 26 | should return original data for PNG input | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 33 | should convert JPEG to PNG | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 49 | should return original image if within limits | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 64 | should resize image exceeding dimension limits | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 78 | should resize image exceeding byte limit | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 95 | should return null when image cannot be resized below maxBytes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 104 | should handle JPEG input | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 118 | should return undefined for non-resized images | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 131 | should return formatted note for resized images | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 26 | should return original data for PNG input | 已有 | gi-coding-agent/image_resize_test.go |
+| 33 | should convert JPEG to PNG | 已有 | gi-coding-agent/image_resize_test.go |
+| 49 | should return original image if within limits | 已有 | gi-coding-agent/image_resize_test.go |
+| 64 | should resize image exceeding dimension limits | 已有 | gi-coding-agent/image_resize_test.go |
+| 78 | should resize image exceeding byte limit | 已有 | gi-coding-agent/image_resize_test.go |
+| 95 | should return null when image cannot be resized below maxBytes | 已有 | gi-coding-agent/image_resize_test.go |
+| 104 | should handle JPEG input | 已有 | gi-coding-agent/image_resize_test.go |
+| 118 | should return undefined for non-resized images | 已有 | gi-coding-agent/image_resize_test.go |
+| 131 | should return formatted note for resized images | 已有 | gi-coding-agent/image_resize_test.go |
 
 ## `image-resize-callers.test.ts`
 
 Pi cases: `2`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/image_resize_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 32 | read tool returns text-only output when auto-resize cannot produce a safe image | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 44 | file processor omits image attachments when auto-resize cannot produce a safe image | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 32 | read tool returns text-only output when auto-resize cannot produce a safe image | 已有 | gi-coding-agent/image_resize_test.go |
+| 44 | file processor omits image attachments when auto-resize cannot produce a safe image | 已有 | gi-coding-agent/image_resize_test.go |
 
 ## `initial-message.test.ts`
 

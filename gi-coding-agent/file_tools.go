@@ -11,10 +11,11 @@ import (
 )
 
 type FileToolOperations struct {
-	Access    func(path string) error
-	ReadFile  func(path string) ([]byte, error)
-	WriteFile func(path string, content []byte) error
-	MkdirAll  func(path string) error
+	Access      func(path string) error
+	ReadFile    func(path string) ([]byte, error)
+	WriteFile   func(path string, content []byte) error
+	MkdirAll    func(path string) error
+	ResizeImage func(part llm.ContentPart, options ImageResizeOptions) *ResizedImage
 }
 
 type Edit struct {
@@ -48,12 +49,17 @@ type WriteTool struct {
 }
 
 type ReadTool struct {
-	cwd string
-	ops FileToolOperations
+	cwd              string
+	ops              FileToolOperations
+	autoResizeImages bool
 }
 
 type ReadToolInput struct {
 	Path string
+}
+
+type ReadToolOptions struct {
+	AutoResizeImages *bool
 }
 
 func NewEditTool(cwd string, operations ...FileToolOperations) EditTool {
@@ -65,7 +71,15 @@ func NewWriteTool(cwd string, operations ...FileToolOperations) WriteTool {
 }
 
 func NewReadTool(cwd string, operations ...FileToolOperations) ReadTool {
-	return ReadTool{cwd: cwd, ops: normalizeFileToolOperations(operations...)}
+	return NewReadToolWithOptions(cwd, ReadToolOptions{}, operations...)
+}
+
+func NewReadToolWithOptions(cwd string, options ReadToolOptions, operations ...FileToolOperations) ReadTool {
+	autoResizeImages := true
+	if options.AutoResizeImages != nil {
+		autoResizeImages = *options.AutoResizeImages
+	}
+	return ReadTool{cwd: cwd, ops: normalizeFileToolOperations(operations...), autoResizeImages: autoResizeImages}
 }
 
 func (t EditTool) Execute(_ string, input EditToolInput) (FileToolResult, error) {
@@ -128,12 +142,27 @@ func (t ReadTool) Execute(_ string, input ReadToolInput) (FileToolResult, error)
 		return FileToolResult{}, err
 	}
 	if mimeType := imageMIMETypeForPath(absolutePath); mimeType != "" {
+		imagePart := llm.Image(base64.StdEncoding.EncodeToString(content), mimeType)
 		note := fmt.Sprintf("Read image file [%s]", mimeType)
+		if t.autoResizeImages {
+			resized := t.ops.ResizeImage(imagePart, ImageResizeOptions{})
+			if resized == nil {
+				return FileToolResult{
+					Text:    note + "\n[Image omitted: could not be resized below the inline image size limit.]",
+					Content: []llm.ContentPart{llm.Text(note + "\n[Image omitted: could not be resized below the inline image size limit.]")},
+				}, nil
+			}
+			imagePart = llm.Image(resized.Data, resized.MIMEType)
+			note = fmt.Sprintf("Read image file [%s]", resized.MIMEType)
+			if dimensionNote := FormatDimensionNote(*resized); dimensionNote != "" {
+				note += "\n" + dimensionNote
+			}
+		}
 		return FileToolResult{
 			Text: note,
 			Content: []llm.ContentPart{
 				llm.Text(note),
-				llm.Image(base64.StdEncoding.EncodeToString(content), mimeType),
+				imagePart,
 			},
 		}, nil
 	}
@@ -163,6 +192,11 @@ func normalizeFileToolOperations(operations ...FileToolOperations) FileToolOpera
 	if ops.MkdirAll == nil {
 		ops.MkdirAll = func(path string) error {
 			return os.MkdirAll(path, 0o755)
+		}
+	}
+	if ops.ResizeImage == nil {
+		ops.ResizeImage = func(part llm.ContentPart, options ImageResizeOptions) *ResizedImage {
+			return ResizeImage(part, options)
 		}
 	}
 	return ops
