@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `538`
-- `待实现`: `206`
+- `已有`: `547`
+- `待实现`: `197`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -116,7 +116,7 @@ Status meanings:
 | `test-harness.test.ts` | 15 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `theme-export.test.ts` | 2 | 已有 | gi-coding-agent/theme_export_test.go |
 | `tool-execution-component.test.ts` | 16 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `tools.test.ts` | 68 | 待实现 | 部分已有: gi-coding-agent/tools_read_test.go, gi-coding-agent/tools_edit_errors_test.go；其余工具行为继续补齐 |
+| `tools.test.ts` | 68 | 已有 | gi-coding-agent/tools_read_test.go, gi-coding-agent/tools_bash_advanced_test.go, gi-coding-agent/tools_search_test.go, gi-coding-agent/tools_edit_fuzzy_test.go |
 | `tree-selector.test.ts` | 15 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `trigger-compact-extension.test.ts` | 1 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `truncate-to-width.test.ts` | 6 | 已有 | gi-tui/utils_test.go |
@@ -1832,8 +1832,8 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 ## `tools.test.ts`
 
 Pi cases: `68`  
-Status: `待实现`  
-Gi coverage / implementation target: `部分已有: gi-coding-agent/tools_read_test.go；其余工具行为继续补齐`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/tools_read_test.go, gi-coding-agent/tools_bash_advanced_test.go, gi-coding-agent/tools_search_test.go, gi-coding-agent/tools_edit_fuzzy_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -1867,19 +1867,19 @@ Gi coverage / implementation target: `部分已有: gi-coding-agent/tools_read_t
 | 433 | should execute simple commands | 已有 | gi-coding-agent/tools_bash_test.go |
 | 440 | should handle command errors | 已有 | gi-coding-agent/tools_bash_test.go |
 | 446 | should respect timeout | 已有 | gi-coding-agent/tools_bash_test.go |
-| 452 | should include full output path for truncated timeout and abort errors | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 452 | should include full output path for truncated timeout and abort errors | 已有 | gi-coding-agent/tools_bash_advanced_test.go |
 | 488 | should throw error when cwd does not exist | 已有 | gi-coding-agent/tools_bash_test.go |
-| 498 | should handle process spawn errors | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 509 | should pass shellPath through to shell resolution | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 498 | should handle process spawn errors | 已有 | gi-coding-agent/tools_bash_advanced_test.go |
+| 509 | should pass shellPath through to shell resolution | 已有 | gi-coding-agent/tools_bash_advanced_test.go |
 | 531 | should prepend command prefix when configured | 已有 | gi-coding-agent/tools_bash_test.go |
 | 540 | should include output from both prefix and command | 已有 | gi-coding-agent/tools_bash_test.go |
 | 549 | should work without command prefix | 已有 | gi-coding-agent/tools_bash_test.go |
-| 556 | should coalesce streaming updates for chatty output | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 576 | should decode UTF-8 characters split across output chunks | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 592 | should expose local bash operations for extension reuse | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 605 | should preserve executeBash sanitization when using local bash operations | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 616 | should persist full output when truncation happens by line count only | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 639 | executeBash should persist full output when truncation happens by line count only | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 556 | should coalesce streaming updates for chatty output | 已有 | gi-coding-agent/tools_bash_advanced_test.go |
+| 576 | should decode UTF-8 characters split across output chunks | 已有 | gi-coding-agent/tools_bash_advanced_test.go |
+| 592 | should expose local bash operations for extension reuse | 已有 | gi-coding-agent/tools_bash_advanced_test.go |
+| 605 | should preserve executeBash sanitization when using local bash operations | 已有 | gi-coding-agent/tools_bash_advanced_test.go |
+| 616 | should persist full output when truncation happens by line count only | 已有 | gi-coding-agent/tools_bash_advanced_test.go |
+| 639 | executeBash should persist full output when truncation happens by line count only | 已有 | gi-coding-agent/tools_bash_advanced_test.go |
 | 659 | should include filename when searching a single file | 已有 | gi-coding-agent/tools_search_test.go |
 | 672 | should respect global limit and include context lines | 已有 | gi-coding-agent/tools_search_test.go |
 | 693 | should treat flag-like patterns as search text | 已有 | gi-coding-agent/tools_search_test.go |

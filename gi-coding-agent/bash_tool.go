@@ -13,10 +13,13 @@ import (
 type BashTool struct {
 	cwd           string
 	commandPrefix string
+	operations    BashOperations
 }
 
 type BashToolOptions struct {
 	CommandPrefix string
+	Operations    BashOperations
+	ShellPath     string
 }
 
 type BashToolInput struct {
@@ -29,10 +32,18 @@ func NewBashTool(cwd string, options ...BashToolOptions) BashTool {
 	if len(options) > 0 {
 		opts = options[0]
 	}
-	return BashTool{cwd: cwd, commandPrefix: opts.CommandPrefix}
+	operations := opts.Operations
+	if operations.Exec == nil {
+		operations = CreateLocalBashOperations(BashLocalOperationsOptions{ShellPath: opts.ShellPath})
+	}
+	return BashTool{cwd: cwd, commandPrefix: opts.CommandPrefix, operations: operations}
 }
 
 func (t BashTool) Execute(_ string, input BashToolInput) (FileToolResult, error) {
+	return t.ExecuteWithUpdates("", input, nil)
+}
+
+func (t BashTool) ExecuteWithUpdates(_ string, input BashToolInput, onUpdate func(FileToolResult)) (FileToolResult, error) {
 	if strings.TrimSpace(input.Command) == "" {
 		return FileToolResult{}, fmt.Errorf("command is required")
 	}
@@ -53,15 +64,71 @@ func (t BashTool) Execute(_ string, input BashToolInput) (FileToolResult, error)
 	}
 	defer cancel()
 
-	result, err := ExecuteBash(command, t.cwd, BashExecutorOptions{Context: ctx})
+	var updateText strings.Builder
+	lastUpdate := time.Now()
+	result, err := ExecuteBashWithOperations(command, t.cwd, t.operations, BashExecutorOptions{
+		Context: ctx,
+		OnChunk: func(chunk string) {
+			if onUpdate == nil {
+				return
+			}
+			updateText.WriteString(chunk)
+			if time.Since(lastUpdate) < 50*time.Millisecond {
+				return
+			}
+			lastUpdate = time.Now()
+			text := updateText.String()
+			onUpdate(FileToolResult{Text: text, Content: []llm.ContentPart{llm.Text(text)}})
+		},
+	})
+	if onUpdate != nil && updateText.Len() > 0 {
+		text := updateText.String()
+		onUpdate(FileToolResult{Text: text, Content: []llm.ContentPart{llm.Text(text)}})
+	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return FileToolResult{}, fmt.Errorf("Command timed out after %d seconds", input.Timeout)
+		return FileToolResult{}, formatBashToolError(fmt.Sprintf("Command timed out after %d seconds", input.Timeout), result)
 	}
 	if err != nil && result.ExitCode == 0 {
-		return FileToolResult{}, err
+		return FileToolResult{}, formatBashToolError(formatBashOperationError(err), result)
 	}
 	if result.ExitCode != 0 {
-		return FileToolResult{}, fmt.Errorf("Command failed with code %d", result.ExitCode)
+		return FileToolResult{}, formatBashToolError(fmt.Sprintf("Command failed with code %d", result.ExitCode), result)
 	}
-	return FileToolResult{Text: result.Output, Content: []llm.ContentPart{llm.Text(result.Output)}}, nil
+	details := bashToolDetails(result)
+	return FileToolResult{Text: result.Output, Content: []llm.ContentPart{llm.Text(result.Output)}, Details: details}, nil
+}
+
+func formatBashOperationError(err error) string {
+	message := err.Error()
+	if strings.HasPrefix(message, "timeout:") {
+		seconds := strings.TrimPrefix(message, "timeout:")
+		return "Command timed out after " + seconds + " seconds"
+	}
+	if message == "aborted" {
+		return "Command aborted"
+	}
+	return message
+}
+
+func formatBashToolError(message string, result BashResult) error {
+	if strings.TrimSpace(result.Output) != "" {
+		return fmt.Errorf("%s\n%s", message, result.Output)
+	}
+	return fmt.Errorf("%s", message)
+}
+
+func bashToolDetails(result BashResult) *FileToolDetails {
+	if !result.Truncated && result.FullOutputPath == "" {
+		return nil
+	}
+	details := &FileToolDetails{FullOutputPath: result.FullOutputPath}
+	if result.Truncated {
+		details.Truncation = &ReadToolTruncation{
+			Truncated:   true,
+			TruncatedBy: result.TruncatedBy,
+			TotalLines:  result.TotalLines,
+			OutputLines: result.OutputLines,
+		}
+	}
+	return details
 }

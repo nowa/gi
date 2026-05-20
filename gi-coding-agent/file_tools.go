@@ -48,8 +48,9 @@ type FileToolResult struct {
 }
 
 type FileToolDetails struct {
-	Truncation *ReadToolTruncation
-	Diff       string
+	Truncation     *ReadToolTruncation
+	Diff           string
+	FullOutputPath string
 }
 
 type EditDiffResult struct {
