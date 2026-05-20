@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `644`
-- `待实现`: `122`
+- `已有`: `648`
+- `待实现`: `118`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -54,7 +54,7 @@ Status meanings:
 | `compaction-extensions-example.test.ts` | 2 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `compaction-extensions.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `compaction-serialization.test.ts` | 3 | 已有 | gi-agent-core/harness/compaction_test.go |
-| `compaction-summary-reasoning.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `compaction-summary-reasoning.test.ts` | 4 | 已有 | gi-agent-core/harness/compaction_summary_reasoning_test.go |
 | `compaction.test.ts` | 23 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `config.test.ts` | 13 | 已有 | gi-coding-agent/config_test.go |
 | `edit-tool-legacy-input.test.ts` | 8 | 已有 | gi-coding-agent/edit_tool_definition_test.go |
@@ -510,14 +510,14 @@ Gi coverage / implementation target: `gi-coding-agent/export_html_whitespace_tes
 
 Pi cases: `4`  
 Status: `已有`
-Gi coverage / implementation target: `gi-coding-agent/export_html_skill_block_test.go`
+Gi coverage / implementation target: `gi-agent-core/harness/compaction_summary_reasoning_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 59 | uses the provided thinking level for reasoning-capable models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 79 | does not set reasoning when thinking is off | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 99 | does not set reasoning for non-reasoning models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 119 | clamps compaction summary maxTokens to the model output cap | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 59 | uses the provided thinking level for reasoning-capable models | 已有 | gi-agent-core/harness/compaction_summary_reasoning_test.go |
+| 79 | does not set reasoning when thinking is off | 已有 | gi-agent-core/harness/compaction_summary_reasoning_test.go |
+| 99 | does not set reasoning for non-reasoning models | 已有 | gi-agent-core/harness/compaction_summary_reasoning_test.go |
+| 119 | clamps compaction summary maxTokens to the model output cap | 已有 | gi-agent-core/harness/compaction_summary_reasoning_test.go |
 
 ## `compaction.test.ts`
 
