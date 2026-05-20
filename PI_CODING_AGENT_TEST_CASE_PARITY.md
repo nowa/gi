@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `696`
-- `待实现`: `67`
+- `已有`: `711`
+- `待实现`: `52`
 - `需要协议 runtime`: `274`
 - `不适用`: `0`
 
@@ -117,7 +117,7 @@ Status meanings:
 | `theme-export.test.ts` | 2 | 已有 | gi-coding-agent/theme_export_test.go |
 | `tool-execution-component.test.ts` | 16 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `tools.test.ts` | 68 | 已有 | gi-coding-agent/tools_read_test.go, gi-coding-agent/tools_bash_advanced_test.go, gi-coding-agent/tools_search_test.go, gi-coding-agent/tools_edit_fuzzy_test.go |
-| `tree-selector.test.ts` | 15 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `tree-selector.test.ts` | 15 | 已有 | gi-coding-agent/tree_selector_test.go |
 | `trigger-compact-extension.test.ts` | 1 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `truncate-to-width.test.ts` | 6 | 已有 | gi-tui/utils_test.go |
 | `user-message.test.ts` | 1 | 已有 | gi-coding-agent/message_components_test.go |
@@ -1909,26 +1909,26 @@ Gi coverage / implementation target: `gi-coding-agent/tools_read_test.go, gi-cod
 ## `tree-selector.test.ts`
 
 Pi cases: `15`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/tree_selector_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 129 | focuses nearest visible ancestor when currentLeafId is a model_change with sibling branch | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 158 | focuses nearest visible ancestor when currentLeafId is a thinking_level_change entry | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 189 | switches to nearest visible user message when changing to user-only filter | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 218 | returns to nearest visible ancestor when switching back to default filter | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 252 | toggles label timestamps for labeled nodes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 282 | preserves selection when switching to empty labeled filter and back | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 316 | preserves selection through multiple empty filter switches | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 392 | ctrl+right unfolds a folded node, then does segment jump when unfolded | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 428 | alt+left/right are aliases for fold and unfold navigation | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 452 | folding root hides entire subtree, nested fold preserved on unfold | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 488 | fold and navigate on non-active branch | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 523 | fold and navigate with multiple roots | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 564 | folding root hides descendants even when intermediate nodes are filtered out | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 592 | search resets fold state | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 625 | filter mode change resets fold state | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 129 | focuses nearest visible ancestor when currentLeafId is a model_change with sibling branch | 已有 | gi-coding-agent/tree_selector_test.go |
+| 158 | focuses nearest visible ancestor when currentLeafId is a thinking_level_change entry | 已有 | gi-coding-agent/tree_selector_test.go |
+| 189 | switches to nearest visible user message when changing to user-only filter | 已有 | gi-coding-agent/tree_selector_test.go |
+| 218 | returns to nearest visible ancestor when switching back to default filter | 已有 | gi-coding-agent/tree_selector_test.go |
+| 252 | toggles label timestamps for labeled nodes | 已有 | gi-coding-agent/tree_selector_test.go |
+| 282 | preserves selection when switching to empty labeled filter and back | 已有 | gi-coding-agent/tree_selector_test.go |
+| 316 | preserves selection through multiple empty filter switches | 已有 | gi-coding-agent/tree_selector_test.go |
+| 392 | ctrl+right unfolds a folded node, then does segment jump when unfolded | 已有 | gi-coding-agent/tree_selector_test.go |
+| 428 | alt+left/right are aliases for fold and unfold navigation | 已有 | gi-coding-agent/tree_selector_test.go |
+| 452 | folding root hides entire subtree, nested fold preserved on unfold | 已有 | gi-coding-agent/tree_selector_test.go |
+| 488 | fold and navigate on non-active branch | 已有 | gi-coding-agent/tree_selector_test.go |
+| 523 | fold and navigate with multiple roots | 已有 | gi-coding-agent/tree_selector_test.go |
+| 564 | folding root hides descendants even when intermediate nodes are filtered out | 已有 | gi-coding-agent/tree_selector_test.go |
+| 592 | search resets fold state | 已有 | gi-coding-agent/tree_selector_test.go |
+| 625 | filter mode change resets fold state | 已有 | gi-coding-agent/tree_selector_test.go |
 
 ## `trigger-compact-extension.test.ts`
 
