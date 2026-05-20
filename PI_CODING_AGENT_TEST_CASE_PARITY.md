@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `711`
-- `待实现`: `52`
+- `已有`: `723`
+- `待实现`: `40`
 - `需要协议 runtime`: `274`
 - `不适用`: `0`
 
@@ -75,11 +75,11 @@ Status meanings:
 | `image-resize-callers.test.ts` | 2 | 已有 | gi-coding-agent/image_resize_test.go |
 | `initial-message.test.ts` | 3 | 已有 | gi-coding-agent/initial_message_test.go |
 | `interactive-mode-anthropic-warning.test.ts` | 4 | 已有 | gi-coding-agent/anthropic_warning_test.go |
-| `interactive-mode-clone-command.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `interactive-mode-compaction.test.ts` | 1 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `interactive-mode-import-command.test.ts` | 6 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `interactive-mode-clone-command.test.ts` | 2 | 已有 | gi-coding-agent/interactive_mode_test.go |
+| `interactive-mode-compaction.test.ts` | 1 | 已有 | gi-coding-agent/interactive_mode_test.go |
+| `interactive-mode-import-command.test.ts` | 6 | 已有 | gi-coding-agent/interactive_mode_test.go |
 | `interactive-mode-status.test.ts` | 25 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `interactive-mode-suspend.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `interactive-mode-suspend.test.ts` | 3 | 已有 | gi-coding-agent/interactive_mode_test.go |
 | `keybindings-migration.test.ts` | 3 | 已有 | gi-coding-agent/keybindings_test.go |
 | `model-registry.test.ts` | 64 | 已有 | gi-coding-agent/model_registry_test.go |
 | `model-resolver.test.ts` | 31 | 已有 | gi-coding-agent/model_resolver_test.go |
@@ -887,38 +887,38 @@ Gi coverage / implementation target: `gi-coding-agent/anthropic_warning_test.go`
 ## `interactive-mode-clone-command.test.ts`
 
 Pi cases: `2`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/interactive_mode_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 23 | clones the current leaf into a new session | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 51 | shows a status message when there is nothing to clone | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 23 | clones the current leaf into a new session | 已有 | gi-coding-agent/interactive_mode_test.go |
+| 51 | shows a status message when there is nothing to clone | 已有 | gi-coding-agent/interactive_mode_test.go |
 
 ## `interactive-mode-compaction.test.ts`
 
 Pi cases: `1`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/interactive_mode_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 5 | rebuilds chat and appends a synthetic compaction summary at the bottom | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 5 | rebuilds chat and appends a synthetic compaction summary at the bottom | 已有 | gi-coding-agent/interactive_mode_test.go |
 
 ## `interactive-mode-import-command.test.ts`
 
 Pi cases: `6`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/interactive_mode_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 29 | strips quotes from /import path arguments | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 38 | preserves apostrophes in unquoted /import path arguments | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 44 | enforces command token boundaries | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 54 | passes unquoted path to runtimeHost.importFromJsonl | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 86 | passes unquoted apostrophe path to runtimeHost.importFromJsonl unchanged | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 114 | shows a non-fatal error when /import path does not exist | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 29 | strips quotes from /import path arguments | 已有 | gi-coding-agent/interactive_mode_test.go |
+| 38 | preserves apostrophes in unquoted /import path arguments | 已有 | gi-coding-agent/interactive_mode_test.go |
+| 44 | enforces command token boundaries | 已有 | gi-coding-agent/interactive_mode_test.go |
+| 54 | passes unquoted path to runtimeHost.importFromJsonl | 已有 | gi-coding-agent/interactive_mode_test.go |
+| 86 | passes unquoted apostrophe path to runtimeHost.importFromJsonl unchanged | 已有 | gi-coding-agent/interactive_mode_test.go |
+| 114 | shows a non-fatal error when /import path does not exist | 已有 | gi-coding-agent/interactive_mode_test.go |
 
 ## `interactive-mode-status.test.ts`
 
@@ -957,14 +957,14 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `interactive-mode-suspend.test.ts`
 
 Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/interactive_mode_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 31 | shows a status message and skips suspend on Windows | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 65 | keeps the process alive while suspended and restores the TUI on SIGCONT | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 115 | cleans up the temporary handlers if suspension fails | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 31 | shows a status message and skips suspend on Windows | 已有 | gi-coding-agent/interactive_mode_test.go |
+| 65 | keeps the process alive while suspended and restores the TUI on SIGCONT | 已有 | gi-coding-agent/interactive_mode_test.go |
+| 115 | cleans up the temporary handlers if suspension fails | 已有 | gi-coding-agent/interactive_mode_test.go |
 
 ## `keybindings-migration.test.ts`
 
