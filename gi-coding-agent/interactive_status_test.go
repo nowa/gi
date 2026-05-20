@@ -212,7 +212,7 @@ func TestInteractiveModeShowLoadedResourcesProtocolExtensionLabels(t *testing.T)
 		{
 			name:       "captures mixed extension layouts in compact output",
 			extensions: createInteractiveExtensionFixtures(),
-			want:       "[Extensions]\n  @scope/pi-scoped, answer.gi.json, cli-extension.gi.json, HazAT/pi-interactive-subagents, HazAT/pi-interactive-subagents:subagents, local-index, pi-markdown-preview, user-index",
+			want:       "[Extensions]\n  answer.gi.json, cli-extension.gi.json, gi-packages/git-guard, gi-packages/plan-mode, HazAT/pi-interactive-subagents, HazAT/pi-interactive-subagents:subagents, local-index, user-index",
 		},
 		{
 			name: "adds more parent folders until local extension labels are unique",
@@ -264,9 +264,9 @@ func TestInteractiveModeShowLoadedResourcesProtocolExtensionLabels(t *testing.T)
 		{
 			name: "package extensions still strip index.gi.json correctly",
 			extensions: []InteractiveExtensionResource{
-				{Path: "/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.gi.json", "npm:pi-markdown-preview", "project", "package", "/tmp/project/.pi/npm/node_modules/pi-markdown-preview")},
+				{Path: "/tmp/project/.pi/git/github.com/gi-packages/plan-mode/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/gi-packages/plan-mode/extensions/index.gi.json", "git:github.com/gi-packages/plan-mode", "project", "package", "/tmp/project/.pi/git/github.com/gi-packages/plan-mode")},
 			},
-			want: "[Extensions]\n  pi-markdown-preview",
+			want: "[Extensions]\n  gi-packages/plan-mode",
 		},
 		{
 			name:       "captures mixed extension layouts in expanded output",
@@ -279,9 +279,9 @@ func TestInteractiveModeShowLoadedResourcesProtocolExtensionLabels(t *testing.T)
     git:github.com/HazAT/pi-interactive-subagents
       extensions
       extensions/subagents
-    npm:@scope/pi-scoped
+    git:github.com/gi-packages/git-guard
       extensions
-    npm:pi-markdown-preview
+    git:github.com/gi-packages/plan-mode
       extensions
   user
     /tmp/agent/extensions/user-index
@@ -339,8 +339,8 @@ func createInteractiveExtensionFixtures() []InteractiveExtensionResource {
 		{Path: "/tmp/project/.pi/extensions/answer.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/extensions/answer.gi.json", "local", "project", "top-level", "/tmp/project/.pi/extensions")},
 		{Path: "/tmp/project/.pi/extensions/local-index/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/extensions/local-index/index.gi.json", "local", "project", "top-level", "/tmp/project/.pi/extensions")},
 		{Path: "/tmp/agent/extensions/user-index/index.gi.json", SourceInfo: sourceInfo("/tmp/agent/extensions/user-index/index.gi.json", "local", "user", "top-level", "/tmp/agent/extensions")},
-		{Path: "/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.gi.json", "npm:pi-markdown-preview", "project", "package", "/tmp/project/.pi/npm/node_modules/pi-markdown-preview")},
-		{Path: "/tmp/project/.pi/npm/node_modules/@scope/pi-scoped/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/npm/node_modules/@scope/pi-scoped/extensions/index.gi.json", "npm:@scope/pi-scoped", "project", "package", "/tmp/project/.pi/npm/node_modules/@scope/pi-scoped")},
+		{Path: "/tmp/project/.pi/git/github.com/gi-packages/plan-mode/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/gi-packages/plan-mode/extensions/index.gi.json", "git:github.com/gi-packages/plan-mode", "project", "package", "/tmp/project/.pi/git/github.com/gi-packages/plan-mode")},
+		{Path: "/tmp/project/.pi/git/github.com/gi-packages/git-guard/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/gi-packages/git-guard/extensions/index.gi.json", "git:github.com/gi-packages/git-guard", "project", "package", "/tmp/project/.pi/git/github.com/gi-packages/git-guard")},
 		{Path: "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/index.gi.json", "git:github.com/HazAT/pi-interactive-subagents", "project", "package", "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents")},
 		{Path: "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.gi.json", "git:github.com/HazAT/pi-interactive-subagents", "project", "package", "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents")},
 		{Path: "/tmp/temp/cli-extension.gi.json", SourceInfo: sourceInfo("/tmp/temp/cli-extension.gi.json", "cli", "temporary", "top-level", "/tmp/temp")},

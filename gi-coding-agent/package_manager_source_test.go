@@ -30,8 +30,8 @@ func TestPackageManagerSourceParsingPiDocsAndHTTPSMatrix(t *testing.T) {
 	manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
 
 	for _, source := range []string{"npm:@scope/pkg@1.2.3", "npm:pkg"} {
-		if parsed := manager.ParseSource(source); parsed.Type != "npm" {
-			t.Fatalf("ParseSource(%q).Type = %q, want npm", source, parsed.Type)
+		if parsed := manager.ParseSource(source); parsed.Type != "unsupported" {
+			t.Fatalf("ParseSource(%q).Type = %q, want unsupported", source, parsed.Type)
 		}
 	}
 	for _, source := range []string{

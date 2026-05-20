@@ -39,7 +39,7 @@ func TestProtocolPackageResolverLocalResources(t *testing.T) {
 		skillPath := filepath.Join(pkgDir, "skills", "my-skill", "SKILL.md")
 		writeGiProtocolExtensionDescriptor(t, extensionPath)
 		writeResourceSkill(t, skillPath, "my-skill", "Test", "Content")
-		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "package.json"), map[string]any{
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "gi.package.json"), map[string]any{
 			"extensions": []any{"./src/index.gi.json"},
 			"skills":     []any{"./skills"},
 		})
@@ -98,7 +98,7 @@ func TestProtocolPackageManifestPatternRules(t *testing.T) {
 		writeGiProtocolExtensionDescriptor(t, local)
 		writeGiProtocolExtensionDescriptor(t, remote)
 		writeGiProtocolExtensionDescriptor(t, skip)
-		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "package.json"), map[string]any{
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "gi.package.json"), map[string]any{
 			"extensions": []any{"extensions", "node_modules/dep/extensions", "!**/skip.gi.json"},
 		})
 
@@ -120,7 +120,7 @@ func TestProtocolPackageManifestPatternRules(t *testing.T) {
 		bad := filepath.Join(pkgDir, "skills", "bad-skill", "SKILL.md")
 		writeResourceSkill(t, good, "good-skill", "Good", "Content")
 		writeResourceSkill(t, bad, "bad-skill", "Bad", "Content")
-		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "package.json"), map[string]any{
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "gi.package.json"), map[string]any{
 			"skills": []any{"skills", "!**/bad-skill"},
 		})
 
@@ -140,7 +140,7 @@ func TestProtocolPackageManifestPatternRules(t *testing.T) {
 		dws := filepath.Join(pkgDir, "plugins", "nutrient-dws", "skills", "document-processor-api", "SKILL.md")
 		writeResourceSkill(t, pdf, "pdf-to-markdown", "PDF to Markdown", "Content")
 		writeResourceSkill(t, dws, "document-processor-api", "DWS", "Content")
-		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "package.json"), map[string]any{
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "gi.package.json"), map[string]any{
 			"skills": []any{"./plugins/*/skills"},
 		})
 
@@ -162,7 +162,7 @@ func TestProtocolPackageManifestPatternRules(t *testing.T) {
 		writeGiProtocolExtensionDescriptor(t, one)
 		writeGiProtocolExtensionDescriptor(t, two)
 		writeGiProtocolExtensionDescriptor(t, three)
-		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "package.json"), map[string]any{
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "gi.package.json"), map[string]any{
 			"extensions": []any{"extensions", "!**/two.gi.json", "+extensions/two.gi.json"},
 		})
 
@@ -188,7 +188,7 @@ func TestProtocolPackageResourceFilterRules(t *testing.T) {
 		writeGiProtocolExtensionDescriptor(t, foo)
 		writeGiProtocolExtensionDescriptor(t, bar)
 		writeGiProtocolExtensionDescriptor(t, baz)
-		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "package.json"), map[string]any{
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "gi.package.json"), map[string]any{
 			"extensions": []any{"extensions", "!**/baz.gi.json"},
 		})
 

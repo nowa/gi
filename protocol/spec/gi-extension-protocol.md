@@ -52,9 +52,15 @@ Hosts and SDKs claim only profiles they pass:
 ## Package Layer
 
 A package is a distribution unit. It MAY contain extensions, skills, prompt
-templates, themes, and static assets. Packages SHOULD use `gi.package.json`.
-Npm-compatible packages MAY embed the same object under the `gi` key in
-`package.json`.
+templates, themes, and static assets. Packages MUST use `gi.package.json`.
+`package.json#gi` and `npm:` sources are not part of v1 and MUST NOT be
+treated as compatible package inputs.
+
+V1 package sources are local paths, git URLs with optional refs, and approved
+archive sources such as tarball or OCI when a host explicitly implements them.
+Hosts MUST NOT support `npm:` as a package source. Package compatibility is
+defined by `gi.package.json`, extension RPC, capabilities, host actions, and
+ViewTree, not by any language ecosystem package manager.
 
 Package resolution MUST preserve this resource precedence:
 
@@ -66,6 +72,20 @@ Package resolution MUST preserve this resource precedence:
 
 Package resources MUST be filterable by group. Unknown manifest metadata MUST
 be preserved in lock files.
+
+Package install MUST fetch or copy the artifact, validate `gi.package.json`,
+record source/ref/digest metadata, and avoid executing package code by default.
+Hosts MUST NOT run post-install scripts implicitly. Declared prepare/build steps
+are host policy and require explicit approval.
+
+Packages do not run as a whole. On startup or reload, hosts resolve enabled
+package resources and activate extension entries only when needed: startup
+policy, command invocation, lifecycle event, TUI slot mount, provider use, or
+resource discovery. For `entry.kind = "process"`, hosts spawn the command with
+the package root as `cwd`, connect stdio NDJSON, require a `hello` handshake,
+grant capabilities, and route all state changes through RPC and `host.*`
+actions. On disable, session end, or host exit, hosts send shutdown, wait for a
+bounded grace period, kill on timeout, and record diagnostics.
 
 ## Extension Layer
 

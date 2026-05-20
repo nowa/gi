@@ -163,8 +163,11 @@ testable.
 
 ## Package Manifest v1
 
-Gi packages SHOULD declare resources in `gi.package.json`. For npm-compatible
-packages, the same object MAY be embedded under `package.json` key `gi`.
+Gi packages MUST declare resources in `gi.package.json`. `package.json#gi` and
+`npm:` package sources are not part of the Gi protocol and MUST NOT be treated
+as compatible package inputs. A JavaScript, Go, Rust, Python, or shell package
+can be a Gi package only by shipping the same `gi.package.json` manifest and
+speaking the same RPC/ViewTree protocol.
 
 ```json
 {
@@ -206,10 +209,13 @@ packages, the same object MAY be embedded under `package.json` key `gi`.
 
 Supported source types:
 
-- npm package
 - git URL with optional ref
 - local file or directory
 - OCI/tarball source, optional for hosted registries
+
+Hosts MUST NOT support `npm:` as a package source. Reusing npm as an artifact
+store would make users expect Pi/npm packages to run directly, while Gi only
+guarantees artifacts that implement this protocol.
 
 Resource precedence SHOULD match Pi's useful behavior:
 
@@ -225,7 +231,7 @@ Package settings MUST support filtering individual resource groups:
 {
   "packages": [
     {
-      "source": "npm:acme/plan-mode@1.0.0",
+      "source": "git:https://github.com/acme/gi-plan-mode.git#v1.0.0",
       "extensions": ["plan-mode"],
       "skills": false,
       "prompts": true,
@@ -237,6 +243,46 @@ Package settings MUST support filtering individual resource groups:
 
 Missing package behavior is host policy. Interactive Gi SHOULD offer install,
 skip, or fail. Non-interactive Gi SHOULD fail unless configured to auto-install.
+
+## Package Lifecycle
+
+Packages are installed resources, not running programs. The host runs only the
+resources declared by `gi.package.json`.
+
+### Install
+
+Install resolves a local path, git ref, or approved archive into the user or
+project package store, validates `gi.package.json`, records source/ref/digest
+metadata in a lock file, and does not execute package code. Hosts MUST NOT run
+post-install scripts by default. Any prepare/build step is host policy, must be
+declared, and requires explicit approval.
+
+### Resolve
+
+On startup or reload, the host reads enabled package manifests, applies resource
+precedence and package filters, and records deterministic source metadata for
+extensions, skills, prompts, themes, and assets.
+
+### Activate
+
+Activation is lazy unless a manifest explicitly requires startup behavior. A
+host MAY activate an extension on startup, command invocation, lifecycle event,
+TUI slot mount, provider use, or resource discovery. The activation trigger is
+host-controlled; packages do not import themselves into core.
+
+### Run
+
+For `entry.kind = "process"`, the host spawns the declared command with the
+package root as `cwd`, connects stdio NDJSON, and requires a `hello` handshake
+before accepting registrations. The process receives only granted capabilities
+and can mutate host state only through RPC methods and `host.*` actions.
+
+### Shutdown
+
+When a package is disabled, a session ends, or the host exits, the host sends a
+shutdown event, waits for a bounded grace period, kills the process on timeout,
+and records diagnostics. Extensions MUST tolerate duplicate shutdown and stale
+cancellation messages.
 
 ## Capability Model
 
@@ -1009,7 +1055,7 @@ Install-time UI SHOULD show:
 - package source and version/ref
 - publisher or repository origin
 - requested capabilities
-- post-install scripts or dependency install behavior
+- declared prepare/build behavior, if any
 - whether package has native binaries
 
 Runtime policy SHOULD support:

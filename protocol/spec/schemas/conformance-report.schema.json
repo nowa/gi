@@ -51,7 +51,7 @@
         "packageSources": {
           "type": "array",
           "items": {
-            "enum": ["npm", "git", "local", "oci", "tarball"]
+            "enum": ["git", "local", "oci", "tarball"]
           }
         },
         "viewNodes": {

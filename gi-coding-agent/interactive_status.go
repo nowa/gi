@@ -392,7 +392,7 @@ func compactInteractivePathSegments(path string) []string {
 
 func compactInteractivePackageLabel(extension InteractiveExtensionResource) string {
 	source := extension.SourceInfo.Source
-	label := strings.TrimPrefix(source, "npm:")
+	label := source
 	if strings.HasPrefix(source, "git:") {
 		label = strings.TrimPrefix(source, "git:")
 		label = strings.TrimPrefix(label, "github.com/")

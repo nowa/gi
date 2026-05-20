@@ -119,7 +119,7 @@ func resolveProtocolExtensionDir(dir string) []ProtocolExtensionSource {
 }
 
 func protocolExtensionManifestSources(dir string) []ProtocolExtensionSource {
-	content, err := os.ReadFile(filepath.Join(dir, "package.json"))
+	content, err := os.ReadFile(filepath.Join(dir, "gi.package.json"))
 	if err != nil {
 		return nil
 	}

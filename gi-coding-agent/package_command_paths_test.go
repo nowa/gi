@@ -237,19 +237,19 @@ func TestPackageCommandPathsPiBasics(t *testing.T) {
 		}
 	})
 
-	t.Run("suggests the configured source when update input omits the npm prefix", func(t *testing.T) {
+	t.Run("suggests the configured source when update input omits the git prefix", func(t *testing.T) {
 		agentDir, projectDir := createPackageCommandPathDirs(t)
 		settingsPath := filepath.Join(agentDir, "settings.json")
-		writeSettingsJSON(t, settingsPath, map[string]any{"packages": []any{"npm:pi-formatter"}})
+		writeSettingsJSON(t, settingsPath, map[string]any{"packages": []any{"git:github.com/gi-packages/formatter"}})
 
-		stdout, stderr, code := runPackageCommandCLI(t, []string{"update", "pi-formatter"}, projectDir, agentDir)
+		stdout, stderr, code := runPackageCommandCLI(t, []string{"update", "github.com/gi-packages/formatter"}, projectDir, agentDir)
 		if code != 1 {
 			t.Fatalf("code=%d stderr=%q", code, stderr)
 		}
-		if !strings.Contains(stderr, "Did you mean npm:pi-formatter?") || strings.Contains(stdout, "Updated pi-formatter") {
+		if !strings.Contains(stderr, "Did you mean git:github.com/gi-packages/formatter?") || strings.Contains(stdout, "Updated github.com/gi-packages/formatter") {
 			t.Fatalf("stdout=%q stderr=%q", stdout, stderr)
 		}
-		if packages := packageCommandSettingsPackages(t, settingsPath); !reflect.DeepEqual(packages, []string{"npm:pi-formatter"}) {
+		if packages := packageCommandSettingsPackages(t, settingsPath); !reflect.DeepEqual(packages, []string{"git:github.com/gi-packages/formatter"}) {
 			t.Fatalf("packages = %#v", packages)
 		}
 	})

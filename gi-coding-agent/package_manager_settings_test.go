@@ -73,23 +73,6 @@ func TestPackageManagerSettingsNormalizationPiParity(t *testing.T) {
 }
 
 func TestPackageManagerUpdatePrefixSuggestionsPiParity(t *testing.T) {
-	t.Run("suggests npm source prefixes for update lookups", func(t *testing.T) {
-		manager := NewDefaultPackageManager(PackageManagerOptions{
-			CWD:             t.TempDir(),
-			AgentDir:        t.TempDir(),
-			SettingsManager: NewInMemorySettingsManager(map[string]any{"packages": []any{"npm:example"}}),
-		})
-
-		err := manager.Update("example")
-		if err == nil {
-			t.Fatal("Update returned nil error")
-		}
-		want := "No matching package found for example. Did you mean npm:example?"
-		if err.Error() != want {
-			t.Fatalf("error = %q, want %q", err.Error(), want)
-		}
-	})
-
 	t.Run("suggests git source prefixes for update lookups", func(t *testing.T) {
 		manager := NewDefaultPackageManager(PackageManagerOptions{
 			CWD:             t.TempDir(),
@@ -104,6 +87,17 @@ func TestPackageManagerUpdatePrefixSuggestionsPiParity(t *testing.T) {
 		want := "No matching package found for github.com/example/repo. Did you mean git:github.com/example/repo?"
 		if err.Error() != want {
 			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	})
+
+	t.Run("rejects npm package sources", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir()})
+
+		if _, err := manager.addSourceToSettings("npm:example", true); err == nil || !strings.Contains(err.Error(), "npm packages are not supported") {
+			t.Fatalf("error = %v", err)
+		}
+		if err := manager.Update("npm:example"); err == nil || !strings.Contains(err.Error(), "npm packages are not supported") {
+			t.Fatalf("update error = %v", err)
 		}
 	})
 }

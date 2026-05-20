@@ -188,10 +188,7 @@ func resolveProtocolPackageDir(packageDir string, metadata ProtocolSourceInfo) P
 }
 
 func readProtocolPackageManifest(packageDir string) (protocolPackageManifest, bool) {
-	if manifest, ok := readProtocolPackageManifestFile(filepath.Join(packageDir, "gi.package.json")); ok {
-		return manifest, true
-	}
-	return readProtocolPackageManifestFile(filepath.Join(packageDir, "package.json"))
+	return readProtocolPackageManifestFile(filepath.Join(packageDir, "gi.package.json"))
 }
 
 func readProtocolPackageManifestFile(path string) (protocolPackageManifest, bool) {

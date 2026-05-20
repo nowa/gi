@@ -87,21 +87,21 @@ func TestSettingsManagerPackagesAndExtensions(t *testing.T) {
 
 	writeSettingsJSON(t, settingsPath, map[string]any{
 		"packages": []any{
-			"npm:simple-pkg",
+			"git:github.com/gi-packages/simple-pkg",
 			map[string]any{
-				"source":     "npm:shitty-extensions",
-				"extensions": []any{"extensions/oracle.ts"},
+				"source":     "git:github.com/gi-packages/test-extensions",
+				"extensions": []any{"extensions/oracle.gi.json"},
 				"skills":     []any{},
 			},
 		},
 	})
 	manager = NewSettingsManager(projectDir, agentDir)
 	packages := manager.GetPackages()
-	if len(packages) != 2 || packages[0] != "npm:simple-pkg" {
+	if len(packages) != 2 || packages[0] != "git:github.com/gi-packages/simple-pkg" {
 		t.Fatalf("packages = %#v", packages)
 	}
 	object, ok := packages[1].(map[string]any)
-	if !ok || object["source"] != "npm:shitty-extensions" {
+	if !ok || object["source"] != "git:github.com/gi-packages/test-extensions" {
 		t.Fatalf("package object = %#v", packages[1])
 	}
 }
@@ -174,7 +174,7 @@ func TestSettingsManagerProjectDirectoryCreation(t *testing.T) {
 		t.Fatalf("theme = %q", manager.GetTheme())
 	}
 
-	manager.SetProjectPackages([]any{map[string]any{"source": "npm:test-pkg"}})
+	manager.SetProjectPackages([]any{map[string]any{"source": "git:github.com/gi-packages/test-pkg"}})
 	if _, err := os.Stat(filepath.Join(projectDir, ".pi", "settings.json")); err != nil {
 		t.Fatalf("project settings should be created: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestSettingsManagerPreservesExternalArrayEdits(t *testing.T) {
 
 	writeSettingsJSON(t, settingsPath, map[string]any{
 		"theme":    "dark",
-		"packages": []any{"npm:pi-mcp-adapter"},
+		"packages": []any{"git:github.com/gi-packages/mcp-adapter"},
 	})
 	manager := NewSettingsManager(projectDir, agentDir)
 	settings := readSettingsJSON(t, settingsPath)

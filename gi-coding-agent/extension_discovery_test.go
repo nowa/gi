@@ -34,53 +34,53 @@ func TestProtocolExtensionDiscoveryPathRules(t *testing.T) {
 		}
 	})
 
-	t.Run("discovers subdirectory with package.json gi field", func(t *testing.T) {
+	t.Run("discovers subdirectory with gi.package.json gi field", func(t *testing.T) {
 		env := newProtocolExtensionDiscoveryEnv(t)
 		subdir := filepath.Join(env.extensionsDir, "my-package")
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(subdir, "src", "main.gi.json"))
-		writeGiProtocolPackageJSON(t, subdir, []string{"./src/main.gi.json"})
+		writeGiProtocolPackageManifest(t, subdir, []string{"./src/main.gi.json"})
 		result := DiscoverProtocolExtensions(nil, env.cwd, env.agentDir)
 		if len(result.Extensions) != 1 || !strings.Contains(result.Extensions[0].Path, filepath.Join("src", "main.gi.json")) {
 			t.Fatalf("extensions = %#v", result.Extensions)
 		}
 	})
 
-	t.Run("package.json can declare multiple extensions", func(t *testing.T) {
+	t.Run("gi.package.json can declare multiple extensions", func(t *testing.T) {
 		env := newProtocolExtensionDiscoveryEnv(t)
 		subdir := filepath.Join(env.extensionsDir, "my-package")
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(subdir, "ext1.gi.json"))
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(subdir, "ext2.gi.json"))
-		writeGiProtocolPackageJSON(t, subdir, []string{"./ext1.gi.json", "./ext2.gi.json"})
+		writeGiProtocolPackageManifest(t, subdir, []string{"./ext1.gi.json", "./ext2.gi.json"})
 		result := DiscoverProtocolExtensions(nil, env.cwd, env.agentDir)
 		if got := baseNames(result.Extensions); !reflect.DeepEqual(got, []string{"ext1.gi.json", "ext2.gi.json"}) {
 			t.Fatalf("extensions = %#v", got)
 		}
 	})
 
-	t.Run("package.json with gi field takes precedence over index descriptor", func(t *testing.T) {
+	t.Run("gi.package.json with gi field takes precedence over index descriptor", func(t *testing.T) {
 		env := newProtocolExtensionDiscoveryEnv(t)
 		subdir := filepath.Join(env.extensionsDir, "my-package")
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(subdir, "index.gi.json"))
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(subdir, "custom.gi.json"))
-		writeGiProtocolPackageJSON(t, subdir, []string{"./custom.gi.json"})
+		writeGiProtocolPackageManifest(t, subdir, []string{"./custom.gi.json"})
 		result := DiscoverProtocolExtensions(nil, env.cwd, env.agentDir)
 		if len(result.Extensions) != 1 || filepath.Base(result.Extensions[0].Path) != "custom.gi.json" {
 			t.Fatalf("extensions = %#v", result.Extensions)
 		}
 	})
 
-	t.Run("ignores package.json without gi field and falls back to index descriptor", func(t *testing.T) {
+	t.Run("ignores gi.package.json without gi field and falls back to index descriptor", func(t *testing.T) {
 		env := newProtocolExtensionDiscoveryEnv(t)
 		subdir := filepath.Join(env.extensionsDir, "my-package")
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(subdir, "index.gi.json"))
-		writeJSON(t, filepath.Join(subdir, "package.json"), map[string]any{"name": "my-package", "version": "1.0.0"})
+		writeJSON(t, filepath.Join(subdir, "gi.package.json"), map[string]any{"name": "my-package", "version": "1.0.0"})
 		result := DiscoverProtocolExtensions(nil, env.cwd, env.agentDir)
 		if len(result.Extensions) != 1 || filepath.Base(result.Extensions[0].Path) != "index.gi.json" {
 			t.Fatalf("extensions = %#v", result.Extensions)
 		}
 	})
 
-	t.Run("ignores subdirectory without index or package.json", func(t *testing.T) {
+	t.Run("ignores subdirectory without index or gi.package.json", func(t *testing.T) {
 		env := newProtocolExtensionDiscoveryEnv(t)
 		subdir := filepath.Join(env.extensionsDir, "not-an-extension")
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(subdir, "helper.gi.json"))
@@ -105,18 +105,18 @@ func TestProtocolExtensionDiscoveryPathRules(t *testing.T) {
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(env.extensionsDir, "direct.gi.json"))
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(env.extensionsDir, "with-index", "index.gi.json"))
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(env.extensionsDir, "with-manifest", "entry.gi.json"))
-		writeGiProtocolPackageJSON(t, filepath.Join(env.extensionsDir, "with-manifest"), []string{"./entry.gi.json"})
+		writeGiProtocolPackageManifest(t, filepath.Join(env.extensionsDir, "with-manifest"), []string{"./entry.gi.json"})
 		result := DiscoverProtocolExtensions(nil, env.cwd, env.agentDir)
 		if len(result.Errors) != 0 || len(result.Extensions) != 3 {
 			t.Fatalf("extensions = %#v errors=%#v", result.Extensions, result.Errors)
 		}
 	})
 
-	t.Run("skips non-existent paths declared in package.json", func(t *testing.T) {
+	t.Run("skips non-existent paths declared in gi.package.json", func(t *testing.T) {
 		env := newProtocolExtensionDiscoveryEnv(t)
 		subdir := filepath.Join(env.extensionsDir, "my-package")
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(subdir, "exists.gi.json"))
-		writeGiProtocolPackageJSON(t, subdir, []string{"./exists.gi.json", "./missing.gi.json"})
+		writeGiProtocolPackageManifest(t, subdir, []string{"./exists.gi.json", "./missing.gi.json"})
 		result := DiscoverProtocolExtensions(nil, env.cwd, env.agentDir)
 		if len(result.Extensions) != 1 || filepath.Base(result.Extensions[0].Path) != "exists.gi.json" {
 			t.Fatalf("extensions = %#v", result.Extensions)
@@ -170,12 +170,12 @@ func TestProtocolPackageExtensionEntrypointDiscovery(t *testing.T) {
 		}
 	})
 
-	t.Run("respects package.json gi.extensions manifest in subdirectories", func(t *testing.T) {
+	t.Run("respects gi.package.json gi.extensions manifest in subdirectories", func(t *testing.T) {
 		pkgDir := filepath.Join(t.TempDir(), "manifest-subdir-pkg")
 		customDir := filepath.Join(pkgDir, "extensions", "custom")
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(customDir, "main.gi.json"))
 		writeGiProtocolExtensionDescriptor(t, filepath.Join(customDir, "utils.gi.json"))
-		writeGiProtocolPackageJSON(t, customDir, []string{"./main.gi.json"})
+		writeGiProtocolPackageManifest(t, customDir, []string{"./main.gi.json"})
 
 		result := discoverProtocolExtensionsInDir(filepath.Join(pkgDir, "extensions"))
 		if !protocolExtensionHasSuffix(result.Extensions, filepath.Join("custom", "main.gi.json")) ||
@@ -234,9 +234,9 @@ func newProtocolExtensionDiscoveryEnv(t *testing.T) protocolExtensionDiscoveryEn
 	}
 }
 
-func writeGiProtocolPackageJSON(t *testing.T, dir string, extensions []string) {
+func writeGiProtocolPackageManifest(t *testing.T, dir string, extensions []string) {
 	t.Helper()
-	writeJSON(t, filepath.Join(dir, "package.json"), map[string]any{"gi": map[string]any{"extensions": extensions}})
+	writeJSON(t, filepath.Join(dir, "gi.package.json"), map[string]any{"gi": map[string]any{"extensions": extensions}})
 }
 
 func writeGiProtocolExtensionDescriptor(t *testing.T, path string) {

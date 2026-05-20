@@ -3,7 +3,6 @@ package gicodingagent
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -45,13 +44,6 @@ type SelfUpdateOptions struct {
 type SelfUpdateResult struct {
 	Updated     bool
 	PackageName string
-}
-
-type PackageUpdateInfo struct {
-	Source      string
-	DisplayName string
-	Type        string
-	Scope       string
 }
 
 type PackageUpdateSuggestionError struct {
@@ -111,6 +103,9 @@ func (m *DefaultPackageManager) addSourceToSettings(source string, project bool)
 	source = strings.TrimSpace(source)
 	if source == "" {
 		return false, fmt.Errorf("missing install source")
+	}
+	if unsupportedPackageSource(source) {
+		return false, unsupportedPackageSourceError(source)
 	}
 	baseDir := m.settingsBaseDir(project)
 	stored := m.packageSettingsValue(source, baseDir)
@@ -187,9 +182,6 @@ func (m *DefaultPackageManager) packageUpdateSuggestion(source string) string {
 	}
 	for _, existing := range settingsPackagesToStrings(m.settingsManager.GetPackages()) {
 		parsed := ParsePackageSource(existing)
-		if parsed.Type == "npm" && parsed.Path == source {
-			return existing
-		}
 		if parsed.Type == "git" && parsed.Host+"/"+parsed.Path == source {
 			return existing
 		}
@@ -200,7 +192,7 @@ func (m *DefaultPackageManager) packageUpdateSuggestion(source string) string {
 func ParsePackageSource(source string) PackageSource {
 	trimmed := strings.TrimSpace(source)
 	if strings.HasPrefix(trimmed, "npm:") {
-		return PackageSource{Type: "npm", Source: trimmed, Path: strings.TrimSpace(strings.TrimPrefix(trimmed, "npm:"))}
+		return PackageSource{Type: "unsupported", Source: trimmed, Path: strings.TrimSpace(strings.TrimPrefix(trimmed, "npm:"))}
 	}
 	if gitSource, ok := ParseGitURL(trimmed); ok {
 		return PackageSource{
@@ -220,8 +212,8 @@ func PackageSourceIdentity(source PackageSource) string {
 	if source.Type == "git" {
 		return "git:" + source.Host + "/" + source.Path
 	}
-	if source.Type == "npm" {
-		return "npm:" + source.Path
+	if source.Type == "unsupported" {
+		return "unsupported:" + source.Source
 	}
 	return "local:" + filepath.Clean(source.Path)
 }
@@ -237,10 +229,8 @@ func (m *DefaultPackageManager) Update(sources ...string) error {
 		}
 	}
 	for _, sourceText := range sources {
-		if ParsePackageSource(sourceText).Type == "npm" {
-			if err := m.updateNPMSource(sourceText); err != nil {
-				return err
-			}
+		if unsupportedPackageSource(sourceText) {
+			return unsupportedPackageSourceError(sourceText)
 		}
 	}
 	for _, sourceText := range sources {
@@ -262,38 +252,12 @@ func (m *DefaultPackageManager) Update(sources ...string) error {
 	return nil
 }
 
-func (m *DefaultPackageManager) updateNPMSource(sourceText string) error {
-	match, ok := m.findConfiguredNPMUpdateSource(sourceText)
-	if !ok {
-		return nil
-	}
-	ref := parseNPMPackageRef(match.source)
-	if ref.Name == "" || ref.Pinned {
-		return nil
-	}
-	installedVersion := readInstalledNPMVersion(filepath.Join(m.npmNodeModulesDir(match.scope), filepath.FromSlash(ref.Name), "package.json"))
-	if installedVersion == "" {
-		return nil
-	}
-	latestVersion, err := m.GetLatestNPMVersion(ref.Name)
-	if err != nil {
-		return err
-	}
-	if latestVersion == "" || latestVersion == installedVersion {
-		return nil
-	}
-	command, args := m.npmInstallCommand(match.scope, ref.Name+"@latest")
-	return m.operations.RunCommand(command, args, PackageCommandOptions{})
+func unsupportedPackageSource(source string) bool {
+	return ParsePackageSource(source).Type == "unsupported"
 }
 
-func (m *DefaultPackageManager) findConfiguredNPMUpdateSource(sourceText string) (configuredNPMUpdateSource, bool) {
-	inputIdentity := PackageSourceIdentity(ParsePackageSource(sourceText))
-	for _, source := range m.configuredNPMUpdateSources() {
-		if PackageSourceIdentity(ParsePackageSource(source.source)) == inputIdentity {
-			return source, true
-		}
-	}
-	return configuredNPMUpdateSource{}, false
+func unsupportedPackageSourceError(source string) error {
+	return fmt.Errorf("unsupported package source %q: Gi packages support local paths and git URLs with gi.package.json; npm packages are not supported", strings.TrimSpace(source))
 }
 
 func (m *DefaultPackageManager) RunSelfUpdate(options SelfUpdateOptions) (SelfUpdateResult, error) {
@@ -331,52 +295,6 @@ func (m *DefaultPackageManager) RunSelfUpdate(options SelfUpdateOptions) (SelfUp
 	return SelfUpdateResult{Updated: true, PackageName: updatePackageName}, nil
 }
 
-func (m *DefaultPackageManager) GetLatestNPMVersion(packageName string) (string, error) {
-	packageName = strings.TrimSpace(packageName)
-	if packageName == "" {
-		return "", fmt.Errorf("missing npm package name")
-	}
-	command := "npm"
-	args := []string{"view", packageName, "version", "--json"}
-	if npmCommand := m.globalNPMCommand(); len(npmCommand) > 0 {
-		command = npmCommand[0]
-		args = append(append([]string{}, npmCommand[1:]...), args...)
-	}
-	output, err := m.operations.RunCommandCapture(command, args, PackageCommandOptions{CWD: m.cwd})
-	if err != nil {
-		return "", err
-	}
-	return strings.Trim(strings.TrimSpace(output), `"`), nil
-}
-
-func (m *DefaultPackageManager) CheckForAvailablePackageUpdates() ([]PackageUpdateInfo, error) {
-	if packageManagerOffline() {
-		return nil, nil
-	}
-	var updates []PackageUpdateInfo
-	for _, item := range m.configuredNPMUpdateSources() {
-		ref := parseNPMPackageRef(item.source)
-		if ref.Name == "" || ref.Pinned {
-			continue
-		}
-		installedVersion := readInstalledNPMVersion(filepath.Join(m.npmNodeModulesDir(item.scope), filepath.FromSlash(ref.Name), "package.json"))
-		if installedVersion == "" {
-			continue
-		}
-		latestVersion, err := m.GetLatestNPMVersion(ref.Name)
-		if err != nil || latestVersion == "" || latestVersion == installedVersion {
-			continue
-		}
-		updates = append(updates, PackageUpdateInfo{
-			Source:      item.source,
-			DisplayName: ref.Name,
-			Type:        "npm",
-			Scope:       item.scope,
-		})
-	}
-	return updates, nil
-}
-
 func (m *DefaultPackageManager) ResolveExtensionSources(sources []string, options ResolveExtensionSourcesOptions) ([]string, error) {
 	resolved := make([]string, 0, len(sources))
 	for _, sourceText := range sources {
@@ -408,102 +326,6 @@ func packageManagerOffline() bool {
 		value = strings.TrimSpace(os.Getenv("PI_OFFLINE"))
 	}
 	return value == "1" || strings.EqualFold(value, "true")
-}
-
-type configuredNPMUpdateSource struct {
-	source string
-	scope  string
-}
-
-func (m *DefaultPackageManager) configuredNPMUpdateSources() []configuredNPMUpdateSource {
-	var sources []configuredNPMUpdateSource
-	add := func(values []any, scope string) {
-		for _, value := range values {
-			source := ""
-			if text, ok := value.(string); ok {
-				source = strings.TrimSpace(text)
-			} else if object, ok := value.(map[string]any); ok {
-				source, _ = object["source"].(string)
-				source = strings.TrimSpace(source)
-			}
-			if ParsePackageSource(source).Type == "npm" {
-				sources = append(sources, configuredNPMUpdateSource{source: source, scope: scope})
-			}
-		}
-	}
-	add(settingsSlice(m.settingsManager.global, "packages"), "user")
-	add(settingsSlice(m.settingsManager.project, "packages"), "project")
-	return sources
-}
-
-type npmPackageRef struct {
-	Name    string
-	Version string
-	Pinned  bool
-}
-
-func parseNPMPackageRef(source string) npmPackageRef {
-	parsed := ParsePackageSource(source)
-	if parsed.Type != "npm" {
-		return npmPackageRef{}
-	}
-	value := strings.TrimSpace(parsed.Path)
-	if value == "" {
-		return npmPackageRef{}
-	}
-	versionIndex := -1
-	if strings.HasPrefix(value, "@") {
-		if slash := strings.Index(value, "/"); slash >= 0 {
-			versionIndex = strings.LastIndex(value[slash+1:], "@")
-			if versionIndex >= 0 {
-				versionIndex += slash + 1
-			}
-		}
-	} else {
-		versionIndex = strings.LastIndex(value, "@")
-	}
-	if versionIndex > 0 {
-		return npmPackageRef{Name: value[:versionIndex], Version: value[versionIndex+1:], Pinned: true}
-	}
-	return npmPackageRef{Name: value}
-}
-
-func (m *DefaultPackageManager) npmNodeModulesDir(scope string) string {
-	if scope == "project" {
-		return filepath.Join(m.cwd, ConfigDirName, "npm", "node_modules")
-	}
-	return filepath.Join(m.agentDir, "node_modules")
-}
-
-func (m *DefaultPackageManager) npmInstallCommand(scope, packageSpec string) (string, []string) {
-	command := "npm"
-	prefixArgs := []string(nil)
-	if npmCommand := m.globalNPMCommand(); len(npmCommand) > 0 {
-		command = npmCommand[0]
-		prefixArgs = append(prefixArgs, npmCommand[1:]...)
-	}
-	args := append([]string{}, prefixArgs...)
-	args = append(args, "install")
-	if scope == "user" {
-		args = append(args, "-g", packageSpec)
-		return command, args
-	}
-	args = append(args, packageSpec, "--prefix", filepath.Join(m.cwd, ConfigDirName, "npm"))
-	return command, args
-}
-
-func readInstalledNPMVersion(packageJSONPath string) string {
-	content, err := os.ReadFile(packageJSONPath)
-	if err != nil {
-		return ""
-	}
-	var payload struct {
-		Version string `json:"version"`
-	}
-	if err := json.Unmarshal(content, &payload); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(payload.Version)
 }
 
 func (m *DefaultPackageManager) refreshGitPackage(packageDir string) error {

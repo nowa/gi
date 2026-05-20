@@ -15,10 +15,10 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `978`
+- `已有`: `970`
 - `待实现`: `0`
-- `需要协议 runtime`: `59`
-- `不适用`: `0`
+- `需要协议 runtime`: `48`
+- `不适用`: `19`
 
 ## Commit Plan
 
@@ -648,7 +648,7 @@ Gi coverage / implementation target: `gi-coding-agent/export_html_xss_test.go`
 
 Pi cases: `27`  
 Status: `需要协议 runtime`  
-Gi coverage / implementation target: `Pi 的 TS/JS extension discovery 只做协议等价移植：Gi core 发现 .gi.json descriptor 和 package.json gi.extensions，不发现或执行 .ts/.js 入口。`
+Gi coverage / implementation target: `Pi 的 TS/JS extension discovery 只做协议等价移植：Gi core 发现 .gi.json descriptor 和 gi.package.json gi.extensions，不发现或执行 .ts/.js 入口。`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -656,15 +656,15 @@ Gi coverage / implementation target: `Pi 的 TS/JS extension discovery 只做协
 | 54 | discovers direct .js files in extensions/ | 已有 | Gi 协议等价：发现 direct .gi.json descriptor；不发现 .js |
 | 64 | discovers subdirectory with index.ts | 已有 | Gi 协议等价：发现 subdirectory index.gi.json |
 | 77 | discovers subdirectory with index.js | 已有 | Gi 协议等价：发现 subdirectory index.gi.json |
-| 89 | prefers index.ts over index.js | 已有 | Gi 协议等价：package.json gi.extensions 优先于 index.gi.json；无 TS/JS 优先级 |
-| 102 | discovers subdirectory with package.json pi field | 已有 | Gi 协议等价：package.json gi.extensions |
-| 126 | package.json can declare multiple extensions | 已有 | Gi 协议等价：package.json gi.extensions declares multiple .gi.json descriptors |
-| 147 | package.json with pi field takes precedence over index.ts | 已有 | Gi 协议等价：package.json gi.extensions takes precedence over index.gi.json |
-| 172 | ignores package.json without pi field, falls back to index.ts | 已有 | Gi 协议等价：package.json without gi field falls back to index.gi.json |
-| 191 | ignores subdirectory without index or package.json | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 89 | prefers index.ts over index.js | 已有 | Gi 协议等价：gi.package.json gi.extensions 优先于 index.gi.json；无 TS/JS 优先级 |
+| 102 | discovers subdirectory with package.json pi field | 已有 | Gi 协议等价：gi.package.json gi.extensions |
+| 126 | package.json can declare multiple extensions | 已有 | Gi 协议等价：gi.package.json gi.extensions declares multiple .gi.json descriptors |
+| 147 | package.json with pi field takes precedence over index.ts | 已有 | Gi 协议等价：gi.package.json gi.extensions takes precedence over index.gi.json |
+| 172 | ignores package.json without pi field, falls back to index.ts | 已有 | Gi 协议等价：gi.package.json without gi field falls back to index.gi.json |
+| 191 | ignores subdirectory without index or package.json | 已有 | Gi 协议等价：subdirectory without index.gi.json or gi.package.json is ignored |
 | 203 | does not recurse beyond one level | 已有 | gi-coding-agent/extension_discovery_test.go |
 | 217 | handles mixed direct files and subdirectories | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 238 | skips non-existent paths declared in package.json | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 238 | skips non-existent paths declared in package.json | 已有 | Gi 协议等价：skips non-existent paths declared in gi.package.json |
 | 258 | loads extensions and registers commands | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 268 | loads extensions and registers tools | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 278 | reports errors for invalid extension code | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -1123,7 +1123,7 @@ Gi coverage / implementation target: `gi-coding-agent/package_command_paths_test
 | 187 | uses the current package name when the update check omits packageName | 已有 | gi-coding-agent/package_command_paths_test.go |
 | 229 | installs the active package name from the update check during self-update | 已有 | gi-coding-agent/package_command_paths_test.go |
 | 280 | fails self-update when renamed npm package installation fails | 已有 | gi-coding-agent/package_command_paths_test.go |
-| 336 | suggests the configured source when update input omits the npm prefix | 已有 | gi-coding-agent/package_command_paths_test.go |
+| 336 | suggests the configured source when update input omits the npm prefix | 不适用 | npm source 已移除；git source suggestion 覆盖在 package-manager.test.ts:1949 |
 
 ## `package-manager-ssh.test.ts`
 
@@ -1158,7 +1158,7 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 150 | should auto-discover user prompts with overrides | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 162 | should resolve symlinked user and project resources once | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 230 | should auto-discover project prompts with overrides | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 242 | should resolve directory with package.json pi.extensions in extensions setting | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 242 | should resolve directory with package.json pi.extensions in extensions setting | 已有 | Gi 协议等价：resolve gi.package.json gi.extensions descriptor paths |
 | 278 | should use the agent dir as baseDir for user .pi/agent skills | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 291 | should use the project .pi dir as baseDir for project .pi skills | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 305 | should use ~/.agents as baseDir for user .agents skills | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -1176,15 +1176,15 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 590 | should stop recursing when a package skill directory contains SKILL.md | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 605 | should emit progress events | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 621 | should avoid the shell for git so Windows paths with spaces stay single arguments | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 632 | should use npmCommand argv for npm installs | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 632 | should use npmCommand argv for npm installs | 不适用 | Gi package v1 不支持 npm source 或隐式 npm install |
 | 653 | should install git package dependencies with --omit=dev | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 671 | should use plain install for git package dependencies when npmCommand is configured | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 671 | should use plain install for git package dependencies when npmCommand is configured | 不适用 | Gi package install 不默认执行 dependency install/postinstall |
 | 698 | should update git package dependencies with --omit=dev | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 725 | should use plain install through npmCommand argv when updating git package dependencies | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 763 | should use npmCommand argv for npm root lookup and invalidate cached root when npmCommand changes | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 802 | should resolve pnpm global package paths from pnpm list output | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 860 | should resolve wrapped pnpm global package paths from pnpm list output | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 886 | should fail when pnpm global package list is malformed | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 725 | should use plain install through npmCommand argv when updating git package dependencies | 不适用 | Gi package update 不默认执行 npm dependency install |
+| 763 | should use npmCommand argv for npm root lookup and invalidate cached root when npmCommand changes | 不适用 | Gi package v1 无 npm global root lookup |
+| 802 | should resolve pnpm global package paths from pnpm list output | 不适用 | Gi package v1 无 pnpm global package source |
+| 860 | should resolve wrapped pnpm global package paths from pnpm list output | 不适用 | Gi package v1 无 pnpm global package source |
+| 886 | should fail when pnpm global package list is malformed | 不适用 | Gi package v1 无 pnpm global package source |
 | 903 | should emit progress events on install attempt | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 920 | should recognize github URLs without git: prefix | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 945 | should parse package source types from docs examples | 已有 | gi-coding-agent/package_manager_source_test.go |
@@ -1234,23 +1234,23 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1652 | should dedupe all supported URL formats for same repo | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 1671 | should keep different repos separate (HTTPS vs SSH) | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 1686 | should only load index.ts from subdirectories, not helper modules | 已有 | Gi 协议等价：only load index.gi.json from subdirectories, not helper descriptors |
-| 1716 | should respect package.json pi.extensions manifest in subdirectories | 已有 | Gi 协议等价：respect package.json gi.extensions manifest in subdirectories |
+| 1716 | should respect package.json pi.extensions manifest in subdirectories | 已有 | Gi 协议等价：respect gi.package.json gi.extensions manifest in subdirectories |
 | 1741 | should handle mixed top-level files and subdirectories | 已有 | gi-coding-agent/extension_discovery_test.go |
 | 1770 | should skip subdirectories without index.ts or manifest | 已有 | Gi 协议等价：skip subdirectories without index.gi.json or gi.extensions manifest |
-| 1790 | should update project npm packages using @latest when newer version is available | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
-| 1813 | should skip project npm update when installed version matches latest | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
-| 1832 | should batch npm updates per scope and run git updates in parallel while skipping pinned and current packages | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1941 | should suggest npm source prefixes for update lookups | 已有 | gi-coding-agent/package_manager_settings_test.go |
+| 1790 | should update project npm packages using @latest when newer version is available | 不适用 | Gi package v1 不支持 npm source/update |
+| 1813 | should skip project npm update when installed version matches latest | 不适用 | Gi package v1 不支持 npm source/update |
+| 1832 | should batch npm updates per scope and run git updates in parallel while skipping pinned and current packages | 不适用 | Gi package v1 不支持 npm source/update |
+| 1941 | should suggest npm source prefixes for update lookups | 不适用 | npm source 已被移除；显式拒绝 npm: |
 | 1949 | should suggest git source prefixes for update lookups | 已有 | gi-coding-agent/package_manager_settings_test.go |
 | 1957 | should skip installing missing package sources when offline | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1969 | should skip refreshing temporary git sources when offline | 已有 | gi-coding-agent/package_manager_git_update_test.go |
-| 1985 | should not run npm view during resolve for installed unpinned packages | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1999 | should reinstall pinned npm packages when installed version does not match | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 2013 | should not check package updates when offline | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
-| 2022 | should report updates for installed unpinned npm packages | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
-| 2041 | should skip pinned packages when checking for updates | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
-| 2060 | should use npm view to fetch latest version | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
-| 2073 | should use npmCommand argv for npm update checks | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
+| 1985 | should not run npm view during resolve for installed unpinned packages | 不适用 | Gi package v1 不支持 npm source/update |
+| 1999 | should reinstall pinned npm packages when installed version does not match | 不适用 | Gi package v1 不支持 npm source/update |
+| 2013 | should not check package updates when offline | 不适用 | npm update checker 已移除 |
+| 2022 | should report updates for installed unpinned npm packages | 不适用 | Gi package v1 不支持 npm source/update |
+| 2041 | should skip pinned packages when checking for updates | 不适用 | Gi package v1 不支持 npm source/update |
+| 2060 | should use npm view to fetch latest version | 不适用 | Gi package v1 不调用 npm view |
+| 2073 | should use npmCommand argv for npm update checks | 不适用 | Gi package v1 无 npmCommand package update path |
 | 2094 | should wait for close before resolving captured stdout | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 
 ## `path-utils.test.ts`
