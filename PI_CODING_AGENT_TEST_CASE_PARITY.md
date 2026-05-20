@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `940`
+- `已有`: `944`
 - `待实现`: `0`
-- `需要协议 runtime`: `97`
+- `需要协议 runtime`: `93`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -1170,10 +1170,10 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 476 | should dedupe user skill entries when ~/.pi/agent/skills is a symlink to ~/.agents/skills | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 507 | should respect .gitignore in skill directories | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 527 | should not apply parent .gitignore to .pi auto-discovery | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 541 | should resolve local paths | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 549 | should handle directories with pi manifest | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 578 | should handle directories with auto-discovery layout | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 590 | should stop recursing when a package skill directory contains SKILL.md | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 541 | should resolve local paths | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
+| 549 | should handle directories with pi manifest | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
+| 578 | should handle directories with auto-discovery layout | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
+| 590 | should stop recursing when a package skill directory contains SKILL.md | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 605 | should emit progress events | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 621 | should avoid the shell for git so Windows paths with spaces stay single arguments | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 632 | should use npmCommand argv for npm installs | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
