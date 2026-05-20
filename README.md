@@ -59,6 +59,22 @@ go get github.com/nowa/gi/gi-agent-core
 go get github.com/nowa/gi/gi-tui
 ```
 
+## CLI Usage
+
+Gi includes a Go CLI entrypoint for the coding-agent migration surface:
+
+```sh
+go run ./cmd/gi --help
+go run ./cmd/gi -p --model openai/gpt-4o-mini "Summarize this repository"
+go run ./cmd/gi --offline --no-session -p --model openai/gpt-4o-mini "Smoke test"
+go run ./cmd/gi install official:gi-plan-mode -l
+```
+
+`-p` runs non-interactive print mode. Live model calls use provider credentials
+from `--api-key`, `~/.gi/agent/auth.json`, `~/.gi/agent/models.json`, or provider
+environment variables. `--offline --no-session` uses the local deterministic
+responder without writing session files and is intended for smoke tests.
+
 ## LLM Usage
 
 ```go

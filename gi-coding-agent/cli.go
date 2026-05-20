@@ -9,16 +9,19 @@ import (
 )
 
 type CLIOptions struct {
-	Args                []string
-	Stdout              io.Writer
-	Stderr              io.Writer
-	Startup             func(stderr io.Writer) error
-	PackageManager      *DefaultPackageManager
-	PackageName         string
-	Version             string
-	InstallEnvironment  InstallEnvironment
-	VersionCheck        VersionReleaseChecker
-	VersionCheckOptions VersionCheckOptions
+	Args                 []string
+	Stdout               io.Writer
+	Stderr               io.Writer
+	CWD                  string
+	AgentDir             string
+	Startup              func(stderr io.Writer) error
+	PrintModeHostFactory func(Args) (PrintModeRuntimeHost, error)
+	PackageManager       *DefaultPackageManager
+	PackageName          string
+	Version              string
+	InstallEnvironment   InstallEnvironment
+	VersionCheck         VersionReleaseChecker
+	VersionCheckOptions  VersionCheckOptions
 }
 
 func RunCLI(options CLIOptions) int {
@@ -39,6 +42,13 @@ func RunCLI(options CLIOptions) int {
 	if args.Version {
 		_, _ = fmt.Fprintln(nonNilWriter(options.Stdout), "gi")
 		return 0
+	}
+	if args.Print || args.Mode == ModeJSON {
+		return runCLIPrintMode(args, options)
+	}
+	if args.Mode == ModeRPC {
+		writeCLIError(options.Stderr, "RPC mode is not wired to the CLI entrypoint yet.")
+		return 1
 	}
 	return 0
 }
@@ -223,13 +233,16 @@ func defaultCLIPackageManager() *DefaultPackageManager {
 	if err != nil || cwd == "" {
 		cwd = "."
 	}
+	return NewDefaultPackageManager(PackageManagerOptions{CWD: cwd, AgentDir: defaultCLIAgentDir(cwd)})
+}
+
+func defaultCLIAgentDir(cwd string) string {
 	agentDir := firstNonEmptyString(os.Getenv("GI_CODING_AGENT_DIR"), os.Getenv("PI_CODING_AGENT_DIR"))
 	if agentDir != "" {
-		agentDir = ExpandPath(agentDir)
-	} else if home, err := os.UserHomeDir(); err == nil && home != "" {
-		agentDir = filepath.Join(home, ConfigDirName, "agent")
-	} else {
-		agentDir = filepath.Join(cwd, ConfigDirName, "agent")
+		return ExpandPath(agentDir)
 	}
-	return NewDefaultPackageManager(PackageManagerOptions{CWD: cwd, AgentDir: agentDir})
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ConfigDirName, "agent")
+	}
+	return filepath.Join(cwd, ConfigDirName, "agent")
 }
