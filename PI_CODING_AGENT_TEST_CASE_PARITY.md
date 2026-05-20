@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `594`
-- `待实现`: `172`
+- `已有`: `597`
+- `待实现`: `169`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -60,7 +60,7 @@ Status meanings:
 | `edit-tool-legacy-input.test.ts` | 8 | 已有 | gi-coding-agent/edit_tool_definition_test.go |
 | `edit-tool-no-full-redraw.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `export-html-skill-block.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `export-html-whitespace.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `export-html-whitespace.test.ts` | 3 | 已有 | gi-coding-agent/export_html_whitespace_test.go |
 | `export-html-xss.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `extensions-discovery.test.ts` | 27 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `extensions-input-event.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -497,8 +497,8 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 ## `compaction-serialization.test.ts`
 
 Pi cases: `3`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/export_html_whitespace_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -623,9 +623,9 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 10 | preserves whitespace for plain-text tool output lines without preserving template whitespace | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 20 | does not insert source whitespace between ANSI-rendered lines | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 24 | trims TUI spacing lines from custom tool result HTML | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 10 | preserves whitespace for plain-text tool output lines without preserving template whitespace | 已有 | gi-coding-agent/export_html_whitespace_test.go |
+| 20 | does not insert source whitespace between ANSI-rendered lines | 已有 | gi-coding-agent/export_html_whitespace_test.go |
+| 24 | trims TUI spacing lines from custom tool result HTML | 已有 | gi-coding-agent/export_html_whitespace_test.go |
 
 ## `export-html-xss.test.ts`
 
