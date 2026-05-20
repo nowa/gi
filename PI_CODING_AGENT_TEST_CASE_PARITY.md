@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `403`
-- `待实现`: `341`
+- `已有`: `407`
+- `待实现`: `337`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -74,7 +74,7 @@ Status meanings:
 | `image-processing.test.ts` | 9 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `image-resize-callers.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `initial-message.test.ts` | 3 | 已有 | gi-coding-agent/initial_message_test.go |
-| `interactive-mode-anthropic-warning.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `interactive-mode-anthropic-warning.test.ts` | 4 | 已有 | gi-coding-agent/anthropic_warning_test.go |
 | `interactive-mode-clone-command.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `interactive-mode-compaction.test.ts` | 1 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `interactive-mode-import-command.test.ts` | 6 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -873,16 +873,16 @@ Gi coverage / implementation target: `gi-coding-agent/initial_message_test.go`
 
 ## `interactive-mode-anthropic-warning.test.ts`
 
-Pi cases: `4`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `4`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/anthropic_warning_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 11 | warns once when Anthropic subscription auth is detected | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 37 | warns when Anthropic OAuth is stored even if token refresh lookup would fail | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 60 | does not warn for non-Anthropic models | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 83 | does not warn when Anthropic extra usage warning is disabled | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 11 | warns once when Anthropic subscription auth is detected | 已有 | gi-coding-agent/anthropic_warning_test.go |
+| 37 | warns when Anthropic OAuth is stored even if token refresh lookup would fail | 已有 | gi-coding-agent/anthropic_warning_test.go |
+| 60 | does not warn for non-Anthropic models | 已有 | gi-coding-agent/anthropic_warning_test.go |
+| 83 | does not warn when Anthropic extra usage warning is disabled | 已有 | gi-coding-agent/anthropic_warning_test.go |
 
 ## `interactive-mode-clone-command.test.ts`
 
