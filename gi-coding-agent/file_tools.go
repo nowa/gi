@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
@@ -242,9 +243,15 @@ type editApplyResult struct {
 }
 
 type editRange struct {
+	start       int
+	end         int
+	edit        Edit
+	replacement string
+}
+
+type editOccurrence struct {
 	start int
 	end   int
-	edit  Edit
 }
 
 func applyEditsAgainstOriginal(content string, edits []Edit) (editApplyResult, error) {
@@ -254,13 +261,38 @@ func applyEditsAgainstOriginal(content string, edits []Edit) (editApplyResult, e
 			return editApplyResult{}, fmt.Errorf("oldText must not be empty")
 		}
 		occurrences := findEditOccurrences(content, edit.OldText)
+		var occurrence editOccurrence
+		fuzzy := false
 		if len(occurrences) == 0 {
-			return editApplyResult{}, fmt.Errorf("Could not find the exact text to replace")
+			fuzzyOccurrences := findFuzzyEditOccurrences(content, edit.OldText)
+			if len(fuzzyOccurrences) == 0 {
+				return editApplyResult{}, fmt.Errorf("Could not find the exact text to replace")
+			}
+			if len(fuzzyOccurrences) > 1 {
+				return editApplyResult{}, fmt.Errorf("Found %d occurrences of oldText; expected exactly one", len(fuzzyOccurrences))
+			}
+			occurrence = fuzzyOccurrences[0]
+			fuzzy = true
+		} else {
+			if len(occurrences) > 1 {
+				return editApplyResult{}, fmt.Errorf("Found %d occurrences of oldText; expected exactly one", len(occurrences))
+			}
+			if strings.Contains(edit.OldText, "\n") {
+				if fuzzyOccurrences := findFuzzyEditOccurrences(content, edit.OldText); len(fuzzyOccurrences) > 1 {
+					return editApplyResult{}, fmt.Errorf("Found %d occurrences of oldText; expected exactly one", len(fuzzyOccurrences))
+				}
+			}
+			occurrence = editOccurrence{start: occurrences[0], end: occurrences[0] + len(edit.OldText)}
 		}
-		if len(occurrences) > 1 {
-			return editApplyResult{}, fmt.Errorf("Found %d occurrences of oldText; expected exactly one", len(occurrences))
+		replacement := edit.NewText
+		start := occurrence.start
+		end := occurrence.end
+		if fuzzy {
+			if strings.Contains(content[start:end], "\r\n") {
+				replacement = strings.ReplaceAll(replacement, "\n", "\r\n")
+			}
 		}
-		ranges = append(ranges, editRange{start: occurrences[0], end: occurrences[0] + len(edit.OldText), edit: edit})
+		ranges = append(ranges, editRange{start: start, end: end, edit: edit, replacement: replacement})
 	}
 	sortEditRanges(ranges)
 	for i := 1; i < len(ranges); i++ {
@@ -273,7 +305,7 @@ func applyEditsAgainstOriginal(content string, edits []Edit) (editApplyResult, e
 	cursor := 0
 	for _, r := range ranges {
 		builder.WriteString(content[cursor:r.start])
-		builder.WriteString(r.edit.NewText)
+		builder.WriteString(r.replacement)
 		cursor = r.end
 	}
 	builder.WriteString(content[cursor:])
@@ -308,10 +340,101 @@ func buildEditDiff(content string, ranges []editRange) string {
 			lines = append(lines, "...")
 		}
 		lines = append(lines, prefixEditDiffLines("-", content[r.start:r.end])...)
-		lines = append(lines, prefixEditDiffLines("+", r.edit.NewText)...)
+		lines = append(lines, prefixEditDiffLines("+", r.replacement)...)
 		previousEnd = r.end
 	}
 	return strings.Join(lines, "\n")
+}
+
+func findFuzzyEditOccurrences(content, oldText string) []editOccurrence {
+	normalizedContent, contentPositions := normalizeEditText(content)
+	normalizedOldText, _ := normalizeEditText(oldText)
+	if normalizedOldText == "" {
+		return nil
+	}
+	var ranges []editOccurrence
+	searchFrom := 0
+	for {
+		index := strings.Index(normalizedContent[searchFrom:], normalizedOldText)
+		if index < 0 {
+			return ranges
+		}
+		normalizedStart := searchFrom + index
+		normalizedEnd := normalizedStart + len(normalizedOldText)
+		ranges = append(ranges, editOccurrence{start: contentPositions[normalizedStart], end: contentPositions[normalizedEnd]})
+		searchFrom = normalizedEnd
+	}
+}
+
+func normalizeEditText(input string) (string, []int) {
+	var builder strings.Builder
+	var positions []int
+	var pendingSpaces []int
+	appendNormalized := func(value string, originalIndex int) {
+		for range []byte(value) {
+			positions = append(positions, originalIndex)
+		}
+		builder.WriteString(value)
+	}
+	flushSpaces := func() {
+		for _, position := range pendingSpaces {
+			appendNormalized(" ", position)
+		}
+		pendingSpaces = nil
+	}
+
+	for index := 0; index < len(input); {
+		r, size := utf8.DecodeRuneInString(input[index:])
+		if r == '\r' && index+size < len(input) && input[index+size] == '\n' {
+			pendingSpaces = nil
+			appendNormalized("\n", index)
+			index += size + 1
+			continue
+		}
+		if r == '\n' {
+			pendingSpaces = nil
+			appendNormalized("\n", index)
+			index += size
+			continue
+		}
+		normalized, keep := normalizeEditRune(r)
+		if !keep {
+			index += size
+			continue
+		}
+		if normalized == " " || normalized == "\t" {
+			pendingSpaces = append(pendingSpaces, index)
+			index += size
+			continue
+		}
+		flushSpaces()
+		appendNormalized(normalized, index)
+		index += size
+	}
+	flushSpaces()
+	positions = append(positions, len(input))
+	return builder.String(), positions
+}
+
+func normalizeEditRune(r rune) (string, bool) {
+	switch r {
+	case '\u0301':
+		return "", false
+	case '\u00a0', '\u202f':
+		return " ", true
+	case '\u2018', '\u2019':
+		return "'", true
+	case '\u201c', '\u201d':
+		return "\"", true
+	case '\u2010', '\u2011', '\u2012', '\u2013', '\u2014', '\u2212':
+		return "-", true
+	case 'é', 'É':
+		return "e", true
+	}
+	if r >= '\uff01' && r <= '\uff5e' {
+		return string(r - 0xfee0), true
+	}
+	return string(r), true
 }
 
 func prefixEditDiffLines(prefix, value string) []string {

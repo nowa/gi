@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `502`
-- `待实现`: `242`
+- `已有`: `519`
+- `待实现`: `225`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -1888,23 +1888,23 @@ Gi coverage / implementation target: `部分已有: gi-coding-agent/tools_read_t
 | 747 | should surface fd glob parse errors | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 756 | should treat flag-like patterns as search text | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | 767 | should list dotfiles and directories | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 792 | should match text with trailing whitespace stripped | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 808 | should match fullwidth punctuation in Chinese text | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 822 | should match compatibility-equivalent Unicode forms | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 836 | should match smart single quotes to ASCII quotes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 852 | should match smart double quotes to ASCII quotes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 868 | should match Unicode dashes to ASCII hyphen | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 884 | should match non-breaking space to regular space | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 900 | should prefer exact match over fuzzy match | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 915 | should still fail when text is not found even with fuzzy matching | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 927 | should detect duplicates after fuzzy normalization | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 940 | should support fuzzy matching in multi-edit mode | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 968 | should match LF oldText against CRLF file content | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 981 | should preserve CRLF line endings after edit | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 994 | should preserve LF line endings for LF files | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1007 | should detect duplicates across CRLF/LF variants | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1020 | should preserve UTF-8 BOM after edit | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 1033 | should preserve CRLF line endings and BOM in multi-edit mode | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 792 | should match text with trailing whitespace stripped | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 808 | should match fullwidth punctuation in Chinese text | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 822 | should match compatibility-equivalent Unicode forms | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 836 | should match smart single quotes to ASCII quotes | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 852 | should match smart double quotes to ASCII quotes | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 868 | should match Unicode dashes to ASCII hyphen | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 884 | should match non-breaking space to regular space | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 900 | should prefer exact match over fuzzy match | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 915 | should still fail when text is not found even with fuzzy matching | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 927 | should detect duplicates after fuzzy normalization | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 940 | should support fuzzy matching in multi-edit mode | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 968 | should match LF oldText against CRLF file content | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 981 | should preserve CRLF line endings after edit | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 994 | should preserve LF line endings for LF files | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 1007 | should detect duplicates across CRLF/LF variants | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 1020 | should preserve UTF-8 BOM after edit | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
+| 1033 | should preserve CRLF line endings and BOM in multi-edit mode | 已有 | gi-coding-agent/tools_edit_fuzzy_test.go |
 
 ## `tree-selector.test.ts`
 
