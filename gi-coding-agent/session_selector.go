@@ -7,17 +7,15 @@ import (
 )
 
 const (
-	sessionSelectorCtrlR          = "\x1b[114;5u"
-	sessionSelectorCtrlD          = "\x04"
-	sessionSelectorCtrlBackspace  = "\x1b[127;5u"
-	sessionSelectorTab            = "\t"
-	sessionSelectorConfirm        = "\r"
-	sessionSelectorConfirmAlt     = "\n"
-	sessionSelectorCancel         = "\x1b"
-	sessionSelectorCurrentScope   = "current"
-	sessionSelectorAllScope       = "all"
-	sessionSelectorThreadedSort   = "threaded"
-	sessionSelectorDefaultMaxRows = 10
+	sessionSelectorCtrlR         = "\x1b[114;5u"
+	sessionSelectorCtrlD         = "\x04"
+	sessionSelectorCtrlBackspace = "\x1b[127;5u"
+	sessionSelectorTab           = "\t"
+	sessionSelectorConfirm       = "\r"
+	sessionSelectorConfirmAlt    = "\n"
+	sessionSelectorCancel        = "\x1b"
+	sessionSelectorCurrentScope  = "current"
+	sessionSelectorAllScope      = "all"
 )
 
 type SessionSelectorLoader func(SessionListProgress) ([]SessionInfo, error)
@@ -43,6 +41,8 @@ type SessionSelectorComponent struct {
 	options         SessionSelectorOptions
 	selected        int
 	scope           string
+	sortMode        SessionSelectorSortMode
+	nameFilter      SessionSelectorNameFilter
 	searchQuery     string
 	deleteConfirm   bool
 	deletePath      string
@@ -58,14 +58,18 @@ func NewSessionSelectorComponent(sessions []SessionInfo, options SessionSelector
 		currentSessions: cloneSessionInfos(cloned),
 		options:         options,
 		scope:           sessionSelectorCurrentScope,
+		sortMode:        SessionSelectorSortThreaded,
+		nameFilter:      SessionSelectorNameAll,
 	}
 }
 
 func NewLoadingSessionSelectorComponent(currentLoader, allLoader SessionSelectorLoader, options SessionSelectorOptions) *SessionSelectorComponent {
 	selector := &SessionSelectorComponent{
-		options:   options,
-		scope:     sessionSelectorCurrentScope,
-		allLoader: allLoader,
+		options:    options,
+		scope:      sessionSelectorCurrentScope,
+		allLoader:  allLoader,
+		sortMode:   SessionSelectorSortThreaded,
+		nameFilter: SessionSelectorNameAll,
 	}
 	if currentLoader == nil {
 		return selector
@@ -217,6 +221,20 @@ func (s *SessionSelectorComponent) Scope() string {
 	return s.scope
 }
 
+func (s *SessionSelectorComponent) SetSortMode(mode SessionSelectorSortMode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sortMode = mode
+	s.clampSelectedLocked()
+}
+
+func (s *SessionSelectorComponent) SetNameFilter(filter SessionSelectorNameFilter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nameFilter = filter
+	s.clampSelectedLocked()
+}
+
 func (s *SessionSelectorComponent) toggleScope() {
 	var loader SessionSelectorLoader
 	var seq int
@@ -341,7 +359,7 @@ func (s *SessionSelectorComponent) isCurrentSessionPathLocked(path string) bool 
 
 func (s *SessionSelectorComponent) visibleNodesLocked() []sessionSelectorFlatNode {
 	sessions := s.filteredSessionsLocked()
-	if strings.TrimSpace(s.searchQuery) != "" {
+	if strings.TrimSpace(s.searchQuery) != "" || s.sortMode != SessionSelectorSortThreaded {
 		nodes := make([]sessionSelectorFlatNode, 0, len(sessions))
 		for _, session := range sessions {
 			nodes = append(nodes, sessionSelectorFlatNode{session: session, isLast: true})
@@ -352,25 +370,7 @@ func (s *SessionSelectorComponent) visibleNodesLocked() []sessionSelectorFlatNod
 }
 
 func (s *SessionSelectorComponent) filteredSessionsLocked() []SessionInfo {
-	query := strings.ToLower(strings.TrimSpace(s.searchQuery))
-	if query == "" {
-		return cloneSessionInfos(s.sessions)
-	}
-	filtered := make([]SessionInfo, 0, len(s.sessions))
-	for _, session := range s.sessions {
-		haystack := strings.ToLower(strings.Join([]string{
-			session.ID,
-			session.Name,
-			session.FirstMessage,
-			session.AllMessagesText,
-			session.Path,
-			session.CWD,
-		}, "\n"))
-		if strings.Contains(haystack, query) {
-			filtered = append(filtered, session)
-		}
-	}
-	return filtered
+	return FilterAndSortSessions(s.sessions, s.searchQuery, s.sortMode, s.nameFilter)
 }
 
 func (s *SessionSelectorComponent) clampSelectedLocked() {

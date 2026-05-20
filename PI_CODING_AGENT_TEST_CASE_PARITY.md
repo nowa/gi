@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `619`
-- `待实现`: `147`
+- `已有`: `628`
+- `待实现`: `138`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -106,7 +106,7 @@ Status meanings:
 | `session-info-modified-timestamp.test.ts` | 1 | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
 | `session-selector-path-delete.test.ts` | 7 | 已有 | gi-coding-agent/session_selector_path_delete_test.go |
 | `session-selector-rename.test.ts` | 3 | 已有 | gi-coding-agent/session_selector_rename_test.go |
-| `session-selector-search.test.ts` | 9 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `session-selector-search.test.ts` | 9 | 已有 | gi-coding-agent/session_selector_search_test.go |
 | `settings-manager-bug.test.ts` | 4 | 已有 | gi-coding-agent/settings_manager_test.go |
 | `settings-manager.test.ts` | 17 | 已有 | gi-coding-agent/settings_manager_test.go |
 | `skills.test.ts` | 28 | 已有 | gi-agent-core/harness/skills_test.go |
@@ -1636,21 +1636,21 @@ Gi coverage / implementation target: `gi-coding-agent/session_selector_rename_te
 
 ## `session-selector-search.test.ts`
 
-Pi cases: `9`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `9`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/session_selector_search_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 22 | filters by quoted phrase with whitespace normalization | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 40 | filters by regex (re:) and is case-insensitive | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 58 | recent sort preserves input order | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 81 | relevance sort orders by score and tie-breaks by modified desc | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 115 | returns empty list for invalid regex | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 154 | returns all sessions when nameFilter is 'all' | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 159 | returns only named sessions when nameFilter is 'named' | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 164 | applies name filter before search query | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 169 | excludes whitespace-only names from named filter | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 22 | filters by quoted phrase with whitespace normalization | 已有 | gi-coding-agent/session_selector_search_test.go |
+| 40 | filters by regex (re:) and is case-insensitive | 已有 | gi-coding-agent/session_selector_search_test.go |
+| 58 | recent sort preserves input order | 已有 | gi-coding-agent/session_selector_search_test.go |
+| 81 | relevance sort orders by score and tie-breaks by modified desc | 已有 | gi-coding-agent/session_selector_search_test.go |
+| 115 | returns empty list for invalid regex | 已有 | gi-coding-agent/session_selector_search_test.go |
+| 154 | returns all sessions when nameFilter is 'all' | 已有 | gi-coding-agent/session_selector_search_test.go |
+| 159 | returns only named sessions when nameFilter is 'named' | 已有 | gi-coding-agent/session_selector_search_test.go |
+| 164 | applies name filter before search query | 已有 | gi-coding-agent/session_selector_search_test.go |
+| 169 | excludes whitespace-only names from named filter | 已有 | gi-coding-agent/session_selector_search_test.go |
 
 ## `settings-manager-bug.test.ts`
 
