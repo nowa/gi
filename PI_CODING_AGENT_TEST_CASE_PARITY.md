@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `628`
-- `待实现`: `138`
+- `已有`: `631`
+- `待实现`: `135`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -58,7 +58,7 @@ Status meanings:
 | `compaction.test.ts` | 23 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `config.test.ts` | 13 | 已有 | gi-coding-agent/config_test.go |
 | `edit-tool-legacy-input.test.ts` | 8 | 已有 | gi-coding-agent/edit_tool_definition_test.go |
-| `edit-tool-no-full-redraw.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `edit-tool-no-full-redraw.test.ts` | 3 | 已有 | gi-coding-agent/edit_tool_no_full_redraw_test.go |
 | `export-html-skill-block.test.ts` | 4 | 已有 | gi-coding-agent/export_html_skill_block_test.go |
 | `export-html-whitespace.test.ts` | 3 | 已有 | gi-coding-agent/export_html_whitespace_test.go |
 | `export-html-xss.test.ts` | 8 | 已有 | gi-coding-agent/export_html_xss_test.go |
@@ -592,15 +592,15 @@ Gi coverage / implementation target: `gi-coding-agent/edit_tool_definition_test.
 
 ## `edit-tool-no-full-redraw.test.ts`
 
-Pi cases: `3`  
+Pi cases: `3`
 Status: `已有`
-Gi coverage / implementation target: `gi-coding-agent/session_selector_rename_test.go`
+Gi coverage / implementation target: `gi-coding-agent/edit_tool_no_full_redraw_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 79 | renders the large diff in the call preview and does not full-redraw when the result settles | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 152 | reconstructs the boxed preview from a settled result without argsComplete | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 201 | shows a preflight error without rendering a diff when the edits do not apply | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 79 | renders the large diff in the call preview and does not full-redraw when the result settles | 已有 | gi-coding-agent/edit_tool_no_full_redraw_test.go |
+| 152 | reconstructs the boxed preview from a settled result without argsComplete | 已有 | gi-coding-agent/edit_tool_no_full_redraw_test.go |
+| 201 | shows a preflight error without rendering a diff when the edits do not apply | 已有 | gi-coding-agent/edit_tool_no_full_redraw_test.go |
 
 ## `export-html-skill-block.test.ts`
 
