@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `597`
-- `待实现`: `169`
+- `已有`: `601`
+- `待实现`: `165`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -59,7 +59,7 @@ Status meanings:
 | `config.test.ts` | 13 | 已有 | gi-coding-agent/config_test.go |
 | `edit-tool-legacy-input.test.ts` | 8 | 已有 | gi-coding-agent/edit_tool_definition_test.go |
 | `edit-tool-no-full-redraw.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `export-html-skill-block.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `export-html-skill-block.test.ts` | 4 | 已有 | gi-coding-agent/export_html_skill_block_test.go |
 | `export-html-whitespace.test.ts` | 3 | 已有 | gi-coding-agent/export_html_whitespace_test.go |
 | `export-html-xss.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `extensions-discovery.test.ts` | 27 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -509,8 +509,8 @@ Gi coverage / implementation target: `gi-coding-agent/export_html_whitespace_tes
 ## `compaction-summary-reasoning.test.ts`
 
 Pi cases: `4`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/export_html_skill_block_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -610,10 +610,10 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 7 | strips skill wrapper XML from user message rendering | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 16 | renders skill invocation and user message as separate sibling blocks | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 29 | renders skill content as markdown, not raw text | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 35 | shows skill name and user message in the sidebar tree | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 7 | strips skill wrapper XML from user message rendering | 已有 | gi-coding-agent/export_html_skill_block_test.go |
+| 16 | renders skill invocation and user message as separate sibling blocks | 已有 | gi-coding-agent/export_html_skill_block_test.go |
+| 29 | renders skill content as markdown, not raw text | 已有 | gi-coding-agent/export_html_skill_block_test.go |
+| 35 | shows skill name and user message in the sidebar tree | 已有 | gi-coding-agent/export_html_skill_block_test.go |
 
 ## `export-html-whitespace.test.ts`
 

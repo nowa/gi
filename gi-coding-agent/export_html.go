@@ -2,6 +2,7 @@ package gicodingagent
 
 import (
 	"html"
+	"regexp"
 	"strings"
 )
 
@@ -36,6 +37,84 @@ func RenderCustomToolResultHTML(lines []string) string {
 		end--
 	}
 	return AnsiLinesToHTML(lines[start:end])
+}
+
+type ExportHTMLSkillBlock struct {
+	Name        string
+	Location    string
+	Content     string
+	UserMessage string
+}
+
+type ExportHTMLSidebarEntry struct {
+	Role  string
+	Label string
+}
+
+var exportHTMLSkillBlockPattern = regexp.MustCompile(`(?s)^<skill\s+([^>]*)>\s*\n?(.*?)\n?</skill>\s*(.*)$`)
+var exportHTMLSkillAttrPattern = regexp.MustCompile(`([A-Za-z_:][A-Za-z0-9_.:-]*)="([^"]*)"`)
+
+func ParseExportHTMLSkillBlock(text string) (ExportHTMLSkillBlock, bool) {
+	match := exportHTMLSkillBlockPattern.FindStringSubmatch(text)
+	if match == nil {
+		return ExportHTMLSkillBlock{}, false
+	}
+	attrs := parseExportHTMLSkillAttrs(match[1])
+	name := attrs["name"]
+	if name == "" {
+		return ExportHTMLSkillBlock{}, false
+	}
+	return ExportHTMLSkillBlock{
+		Name:        name,
+		Location:    attrs["location"],
+		Content:     strings.TrimSpace(match[2]),
+		UserMessage: strings.TrimSpace(match[3]),
+	}, true
+}
+
+func RenderExportHTMLUserMessage(text string) string {
+	skillBlock, ok := ParseExportHTMLSkillBlock(text)
+	if !ok {
+		return `<div class="user-message">` + html.EscapeString(text) + `</div>`
+	}
+	var builder strings.Builder
+	builder.WriteString(`<div class="skill-invocation"><div class="skill-name">`)
+	builder.WriteString(html.EscapeString(skillBlock.Name))
+	builder.WriteString(`</div><div class="skill-content">`)
+	builder.WriteString(renderExportHTMLMarkdown(skillBlock.Content))
+	builder.WriteString(`</div></div>`)
+	if skillBlock.UserMessage != "" {
+		builder.WriteString(`<div class="user-message">`)
+		builder.WriteString(html.EscapeString(skillBlock.UserMessage))
+		builder.WriteString(`</div>`)
+	}
+	return builder.String()
+}
+
+func ExportHTMLSidebarEntriesForUserMessage(text string) []ExportHTMLSidebarEntry {
+	skillBlock, ok := ParseExportHTMLSkillBlock(text)
+	if !ok {
+		return []ExportHTMLSidebarEntry{{Role: "tree-role-user", Label: text}}
+	}
+	entries := []ExportHTMLSidebarEntry{{Role: "tree-role-skill", Label: skillBlock.Name}}
+	if skillBlock.UserMessage != "" {
+		entries = append(entries, ExportHTMLSidebarEntry{Role: "tree-role-user", Label: skillBlock.UserMessage})
+	}
+	return entries
+}
+
+func parseExportHTMLSkillAttrs(raw string) map[string]string {
+	attrs := map[string]string{}
+	for _, match := range exportHTMLSkillAttrPattern.FindAllStringSubmatch(raw, -1) {
+		attrs[match[1]] = html.UnescapeString(match[2])
+	}
+	return attrs
+}
+
+func renderExportHTMLMarkdown(markdown string) string {
+	escaped := html.EscapeString(markdown)
+	boldPattern := regexp.MustCompile(`\*\*([^*]+)\*\*`)
+	return boldPattern.ReplaceAllString(escaped, `<strong>$1</strong>`)
 }
 
 func ansiLineToHTML(line string) string {
