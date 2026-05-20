@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `902`
+- `已有`: `917`
 - `待实现`: `0`
-- `需要协议 runtime`: `135`
+- `需要协议 runtime`: `120`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -93,7 +93,7 @@ Status meanings:
 | `plan-mode-utils.test.ts` | 33 | 已有 | gi-coding-agent/plan_mode_utils_test.go |
 | `print-mode.test.ts` | 3 | 已有 | gi-coding-agent/print_mode_test.go |
 | `prompt-templates.test.ts` | 82 | 已有 | gi-coding-agent/prompt_templates_test.go |
-| `resource-loader.test.ts` | 19 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `resource-loader.test.ts` | 19 | 需要协议 runtime | gi-coding-agent/resource_loader_test.go for host resource discovery; remaining extension execution/conflict cases need protocol runtime |
 | `restore-sandbox-env.test.ts` | 3 | 已有 | gi-coding-agent/restore_sandbox_env_test.go |
 | `rpc-client-clone.test.ts` | 1 | 已有 | gi-coding-agent/rpc_client_test.go |
 | `rpc-jsonl.test.ts` | 4 | 已有 | gi-coding-agent/rpc_jsonl_test.go |
@@ -1457,23 +1457,23 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 32 | should initialize with empty results before reload | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 41 | should discover skills from agentDir | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 60 | should ignore extra markdown files in auto-discovered skill dirs | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 81 | should discover prompts from agentDir | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 99 | should prefer project resources over user on name collisions | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 159 | should load symlinked user and project extensions once | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 32 | should initialize with empty results before reload | 已有 | gi-coding-agent/resource_loader_test.go |
+| 41 | should discover skills from agentDir | 已有 | gi-coding-agent/resource_loader_test.go |
+| 60 | should ignore extra markdown files in auto-discovered skill dirs | 已有 | gi-coding-agent/resource_loader_test.go |
+| 81 | should discover prompts from agentDir | 已有 | gi-coding-agent/resource_loader_test.go |
+| 99 | should prefer project resources over user on name collisions | 已有 | gi-coding-agent/resource_loader_test.go |
+| 159 | should load symlinked user and project extensions once | 已有 | gi-coding-agent/resource_loader_test.go |
 | 189 | should keep both extensions loaded when command names collide | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 255 | should honor overrides for auto-discovered resources | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 299 | should discover AGENTS.md context files | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 309 | should skip AGENTS.md and CLAUDE.md discovery when noContextFiles is true | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 320 | should discover SYSTEM.md from cwd/.pi | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 331 | should discover APPEND_SYSTEM.md | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 255 | should honor overrides for auto-discovered resources | 已有 | gi-coding-agent/resource_loader_test.go |
+| 299 | should discover AGENTS.md context files | 已有 | gi-coding-agent/resource_loader_test.go |
+| 309 | should skip AGENTS.md and CLAUDE.md discovery when noContextFiles is true | 已有 | gi-coding-agent/resource_loader_test.go |
+| 320 | should discover SYSTEM.md from cwd/.pi | 已有 | gi-coding-agent/resource_loader_test.go |
+| 331 | should discover APPEND_SYSTEM.md | 已有 | gi-coding-agent/resource_loader_test.go |
 | 344 | should load skills and prompts with extension metadata | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 411 | should skip skill discovery when noSkills is true | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 430 | should still load additional skill paths when noSkills is true | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 456 | should apply skillsOverride | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 480 | should apply systemPromptOverride | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 411 | should skip skill discovery when noSkills is true | 已有 | gi-coding-agent/resource_loader_test.go |
+| 430 | should still load additional skill paths when noSkills is true | 已有 | gi-coding-agent/resource_loader_test.go |
+| 456 | should apply skillsOverride | 已有 | gi-coding-agent/resource_loader_test.go |
+| 480 | should apply systemPromptOverride | 已有 | gi-coding-agent/resource_loader_test.go |
 | 493 | should detect tool conflicts between extensions | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 537 | should prefer explicit CLI extensions over discovered extensions when commands and tools conflict | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 
