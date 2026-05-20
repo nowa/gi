@@ -1,6 +1,7 @@
 package gicodingagent
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -8,6 +9,11 @@ import (
 	"strings"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
+)
+
+const (
+	defaultReadToolLineLimit = 2000
+	defaultReadToolByteLimit = 50 * 1024
 )
 
 type FileToolOperations struct {
@@ -36,6 +42,18 @@ type WriteToolInput struct {
 type FileToolResult struct {
 	Text    string
 	Content []llm.ContentPart
+	Details *FileToolDetails
+}
+
+type FileToolDetails struct {
+	Truncation *ReadToolTruncation
+}
+
+type ReadToolTruncation struct {
+	Truncated   bool
+	TruncatedBy string
+	TotalLines  int
+	OutputLines int
 }
 
 type EditTool struct {
@@ -55,7 +73,9 @@ type ReadTool struct {
 }
 
 type ReadToolInput struct {
-	Path string
+	Path   string
+	Offset int
+	Limit  int
 }
 
 type ReadToolOptions struct {
@@ -141,7 +161,7 @@ func (t ReadTool) Execute(_ string, input ReadToolInput) (FileToolResult, error)
 	if err != nil {
 		return FileToolResult{}, err
 	}
-	if mimeType := imageMIMETypeForPath(absolutePath); mimeType != "" {
+	if mimeType := detectSupportedImageMIMEType(content); mimeType != "" {
 		imagePart := llm.Image(base64.StdEncoding.EncodeToString(content), mimeType)
 		note := fmt.Sprintf("Read image file [%s]", mimeType)
 		if t.autoResizeImages {
@@ -166,8 +186,11 @@ func (t ReadTool) Execute(_ string, input ReadToolInput) (FileToolResult, error)
 			},
 		}, nil
 	}
-	text := string(content)
-	return FileToolResult{Text: text, Content: []llm.ContentPart{llm.Text(text)}}, nil
+	text, details, err := formatReadToolTextContent(string(content), input.Offset, input.Limit)
+	if err != nil {
+		return FileToolResult{}, err
+	}
+	return FileToolResult{Text: text, Content: []llm.ContentPart{llm.Text(text)}, Details: details}, nil
 }
 
 func normalizeFileToolOperations(operations ...FileToolOperations) FileToolOperations {
@@ -214,6 +237,93 @@ func applySimpleEdits(content string, edits []Edit) (string, error) {
 		next = strings.Replace(next, edit.OldText, edit.NewText, 1)
 	}
 	return next, nil
+}
+
+func formatReadToolTextContent(content string, offset, limit int) (string, *FileToolDetails, error) {
+	lines := strings.Split(content, "\n")
+	totalLines := len(lines)
+	start := 0
+	if offset > 0 {
+		start = offset - 1
+	}
+	if start >= totalLines {
+		return "", nil, fmt.Errorf("Offset %d is beyond end of file (%d lines total)", offset, totalLines)
+	}
+	lineLimit := defaultReadToolLineLimit
+	explicitLimit := false
+	if limit > 0 {
+		lineLimit = limit
+		explicitLimit = true
+	}
+
+	capacity := lineLimit
+	if remaining := totalLines - start; remaining < capacity {
+		capacity = remaining
+	}
+	outputLines := make([]string, 0, capacity)
+	outputBytes := 0
+	truncatedBy := ""
+	nextOffset := 0
+	for index := start; index < totalLines; index++ {
+		if len(outputLines) >= lineLimit {
+			truncatedBy = "lines"
+			if explicitLimit {
+				truncatedBy = "limit"
+			}
+			nextOffset = index + 1
+			break
+		}
+		line := lines[index]
+		addedBytes := len(line)
+		if len(outputLines) > 0 {
+			addedBytes++
+		}
+		if outputBytes+addedBytes > defaultReadToolByteLimit && len(outputLines) > 0 {
+			truncatedBy = "bytes"
+			nextOffset = index + 1
+			break
+		}
+		outputLines = append(outputLines, line)
+		outputBytes += addedBytes
+	}
+
+	output := strings.Join(outputLines, "\n")
+	if truncatedBy == "" {
+		return output, nil, nil
+	}
+
+	displayStart := start + 1
+	displayEnd := start + len(outputLines)
+	remaining := totalLines - displayEnd
+	if explicitLimit {
+		output += fmt.Sprintf("\n[%d more lines in file. Use offset=%d to continue.]", remaining, nextOffset)
+	} else if truncatedBy == "bytes" {
+		output += fmt.Sprintf("\n[Showing lines %d-%d of %d (byte limit). Use offset=%d to continue.]", displayStart, displayEnd, totalLines, nextOffset)
+	} else {
+		output += fmt.Sprintf("\n[Showing lines %d-%d of %d. Use offset=%d to continue.]", displayStart, displayEnd, totalLines, nextOffset)
+	}
+	return output, &FileToolDetails{Truncation: &ReadToolTruncation{
+		Truncated:   true,
+		TruncatedBy: truncatedBy,
+		TotalLines:  totalLines,
+		OutputLines: len(outputLines),
+	}}, nil
+}
+
+func detectSupportedImageMIMEType(content []byte) string {
+	if len(content) >= 8 && bytes.Equal(content[:8], []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}) {
+		return "image/png"
+	}
+	if len(content) >= 3 && content[0] == 0xff && content[1] == 0xd8 && content[2] == 0xff {
+		return "image/jpeg"
+	}
+	if len(content) >= 6 && (string(content[:6]) == "GIF87a" || string(content[:6]) == "GIF89a") {
+		return "image/gif"
+	}
+	if len(content) >= 12 && string(content[:4]) == "RIFF" && string(content[8:12]) == "WEBP" {
+		return "image/webp"
+	}
+	return ""
 }
 
 func imageMIMETypeForPath(path string) string {

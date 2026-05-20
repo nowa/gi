@@ -40,7 +40,7 @@ func ProcessFileArguments(paths []string, options ...ProcessFileArgumentsOptions
 		if err != nil {
 			return ProcessedFileArguments{}, err
 		}
-		if mimeType := imageMIMETypeForPath(path); mimeType != "" {
+		if mimeType := detectSupportedImageMIMEType(content); mimeType != "" {
 			imagePart := llm.Image(base64.StdEncoding.EncodeToString(content), mimeType)
 			if autoResizeImages {
 				resized := resizeImage(imagePart, ImageResizeOptions{})
