@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `876`
+- `已有`: `892`
 - `待实现`: `0`
-- `需要协议 runtime`: `161`
+- `需要协议 runtime`: `145`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -652,23 +652,23 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 43 | discovers direct .ts files in extensions/ | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 54 | discovers direct .js files in extensions/ | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 64 | discovers subdirectory with index.ts | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 77 | discovers subdirectory with index.js | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 89 | prefers index.ts over index.js | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 102 | discovers subdirectory with package.json pi field | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 126 | package.json can declare multiple extensions | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 147 | package.json with pi field takes precedence over index.ts | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 172 | ignores package.json without pi field, falls back to index.ts | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 191 | ignores subdirectory without index or package.json | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 203 | does not recurse beyond one level | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 217 | handles mixed direct files and subdirectories | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 238 | skips non-existent paths declared in package.json | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 43 | discovers direct .ts files in extensions/ | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 54 | discovers direct .js files in extensions/ | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 64 | discovers subdirectory with index.ts | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 77 | discovers subdirectory with index.js | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 89 | prefers index.ts over index.js | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 102 | discovers subdirectory with package.json pi field | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 126 | package.json can declare multiple extensions | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 147 | package.json with pi field takes precedence over index.ts | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 172 | ignores package.json without pi field, falls back to index.ts | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 191 | ignores subdirectory without index or package.json | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 203 | does not recurse beyond one level | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 217 | handles mixed direct files and subdirectories | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 238 | skips non-existent paths declared in package.json | 已有 | gi-coding-agent/extension_discovery_test.go |
 | 258 | loads extensions and registers commands | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 268 | loads extensions and registers tools | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 278 | reports errors for invalid extension code | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 288 | handles explicitly configured paths | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 288 | handles explicitly configured paths | 已有 | gi-coding-agent/extension_discovery_test.go |
 | 300 | resolves dependencies from extension's own node_modules | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 313 | registers message renderers | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 330 | reports error when extension throws during initialization | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -677,8 +677,8 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 379 | loads extension with event handlers | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 398 | loads extension with shortcuts | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 416 | loads extension with flags | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 434 | loadExtensions only loads explicit paths without discovery | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 452 | loadExtensions with no paths loads nothing | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 434 | loadExtensions only loads explicit paths without discovery | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 452 | loadExtensions with no paths loads nothing | 已有 | gi-coding-agent/extension_discovery_test.go |
 
 ## `extensions-input-event.test.ts`
 
