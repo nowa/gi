@@ -13,6 +13,8 @@ type ToolDefinition struct {
 	Parameters       llm.Schema
 	PrepareArguments func(args any) any
 	Execute          func(callID string, args any) (FileToolResult, error)
+	RenderCall       ToolCallRenderer
+	RenderResult     ToolResultRenderer
 }
 
 func CreateEditToolDefinition(cwd string, operations ...FileToolOperations) ToolDefinition {
@@ -36,6 +38,8 @@ func CreateEditToolDefinition(cwd string, operations ...FileToolOperations) Tool
 			}
 			return tool.Execute(callID, input)
 		},
+		RenderCall:   renderEditToolCall,
+		RenderResult: renderEditToolResult,
 	}
 }
 

@@ -50,6 +50,9 @@ func (t BashTool) ExecuteWithUpdates(_ string, input BashToolInput, onUpdate fun
 	if stat, err := os.Stat(t.cwd); err != nil || !stat.IsDir() {
 		return FileToolResult{}, fmt.Errorf("Working directory does not exist: %s", t.cwd)
 	}
+	if onUpdate != nil {
+		onUpdate(FileToolResult{})
+	}
 	command := input.Command
 	if strings.TrimSpace(t.commandPrefix) != "" {
 		command = t.commandPrefix + "\n" + command

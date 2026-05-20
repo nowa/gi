@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `842`
+- `已有`: `858`
 - `待实现`: `0`
-- `需要协议 runtime`: `195`
+- `需要协议 runtime`: `179`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -115,7 +115,7 @@ Status meanings:
 | `system-prompt.test.ts` | 7 | 已有 | gi-coding-agent/system_prompt_test.go |
 | `test-harness.test.ts` | 15 | 已有 | gi-coding-agent/test_harness_test.go |
 | `theme-export.test.ts` | 2 | 已有 | gi-coding-agent/theme_export_test.go |
-| `tool-execution-component.test.ts` | 16 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `tool-execution-component.test.ts` | 16 | 已有 | gi-coding-agent/tool_execution_component_test.go |
 | `tools.test.ts` | 68 | 已有 | gi-coding-agent/tools_read_test.go, gi-coding-agent/tools_bash_advanced_test.go, gi-coding-agent/tools_search_test.go, gi-coding-agent/tools_edit_fuzzy_test.go |
 | `tree-selector.test.ts` | 15 | 已有 | gi-coding-agent/tree_selector_test.go |
 | `trigger-compact-extension.test.ts` | 1 | 已有 | gi-coding-agent/trigger_compact_extension_test.go |
@@ -1806,28 +1806,28 @@ Gi coverage / implementation target: `gi-coding-agent/theme_export_test.go`
 
 ## `tool-execution-component.test.ts`
 
-Pi cases: `16`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Pi cases: `16`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/tool_execution_component_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 38 | stacks custom call and result renderers like the old implementation | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 70 | uses built-in rendering for built-in overrides without custom renderers | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 91 | preserves legacy file_path rendering compatibility for built-in tools | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 106 | bash execute emits an initial empty partial update before output arrives | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 126 | does not duplicate built-in headers when passed the active built-in definition | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 141 | inherits missing built-in result renderer slot from the built-in tool | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 162 | inherits missing built-in call renderer slot from the built-in tool | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 184 | uses custom renderers for built-in overrides that reuse built-in definition parameters | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 206 | uses custom renderers for built-in overrides that reuse wrapped built-in tool parameters | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 228 | shares renderer state across custom call and result slots | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 256 | exposes args in render result context | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 278 | falls back when custom renderers are absent | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 298 | trims trailing blank display lines from write previews | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 314 | trims trailing blank display lines from read results | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 368 | renders ${scenario.title} read results compactly until expanded | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 400 | shows the read line range in compact ${scenario.title} reads before the expand hint | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 38 | stacks custom call and result renderers like the old implementation | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 70 | uses built-in rendering for built-in overrides without custom renderers | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 91 | preserves legacy file_path rendering compatibility for built-in tools | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 106 | bash execute emits an initial empty partial update before output arrives | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 126 | does not duplicate built-in headers when passed the active built-in definition | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 141 | inherits missing built-in result renderer slot from the built-in tool | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 162 | inherits missing built-in call renderer slot from the built-in tool | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 184 | uses custom renderers for built-in overrides that reuse built-in definition parameters | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 206 | uses custom renderers for built-in overrides that reuse wrapped built-in tool parameters | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 228 | shares renderer state across custom call and result slots | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 256 | exposes args in render result context | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 278 | falls back when custom renderers are absent | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 298 | trims trailing blank display lines from write previews | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 314 | trims trailing blank display lines from read results | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 368 | renders ${scenario.title} read results compactly until expanded | 已有 | gi-coding-agent/tool_execution_component_test.go |
+| 400 | shows the read line range in compact ${scenario.title} reads before the expand hint | 已有 | gi-coding-agent/tool_execution_component_test.go |
 
 ## `tools.test.ts`
 
