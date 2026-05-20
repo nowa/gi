@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `425`
-- `待实现`: `319`
+- `已有`: `430`
+- `待实现`: `314`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -65,7 +65,7 @@ Status meanings:
 | `extensions-discovery.test.ts` | 27 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `extensions-input-event.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `extensions-runner.test.ts` | 27 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `file-mutation-queue.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `file-mutation-queue.test.ts` | 5 | 已有 | gi-coding-agent/file_mutation_queue_test.go |
 | `footer-data-provider.test.ts` | 8 | 已有 | gi-coding-agent/footer_data_provider_test.go |
 | `footer-width.test.ts` | 2 | 已有 | gi-coding-agent/footer_test.go |
 | `frontmatter.test.ts` | 8 | 已有 | gi-coding-agent/utils_test.go |
@@ -736,16 +736,16 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 ## `file-mutation-queue.test.ts`
 
 Pi cases: `5`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/file_mutation_queue_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 26 | serializes operations for the same file | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 44 | allows different files to proceed in parallel | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 65 | uses the same queue for symlink aliases | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 90 | preserves both parallel edits on the same file | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 119 | shares the queue between edit and write | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 26 | serializes operations for the same file | 已有 | gi-coding-agent/file_mutation_queue_test.go |
+| 44 | allows different files to proceed in parallel | 已有 | gi-coding-agent/file_mutation_queue_test.go |
+| 65 | uses the same queue for symlink aliases | 已有 | gi-coding-agent/file_mutation_queue_test.go |
+| 90 | preserves both parallel edits on the same file | 已有 | gi-coding-agent/file_mutation_queue_test.go |
+| 119 | shares the queue between edit and write | 已有 | gi-coding-agent/file_mutation_queue_test.go |
 
 ## `footer-data-provider.test.ts`
 
