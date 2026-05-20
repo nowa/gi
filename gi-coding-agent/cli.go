@@ -16,6 +16,7 @@ type CLIOptions struct {
 	AgentDir             string
 	Startup              func(stderr io.Writer) error
 	PrintModeHostFactory func(Args) (PrintModeRuntimeHost, error)
+	ModelRegistry        *ModelRegistry
 	PackageManager       *DefaultPackageManager
 	PackageName          string
 	Version              string
@@ -42,6 +43,9 @@ func RunCLI(options CLIOptions) int {
 	if args.Version {
 		_, _ = fmt.Fprintln(nonNilWriter(options.Stdout), "gi")
 		return 0
+	}
+	if args.ListModels != nil {
+		return runCLIListModels(args, options)
 	}
 	if args.Print || args.Mode == ModeJSON {
 		return runCLIPrintMode(args, options)

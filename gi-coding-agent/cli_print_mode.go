@@ -3,8 +3,6 @@ package gicodingagent
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
@@ -96,24 +94,11 @@ func contentPartsFromInitialImages(values []any) []llm.ContentPart {
 }
 
 func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntimeHost, error) {
-	cwd := options.CWD
-	if cwd == "" {
-		var err error
-		cwd, err = os.Getwd()
-		if err != nil {
-			return nil, err
-		}
+	writeAuth := !args.Offline || args.APIKey != ""
+	modelRegistry, cwd, agentDir, err := newCLIModelRegistry(options, writeAuth)
+	if err != nil {
+		return nil, err
 	}
-	agentDir := options.AgentDir
-	if agentDir == "" {
-		agentDir = defaultCLIAgentDir(cwd)
-	}
-
-	authStorage := NewInMemoryAuthStorage(nil)
-	if !args.Offline || args.APIKey != "" {
-		authStorage = NewAuthStorage(filepath.Join(agentDir, "auth.json"))
-	}
-	modelRegistry := NewModelRegistry(authStorage, filepath.Join(agentDir, "models.json"))
 	model, thinkingLevel, err := resolveCLIPrintModeModel(args, modelRegistry)
 	if err != nil {
 		return nil, err
@@ -121,8 +106,8 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	if model == nil {
 		return nil, errors.New("No model available. Configure provider auth or pass --model with --api-key.")
 	}
-	if args.APIKey != "" {
-		authStorage.SetRuntimeAPIKey(model.Provider, args.APIKey)
+	if args.APIKey != "" && modelRegistry.authStorage != nil {
+		modelRegistry.authStorage.SetRuntimeAPIKey(model.Provider, args.APIKey)
 	}
 
 	var sessionManager *SessionManager

@@ -65,6 +65,7 @@ Gi includes a Go CLI entrypoint for the coding-agent migration surface:
 
 ```sh
 go run ./cmd/gi --help
+go run ./cmd/gi --list-models
 go run ./cmd/gi -p --model openai/gpt-4o-mini "Summarize this repository"
 go run ./cmd/gi --offline --no-session -p --model openai/gpt-4o-mini "Smoke test"
 go run ./cmd/gi install official:gi-plan-mode -l
