@@ -30,6 +30,16 @@ type ResolveExtensionSourcesOptions struct {
 	Temporary bool
 }
 
+type PackageSource struct {
+	Type   string
+	Source string
+	Repo   string
+	Host   string
+	Path   string
+	Ref    string
+	Pinned bool
+}
+
 type DefaultPackageManager struct {
 	cwd             string
 	agentDir        string
@@ -49,6 +59,43 @@ func NewDefaultPackageManager(options PackageManagerOptions) *DefaultPackageMana
 		settingsManager: settingsManager,
 		operations:      operations,
 	}
+}
+
+func (m *DefaultPackageManager) ParseSource(source string) PackageSource {
+	return ParsePackageSource(source)
+}
+
+func (m *DefaultPackageManager) GetPackageIdentity(source string) string {
+	return PackageSourceIdentity(ParsePackageSource(source))
+}
+
+func ParsePackageSource(source string) PackageSource {
+	trimmed := strings.TrimSpace(source)
+	if strings.HasPrefix(trimmed, "npm:") {
+		return PackageSource{Type: "npm", Source: trimmed, Path: strings.TrimSpace(strings.TrimPrefix(trimmed, "npm:"))}
+	}
+	if gitSource, ok := ParseGitURL(trimmed); ok {
+		return PackageSource{
+			Type:   "git",
+			Source: trimmed,
+			Repo:   gitSource.Repo,
+			Host:   gitSource.Host,
+			Path:   gitSource.Path,
+			Ref:    gitSource.Ref,
+			Pinned: gitSource.Pinned,
+		}
+	}
+	return PackageSource{Type: "local", Source: trimmed, Path: trimmed}
+}
+
+func PackageSourceIdentity(source PackageSource) string {
+	if source.Type == "git" {
+		return "git:" + source.Host + "/" + source.Path
+	}
+	if source.Type == "npm" {
+		return "npm:" + source.Path
+	}
+	return "local:" + filepath.Clean(source.Path)
 }
 
 func (m *DefaultPackageManager) Update(sources ...string) error {

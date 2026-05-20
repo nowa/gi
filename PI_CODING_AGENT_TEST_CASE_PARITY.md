@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `558`
+- `已有`: `580`
 - `待实现`: `186`
-- `需要协议 runtime`: `293`
+- `需要协议 runtime`: `271`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -85,7 +85,7 @@ Status meanings:
 | `model-resolver.test.ts` | 31 | 已有 | gi-coding-agent/model_resolver_test.go |
 | `oauth-selector.test.ts` | 6 | 已有 | gi-coding-agent/oauth_selector_test.go |
 | `package-command-paths.test.ts` | 10 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `package-manager-ssh.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `package-manager-ssh.test.ts` | 8 | 已有 | gi-coding-agent/package_manager_source_test.go |
 | `package-manager.test.ts` | 102 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `path-utils.test.ts` | 11 | 已有 | gi-coding-agent/utils_test.go |
 | `paths.test.ts` | 12 | 已有 | gi-coding-agent/utils_test.go |
@@ -1128,19 +1128,19 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 ## `package-manager-ssh.test.ts`
 
 Pi cases: `8`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/package_manager_source_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 33 | should parse https:// URL | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 40 | should parse ssh:// URL | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 50 | should parse git@host:path format | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 59 | should parse host/path shorthand | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 66 | should parse shorthand with ref | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 75 | should treat git@host:path as local without git: prefix | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 80 | should treat host/path shorthand as local without git: prefix | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 87 | should normalize protocol and shorthand-prefixed URLs to same identity | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 33 | should parse https:// URL | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 40 | should parse ssh:// URL | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 50 | should parse git@host:path format | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 59 | should parse host/path shorthand | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 66 | should parse shorthand with ref | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 75 | should treat git@host:path as local without git: prefix | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 80 | should treat host/path shorthand as local without git: prefix | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 87 | should normalize protocol and shorthand-prefixed URLs to same identity | 已有 | gi-coding-agent/package_manager_source_test.go |
 
 ## `package-manager.test.ts`
 
@@ -1187,23 +1187,23 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 886 | should fail when pnpm global package list is malformed | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 903 | should emit progress events on install attempt | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 920 | should recognize github URLs without git: prefix | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 945 | should parse package source types from docs examples | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 959 | should never parse dot-relative paths as git | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 945 | should parse package source types from docs examples | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 959 | should never parse dot-relative paths as git | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 971 | should store global local packages relative to agent settings base | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 985 | should store project local packages relative to .pi settings base | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 999 | should remove local package entries using equivalent path forms | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1012 | should parse HTTPS GitHub URLs correctly | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1020 | should parse HTTPS URLs with git: prefix | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1027 | should parse HTTPS URLs with ref | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1036 | should parse host/path shorthand only with git: prefix | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1043 | should treat host/path shorthand as local without git: prefix | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1048 | should parse HTTPS URLs with .git suffix | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1055 | should parse GitLab HTTPS URLs | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1062 | should parse Bitbucket HTTPS URLs | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1069 | should parse Codeberg HTTPS URLs | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1076 | should generate correct package identity for protocol and git:-prefixed URLs | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1089 | should deduplicate git URLs with different supported formats | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1112 | should handle HTTPS URLs with refs in resolve | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1012 | should parse HTTPS GitHub URLs correctly | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1020 | should parse HTTPS URLs with git: prefix | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1027 | should parse HTTPS URLs with ref | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1036 | should parse host/path shorthand only with git: prefix | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1043 | should treat host/path shorthand as local without git: prefix | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1048 | should parse HTTPS URLs with .git suffix | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1055 | should parse GitLab HTTPS URLs | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1062 | should parse Bitbucket HTTPS URLs | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1069 | should parse Codeberg HTTPS URLs | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1076 | should generate correct package identity for protocol and git:-prefixed URLs | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1089 | should deduplicate git URLs with different supported formats | 已有 | gi-coding-agent/package_manager_source_test.go |
+| 1112 | should handle HTTPS URLs with refs in resolve | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 1124 | should exclude extensions with ! pattern | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1137 | should filter themes with glob patterns | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1152 | should filter prompts with exclusion pattern | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
