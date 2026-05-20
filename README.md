@@ -35,6 +35,8 @@ Detailed coverage is tracked in [PI_COMPATIBILITY.md](PI_COMPATIBILITY.md).
 Per-case provider/agent mapping is tracked in
 [PI_AI_AGENT_TEST_CASE_PARITY.md](PI_AI_AGENT_TEST_CASE_PARITY.md), and per-case
 TUI mapping is tracked in [PI_TUI_TEST_CASE_PARITY.md](PI_TUI_TEST_CASE_PARITY.md).
+The Pi coding-agent migration scope is tracked in
+[PI_CODING_AGENT_TEST_CASE_PARITY.md](PI_CODING_AGENT_TEST_CASE_PARITY.md).
 
 The proposed cross-language package, extension, and custom TUI component
 protocol for a future full coding-agent runtime is described in

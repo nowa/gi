@@ -5,6 +5,8 @@ This repository is a Go rebuild of the Pi `pi-ai`, `pi-agent-core`, and `pi-tui`
 Case-level provider/agent parity is tracked in
 [`PI_AI_AGENT_TEST_CASE_PARITY.md`](PI_AI_AGENT_TEST_CASE_PARITY.md). Case-level
 TUI parity is tracked in [`PI_TUI_TEST_CASE_PARITY.md`](PI_TUI_TEST_CASE_PARITY.md).
+Pi coding-agent migration scope is tracked in
+[`PI_CODING_AGENT_TEST_CASE_PARITY.md`](PI_CODING_AGENT_TEST_CASE_PARITY.md).
 The forward design for Pi-style extensions, packages, trusted in-process
 components, and package-provided out-of-process TUI components is tracked in
 [`protocol/README.md`](protocol/README.md). Machine-readable schema, registry,
