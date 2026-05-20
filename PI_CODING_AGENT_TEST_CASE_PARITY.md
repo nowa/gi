@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `201`
-- `待实现`: `543`
+- `已有`: `222`
+- `待实现`: `522`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -107,8 +107,8 @@ Status meanings:
 | `session-selector-path-delete.test.ts` | 7 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `session-selector-rename.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `session-selector-search.test.ts` | 9 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `settings-manager-bug.test.ts` | 4 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `settings-manager.test.ts` | 17 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `settings-manager-bug.test.ts` | 4 | 已有 | gi-coding-agent/settings_manager_test.go |
+| `settings-manager.test.ts` | 17 | 已有 | gi-coding-agent/settings_manager_test.go |
 | `skills.test.ts` | 28 | 已有 | gi-agent-core/harness/skills_test.go |
 | `stdout-cleanliness.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `syntax-highlight.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -1655,41 +1655,41 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `settings-manager-bug.test.ts`
 
 Pi cases: `4`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/settings_manager_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 37 | should preserve file changes to packages array when changing unrelated setting | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 74 | should preserve file changes to extensions array when changing unrelated setting | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 102 | should preserve external project settings changes when updating unrelated project field | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 126 | should let in-memory project changes override external changes for the same project field | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 37 | should preserve file changes to packages array when changing unrelated setting | 已有 | gi-coding-agent/settings_manager_test.go |
+| 74 | should preserve file changes to extensions array when changing unrelated setting | 已有 | gi-coding-agent/settings_manager_test.go |
+| 102 | should preserve external project settings changes when updating unrelated project field | 已有 | gi-coding-agent/settings_manager_test.go |
+| 126 | should let in-memory project changes override external changes for the same project field | 已有 | gi-coding-agent/settings_manager_test.go |
 
 ## `settings-manager.test.ts`
 
 Pi cases: `17`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/settings_manager_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 28 | should preserve enabledModels when changing thinking level | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 59 | should preserve custom settings when changing theme | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 87 | should let in-memory changes override file changes for same key | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 114 | should keep local-only extensions in extensions array | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 129 | should handle packages with filtering objects | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 159 | should reload global settings from disk | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 187 | should keep previous settings when file is invalid | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 201 | should collect and clear load errors via drainErrors | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 217 | should not create .pi folder when only reading project settings | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 235 | should create .pi folder when writing project settings | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 261 | should load shellCommandPrefix from settings | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 270 | should return undefined when shellCommandPrefix is not set | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 279 | should preserve shellCommandPrefix when saving unrelated settings | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 294 | should return undefined when not set | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 300 | should return global sessionDir | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 306 | should return project sessionDir, overriding global | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 313 | should expand ~ in sessionDir | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 28 | should preserve enabledModels when changing thinking level | 已有 | gi-coding-agent/settings_manager_test.go |
+| 59 | should preserve custom settings when changing theme | 已有 | gi-coding-agent/settings_manager_test.go |
+| 87 | should let in-memory changes override file changes for same key | 已有 | gi-coding-agent/settings_manager_test.go |
+| 114 | should keep local-only extensions in extensions array | 已有 | gi-coding-agent/settings_manager_test.go |
+| 129 | should handle packages with filtering objects | 已有 | gi-coding-agent/settings_manager_test.go |
+| 159 | should reload global settings from disk | 已有 | gi-coding-agent/settings_manager_test.go |
+| 187 | should keep previous settings when file is invalid | 已有 | gi-coding-agent/settings_manager_test.go |
+| 201 | should collect and clear load errors via drainErrors | 已有 | gi-coding-agent/settings_manager_test.go |
+| 217 | should not create .pi folder when only reading project settings | 已有 | gi-coding-agent/settings_manager_test.go |
+| 235 | should create .pi folder when writing project settings | 已有 | gi-coding-agent/settings_manager_test.go |
+| 261 | should load shellCommandPrefix from settings | 已有 | gi-coding-agent/settings_manager_test.go |
+| 270 | should return undefined when shellCommandPrefix is not set | 已有 | gi-coding-agent/settings_manager_test.go |
+| 279 | should preserve shellCommandPrefix when saving unrelated settings | 已有 | gi-coding-agent/settings_manager_test.go |
+| 294 | should return undefined when not set | 已有 | gi-coding-agent/settings_manager_test.go |
+| 300 | should return global sessionDir | 已有 | gi-coding-agent/settings_manager_test.go |
+| 306 | should return project sessionDir, overriding global | 已有 | gi-coding-agent/settings_manager_test.go |
+| 313 | should expand ~ in sessionDir | 已有 | gi-coding-agent/settings_manager_test.go |
 
 ## `skills.test.ts`
 
