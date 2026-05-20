@@ -83,6 +83,12 @@ func (s *AgentSession) Prompt(text string) error {
 	if prompt == "" {
 		return errors.New("prompt is required")
 	}
+	if strings.HasPrefix(prompt, "/") && s.ExtensionRuntime != nil {
+		name := strings.TrimSpace(strings.TrimPrefix(prompt, "/"))
+		if command := s.ExtensionRuntime.GetCommand(name); command != nil && command.Handler != nil {
+			return command.Handler("")
+		}
+	}
 	s.isStreaming = true
 	defer func() {
 		s.isStreaming = false

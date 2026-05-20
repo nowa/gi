@@ -26,8 +26,14 @@ type AgentSessionRuntimeForkOptions struct {
 
 func NewAgentSessionRuntimeHost(session *AgentSession, extensionRuntime *ProtocolExtensionRuntime) (*AgentSessionRuntimeHost, error) {
 	host := &AgentSessionRuntimeHost{Session: session, ExtensionRuntime: extensionRuntime}
+	if extensionRuntime != nil {
+		extensionRuntime.BindSession(session)
+	}
 	if _, err := host.emitSessionEvent(ProtocolSessionEvent{Type: ProtocolEventSessionStart, Reason: "startup"}); err != nil {
 		return nil, err
+	}
+	if extensionRuntime != nil {
+		extensionRuntime.ApplyToSession(session)
 	}
 	return host, nil
 }
@@ -108,12 +114,18 @@ func (h *AgentSessionRuntimeHost) replaceSession(newSession *AgentSession, reaso
 		h.BeforeSessionInvalidate()
 	}
 	h.Session = newSession
+	if h.ExtensionRuntime != nil {
+		h.ExtensionRuntime.BindSession(newSession)
+	}
 	if h.RebindSession != nil {
 		if err := h.RebindSession(newSession); err != nil {
 			return err
 		}
 	}
 	_, err := h.emitSessionEvent(ProtocolSessionEvent{Type: ProtocolEventSessionStart, Reason: reason, PreviousSessionFile: previousSessionFile})
+	if h.ExtensionRuntime != nil {
+		h.ExtensionRuntime.ApplyToSession(newSession)
+	}
 	return err
 }
 

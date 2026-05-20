@@ -23,6 +23,7 @@ type AgentSessionOptions struct {
 	AutoCompactionRunner AgentSessionAutoCompactionRunner
 	AgentContinue        func() error
 	Responder            AgentSessionResponder
+	CustomTools          []SDKTool
 }
 
 type AgentSession struct {
@@ -37,6 +38,8 @@ type AgentSession struct {
 	AutoCompactionRunner AgentSessionAutoCompactionRunner
 	AgentContinue        func() error
 	Responder            AgentSessionResponder
+	ExtensionRuntime     *ProtocolExtensionRuntime
+	DynamicTools         []SDKTool
 	eventListeners       []AgentSessionEventListener
 	branchSummaryAbort   chan struct{}
 	isCompacting         bool
@@ -71,8 +74,13 @@ type SDKAgentState struct {
 }
 
 type SDKTool struct {
-	Name    string
-	Execute func(toolCallID string, input map[string]any) (SDKToolResult, error)
+	Name             string
+	Label            string
+	Description      string
+	PromptSnippet    string
+	PromptGuidelines []string
+	SourceInfo       ProtocolSourceInfo
+	Execute          func(toolCallID string, input map[string]any) (SDKToolResult, error)
 }
 
 type SDKToolResult struct {
@@ -148,18 +156,19 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		responder = DefaultAgentSessionResponder
 	}
 
-	systemPrompt := BuildSystemPrompt(BuildSystemPromptOptions{
-		CWD:           cwd,
-		ContextFiles:  []SystemPromptContextFile{},
-		Skills:        toSystemPromptSkills(resourceLoader.GetSkills().Skills),
-		ToolSnippets:  defaultSDKToolSnippets(),
-		SelectedTools: []string{"read", "bash", "edit", "write"},
-	})
+	tools := defaultSDKTools(cwd)
+	for _, tool := range options.CustomTools {
+		if tool.SourceInfo.Path == "" {
+			tool.SourceInfo = ProtocolSourceInfo{Path: "<sdk:" + tool.Name + ">", Source: "sdk", Scope: "temporary", Origin: "top-level"}
+		}
+		tools = append(tools, tool)
+	}
+	systemPrompt := buildAgentSessionSystemPrompt(cwd, resourceLoader, tools)
 	agent := &SDKAgent{State: SDKAgentState{
 		SystemPrompt:  systemPrompt,
 		Model:         options.Model,
 		ThinkingLevel: "off",
-		Tools:         defaultSDKTools(cwd),
+		Tools:         tools,
 	}}
 	return &AgentSession{
 		SessionManager:       sessionManager,
@@ -272,9 +281,11 @@ func defaultSDKToolSnippets() map[string]string {
 
 func defaultSDKTools(cwd string) []SDKTool {
 	return []SDKTool{
-		{Name: "read"},
+		{Name: "read", PromptSnippet: "Read file contents", SourceInfo: ProtocolSourceInfo{Path: "<builtin:read>", Source: "builtin", Scope: "temporary", Origin: "top-level"}},
 		{
-			Name: "bash",
+			Name:          "bash",
+			PromptSnippet: "Execute bash commands",
+			SourceInfo:    ProtocolSourceInfo{Path: "<builtin:bash>", Source: "builtin", Scope: "temporary", Origin: "top-level"},
 			Execute: func(_ string, input map[string]any) (SDKToolResult, error) {
 				command, _ := input["command"].(string)
 				if strings.TrimSpace(command) == "" {
@@ -284,9 +295,61 @@ func defaultSDKTools(cwd string) []SDKTool {
 				return SDKToolResult{Content: []SDKContentPart{{Type: "text", Text: result.Output}}}, err
 			},
 		},
-		{Name: "edit"},
-		{Name: "write"},
+		{Name: "edit", PromptSnippet: "Make surgical edits", SourceInfo: ProtocolSourceInfo{Path: "<builtin:edit>", Source: "builtin", Scope: "temporary", Origin: "top-level"}},
+		{Name: "write", PromptSnippet: "Create or overwrite files", SourceInfo: ProtocolSourceInfo{Path: "<builtin:write>", Source: "builtin", Scope: "temporary", Origin: "top-level"}},
 	}
+}
+
+func (s *AgentSession) GetAllTools() []SDKTool {
+	if s == nil || s.Agent == nil {
+		return nil
+	}
+	tools := append([]SDKTool(nil), s.Agent.State.Tools...)
+	tools = append(tools, s.DynamicTools...)
+	return tools
+}
+
+func (s *AgentSession) GetActiveToolNames() []string {
+	tools := s.GetAllTools()
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	return names
+}
+
+func (s *AgentSession) RefreshSystemPrompt() {
+	if s == nil || s.Agent == nil || s.SessionManager == nil {
+		return
+	}
+	prompt := buildAgentSessionSystemPrompt(s.SessionManager.GetCWD(), s.ResourceLoader, s.GetAllTools())
+	s.SystemPrompt = prompt
+	s.Agent.State.SystemPrompt = prompt
+}
+
+func buildAgentSessionSystemPrompt(cwd string, resourceLoader AgentSessionResourceLoader, tools []SDKTool) string {
+	var guidelines []string
+	selected := make([]string, 0, len(tools))
+	snippets := map[string]string{}
+	for _, tool := range tools {
+		selected = append(selected, tool.Name)
+		if strings.TrimSpace(tool.PromptSnippet) != "" {
+			snippets[tool.Name] = tool.PromptSnippet
+		}
+		guidelines = append(guidelines, tool.PromptGuidelines...)
+	}
+	var skills []agentharness.Skill
+	if resourceLoader != nil {
+		skills = resourceLoader.GetSkills().Skills
+	}
+	return BuildSystemPrompt(BuildSystemPromptOptions{
+		CWD:              cwd,
+		ContextFiles:     []SystemPromptContextFile{},
+		Skills:           toSystemPromptSkills(skills),
+		ToolSnippets:     snippets,
+		SelectedTools:    selected,
+		PromptGuidelines: guidelines,
+	})
 }
 
 func toSystemPromptSkills(skills []agentharness.Skill) []SystemPromptSkill {

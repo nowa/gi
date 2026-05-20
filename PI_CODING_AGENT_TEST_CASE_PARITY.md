@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `789`
+- `已有`: `795`
 - `待实现`: `0`
-- `需要协议 runtime`: `248`
+- `需要协议 runtime`: `242`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -35,8 +35,8 @@ Status meanings:
 | `agent-session-branching.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_branching_test.go |
 | `agent-session-compaction.test.ts` | 5 | 已有 | gi-coding-agent/agent_session_compaction_test.go |
 | `agent-session-concurrent.test.ts` | 7 | 部分已有 / 需要协议 runtime | gi-coding-agent/agent_session_concurrent_test.go; extension event-order cases wait for protocol runtime |
-| `agent-session-dynamic-provider.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `agent-session-dynamic-tools.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `agent-session-dynamic-provider.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
+| `agent-session-dynamic-tools.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
 | `agent-session-retry.test.ts` | 5 | 已有 | gi-coding-agent/agent_session_retry_test.go |
 | `agent-session-runtime-events.test.ts` | 4 | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
 | `agent-session-stats.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_stats_test.go |
@@ -183,26 +183,26 @@ Gi coverage / implementation target: `gi-coding-agent/agent_session_concurrent_t
 ## `agent-session-dynamic-provider.test.ts`
 
 Pi cases: `3`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_dynamic_provider_tools_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 67 | applies top-level registerProvider overrides to the active model | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 80 | applies session_start registerProvider overrides to the active model | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 97 | applies command-time registerProvider overrides without reload | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 67 | applies top-level registerProvider overrides to the active model | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
+| 80 | applies session_start registerProvider overrides to the active model | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
+| 97 | applies command-time registerProvider overrides without reload | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
 
 ## `agent-session-dynamic-tools.test.ts`
 
 Pi cases: `3`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_dynamic_provider_tools_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 28 | refreshes tool registry when tools are registered after initialization | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 94 | returns source metadata for SDK custom tools | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 137 | keeps custom tools active but omits them from available tools when promptSnippet is not provided | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 28 | refreshes tool registry when tools are registered after initialization | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
+| 94 | returns source metadata for SDK custom tools | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
+| 137 | keeps custom tools active but omits them from available tools when promptSnippet is not provided | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
 
 ## `agent-session-retry.test.ts`
 
