@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `449`
-- `待实现`: `295`
+- `已有`: `455`
+- `待实现`: `289`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -48,8 +48,8 @@ Status meanings:
 | `bash-close-hang-windows.test.ts` | 2 | 已有 | gi-coding-agent/bash_executor_test.go |
 | `bash-execution-width.test.ts` | 2 | 已有 | gi-coding-agent/bash_execution_test.go |
 | `block-images.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `clipboard-image-bmp-conversion.test.ts` | 1 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `clipboard-image.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `clipboard-image-bmp-conversion.test.ts` | 1 | 已有 | gi-coding-agent/clipboard_image_test.go |
+| `clipboard-image.test.ts` | 5 | 已有 | gi-coding-agent/clipboard_image_test.go |
 | `clipboard.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `compaction-extensions-example.test.ts` | 2 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `compaction-extensions.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -430,27 +430,27 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 
 ## `clipboard-image-bmp-conversion.test.ts`
 
-Pi cases: `1`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `1`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/clipboard_image_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 70 | converts BMP to PNG on Wayland/WSLg | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 70 | converts BMP to PNG on Wayland/WSLg | 已有 | gi-coding-agent/clipboard_image_test.go |
 
 ## `clipboard-image.test.ts`
 
-Pi cases: `5`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `5`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/clipboard_image_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 58 | Wayland: uses wl-paste and never calls clipboard | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 80 | Wayland: falls back to xclip when wl-paste is missing | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 111 | WSL: passes PowerShell path directly instead of through a custom env var | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 148 | Non-Wayland: uses clipboard | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 163 | Non-Wayland: returns null when clipboard has no image | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 58 | Wayland: uses wl-paste and never calls clipboard | 已有 | gi-coding-agent/clipboard_image_test.go |
+| 80 | Wayland: falls back to xclip when wl-paste is missing | 已有 | gi-coding-agent/clipboard_image_test.go |
+| 111 | WSL: passes PowerShell path directly instead of through a custom env var | 已有 | gi-coding-agent/clipboard_image_test.go |
+| 148 | Non-Wayland: uses clipboard | 已有 | gi-coding-agent/clipboard_image_test.go |
+| 163 | Non-Wayland: returns null when clipboard has no image | 已有 | gi-coding-agent/clipboard_image_test.go |
 
 ## `clipboard.test.ts`
 
