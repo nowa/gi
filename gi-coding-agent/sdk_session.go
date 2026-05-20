@@ -18,6 +18,7 @@ type AgentSessionOptions struct {
 	ResourceLoader       AgentSessionResourceLoader
 	CompactionSettings   *agentharness.CompactionSettings
 	CompactionSummarizer AgentSessionCompactionSummarizer
+	BranchSummarizer     AgentSessionBranchSummarizer
 	Responder            AgentSessionResponder
 }
 
@@ -28,8 +29,11 @@ type AgentSession struct {
 	Agent                *SDKAgent
 	CompactionSettings   agentharness.CompactionSettings
 	CompactionSummarizer AgentSessionCompactionSummarizer
+	BranchSummarizer     AgentSessionBranchSummarizer
 	Responder            AgentSessionResponder
 	eventListeners       []AgentSessionEventListener
+	branchSummaryAbort   chan struct{}
+	isCompacting         bool
 }
 
 type AgentSessionStats struct {
@@ -119,6 +123,10 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 	if compactionSummarizer == nil {
 		compactionSummarizer = DefaultAgentSessionCompactionSummarizer
 	}
+	branchSummarizer := options.BranchSummarizer
+	if branchSummarizer == nil {
+		branchSummarizer = DefaultAgentSessionBranchSummarizer
+	}
 	responder := options.Responder
 	if responder == nil {
 		responder = DefaultAgentSessionResponder
@@ -144,6 +152,7 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		Agent:                agent,
 		CompactionSettings:   compactionSettings,
 		CompactionSummarizer: compactionSummarizer,
+		BranchSummarizer:     branchSummarizer,
 		Responder:            responder,
 	}, nil
 }

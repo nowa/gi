@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `671`
-- `待实现`: `95`
+- `已有`: `681`
+- `待实现`: `85`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -40,7 +40,7 @@ Status meanings:
 | `agent-session-retry.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `agent-session-runtime-events.test.ts` | 4 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `agent-session-stats.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_stats_test.go |
-| `agent-session-tree-navigation.test.ts` | 10 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `agent-session-tree-navigation.test.ts` | 10 | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
 | `ansi-utils.test.ts` | 5 | 已有 | gi-coding-agent/utils_test.go |
 | `args.test.ts` | 60 | 已有 | gi-coding-agent/args_test.go |
 | `assistant-message.test.ts` | 2 | 已有 | gi-coding-agent/message_components_test.go |
@@ -246,21 +246,21 @@ Gi coverage / implementation target: `gi-coding-agent/agent_session_stats_test.g
 ## `agent-session-tree-navigation.test.ts`
 
 Pi cases: `10`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_tree_navigation_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 29 | should navigate to user message and put text in editor | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 56 | should navigate to non-user message without editor text | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 78 | should create branch summary when navigating with summarize=true | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 108 | should attach summary to correct parent when navigating to nested user message | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 147 | should attach summary to selected node when navigating to assistant message | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 175 | should handle abort during summarization | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 214 | should not create summary when navigating without summarize option | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 238 | should handle navigation to same position (no-op) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 257 | should support custom summarization instructions | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 292 | should navigate between branches correctly | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 29 | should navigate to user message and put text in editor | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
+| 56 | should navigate to non-user message without editor text | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
+| 78 | should create branch summary when navigating with summarize=true | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
+| 108 | should attach summary to correct parent when navigating to nested user message | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
+| 147 | should attach summary to selected node when navigating to assistant message | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
+| 175 | should handle abort during summarization | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
+| 214 | should not create summary when navigating without summarize option | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
+| 238 | should handle navigation to same position (no-op) | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
+| 257 | should support custom summarization instructions | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
+| 292 | should navigate between branches correctly | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
 
 ## `ansi-utils.test.ts`
 
