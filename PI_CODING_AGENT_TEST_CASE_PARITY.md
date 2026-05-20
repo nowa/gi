@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `222`
-- `待实现`: `522`
+- `已有`: `246`
+- `待实现`: `498`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -44,7 +44,7 @@ Status meanings:
 | `ansi-utils.test.ts` | 5 | 已有 | gi-coding-agent/utils_test.go |
 | `args.test.ts` | 60 | 已有 | gi-coding-agent/args_test.go |
 | `assistant-message.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `auth-storage.test.ts` | 24 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `auth-storage.test.ts` | 24 | 已有 | gi-coding-agent/auth_storage_test.go |
 | `bash-close-hang-windows.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `bash-execution-width.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `block-images.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -359,35 +359,35 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `auth-storage.test.ts`
 
 Pi cases: `24`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/auth_storage_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 38 | literal API key is returned directly | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 49 | apiKey with ! prefix executes command and uses stdout | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 60 | apiKey with ! prefix trims whitespace from command output | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 71 | apiKey with ! prefix handles multiline output (uses trimmed result) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 82 | apiKey with ! prefix returns undefined on command failure | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 93 | apiKey with ! prefix returns undefined on nonexistent command | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 104 | apiKey with ! prefix returns undefined on empty output | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 115 | apiKey as environment variable name resolves to env value | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 137 | apiKey as literal value is used directly when not an env var | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 151 | apiKey command can use shell features like pipes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 163 | command is only executed once per process | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 186 | cache persists across AuthStorage instances | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 208 | clearConfigValueCache allows command to run again | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 230 | different commands are cached separately | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 245 | failed commands are cached (not retried) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 269 | environment variables are not cached (changes are picked up) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 302 | returns undefined on compromised lock and allows a later retry | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 351 | set preserves unrelated external edits | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 374 | remove preserves unrelated external edits | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 397 | does not overwrite malformed auth file after load error | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 412 | reload records parse errors and drainErrors clears buffer | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 435 | does not expose stored API keys or OAuth tokens | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 455 | runtime override takes priority over auth.json | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 468 | removing runtime override falls back to auth.json | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 38 | literal API key is returned directly | 已有 | gi-coding-agent/auth_storage_test.go |
+| 49 | apiKey with ! prefix executes command and uses stdout | 已有 | gi-coding-agent/auth_storage_test.go |
+| 60 | apiKey with ! prefix trims whitespace from command output | 已有 | gi-coding-agent/auth_storage_test.go |
+| 71 | apiKey with ! prefix handles multiline output (uses trimmed result) | 已有 | gi-coding-agent/auth_storage_test.go |
+| 82 | apiKey with ! prefix returns undefined on command failure | 已有 | gi-coding-agent/auth_storage_test.go |
+| 93 | apiKey with ! prefix returns undefined on nonexistent command | 已有 | gi-coding-agent/auth_storage_test.go |
+| 104 | apiKey with ! prefix returns undefined on empty output | 已有 | gi-coding-agent/auth_storage_test.go |
+| 115 | apiKey as environment variable name resolves to env value | 已有 | gi-coding-agent/auth_storage_test.go |
+| 137 | apiKey as literal value is used directly when not an env var | 已有 | gi-coding-agent/auth_storage_test.go |
+| 151 | apiKey command can use shell features like pipes | 已有 | gi-coding-agent/auth_storage_test.go |
+| 163 | command is only executed once per process | 已有 | gi-coding-agent/auth_storage_test.go |
+| 186 | cache persists across AuthStorage instances | 已有 | gi-coding-agent/auth_storage_test.go |
+| 208 | clearConfigValueCache allows command to run again | 已有 | gi-coding-agent/auth_storage_test.go |
+| 230 | different commands are cached separately | 已有 | gi-coding-agent/auth_storage_test.go |
+| 245 | failed commands are cached (not retried) | 已有 | gi-coding-agent/auth_storage_test.go |
+| 269 | environment variables are not cached (changes are picked up) | 已有 | gi-coding-agent/auth_storage_test.go |
+| 302 | returns undefined on compromised lock and allows a later retry | 已有 | gi-coding-agent/auth_storage_test.go |
+| 351 | set preserves unrelated external edits | 已有 | gi-coding-agent/auth_storage_test.go |
+| 374 | remove preserves unrelated external edits | 已有 | gi-coding-agent/auth_storage_test.go |
+| 397 | does not overwrite malformed auth file after load error | 已有 | gi-coding-agent/auth_storage_test.go |
+| 412 | reload records parse errors and drainErrors clears buffer | 已有 | gi-coding-agent/auth_storage_test.go |
+| 435 | does not expose stored API keys or OAuth tokens | 已有 | gi-coding-agent/auth_storage_test.go |
+| 455 | runtime override takes priority over auth.json | 已有 | gi-coding-agent/auth_storage_test.go |
+| 468 | removing runtime override falls back to auth.json | 已有 | gi-coding-agent/auth_storage_test.go |
 
 ## `bash-close-hang-windows.test.ts`
 
