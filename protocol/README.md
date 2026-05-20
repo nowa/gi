@@ -3,8 +3,10 @@
 This document defines the target architecture for Gi packages, extensions,
 trusted in-process TUI components, and package-provided out-of-process custom
 TUI components. The goal is to support the official Pi extension surface and
-popular Pi package patterns while keeping the protocol open enough for a Rust
-implementation such as `ri`.
+popular Pi package behaviors while keeping the protocol open enough for a Rust
+implementation such as `ri`. This is behavior compatibility, not package
+artifact compatibility: Pi/npm packages are not valid Gi packages unless they
+ship `gi.package.json` and speak the Gi protocol.
 
 Status: design target. The current repository does not yet implement the full
 `gi-coding-agent` runtime, package manager, extension runner, or RPC component
@@ -49,6 +51,8 @@ Non-goals for the base standard:
   the portable extension mechanism.
 - Do not let package-provided components write ANSI directly to the terminal.
 - Do not require every Pi example to be implemented in core.
+- Do not support `npm:` package sources or `package.json#gi` discovery. Gi uses
+  protocol packages, not language-ecosystem package manager metadata.
 
 ## Layer Model
 
@@ -215,7 +219,9 @@ Supported source types:
 
 Hosts MUST NOT support `npm:` as a package source. Reusing npm as an artifact
 store would make users expect Pi/npm packages to run directly, while Gi only
-guarantees artifacts that implement this protocol.
+guarantees artifacts that implement this protocol. Future Gi package-source
+additions must use explicit protocol conformance and must not make npm package
+metadata a compatibility boundary.
 
 Resource precedence SHOULD match Pi's useful behavior:
 

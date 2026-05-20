@@ -49,6 +49,7 @@
           }
         },
         "packageSources": {
+          "description": "Supported Gi package source kinds. npm is intentionally excluded from v1 and MUST NOT be reported as a compatible package source.",
           "type": "array",
           "items": {
             "enum": ["git", "local", "oci", "tarball"]

@@ -6,7 +6,8 @@ This specification defines the open boundary for Gi packages, extension
 processes, trusted in-process components, and package-provided out-of-process
 custom TUI components. A Rust implementation such as Ri can implement the same
 wire protocol, schemas, registries, and conformance fixtures without importing
-Go code.
+Go code. Pi/npm package artifacts are not compatibility targets; only the
+protocol behavior and conformance fixtures are.
 
 Normative keywords `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` use
 RFC 2119 meaning when written in uppercase.
@@ -54,13 +55,16 @@ Hosts and SDKs claim only profiles they pass:
 A package is a distribution unit. It MAY contain extensions, skills, prompt
 templates, themes, and static assets. Packages MUST use `gi.package.json`.
 `package.json#gi` and `npm:` sources are not part of v1 and MUST NOT be
-treated as compatible package inputs.
+treated as compatible package inputs. Hosts MUST NOT discover package metadata
+from `package.json`.
 
 V1 package sources are local paths, git URLs with optional refs, and approved
 archive sources such as tarball or OCI when a host explicitly implements them.
 Hosts MUST NOT support `npm:` as a package source. Package compatibility is
 defined by `gi.package.json`, extension RPC, capabilities, host actions, and
-ViewTree, not by any language ecosystem package manager.
+ViewTree, not by any language ecosystem package manager. Future package source
+additions must preserve that boundary and must not make npm package metadata a
+portable Gi contract.
 
 Package resolution MUST preserve this resource precedence:
 
