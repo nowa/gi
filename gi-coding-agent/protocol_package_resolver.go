@@ -145,6 +145,19 @@ func (m *DefaultPackageManager) resolveProtocolPackageSource(sourceText, scope s
 	if sourceText == "" {
 		return ProtocolPackageResources{}, "", nil
 	}
+	parsed := ParsePackageSource(sourceText)
+	if parsed.Type == "official" {
+		packageDir, err := m.materializeOfficialPackage(parsed.Path)
+		if err != nil {
+			return ProtocolPackageResources{}, "", err
+		}
+		metadata := ProtocolSourceInfo{
+			Source: PackageSourceIdentity(parsed),
+			Scope:  firstNonEmptyString(scope, "temporary"),
+			Origin: "package",
+		}
+		return resolveProtocolPackageDir(packageDir, metadata), packageDir, nil
+	}
 	sourcePath := ResolveToCwd(sourceText, m.cwd)
 	info, err := os.Stat(sourcePath)
 	if err != nil {

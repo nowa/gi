@@ -608,6 +608,27 @@ func (r *ProtocolExtensionRuntime) SendUserMessage(text string, options Protocol
 	}
 }
 
+func (r *ProtocolExtensionRuntime) AppendCustomEntry(customType string, data any) (string, error) {
+	if r == nil || r.boundSession == nil || r.boundSession.SessionManager == nil {
+		return "", ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime has no bound session"}
+	}
+	return r.boundSession.SessionManager.AppendCustomEntry(customType, data), nil
+}
+
+func (r *ProtocolExtensionRuntime) SessionEntries() []FileEntry {
+	if r == nil || r.boundSession == nil || r.boundSession.SessionManager == nil {
+		return nil
+	}
+	return r.boundSession.SessionManager.GetEntries()
+}
+
+func (r *ProtocolExtensionRuntime) ActiveToolNames() []string {
+	if r == nil || r.boundSession == nil {
+		return nil
+	}
+	return r.boundSession.GetActiveToolNames()
+}
+
 func (r *ProtocolExtensionRuntime) LoadFactories(factories []ProtocolExtensionFactory) error {
 	for _, factory := range factories {
 		if factory.Factory == nil {
@@ -744,6 +765,10 @@ func (c *ProtocolExtensionContext) RegisterTool(definition ProtocolToolDefinitio
 	if !c.runtime.capabilities[CapabilityToolsRegister] {
 		return ProtocolRuntimeError{Code: "missing_capability", Message: CapabilityToolsRegister}
 	}
+	sourceInfo := c.source
+	if sourceInfo.Source == "" {
+		sourceInfo = ProtocolSourceInfo{Path: c.source.Path, Source: "inline", Scope: "temporary", Origin: "top-level"}
+	}
 	tool := SDKTool{
 		Name:             definition.Name,
 		Label:            definition.Label,
@@ -751,7 +776,7 @@ func (c *ProtocolExtensionContext) RegisterTool(definition ProtocolToolDefinitio
 		PromptSnippet:    definition.PromptSnippet,
 		PromptGuidelines: append([]string(nil), definition.PromptGuidelines...),
 		Execute:          definition.Execute,
-		SourceInfo:       ProtocolSourceInfo{Path: c.source.Path, Source: "inline", Scope: "temporary", Origin: "top-level"},
+		SourceInfo:       sourceInfo,
 	}
 	c.runtime.tools = append(c.runtime.tools, tool)
 	c.runtime.ApplyToSession(c.runtime.boundSession)

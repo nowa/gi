@@ -9,8 +9,9 @@ import (
 )
 
 type ProtocolExtensionSource struct {
-	Path    string
-	BaseDir string
+	Path     string
+	BaseDir  string
+	Metadata ProtocolSourceInfo
 }
 
 type ProtocolExtensionDiscoveryError struct {

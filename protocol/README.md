@@ -113,7 +113,7 @@ Implementations SHOULD expose a machine-readable conformance report:
   ],
   "features": {
     "transports": ["stdio-ndjson"],
-    "packageSources": ["git", "local"],
+    "packageSources": ["git", "local", "official"],
     "viewNodes": ["text", "markdown", "box", "list", "input"]
   },
   "testResults": {
@@ -216,6 +216,7 @@ Supported source types:
 
 - git URL with optional ref
 - local file or directory
+- built-in official package source, written as `official:<name>`
 - OCI/tarball source, optional for hosted registries
 
 Hosts MUST NOT support `npm:` as a package source. Reusing npm as an artifact
@@ -258,11 +259,12 @@ resources declared by `gi.package.json`.
 
 ### Install
 
-Install resolves a local path, git ref, or approved archive into the user or
-project package store, validates `gi.package.json`, records source/ref/digest
-metadata in a lock file, and does not execute package code. Hosts MUST NOT run
-post-install scripts by default. Any prepare/build step is host policy, must be
-declared, and requires explicit approval.
+Install resolves a local path, git ref, `official:<name>` built-in package, or
+approved archive into the user or project package store, validates
+`gi.package.json`, records source/ref/digest metadata in a lock file, and does
+not execute package code. Hosts MUST NOT run post-install scripts by default.
+Any prepare/build step is host policy, must be declared, and requires explicit
+approval.
 
 ### Resolve
 

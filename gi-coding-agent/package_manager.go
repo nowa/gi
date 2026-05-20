@@ -123,6 +123,10 @@ func (m *DefaultPackageManager) addSourceToSettings(source string, project bool)
 	if unsupportedPackageSource(source) {
 		return false, unsupportedPackageSourceError(source)
 	}
+	parsed := ParsePackageSource(source)
+	if parsed.Type == "official" && !isOfficialPackageName(parsed.Path) {
+		return false, fmt.Errorf("unknown official package %q", parsed.Path)
+	}
 	baseDir := m.settingsBaseDir(project)
 	stored := m.packageSettingsValue(source, baseDir)
 	packages := m.settingsPackages(project)
@@ -210,6 +214,9 @@ func ParsePackageSource(source string) PackageSource {
 	if strings.HasPrefix(trimmed, "npm:") {
 		return PackageSource{Type: "unsupported", Source: trimmed, Path: strings.TrimSpace(strings.TrimPrefix(trimmed, "npm:"))}
 	}
+	if strings.HasPrefix(trimmed, "official:") {
+		return PackageSource{Type: "official", Source: trimmed, Path: strings.TrimSpace(strings.TrimPrefix(trimmed, "official:"))}
+	}
 	if gitSource, ok := ParseGitURL(trimmed); ok {
 		return PackageSource{
 			Type:   "git",
@@ -227,6 +234,9 @@ func ParsePackageSource(source string) PackageSource {
 func PackageSourceIdentity(source PackageSource) string {
 	if source.Type == "git" {
 		return "git:" + source.Host + "/" + source.Path
+	}
+	if source.Type == "official" {
+		return "official:" + source.Path
 	}
 	if source.Type == "unsupported" {
 		return "unsupported:" + source.Source
@@ -296,7 +306,7 @@ func unsupportedPackageSource(source string) bool {
 }
 
 func unsupportedPackageSourceError(source string) error {
-	return fmt.Errorf("unsupported package source %q: Gi packages support local paths and git URLs with gi.package.json; npm packages are not supported", strings.TrimSpace(source))
+	return fmt.Errorf("unsupported package source %q: Gi packages support local paths, git URLs, and official:<name> sources with gi.package.json; npm packages are not supported", strings.TrimSpace(source))
 }
 
 func (m *DefaultPackageManager) RunSelfUpdate(options SelfUpdateOptions) (SelfUpdateResult, error) {

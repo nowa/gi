@@ -97,6 +97,8 @@ type DefaultResourceLoader struct {
 	appendSystem     string
 	extensionSkills  []ResourceSkillPath
 	extensionPrompts []ResourcePromptPath
+	packageResources ProtocolPackageResources
+	packageLoadError error
 	extendedSkills   []ResourceSkillPath
 	extendedPrompts  []ResourcePromptPath
 	extendedExtPaths []ResourceExtensionPath
@@ -127,6 +129,7 @@ func NewDefaultResourceLoader(options DefaultResourceLoaderOptions) *DefaultReso
 }
 
 func (l *DefaultResourceLoader) Reload() {
+	l.packageResources, l.packageLoadError = l.loadPackageResources()
 	l.extensions = l.loadExtensions()
 	l.skills = l.loadSkills()
 	l.prompts = ResourcePromptsResult{Prompts: l.loadPrompts()}
@@ -176,7 +179,16 @@ func (l *DefaultResourceLoader) GetAppendSystemPrompt() string {
 func (l *DefaultResourceLoader) loadExtensions() ResourceExtensionsResult {
 	var combined ProtocolExtensionDiscoveryResult
 	for _, source := range l.extendedExtPaths {
-		combined.Extensions = append(combined.Extensions, ProtocolExtensionSource{Path: source.Path, BaseDir: filepath.Dir(source.Path)})
+		combined.Extensions = append(combined.Extensions, ProtocolExtensionSource{Path: source.Path, BaseDir: filepath.Dir(source.Path), Metadata: source.Metadata})
+	}
+	for _, resource := range l.packageResources.Extensions {
+		if !resource.Enabled {
+			continue
+		}
+		combined.Extensions = append(combined.Extensions, ProtocolExtensionSource{Path: resource.Path, BaseDir: filepath.Dir(resource.Path), Metadata: resource.Metadata})
+	}
+	if l.packageLoadError != nil {
+		combined.Errors = append(combined.Errors, ProtocolExtensionDiscoveryError{Path: "packages", Error: l.packageLoadError.Error()})
 	}
 	for _, source := range l.settingsExtensionSources() {
 		combined.Extensions = append(combined.Extensions, source)
@@ -207,6 +219,14 @@ func (l *DefaultResourceLoader) loadSkills() ResourceSkillsResult {
 		return l.skillsOverride()
 	}
 	var result ResourceSkillsResult
+	for _, resource := range l.packageResources.Skills {
+		if !resource.Enabled {
+			continue
+		}
+		loaded := loadResourceSkillsWithMetadata(resource.Path, resource.Metadata)
+		result.Skills = append(result.Skills, loaded.Skills...)
+		result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
+	}
 	if !l.noSkills {
 		for _, dir := range l.settingsResourcePaths("skills") {
 			loaded := agentharness.LoadSkills(dir)
@@ -304,6 +324,11 @@ func isFilesystemRoot(path string) bool {
 
 func (l *DefaultResourceLoader) loadPrompts() []PromptTemplate {
 	var prompts []PromptTemplate
+	for _, resource := range l.packageResources.Prompts {
+		if resource.Enabled {
+			prompts = append(prompts, loadResourcePromptsWithMetadata(resource.Path, resource.Metadata)...)
+		}
+	}
 	for _, path := range l.settingsResourcePaths("prompts") {
 		prompts = append(prompts, LoadPromptTemplates(LoadPromptTemplatesOptions{Cwd: l.cwd, PromptPaths: []string{path}})...)
 	}
@@ -323,7 +348,11 @@ func (l *DefaultResourceLoader) loadPrompts() []PromptTemplate {
 }
 
 func loadResourceSkillsWithMetadata(path string, metadata ProtocolSourceInfo) agentharness.SkillResult {
-	loaded := agentharness.LoadSkills(path)
+	loadPath := path
+	if filepath.Base(path) == "SKILL.md" {
+		loadPath = filepath.Dir(path)
+	}
+	loaded := agentharness.LoadSkills(loadPath)
 	for index := range loaded.Skills {
 		info := metadata
 		info.Path = loaded.Skills[index].FilePath
@@ -370,11 +399,25 @@ func sourceInfoFromProtocolMetadata(metadata ProtocolSourceInfo) SourceInfo {
 
 func (l *DefaultResourceLoader) loadThemes() []ResourceTheme {
 	var themes []ResourceTheme
+	for _, resource := range l.packageResources.Themes {
+		if resource.Enabled {
+			themes = append(themes, loadThemeFile(resource.Path)...)
+		}
+	}
 	for _, dir := range []string{filepath.Join(l.agentDir, "themes"), filepath.Join(l.cwd, ConfigDirName, "themes")} {
 		themes = append(themes, loadThemesFromDir(dir)...)
 	}
 	themes = filterThemes(themes, l.resourceFilters("themes"), l.cwd, l.agentDir)
 	return dedupeThemesByName(themes)
+}
+
+func (l *DefaultResourceLoader) loadPackageResources() (ProtocolPackageResources, error) {
+	manager := NewDefaultPackageManager(PackageManagerOptions{
+		CWD:             l.cwd,
+		AgentDir:        l.agentDir,
+		SettingsManager: l.settingsManager,
+	})
+	return manager.ResolveConfiguredProtocolPackageResources()
 }
 
 func (l *DefaultResourceLoader) loadAgentsFiles() []ResourceContextFile {
@@ -590,6 +633,23 @@ func loadThemesFromDir(dir string) []ResourceTheme {
 		themes = append(themes, ResourceTheme{Name: value.Name, SourcePath: path})
 	}
 	return themes
+}
+
+func loadThemeFile(path string) []ResourceTheme {
+	if !strings.HasSuffix(path, ".json") {
+		return nil
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var value struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(content, &value); err != nil || strings.TrimSpace(value.Name) == "" {
+		return nil
+	}
+	return []ResourceTheme{{Name: value.Name, SourcePath: path}}
 }
 
 func readOptionalFile(path string) string {

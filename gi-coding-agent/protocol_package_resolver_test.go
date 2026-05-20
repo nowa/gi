@@ -1,7 +1,12 @@
 package gicodingagent
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -86,6 +91,80 @@ func TestProtocolPackageResolverLocalResources(t *testing.T) {
 			t.Fatalf("skills = %#v", result.Skills)
 		}
 	})
+}
+
+func TestProtocolPackageResolverOfficialResources(t *testing.T) {
+	t.Run("resolves official packages as materialized Gi package artifacts", func(t *testing.T) {
+		agentDir := t.TempDir()
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: agentDir, SettingsManager: NewInMemorySettingsManager(nil)})
+
+		source := manager.ParseSource("official:gi-plan-mode")
+		if source.Type != "official" || source.Path != "gi-plan-mode" || manager.GetPackageIdentity("official:gi-plan-mode") != "official:gi-plan-mode" {
+			t.Fatalf("source = %#v identity = %q", source, manager.GetPackageIdentity("official:gi-plan-mode"))
+		}
+
+		result, err := manager.ResolveProtocolPackageResources([]string{"official:gi-plan-mode"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackageHasSuffix(result.Extensions, filepath.Join("official-packages", "gi-plan-mode", "extensions", "main.gi.json")) ||
+			!protocolPackageHasSuffix(result.Skills, filepath.Join("official-packages", "gi-plan-mode", "skills", "plan-mode", "SKILL.md")) ||
+			!protocolPackageHasSuffix(result.Prompts, filepath.Join("official-packages", "gi-plan-mode", "prompts", "plan.md")) {
+			t.Fatalf("resources = %#v", result)
+		}
+		if result.Extensions[0].Metadata.Source != "official:gi-plan-mode" || result.Extensions[0].Metadata.Origin != "package" {
+			t.Fatalf("metadata = %#v", result.Extensions[0].Metadata)
+		}
+	})
+
+	t.Run("install stores official source and rejects unknown official packages", func(t *testing.T) {
+		settings := NewInMemorySettingsManager(nil)
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: settings})
+
+		if err := manager.Install("official:gi-tools-ui", false); err != nil {
+			t.Fatal(err)
+		}
+		if packages := settingsPackagesToStrings(settings.GetPackages()); len(packages) != 1 || packages[0] != "official:gi-tools-ui" {
+			t.Fatalf("packages = %#v", packages)
+		}
+		if err := manager.Install("official:not-real", false); err == nil {
+			t.Fatal("expected unknown official package error")
+		}
+	})
+}
+
+func TestOfficialPackageCatalogMatchesProtocolRegistry(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "protocol", "spec", "registries", "official-packages.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var registry struct {
+		Packages []struct {
+			Name string `json:"name"`
+		} `json:"packages"`
+	}
+	if err := json.Unmarshal(content, &registry); err != nil {
+		t.Fatal(err)
+	}
+	want := make([]string, 0, len(registry.Packages))
+	for _, pkg := range registry.Packages {
+		want = append(want, pkg.Name)
+	}
+	sort.Strings(want)
+	if got := OfficialPackageNames(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("official packages = %#v, want %#v", got, want)
+	}
+
+	manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+	for _, name := range want {
+		result, err := manager.ResolveProtocolPackageResources([]string{"official:" + name})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(result.Extensions) != 1 || len(result.Skills) == 0 || len(result.Prompts) == 0 {
+			t.Fatalf("%s resources = %#v", name, result)
+		}
+	}
 }
 
 func TestProtocolPackageManifestPatternRules(t *testing.T) {
@@ -515,6 +594,16 @@ func protocolPackageHasAnyPath(resources []ProtocolPackageResource, path string)
 	clean := filepath.Clean(path)
 	for _, resource := range resources {
 		if filepath.Clean(resource.Path) == clean {
+			return true
+		}
+	}
+	return false
+}
+
+func protocolPackageHasSuffix(resources []ProtocolPackageResource, suffix string) bool {
+	suffix = filepath.Clean(suffix)
+	for _, resource := range resources {
+		if strings.HasSuffix(filepath.Clean(resource.Path), suffix) && resource.Enabled {
 			return true
 		}
 	}

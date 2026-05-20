@@ -105,7 +105,10 @@ func readProtocolExtensionDescriptor(path string) (protocolExtensionDescriptor, 
 func applyProtocolExtensionDescriptor(ctx *ProtocolExtensionContext, descriptor *protocolExtensionDescriptorGI, toolSources map[string]string) []ProtocolExtensionDiscoveryError {
 	var errors []ProtocolExtensionDiscoveryError
 	for _, command := range descriptor.Commands {
-		if err := ctx.RegisterCommand(command.Name, ProtocolCommandDefinition{Description: command.Description}); err != nil {
+		if err := ctx.RegisterCommand(command.Name, ProtocolCommandDefinition{
+			Description: command.Description,
+			Handler:     officialCommandHandler(ctx, command.Name),
+		}); err != nil {
 			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: err.Error()})
 		}
 	}
@@ -119,7 +122,13 @@ func applyProtocolExtensionDescriptor(ctx *ProtocolExtensionContext, descriptor 
 			continue
 		}
 		toolSources[name] = ctx.source.Path
-		if err := ctx.RegisterTool(ProtocolToolDefinition{Name: name, Label: tool.Label, Description: tool.Description, PromptSnippet: firstNonEmptyString(tool.PromptSnippet, tool.Description)}); err != nil {
+		if err := ctx.RegisterTool(ProtocolToolDefinition{
+			Name:          name,
+			Label:         tool.Label,
+			Description:   tool.Description,
+			PromptSnippet: firstNonEmptyString(tool.PromptSnippet, tool.Description),
+			Execute:       officialToolExecutor(ctx, name),
+		}); err != nil {
 			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: err.Error()})
 		}
 	}
@@ -158,6 +167,20 @@ func protocolDescriptorSourceInfo(source ProtocolExtensionSource, id string) Pro
 	origin := strings.TrimSpace(id)
 	if origin == "" {
 		origin = strings.TrimSuffix(filepath.Base(source.Path), filepath.Ext(source.Path))
+	}
+	if source.Metadata.Source != "" || source.Metadata.Scope != "" || source.Metadata.Origin != "" {
+		info := source.Metadata
+		info.Path = source.Path
+		if info.Source == "" {
+			info.Source = "extension:" + origin
+		}
+		if info.Scope == "" {
+			info.Scope = "temporary"
+		}
+		if info.Origin == "" {
+			info.Origin = "top-level"
+		}
+		return info
 	}
 	return ProtocolSourceInfo{Path: source.Path, Source: "extension:" + origin, Scope: "temporary", Origin: "top-level"}
 }

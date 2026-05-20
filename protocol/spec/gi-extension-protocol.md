@@ -59,13 +59,14 @@ templates, themes, and static assets. Packages MUST use `gi.package.json`.
 treated as compatible package inputs. Hosts MUST NOT discover package metadata
 from `package.json`.
 
-V1 package sources are local paths, git URLs with optional refs, and approved
-archive sources such as tarball or OCI when a host explicitly implements them.
-Hosts MUST NOT support `npm:` as a package source. Package compatibility is
-defined by `gi.package.json`, extension RPC, capabilities, host actions, and
-ViewTree, not by any language ecosystem package manager. Future package source
-additions must preserve that boundary and must not make npm package metadata a
-portable Gi contract.
+V1 package sources are local paths, git URLs with optional refs,
+`official:<name>` built-in Gi packages, and approved archive sources such as
+tarball or OCI when a host explicitly implements them. Hosts MUST NOT support
+`npm:` as a package source. Package compatibility is defined by
+`gi.package.json`, extension RPC, capabilities, host actions, and ViewTree, not
+by any language ecosystem package manager. Future package source additions must
+preserve that boundary and must not make npm package metadata a portable Gi
+contract.
 
 Package resolution MUST preserve this resource precedence:
 

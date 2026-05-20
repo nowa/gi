@@ -439,6 +439,79 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("loads configured official packages through protocol descriptors", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		settings := NewInMemorySettingsManager(map[string]any{
+			"packages": []any{"official:gi-plan-mode", "official:gi-todo-widget"},
+		})
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings})
+		loader.Reload()
+
+		extensions := loader.GetExtensions()
+		if len(extensions.Errors) != 0 {
+			t.Fatalf("extension errors = %#v", extensions.Errors)
+		}
+		if got := extensions.Runtime.CommandInvocationNames(); !reflect.DeepEqual(got, []string{"plan", "plan-review", "todo"}) {
+			t.Fatalf("commands = %#v", got)
+		}
+		todoTool := findDynamicSDKTool(extensions.Runtime.RegisteredTools(), "todo_read")
+		if todoTool == nil {
+			t.Fatalf("tools = %#v", extensions.Runtime.RegisteredTools())
+		}
+		sourceInfo := todoTool.SourceInfo
+		if sourceInfo.Source != "official:gi-todo-widget" || sourceInfo.Origin != "package" {
+			t.Fatalf("tool source = %#v", sourceInfo)
+		}
+		if resourceFindSkill(loader.GetSkills().Skills, "plan-mode") == nil ||
+			resourceFindSkill(loader.GetSkills().Skills, "todo-widget") == nil {
+			t.Fatalf("skills = %#v", loader.GetSkills().Skills)
+		}
+		if resourceFindPrompt(loader.GetPrompts().Prompts, "plan") == nil ||
+			resourceFindPrompt(loader.GetPrompts().Prompts, "todo") == nil {
+			t.Fatalf("prompts = %#v", loader.GetPrompts().Prompts)
+		}
+
+		sessionManager, err := InMemorySessionManager(cwd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		session, err := CreateAgentSession(AgentSessionOptions{
+			CWD:            cwd,
+			AgentDir:       agentDir,
+			Model:          sdkTestModel(),
+			SessionManager: sessionManager,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		extensions.Runtime.BindSession(session)
+		if err := session.Prompt("/plan"); err != nil {
+			t.Fatal(err)
+		}
+		if !resourceHasCustomEntry(sessionManager.GetEntries(), "gi-plan-mode.command") {
+			t.Fatalf("entries = %#v", sessionManager.GetEntries())
+		}
+		writeTool := findDynamicSDKTool(extensions.Runtime.RegisteredTools(), "todo_write")
+		if writeTool == nil || writeTool.Execute == nil {
+			t.Fatalf("tools = %#v", extensions.Runtime.RegisteredTools())
+		}
+		if _, err := writeTool.Execute("todo-write", map[string]any{"todos": []any{"Ship official packages"}}); err != nil {
+			t.Fatal(err)
+		}
+		readTool := findDynamicSDKTool(extensions.Runtime.RegisteredTools(), "todo_read")
+		if readTool == nil || readTool.Execute == nil {
+			t.Fatalf("tools = %#v", extensions.Runtime.RegisteredTools())
+		}
+		result, err := readTool.Execute("todo-read", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(sdkToolText(result), "Ship official packages") {
+			t.Fatalf("todo read result = %#v", result)
+		}
+	})
+
 	t.Run("detects tool conflicts and keeps explicit extension first", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		globalExt := filepath.Join(agentDir, "extensions", "global.gi.json")
@@ -615,6 +688,15 @@ func resourceFindPrompt(prompts []PromptTemplate, name string) *PromptTemplate {
 func resourceExtensionErrorsContain(errors []ProtocolExtensionDiscoveryError, text string) bool {
 	for _, err := range errors {
 		if strings.Contains(err.Error, text) {
+			return true
+		}
+	}
+	return false
+}
+
+func resourceHasCustomEntry(entries []FileEntry, customType string) bool {
+	for _, entry := range entries {
+		if entry.CustomType == customType {
 			return true
 		}
 	}
