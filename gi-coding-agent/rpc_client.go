@@ -10,8 +10,22 @@ import (
 const RPCCommandClone = "clone"
 
 type RPCCommand struct {
-	ID   string `json:"id,omitempty"`
-	Type string `json:"type"`
+	ID                 string `json:"id,omitempty"`
+	Type               string `json:"type"`
+	Message            string `json:"message,omitempty"`
+	StreamingBehavior  string `json:"streamingBehavior,omitempty"`
+	Provider           string `json:"provider,omitempty"`
+	ModelID            string `json:"modelId,omitempty"`
+	Level              string `json:"level,omitempty"`
+	Mode               string `json:"mode,omitempty"`
+	CustomInstructions string `json:"customInstructions,omitempty"`
+	Enabled            *bool  `json:"enabled,omitempty"`
+	Command            string `json:"command,omitempty"`
+	OutputPath         string `json:"outputPath,omitempty"`
+	SessionPath        string `json:"sessionPath,omitempty"`
+	EntryID            string `json:"entryId,omitempty"`
+	Name               string `json:"name,omitempty"`
+	ParentSession      string `json:"parentSession,omitempty"`
 }
 
 type RPCResponse struct {
@@ -78,4 +92,27 @@ func rpcResponseData[T any](response RPCResponse) (T, error) {
 		return zero, err
 	}
 	return zero, nil
+}
+
+func rpcSuccessResponse(command string, data any) RPCResponse {
+	response := RPCResponse{Type: "response", Command: command, Success: true}
+	if data == nil {
+		return response
+	}
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		response.Success = false
+		response.Error = err.Error()
+		return response
+	}
+	response.Data = encoded
+	return response
+}
+
+func rpcErrorResponse(command string, err error) RPCResponse {
+	message := "RPC command failed"
+	if err != nil {
+		message = err.Error()
+	}
+	return RPCResponse{Type: "response", Command: command, Success: false, Error: message}
 }

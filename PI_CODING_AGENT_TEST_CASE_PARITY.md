@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `768`
+- `已有`: `782`
 - `待实现`: `0`
-- `需要协议 runtime`: `269`
+- `需要协议 runtime`: `255`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -98,7 +98,7 @@ Status meanings:
 | `rpc-client-clone.test.ts` | 1 | 已有 | gi-coding-agent/rpc_client_test.go |
 | `rpc-jsonl.test.ts` | 4 | 已有 | gi-coding-agent/rpc_jsonl_test.go |
 | `rpc-prompt-response-semantics.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `rpc.test.ts` | 14 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `rpc.test.ts` | 14 | 已有 | gi-coding-agent/rpc_session_host_test.go |
 | `sdk-openrouter-attribution.test.ts` | 4 | 已有 | gi-coding-agent/sdk_attribution_test.go |
 | `sdk-session-manager.test.ts` | 3 | 已有 | gi-coding-agent/sdk_session_test.go |
 | `sdk-skills.test.ts` | 3 | 已有 | gi-coding-agent/sdk_session_test.go |
@@ -1527,25 +1527,25 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 ## `rpc.test.ts`
 
 Pi cases: `14`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/rpc_session_host_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 36 | should get state | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 47 | should save messages to session file | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 89 | should handle manual compaction | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 119 | should execute bash command | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 128 | should add bash output to context | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 160 | should include bash output in LLM context | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 184 | should set and get thinking level | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 195 | should cycle thinking level | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 212 | should get available models | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 227 | should get session stats | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 240 | should create new session | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 258 | should export to HTML | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 271 | should get last assistant text | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 286 | should set and get session name | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 36 | should get state | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 47 | should save messages to session file | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 89 | should handle manual compaction | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 119 | should execute bash command | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 128 | should add bash output to context | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 160 | should include bash output in LLM context | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 184 | should set and get thinking level | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 195 | should cycle thinking level | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 212 | should get available models | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 227 | should get session stats | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 240 | should create new session | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 258 | should export to HTML | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 271 | should get last assistant text | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 286 | should set and get session name | 已有 | gi-coding-agent/rpc_session_host_test.go |
 
 ## `sdk-openrouter-attribution.test.ts`
 
