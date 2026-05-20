@@ -3,6 +3,8 @@ package gicodingagent
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -125,6 +127,94 @@ func TestPathUtilitiesMatchPiReadPathBehavior(t *testing.T) {
 	if err != nil || filepath.Base(got) != lowerScreenshotName {
 		t.Fatalf("ResolveReadPath screenshot am = %q err=%v", got, err)
 	}
+}
+
+func TestPathsUtilitiesMatchPiPackagePathBehavior(t *testing.T) {
+	temp := t.TempDir()
+	file := filepath.Join(temp, "file.txt")
+	if err := os.WriteFile(file, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if want := mustEvalSymlinks(t, file); CanonicalizePath(file) != want {
+		t.Fatalf("CanonicalizePath regular file = %q, want %q", CanonicalizePath(file), want)
+	}
+
+	target := filepath.Join(temp, "target.txt")
+	link := filepath.Join(temp, "link.txt")
+	if err := os.WriteFile(target, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if want := mustEvalSymlinks(t, target); CanonicalizePath(link) != want {
+		t.Fatalf("CanonicalizePath symlink = %q, want %q", CanonicalizePath(link), want)
+	}
+
+	targetDir := filepath.Join(temp, "target-dir")
+	linkDir := filepath.Join(temp, "link-dir")
+	if err := os.Mkdir(targetDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(targetDir, linkDir); err != nil {
+		t.Fatal(err)
+	}
+	if want := mustEvalSymlinks(t, targetDir); CanonicalizePath(linkDir) != want {
+		t.Fatalf("CanonicalizePath directory symlink = %q, want %q", CanonicalizePath(linkDir), want)
+	}
+
+	missing := filepath.Join(temp, "no-such-file")
+	if got := CanonicalizePath(missing); got != missing {
+		t.Fatalf("CanonicalizePath missing = %q, want %q", got, missing)
+	}
+
+	danglingTarget := filepath.Join(temp, "dangling-target.txt")
+	danglingLink := filepath.Join(temp, "dangling-link.txt")
+	if err := os.Symlink(danglingTarget, danglingLink); err != nil {
+		t.Fatal(err)
+	}
+	if got := CanonicalizePath(danglingLink); got != danglingLink {
+		t.Fatalf("CanonicalizePath dangling = %q, want %q", got, danglingLink)
+	}
+
+	cwd := filepath.Join(os.TempDir(), "pi-paths-cwd")
+	if got, ok := GetCwdRelativePath(filepath.Join(cwd, "..config", "AGENTS.md"), cwd); !ok || got != filepath.Join("..config", "AGENTS.md") {
+		t.Fatalf("GetCwdRelativePath dot prefix = %q, %v", got, ok)
+	}
+	if got, ok := GetCwdRelativePath(filepath.Join(cwd, "..", "AGENTS.md"), cwd); ok || got != "" {
+		t.Fatalf("GetCwdRelativePath parent traversal = %q, %v", got, ok)
+	}
+
+	for _, value := range []string{"my-package", "./foo"} {
+		if !IsLocalPath(value) {
+			t.Fatalf("IsLocalPath(%q) = false, want true", value)
+		}
+	}
+	for _, value := range []string{"npm:package", "git://repo", "https://example.com"} {
+		if IsLocalPath(value) {
+			t.Fatalf("IsLocalPath(%q) = true, want false", value)
+		}
+	}
+}
+
+func TestGetPiUserAgentFormatsPiDevUserAgent(t *testing.T) {
+	userAgent := GetPiUserAgent("1.2.3")
+	want := "pi/1.2.3 (" + runtime.GOOS + "; go/" + runtime.Version() + "; " + runtime.GOARCH + ")"
+	if userAgent != want {
+		t.Fatalf("user agent = %q, want %q", userAgent, want)
+	}
+	if !regexp.MustCompile(`^pi/[^\s()]+ \([^;()]+;\s*[^;()]+;\s*[^()]+\)$`).MatchString(userAgent) {
+		t.Fatalf("user agent does not match pi.dev format: %q", userAgent)
+	}
+}
+
+func mustEvalSymlinks(t *testing.T, path string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
 }
 
 func TestStripAnsiMatchesPiCompatibilityInputs(t *testing.T) {

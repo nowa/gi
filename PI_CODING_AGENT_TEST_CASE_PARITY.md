@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `246`
-- `待实现`: `498`
+- `已有`: `259`
+- `待实现`: `485`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -88,8 +88,8 @@ Status meanings:
 | `package-manager-ssh.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `package-manager.test.ts` | 102 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `path-utils.test.ts` | 11 | 已有 | gi-coding-agent/utils_test.go |
-| `paths.test.ts` | 12 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `pi-user-agent.test.ts` | 1 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `paths.test.ts` | 12 | 已有 | gi-coding-agent/utils_test.go |
+| `pi-user-agent.test.ts` | 1 | 已有 | gi-coding-agent/utils_test.go |
 | `plan-mode-utils.test.ts` | 33 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `print-mode.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `prompt-templates.test.ts` | 82 | 已有 | gi-coding-agent/prompt_templates_test.go |
@@ -1276,33 +1276,33 @@ Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 ## `paths.test.ts`
 
 Pi cases: `12`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 22 | returns the real path for a regular file | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 29 | resolves symlinks to their targets | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 38 | resolves directory symlinks | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 47 | falls back to the raw path when the target does not exist | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 53 | falls back to the raw path for a dangling symlink | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 65 | keeps cwd-relative names that start with dots | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 70 | rejects parent-directory traversals | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 77 | returns true for bare names | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 81 | returns true for relative paths | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 85 | returns false for npm: protocol | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 89 | returns false for git: protocol | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 93 | returns false for https: protocol | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 22 | returns the real path for a regular file | 已有 | gi-coding-agent/utils_test.go |
+| 29 | resolves symlinks to their targets | 已有 | gi-coding-agent/utils_test.go |
+| 38 | resolves directory symlinks | 已有 | gi-coding-agent/utils_test.go |
+| 47 | falls back to the raw path when the target does not exist | 已有 | gi-coding-agent/utils_test.go |
+| 53 | falls back to the raw path for a dangling symlink | 已有 | gi-coding-agent/utils_test.go |
+| 65 | keeps cwd-relative names that start with dots | 已有 | gi-coding-agent/utils_test.go |
+| 70 | rejects parent-directory traversals | 已有 | gi-coding-agent/utils_test.go |
+| 77 | returns true for bare names | 已有 | gi-coding-agent/utils_test.go |
+| 81 | returns true for relative paths | 已有 | gi-coding-agent/utils_test.go |
+| 85 | returns false for npm: protocol | 已有 | gi-coding-agent/utils_test.go |
+| 89 | returns false for git: protocol | 已有 | gi-coding-agent/utils_test.go |
+| 93 | returns false for https: protocol | 已有 | gi-coding-agent/utils_test.go |
 
 ## `pi-user-agent.test.ts`
 
 Pi cases: `1`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 5 | formats the user agent expected by pi.dev | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 5 | formats the user agent expected by pi.dev | 已有 | gi-coding-agent/utils_test.go |
 
 ## `plan-mode-utils.test.ts`
 

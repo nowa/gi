@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"unicode"
 )
@@ -158,6 +159,52 @@ func ResolveReadPath(path, cwd string) (string, error) {
 		}
 	}
 	return resolved, os.ErrNotExist
+}
+
+func CanonicalizePath(path string) string {
+	realPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+	return realPath
+}
+
+func GetCwdRelativePath(path, cwd string) (string, bool) {
+	resolvedCwd, err := filepath.Abs(cwd)
+	if err != nil {
+		resolvedCwd = filepath.Clean(cwd)
+	}
+	var resolvedPath string
+	if filepath.IsAbs(path) {
+		resolvedPath = filepath.Clean(path)
+	} else {
+		resolvedPath = filepath.Clean(filepath.Join(resolvedCwd, path))
+	}
+	relativePath, err := filepath.Rel(resolvedCwd, resolvedPath)
+	if err != nil {
+		return "", false
+	}
+	if relativePath == "" {
+		return ".", true
+	}
+	if relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) || filepath.IsAbs(relativePath) {
+		return "", false
+	}
+	return relativePath, true
+}
+
+func IsLocalPath(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	for _, prefix := range []string{"npm:", "git:", "github:", "http:", "https:", "ssh:"} {
+		if strings.HasPrefix(trimmed, prefix) {
+			return false
+		}
+	}
+	return true
+}
+
+func GetPiUserAgent(version string) string {
+	return fmt.Sprintf("pi/%s (%s; go/%s; %s)", version, runtime.GOOS, runtime.Version(), runtime.GOARCH)
 }
 
 func normalizeUserPathText(value string) string {
