@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `413`
-- `待实现`: `331`
+- `已有`: `417`
+- `待实现`: `327`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -46,7 +46,7 @@ Status meanings:
 | `assistant-message.test.ts` | 2 | 已有 | gi-coding-agent/message_components_test.go |
 | `auth-storage.test.ts` | 24 | 已有 | gi-coding-agent/auth_storage_test.go |
 | `bash-close-hang-windows.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `bash-execution-width.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `bash-execution-width.test.ts` | 2 | 已有 | gi-coding-agent/bash_execution_test.go |
 | `block-images.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `clipboard-image-bmp-conversion.test.ts` | 1 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `clipboard-image.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -67,7 +67,7 @@ Status meanings:
 | `extensions-runner.test.ts` | 27 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `file-mutation-queue.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `footer-data-provider.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| `footer-width.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `footer-width.test.ts` | 2 | 已有 | gi-coding-agent/footer_test.go |
 | `frontmatter.test.ts` | 8 | 已有 | gi-coding-agent/utils_test.go |
 | `git-ssh-url.test.ts` | 9 | 已有 | gi-coding-agent/git_test.go |
 | `git-update.test.ts` | 11 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -403,13 +403,13 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `bash-execution-width.test.ts`
 
 Pi cases: `2`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/bash_execution_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 35 | collapsed preview lines respect render-time width, not construction-time width | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 59 | re-computes lines when width changes between renders | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 35 | collapsed preview lines respect render-time width, not construction-time width | 已有 | gi-coding-agent/bash_execution_test.go |
+| 59 | re-computes lines when width changes between renders | 已有 | gi-coding-agent/bash_execution_test.go |
 
 ## `block-images.test.ts`
 
@@ -767,13 +767,13 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `footer-width.test.ts`
 
 Pi cases: `2`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/footer_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 81 | keeps all lines within width for wide session names | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 92 | keeps stats line within width for wide model and provider names | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 81 | keeps all lines within width for wide session names | 已有 | gi-coding-agent/footer_test.go |
+| 92 | keeps stats line within width for wide model and provider names | 已有 | gi-coding-agent/footer_test.go |
 
 ## `frontmatter.test.ts`
 
