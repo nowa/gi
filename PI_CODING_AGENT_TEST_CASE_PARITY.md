@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `944`
+- `已有`: `948`
 - `待实现`: `0`
-- `需要协议 runtime`: `93`
+- `需要协议 runtime`: `89`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -1209,9 +1209,9 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1152 | should filter prompts with exclusion pattern | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1165 | should filter skills with exclusion pattern | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1185 | should work without patterns (backward compatible) | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1199 | should support glob patterns in manifest extensions | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1222 | should support glob patterns in manifest skills | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1249 | should expand positive glob manifest entries before collecting skills | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1199 | should support glob patterns in manifest extensions | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
+| 1222 | should support glob patterns in manifest skills | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
+| 1249 | should expand positive glob manifest entries before collecting skills | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 1278 | should apply user filters on top of manifest filters (not replace) | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1316 | should exclude extensions from package with ! pattern | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1339 | should filter themes from package | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -1221,7 +1221,7 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1422 | should force-include overrides exclude in package filters | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1445 | should force-include multiple resources | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1470 | should force-include after specific exclusion | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1484 | should handle force-include in manifest patterns | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1484 | should handle force-include in manifest patterns | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
 | 1506 | should force-include themes | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1521 | should force-include prompts | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1538 | should force-exclude top-level resources | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |

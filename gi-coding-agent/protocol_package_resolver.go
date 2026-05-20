@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"encoding/json"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -152,14 +153,35 @@ func resolveProtocolPackageManifest(packageDir string, metadata ProtocolSourceIn
 }
 
 func resolveProtocolPackageEntries(packageDir string, entries []string, kind string) []string {
-	var paths []string
+	var positiveEntries []string
+	var excludePatterns []string
+	var forceEntries []string
 	for _, entry := range entries {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
 			continue
 		}
-		candidates := expandProtocolPackageEntry(packageDir, entry)
-		for _, candidate := range candidates {
+		switch entry[0] {
+		case '!', '-':
+			excludePatterns = append(excludePatterns, strings.TrimSpace(entry[1:]))
+		case '+':
+			forceEntries = append(forceEntries, strings.TrimSpace(entry[1:]))
+		default:
+			positiveEntries = append(positiveEntries, entry)
+		}
+	}
+	paths := collectProtocolPackageEntries(packageDir, positiveEntries, kind)
+	paths = filterProtocolPackagePaths(packageDir, paths, excludePatterns)
+	paths = append(paths, collectProtocolPackageEntries(packageDir, forceEntries, kind)...)
+	paths = dedupeProtocolPackagePaths(paths)
+	sort.Strings(paths)
+	return paths
+}
+
+func collectProtocolPackageEntries(packageDir string, entries []string, kind string) []string {
+	var paths []string
+	for _, entry := range entries {
+		for _, candidate := range expandProtocolPackageEntry(packageDir, entry) {
 			info, err := os.Stat(candidate)
 			if err != nil {
 				continue
@@ -173,7 +195,6 @@ func resolveProtocolPackageEntries(packageDir string, entries []string, kind str
 			}
 		}
 	}
-	sort.Strings(paths)
 	return paths
 }
 
@@ -188,6 +209,55 @@ func expandProtocolPackageEntry(packageDir, entry string) []string {
 	}
 	sort.Strings(matches)
 	return matches
+}
+
+func filterProtocolPackagePaths(packageDir string, paths []string, excludePatterns []string) []string {
+	if len(excludePatterns) == 0 {
+		return paths
+	}
+	var result []string
+	for _, candidate := range paths {
+		excluded := false
+		for _, pattern := range excludePatterns {
+			if protocolPackagePatternMatches(packageDir, candidate, pattern) {
+				excluded = true
+				break
+			}
+		}
+		if !excluded {
+			result = append(result, candidate)
+		}
+	}
+	return result
+}
+
+func protocolPackagePatternMatches(packageDir, candidate, patternText string) bool {
+	patternText = strings.TrimPrefix(strings.TrimSpace(filepath.ToSlash(patternText)), "./")
+	if patternText == "" {
+		return false
+	}
+	rel, err := filepath.Rel(packageDir, candidate)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == patternText || strings.HasPrefix(rel, strings.TrimSuffix(patternText, "/")+"/") {
+		return true
+	}
+	if patternText == "**" || patternText == "**/*" {
+		return true
+	}
+	if strings.HasPrefix(patternText, "**/") {
+		suffix := strings.TrimPrefix(patternText, "**/")
+		return rel == suffix || strings.HasSuffix(rel, "/"+suffix) || strings.Contains(rel, "/"+strings.TrimSuffix(suffix, "/")+"/")
+	}
+	if ok, _ := path.Match(patternText, rel); ok {
+		return true
+	}
+	if ok, _ := path.Match(patternText, path.Base(rel)); ok {
+		return true
+	}
+	return false
 }
 
 func collectProtocolPackageDir(dir, kind string) []string {
@@ -209,6 +279,20 @@ func collectProtocolPackageDir(dir, kind string) []string {
 	default:
 		return nil
 	}
+}
+
+func dedupeProtocolPackagePaths(paths []string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(paths))
+	for _, rawPath := range paths {
+		clean := filepath.Clean(rawPath)
+		if _, ok := seen[clean]; ok {
+			continue
+		}
+		seen[clean] = struct{}{}
+		result = append(result, clean)
+	}
+	return result
 }
 
 func collectProtocolSkillFiles(root string) []string {

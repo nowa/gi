@@ -76,6 +76,96 @@ func TestProtocolPackageResolverLocalResources(t *testing.T) {
 	})
 }
 
+func TestProtocolPackageManifestPatternRules(t *testing.T) {
+	t.Run("supports glob patterns in manifest extensions", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "manifest-pkg")
+		local := filepath.Join(pkgDir, "extensions", "local.gi.json")
+		remote := filepath.Join(pkgDir, "node_modules", "dep", "extensions", "remote.gi.json")
+		skip := filepath.Join(pkgDir, "node_modules", "dep", "extensions", "skip.gi.json")
+		writeGiProtocolExtensionDescriptor(t, local)
+		writeGiProtocolExtensionDescriptor(t, remote)
+		writeGiProtocolExtensionDescriptor(t, skip)
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "package.json"), map[string]any{
+			"extensions": []any{"extensions", "node_modules/dep/extensions", "!**/skip.gi.json"},
+		})
+
+		result, err := manager.ResolveProtocolPackageResources([]string{pkgDir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackageHasPath(result.Extensions, local) ||
+			!protocolPackageHasPath(result.Extensions, remote) ||
+			protocolPackageHasPath(result.Extensions, skip) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+	})
+
+	t.Run("supports glob patterns in manifest skills", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "skill-manifest-pkg")
+		good := filepath.Join(pkgDir, "skills", "good-skill", "SKILL.md")
+		bad := filepath.Join(pkgDir, "skills", "bad-skill", "SKILL.md")
+		writeResourceSkill(t, good, "good-skill", "Good", "Content")
+		writeResourceSkill(t, bad, "bad-skill", "Bad", "Content")
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "package.json"), map[string]any{
+			"skills": []any{"skills", "!**/bad-skill"},
+		})
+
+		result, err := manager.ResolveProtocolPackageResources([]string{pkgDir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackageHasPath(result.Skills, good) || protocolPackageHasPath(result.Skills, bad) {
+			t.Fatalf("skills = %#v", result.Skills)
+		}
+	})
+
+	t.Run("expands positive glob entries before collecting skills", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "skill-manifest-glob-pkg")
+		pdf := filepath.Join(pkgDir, "plugins", "pdf-to-markdown", "skills", "pdf-to-markdown", "SKILL.md")
+		dws := filepath.Join(pkgDir, "plugins", "nutrient-dws", "skills", "document-processor-api", "SKILL.md")
+		writeResourceSkill(t, pdf, "pdf-to-markdown", "PDF to Markdown", "Content")
+		writeResourceSkill(t, dws, "document-processor-api", "DWS", "Content")
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "package.json"), map[string]any{
+			"skills": []any{"./plugins/*/skills"},
+		})
+
+		result, err := manager.ResolveProtocolPackageResources([]string{pkgDir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackageHasPath(result.Skills, pdf) || !protocolPackageHasPath(result.Skills, dws) {
+			t.Fatalf("skills = %#v", result.Skills)
+		}
+	})
+
+	t.Run("handles force-include in manifest patterns", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "manifest-force-pkg")
+		one := filepath.Join(pkgDir, "extensions", "one.gi.json")
+		two := filepath.Join(pkgDir, "extensions", "two.gi.json")
+		three := filepath.Join(pkgDir, "extensions", "three.gi.json")
+		writeGiProtocolExtensionDescriptor(t, one)
+		writeGiProtocolExtensionDescriptor(t, two)
+		writeGiProtocolExtensionDescriptor(t, three)
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "package.json"), map[string]any{
+			"extensions": []any{"extensions", "!**/two.gi.json", "+extensions/two.gi.json"},
+		})
+
+		result, err := manager.ResolveProtocolPackageResources([]string{pkgDir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackageHasPath(result.Extensions, one) ||
+			!protocolPackageHasPath(result.Extensions, two) ||
+			!protocolPackageHasPath(result.Extensions, three) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+	})
+}
+
 func writeProtocolPackageManifest(t *testing.T, path string, fields map[string]any) {
 	t.Helper()
 	gi := map[string]any{"manifestVersion": 1}
