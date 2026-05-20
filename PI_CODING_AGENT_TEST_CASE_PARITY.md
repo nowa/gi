@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `272`
-- `待实现`: `472`
+- `已有`: `275`
+- `待实现`: `469`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -43,7 +43,7 @@ Status meanings:
 | `agent-session-tree-navigation.test.ts` | 10 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `ansi-utils.test.ts` | 5 | 已有 | gi-coding-agent/utils_test.go |
 | `args.test.ts` | 60 | 已有 | gi-coding-agent/args_test.go |
-| `assistant-message.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `assistant-message.test.ts` | 2 | 已有 | gi-coding-agent/message_components_test.go |
 | `auth-storage.test.ts` | 24 | 已有 | gi-coding-agent/auth_storage_test.go |
 | `bash-close-hang-windows.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `bash-execution-width.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -120,7 +120,7 @@ Status meanings:
 | `tree-selector.test.ts` | 15 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `trigger-compact-extension.test.ts` | 1 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `truncate-to-width.test.ts` | 6 | 已有 | gi-tui/utils_test.go |
-| `user-message.test.ts` | 1 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `user-message.test.ts` | 1 | 已有 | gi-coding-agent/message_components_test.go |
 | `version-check.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 
 ## `agent-session-auto-compaction-queue.test.ts`
@@ -348,13 +348,13 @@ Gi coverage / implementation target: `gi-coding-agent/args_test.go`
 ## `assistant-message.test.ts`
 
 Pi cases: `2`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/message_components_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 31 | adds OSC 133 zone markers to assistant messages without tool calls | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 42 | does not add OSC 133 zone markers when assistant message contains tool calls | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 31 | adds OSC 133 zone markers to assistant messages without tool calls | 已有 | gi-coding-agent/message_components_test.go |
+| 42 | does not add OSC 133 zone markers when assistant message contains tool calls | 已有 | gi-coding-agent/message_components_test.go |
 
 ## `auth-storage.test.ts`
 
@@ -1958,12 +1958,12 @@ Gi coverage / implementation target: `gi-tui/utils_test.go`
 ## `user-message.test.ts`
 
 Pi cases: `1`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/message_components_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 11 | keeps user message height stable while moving closing OSC markers off line end | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 11 | keeps user message height stable while moving closing OSC markers off line end | 已有 | gi-coding-agent/message_components_test.go |
 
 ## `version-check.test.ts`
 
