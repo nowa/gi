@@ -381,7 +381,7 @@ func compactInteractivePathSegments(path string) []string {
 		return []string{normalized}
 	}
 	last := segments[len(segments)-1]
-	if last == "index.ts" || last == "index.js" {
+	if last == "index.gi.json" {
 		segments = segments[:len(segments)-1]
 	}
 	if len(segments) == 0 {
@@ -410,8 +410,8 @@ func expandedInteractiveExtensionPath(extension InteractiveExtensionResource) st
 		return packageRelativeExtensionPath(extension)
 	}
 	normalized := normalizeInteractivePath(extension.Path)
-	if strings.HasSuffix(normalized, "/index.ts") || strings.HasSuffix(normalized, "/index.js") {
-		return strings.TrimSuffix(strings.TrimSuffix(normalized, "/index.ts"), "/index.js")
+	if strings.HasSuffix(normalized, "/index.gi.json") {
+		return strings.TrimSuffix(normalized, "/index.gi.json")
 	}
 	return normalized
 }
@@ -421,7 +421,7 @@ func packageRelativeExtensionPath(extension InteractiveExtensionResource) string
 		return ""
 	}
 	relative := strings.TrimPrefix(normalizeInteractivePath(extension.Path), strings.TrimRight(normalizeInteractivePath(extension.SourceInfo.BaseDir), "/")+"/")
-	relative = strings.TrimSuffix(strings.TrimSuffix(relative, "/index.ts"), "/index.js")
+	relative = strings.TrimSuffix(relative, "/index.gi.json")
 	return relative
 }
 

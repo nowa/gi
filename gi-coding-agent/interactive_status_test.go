@@ -172,7 +172,7 @@ func TestInteractiveModeShowLoadedResourcesSkillsAndDiagnosticsMatchPi(t *testin
 		output := renderInteractiveLoadedResources(InteractiveLoadedResources{
 			QuietStartup: true,
 			Skills:       []InteractiveSkillResource{{FilePath: "/tmp/skill/SKILL.md", Name: "commit"}},
-			Extensions:   []InteractiveExtensionResource{{Path: "/tmp/ext/index.ts"}},
+			Extensions:   []InteractiveExtensionResource{{Path: "/tmp/ext/index.gi.json"}},
 		}, InteractiveShowLoadedResourcesOptions{ShowDiagnosticsWhenQuiet: true})
 		if output != "" {
 			t.Fatalf("output = %q, want empty", output)
@@ -194,7 +194,7 @@ func TestInteractiveModeShowLoadedResourcesSkillsAndDiagnosticsMatchPi(t *testin
 	})
 }
 
-func TestInteractiveModeShowLoadedResourcesExtensionLabelsMatchPi(t *testing.T) {
+func TestInteractiveModeShowLoadedResourcesProtocolExtensionLabels(t *testing.T) {
 	tests := []struct {
 		name       string
 		extensions []InteractiveExtensionResource
@@ -204,74 +204,67 @@ func TestInteractiveModeShowLoadedResourcesExtensionLabelsMatchPi(t *testing.T) 
 		{
 			name: "abbreviates extensions in compact listing",
 			extensions: []InteractiveExtensionResource{
-				{Path: "/tmp/extensions/answer.ts"},
-				{Path: "/tmp/extensions/btw.ts"},
+				{Path: "/tmp/extensions/answer.gi.json"},
+				{Path: "/tmp/extensions/btw.gi.json"},
 			},
-			want: "[Extensions]\n  answer.ts, btw.ts",
+			want: "[Extensions]\n  answer.gi.json, btw.gi.json",
 		},
 		{
 			name:       "captures mixed extension layouts in compact output",
 			extensions: createInteractiveExtensionFixtures(),
-			want:       "[Extensions]\n  @scope/pi-scoped, answer.ts, cli-extension.ts, HazAT/pi-interactive-subagents, HazAT/pi-interactive-subagents:subagents, local-index, pi-markdown-preview, user-index",
+			want:       "[Extensions]\n  @scope/pi-scoped, answer.gi.json, cli-extension.gi.json, HazAT/pi-interactive-subagents, HazAT/pi-interactive-subagents:subagents, local-index, pi-markdown-preview, user-index",
 		},
 		{
 			name: "adds more parent folders until local extension labels are unique",
 			extensions: []InteractiveExtensionResource{
-				{Path: "/tmp/alpha/one/index.ts", SourceInfo: sourceInfo("/tmp/alpha/one/index.ts", "cli", "temporary", "top-level", "/tmp/alpha")},
-				{Path: "/tmp/beta/one/index.ts", SourceInfo: sourceInfo("/tmp/beta/one/index.ts", "cli", "temporary", "top-level", "/tmp/beta")},
-				{Path: "/tmp/gamma/one/index.ts", SourceInfo: sourceInfo("/tmp/gamma/one/index.ts", "cli", "temporary", "top-level", "/tmp/gamma")},
+				{Path: "/tmp/alpha/one/index.gi.json", SourceInfo: sourceInfo("/tmp/alpha/one/index.gi.json", "cli", "temporary", "top-level", "/tmp/alpha")},
+				{Path: "/tmp/beta/one/index.gi.json", SourceInfo: sourceInfo("/tmp/beta/one/index.gi.json", "cli", "temporary", "top-level", "/tmp/beta")},
+				{Path: "/tmp/gamma/one/index.gi.json", SourceInfo: sourceInfo("/tmp/gamma/one/index.gi.json", "cli", "temporary", "top-level", "/tmp/gamma")},
 			},
 			want: "[Extensions]\n  alpha/one, beta/one, gamma/one",
 		},
 		{
-			name: "strips index.ts from local extension label, showing parent dir",
+			name: "strips index.gi.json from local extension label, showing parent dir",
 			extensions: []InteractiveExtensionResource{
-				{Path: "/tmp/extensions/plan-mode/index.ts", SourceInfo: sourceInfo("/tmp/extensions/plan-mode/index.ts", "local", "project", "top-level", "/tmp/extensions")},
+				{Path: "/tmp/extensions/plan-mode/index.gi.json", SourceInfo: sourceInfo("/tmp/extensions/plan-mode/index.gi.json", "local", "project", "top-level", "/tmp/extensions")},
 			},
 			want: "[Extensions]\n  plan-mode",
 		},
 		{
-			name: "strips index.js from local extension label, showing parent dir",
+			name: "mixed single-file and subdirectory index.gi.json extensions strip index.gi.json",
 			extensions: []InteractiveExtensionResource{
-				{Path: "/tmp/extensions/plan-mode/index.js", SourceInfo: sourceInfo("/tmp/extensions/plan-mode/index.js", "local", "project", "top-level", "/tmp/extensions")},
+				{Path: "/tmp/extensions/webfetch.gi.json", SourceInfo: sourceInfo("/tmp/extensions/webfetch.gi.json", "local", "project", "top-level", "/tmp/extensions")},
+				{Path: "/tmp/extensions/plan-mode/index.gi.json", SourceInfo: sourceInfo("/tmp/extensions/plan-mode/index.gi.json", "local", "project", "top-level", "/tmp/extensions")},
 			},
-			want: "[Extensions]\n  plan-mode",
+			want: "[Extensions]\n  plan-mode, webfetch.gi.json",
 		},
 		{
-			name: "mixed single-file and subdirectory index.ts extensions strip index.ts",
+			name: "multiple index.gi.json with unique parent dirs need no disambiguation",
 			extensions: []InteractiveExtensionResource{
-				{Path: "/tmp/extensions/webfetch.ts", SourceInfo: sourceInfo("/tmp/extensions/webfetch.ts", "local", "project", "top-level", "/tmp/extensions")},
-				{Path: "/tmp/extensions/plan-mode/index.ts", SourceInfo: sourceInfo("/tmp/extensions/plan-mode/index.ts", "local", "project", "top-level", "/tmp/extensions")},
-			},
-			want: "[Extensions]\n  plan-mode, webfetch.ts",
-		},
-		{
-			name: "multiple index.ts with unique parent dirs need no disambiguation",
-			extensions: []InteractiveExtensionResource{
-				{Path: "/tmp/extensions/foo/index.ts", SourceInfo: sourceInfo("/tmp/extensions/foo/index.ts", "local", "project", "top-level", "/tmp/extensions")},
-				{Path: "/tmp/extensions/bar/index.ts", SourceInfo: sourceInfo("/tmp/extensions/bar/index.ts", "local", "project", "top-level", "/tmp/extensions")},
+				{Path: "/tmp/extensions/foo/index.gi.json", SourceInfo: sourceInfo("/tmp/extensions/foo/index.gi.json", "local", "project", "top-level", "/tmp/extensions")},
+				{Path: "/tmp/extensions/bar/index.gi.json", SourceInfo: sourceInfo("/tmp/extensions/bar/index.gi.json", "local", "project", "top-level", "/tmp/extensions")},
 			},
 			want: "[Extensions]\n  bar, foo",
 		},
 		{
-			name: "multiple index.ts with same parent dir name disambiguated with grandparent",
+			name: "multiple index.gi.json with same parent dir name disambiguated with grandparent",
 			extensions: []InteractiveExtensionResource{
-				{Path: "/tmp/alpha/tools/index.ts", SourceInfo: sourceInfo("/tmp/alpha/tools/index.ts", "cli", "temporary", "top-level", "/tmp/alpha")},
-				{Path: "/tmp/beta/tools/index.ts", SourceInfo: sourceInfo("/tmp/beta/tools/index.ts", "cli", "temporary", "top-level", "/tmp/beta")},
+				{Path: "/tmp/alpha/tools/index.gi.json", SourceInfo: sourceInfo("/tmp/alpha/tools/index.gi.json", "cli", "temporary", "top-level", "/tmp/alpha")},
+				{Path: "/tmp/beta/tools/index.gi.json", SourceInfo: sourceInfo("/tmp/beta/tools/index.gi.json", "cli", "temporary", "top-level", "/tmp/beta")},
 			},
 			want: "[Extensions]\n  alpha/tools, beta/tools",
 		},
 		{
-			name: "non-index file in subdirectory stays as filename",
+			name: "non-index descriptor in subdirectory stays as filename",
 			extensions: []InteractiveExtensionResource{
-				{Path: "/tmp/extensions/my-ext/main.ts", SourceInfo: sourceInfo("/tmp/extensions/my-ext/main.ts", "local", "project", "top-level", "/tmp/extensions")},
+				{Path: "/tmp/extensions/my-ext/main.gi.json", SourceInfo: sourceInfo("/tmp/extensions/my-ext/main.gi.json", "local", "project", "top-level", "/tmp/extensions")},
 			},
-			want: "[Extensions]\n  main.ts",
+			want: "[Extensions]\n  main.gi.json",
 		},
 		{
-			name: "package extensions still strip index.ts correctly",
+			name: "package extensions still strip index.gi.json correctly",
 			extensions: []InteractiveExtensionResource{
-				{Path: "/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.ts", SourceInfo: sourceInfo("/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.ts", "npm:pi-markdown-preview", "project", "package", "/tmp/project/.pi/npm/node_modules/pi-markdown-preview")},
+				{Path: "/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.gi.json", "npm:pi-markdown-preview", "project", "package", "/tmp/project/.pi/npm/node_modules/pi-markdown-preview")},
 			},
 			want: "[Extensions]\n  pi-markdown-preview",
 		},
@@ -281,7 +274,7 @@ func TestInteractiveModeShowLoadedResourcesExtensionLabelsMatchPi(t *testing.T) 
 			expanded:   true,
 			want: `[Extensions]
   project
-    /tmp/project/.pi/extensions/answer.ts
+    /tmp/project/.pi/extensions/answer.gi.json
     /tmp/project/.pi/extensions/local-index
     git:github.com/HazAT/pi-interactive-subagents
       extensions
@@ -293,7 +286,7 @@ func TestInteractiveModeShowLoadedResourcesExtensionLabelsMatchPi(t *testing.T) 
   user
     /tmp/agent/extensions/user-index
   path
-    /tmp/temp/cli-extension.ts`,
+    /tmp/temp/cli-extension.gi.json`,
 		},
 	}
 
@@ -343,14 +336,14 @@ func sourceInfo(path, source, scope, origin, baseDir string) *InteractiveSourceI
 
 func createInteractiveExtensionFixtures() []InteractiveExtensionResource {
 	return []InteractiveExtensionResource{
-		{Path: "/tmp/project/.pi/extensions/answer.ts", SourceInfo: sourceInfo("/tmp/project/.pi/extensions/answer.ts", "local", "project", "top-level", "/tmp/project/.pi/extensions")},
-		{Path: "/tmp/project/.pi/extensions/local-index/index.ts", SourceInfo: sourceInfo("/tmp/project/.pi/extensions/local-index/index.ts", "local", "project", "top-level", "/tmp/project/.pi/extensions")},
-		{Path: "/tmp/agent/extensions/user-index/index.ts", SourceInfo: sourceInfo("/tmp/agent/extensions/user-index/index.ts", "local", "user", "top-level", "/tmp/agent/extensions")},
-		{Path: "/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.ts", SourceInfo: sourceInfo("/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.ts", "npm:pi-markdown-preview", "project", "package", "/tmp/project/.pi/npm/node_modules/pi-markdown-preview")},
-		{Path: "/tmp/project/.pi/npm/node_modules/@scope/pi-scoped/extensions/index.ts", SourceInfo: sourceInfo("/tmp/project/.pi/npm/node_modules/@scope/pi-scoped/extensions/index.ts", "npm:@scope/pi-scoped", "project", "package", "/tmp/project/.pi/npm/node_modules/@scope/pi-scoped")},
-		{Path: "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/index.ts", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/index.ts", "git:github.com/HazAT/pi-interactive-subagents", "project", "package", "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents")},
-		{Path: "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.ts", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.ts", "git:github.com/HazAT/pi-interactive-subagents", "project", "package", "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents")},
-		{Path: "/tmp/temp/cli-extension.ts", SourceInfo: sourceInfo("/tmp/temp/cli-extension.ts", "cli", "temporary", "top-level", "/tmp/temp")},
+		{Path: "/tmp/project/.pi/extensions/answer.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/extensions/answer.gi.json", "local", "project", "top-level", "/tmp/project/.pi/extensions")},
+		{Path: "/tmp/project/.pi/extensions/local-index/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/extensions/local-index/index.gi.json", "local", "project", "top-level", "/tmp/project/.pi/extensions")},
+		{Path: "/tmp/agent/extensions/user-index/index.gi.json", SourceInfo: sourceInfo("/tmp/agent/extensions/user-index/index.gi.json", "local", "user", "top-level", "/tmp/agent/extensions")},
+		{Path: "/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.gi.json", "npm:pi-markdown-preview", "project", "package", "/tmp/project/.pi/npm/node_modules/pi-markdown-preview")},
+		{Path: "/tmp/project/.pi/npm/node_modules/@scope/pi-scoped/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/npm/node_modules/@scope/pi-scoped/extensions/index.gi.json", "npm:@scope/pi-scoped", "project", "package", "/tmp/project/.pi/npm/node_modules/@scope/pi-scoped")},
+		{Path: "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/index.gi.json", "git:github.com/HazAT/pi-interactive-subagents", "project", "package", "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents")},
+		{Path: "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.gi.json", SourceInfo: sourceInfo("/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents/extensions/subagents/index.gi.json", "git:github.com/HazAT/pi-interactive-subagents", "project", "package", "/tmp/project/.pi/git/github.com/HazAT/pi-interactive-subagents")},
+		{Path: "/tmp/temp/cli-extension.gi.json", SourceInfo: sourceInfo("/tmp/temp/cli-extension.gi.json", "cli", "temporary", "top-level", "/tmp/temp")},
 	}
 }
 

@@ -8,11 +8,11 @@ import (
 	"testing"
 )
 
-func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
+func TestProtocolExtensionRunnerRegistryProtocolContracts(t *testing.T) {
 	t.Run("handles shortcut conflicts against reserved and non-reserved built-ins", func(t *testing.T) {
 		t.Run("warns when extension shortcut conflicts with built-in", func(t *testing.T) {
 			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
-			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("conflict.ts", "ctrl+c", "Conflicts"))
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("conflict.gi.json", "ctrl+c", "Conflicts"))
 			result := runtime.Shortcuts(DefaultProtocolKeybindings())
 			if len(result.Shortcuts) != 0 || !protocolWarningsContain(result.Warnings, "conflicts with built-in") {
 				t.Fatalf("result = %#v", result)
@@ -21,7 +21,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 
 		t.Run("allows a shortcut when the reserved set no longer contains the default key", func(t *testing.T) {
 			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
-			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("rebinding.ts", "ctrl+p", "Uses freed default"))
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("rebinding.gi.json", "ctrl+p", "Uses freed default"))
 			keybindings := DefaultProtocolKeybindings()
 			keybindings["app.model.cycleForward"] = "ctrl+n"
 			keybindings["app.message.followUp"] = "ctrl+shift+p"
@@ -33,7 +33,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 
 		t.Run("warns but allows when extension uses non-reserved built-in shortcut", func(t *testing.T) {
 			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
-			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("non-reserved.ts", "ctrl+v", "Overrides non-reserved"))
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("non-reserved.gi.json", "ctrl+v", "Overrides non-reserved"))
 			result := runtime.Shortcuts(DefaultProtocolKeybindings())
 			if _, ok := result.Shortcuts["ctrl+v"]; !ok || !protocolWarningsContain(result.Warnings, "built-in shortcut for app.clipboard.pasteImage") {
 				t.Fatalf("result = %#v", result)
@@ -42,7 +42,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 
 		t.Run("blocks shortcuts for reserved actions even when rebound", func(t *testing.T) {
 			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
-			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("rebound-reserved.ts", "ctrl+x", "Conflicts"))
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("rebound-reserved.gi.json", "ctrl+x", "Conflicts"))
 			keybindings := DefaultProtocolKeybindings()
 			keybindings["app.interrupt"] = "ctrl+x"
 			result := runtime.Shortcuts(keybindings)
@@ -53,7 +53,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 
 		t.Run("blocks shortcuts when reserved key is also bound to non-reserved actions", func(t *testing.T) {
 			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
-			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("shared-reserved.ts", "ctrl+p", "Conflicts"))
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("shared-reserved.gi.json", "ctrl+p", "Conflicts"))
 			result := runtime.Shortcuts(DefaultProtocolKeybindings())
 			if len(result.Shortcuts) != 0 || !protocolWarningsContain(result.Warnings, "conflicts with built-in") {
 				t.Fatalf("result = %#v", result)
@@ -62,7 +62,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 
 		t.Run("blocks shortcuts when reserved action has multiple keys", func(t *testing.T) {
 			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
-			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("multi-reserved.ts", "ctrl+y", "Conflicts"))
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("multi-reserved.gi.json", "ctrl+y", "Conflicts"))
 			keybindings := DefaultProtocolKeybindings()
 			keybindings["app.clear"] = []any{"ctrl+x", "ctrl+y"}
 			result := runtime.Shortcuts(keybindings)
@@ -73,7 +73,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 
 		t.Run("warns but allows when non-reserved action has multiple keys", func(t *testing.T) {
 			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
-			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("multi-non-reserved.ts", "ctrl+y", "Overrides"))
+			mustLoadProtocolFactories(t, runtime, protocolShortcutFactory("multi-non-reserved.gi.json", "ctrl+y", "Overrides"))
 			keybindings := DefaultProtocolKeybindings()
 			keybindings["app.clipboard.pasteImage"] = []any{"ctrl+x", "ctrl+y"}
 			result := runtime.Shortcuts(keybindings)
@@ -85,8 +85,8 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 		t.Run("warns when two extensions register same shortcut", func(t *testing.T) {
 			runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
 			mustLoadProtocolFactories(t, runtime,
-				protocolShortcutFactory("ext1.ts", "ctrl+shift+x", "First extension"),
-				protocolShortcutFactory("ext2.ts", "ctrl+shift+x", "Second extension"),
+				protocolShortcutFactory("ext1.gi.json", "ctrl+shift+x", "First extension"),
+				protocolShortcutFactory("ext2.gi.json", "ctrl+shift+x", "Second extension"),
 			)
 			result := runtime.Shortcuts(DefaultProtocolKeybindings())
 			if got := result.Shortcuts["ctrl+shift+x"].Description; got != "Second extension" || !protocolWarningsContain(result.Warnings, "shortcut conflict") {
@@ -98,8 +98,8 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 	t.Run("collects tools from multiple extensions", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime(CapabilityToolsRegister)
 		mustLoadProtocolFactories(t, runtime,
-			protocolToolFactory("tool-a.ts", "tool_a", "first"),
-			protocolToolFactory("tool-b.ts", "tool_b", "second"),
+			protocolToolFactory("tool-a.gi.json", "tool_a", "first"),
+			protocolToolFactory("tool-b.gi.json", "tool_b", "second"),
 		)
 		tools := runtime.RegisteredTools()
 		names := []string{tools[0].Name, tools[1].Name}
@@ -112,8 +112,8 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 	t.Run("keeps first tool when two extensions register the same name", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime(CapabilityToolsRegister)
 		mustLoadProtocolFactories(t, runtime,
-			protocolToolFactory("a-first.ts", "shared", "first"),
-			protocolToolFactory("b-second.ts", "shared", "second"),
+			protocolToolFactory("a-first.gi.json", "shared", "first"),
+			protocolToolFactory("b-second.gi.json", "shared", "second"),
 		)
 		tools := runtime.RegisteredTools()
 		if len(tools) != 1 || tools[0].Description != "first" {
@@ -124,8 +124,8 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 	t.Run("collects commands from multiple extensions", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime(CapabilityCommandsRegister)
 		mustLoadProtocolFactories(t, runtime,
-			protocolCommandFactory("cmd-a.ts", "cmd-a", "A command"),
-			protocolCommandFactory("cmd-b.ts", "cmd-b", "B command"),
+			protocolCommandFactory("cmd-a.gi.json", "cmd-a", "A command"),
+			protocolCommandFactory("cmd-b.gi.json", "cmd-b", "B command"),
 		)
 		commands := runtime.RegisteredCommands()
 		names := []string{commands[0].Name, commands[1].Name}
@@ -139,7 +139,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 
 	t.Run("gets command by invocation name", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime(CapabilityCommandsRegister)
-		mustLoadProtocolFactories(t, runtime, protocolCommandFactory("cmd.ts", "my-cmd", "My command"))
+		mustLoadProtocolFactories(t, runtime, protocolCommandFactory("cmd.gi.json", "my-cmd", "My command"))
 		command := runtime.GetCommand("my-cmd")
 		if command == nil || command.Name != "my-cmd" || command.InvocationName != "my-cmd" || command.Description != "My command" {
 			t.Fatalf("command = %#v", command)
@@ -152,8 +152,8 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 	t.Run("suffixes duplicate extension commands in insertion order", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime(CapabilityCommandsRegister)
 		mustLoadProtocolFactories(t, runtime,
-			protocolCommandFactory("cmd-a.ts", "shared-cmd", "First command"),
-			protocolCommandFactory("cmd-b.ts", "shared-cmd", "Second command"),
+			protocolCommandFactory("cmd-a.gi.json", "shared-cmd", "First command"),
+			protocolCommandFactory("cmd-b.gi.json", "shared-cmd", "Second command"),
 		)
 		commands := runtime.RegisteredCommands()
 		if len(commands) != 2 {
@@ -170,7 +170,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 	t.Run("gets message renderer by type", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime()
 		renderer := func(any, any) []string { return []string{"rendered"} }
-		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "renderer.ts", Factory: func(ctx *ProtocolExtensionContext) error {
+		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "renderer.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
 			return ctx.RegisterMessageRenderer("my-type", renderer)
 		}})
 		if got := runtime.GetMessageRenderer("my-type"); got == nil || !reflect.DeepEqual(got(nil, nil), []string{"rendered"}) {
@@ -183,7 +183,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 
 	t.Run("collects flags from extensions", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime()
-		mustLoadProtocolFactories(t, runtime, protocolFlagFactory("with-flag.ts", "my-flag", "My flag", nil))
+		mustLoadProtocolFactories(t, runtime, protocolFlagFactory("with-flag.gi.json", "my-flag", "My flag", nil))
 		flags := runtime.Flags()
 		if len(flags) != 1 || flags[0].Name != "my-flag" || flags[0].Description != "My flag" {
 			t.Fatalf("flags = %#v", flags)
@@ -193,8 +193,8 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 	t.Run("keeps first flag when two extensions register the same name", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime()
 		mustLoadProtocolFactories(t, runtime,
-			protocolFlagFactory("a-first.ts", "shared-flag", "first", true),
-			protocolFlagFactory("b-second.ts", "shared-flag", "second", false),
+			protocolFlagFactory("a-first.gi.json", "shared-flag", "first", true),
+			protocolFlagFactory("b-second.gi.json", "shared-flag", "second", false),
 		)
 		flags := runtime.Flags()
 		if len(flags) != 1 || flags[0].Description != "first" || runtime.FlagValue("shared-flag") != true {
@@ -204,7 +204,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 
 	t.Run("can set flag values", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime()
-		mustLoadProtocolFactories(t, runtime, protocolFlagFactory("flag.ts", "test-flag", "Test flag", nil))
+		mustLoadProtocolFactories(t, runtime, protocolFlagFactory("flag.gi.json", "test-flag", "Test flag", nil))
 		runtime.SetFlagValue("--test-flag", true)
 		if got := runtime.FlagValue("test-flag"); got != true {
 			t.Fatalf("flag value = %#v", got)
@@ -216,7 +216,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 		if runtime.HasHandlers("tool_call") {
 			t.Fatal("empty runtime should not have tool_call handlers")
 		}
-		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "handler.ts", Factory: func(ctx *ProtocolExtensionContext) error {
+		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "handler.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
 			return ctx.On("tool_call", func(ProtocolSessionEvent) (ProtocolEventResult, error) {
 				return ProtocolEventResult{}, nil
 			})
@@ -228,7 +228,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 
 	t.Run("calls error listeners when handler throws", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime(CapabilityLifecycleEvents)
-		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "throws.ts", Factory: func(ctx *ProtocolExtensionContext) error {
+		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "throws.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
 			return ctx.On("context", func(ProtocolSessionEvent) (ProtocolEventResult, error) {
 				return ProtocolEventResult{}, errors.New("Handler error!")
 			})
@@ -240,7 +240,7 @@ func TestProtocolExtensionRunnerRegistryPiParity(t *testing.T) {
 		if _, err := runtime.EmitSessionEvent(ProtocolSessionEvent{Type: "context"}); err == nil {
 			t.Fatal("expected context handler error")
 		}
-		if len(got) != 1 || got[0].ExtensionPath != "throws.ts" || got[0].Event != "context" || !strings.Contains(got[0].Error, "Handler error!") {
+		if len(got) != 1 || got[0].ExtensionPath != "throws.gi.json" || got[0].Event != "context" || !strings.Contains(got[0].Error, "Handler error!") {
 			t.Fatalf("errors = %#v", got)
 		}
 	})
