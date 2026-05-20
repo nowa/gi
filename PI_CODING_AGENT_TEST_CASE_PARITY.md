@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `639`
-- `待实现`: `127`
+- `已有`: `644`
+- `待实现`: `122`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -33,7 +33,7 @@ Status meanings:
 |---|---:|---|---|
 | `agent-session-auto-compaction-queue.test.ts` | 6 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `agent-session-branching.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_branching_test.go |
-| `agent-session-compaction.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `agent-session-compaction.test.ts` | 5 | 已有 | gi-coding-agent/agent_session_compaction_test.go |
 | `agent-session-concurrent.test.ts` | 7 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `agent-session-dynamic-provider.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `agent-session-dynamic-tools.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -153,16 +153,16 @@ Gi coverage / implementation target: `gi-coding-agent/agent_session_branching_te
 ## `agent-session-compaction.test.ts`
 
 Pi cases: `5`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_compaction_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 83 | should trigger manual compaction via compact() | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 109 | should maintain valid session state after compaction | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 134 | should persist compaction to session file | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 162 | should work with --no-session mode (in-memory only) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 184 | should emit compaction events during manual compaction | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 83 | should trigger manual compaction via compact() | 已有 | gi-coding-agent/agent_session_compaction_test.go |
+| 109 | should maintain valid session state after compaction | 已有 | gi-coding-agent/agent_session_compaction_test.go |
+| 134 | should persist compaction to session file | 已有 | gi-coding-agent/agent_session_compaction_test.go |
+| 162 | should work with --no-session mode (in-memory only) | 已有 | gi-coding-agent/agent_session_compaction_test.go |
+| 184 | should emit compaction events during manual compaction | 已有 | gi-coding-agent/agent_session_compaction_test.go |
 
 ## `agent-session-concurrent.test.ts`
 

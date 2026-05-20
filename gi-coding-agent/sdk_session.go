@@ -11,18 +11,25 @@ import (
 )
 
 type AgentSessionOptions struct {
-	CWD            string
-	AgentDir       string
-	Model          llm.Model
-	SessionManager *SessionManager
-	ResourceLoader AgentSessionResourceLoader
+	CWD                  string
+	AgentDir             string
+	Model                llm.Model
+	SessionManager       *SessionManager
+	ResourceLoader       AgentSessionResourceLoader
+	CompactionSettings   *agentharness.CompactionSettings
+	CompactionSummarizer AgentSessionCompactionSummarizer
+	Responder            AgentSessionResponder
 }
 
 type AgentSession struct {
-	SessionManager *SessionManager
-	ResourceLoader AgentSessionResourceLoader
-	SystemPrompt   string
-	Agent          *SDKAgent
+	SessionManager       *SessionManager
+	ResourceLoader       AgentSessionResourceLoader
+	SystemPrompt         string
+	Agent                *SDKAgent
+	CompactionSettings   agentharness.CompactionSettings
+	CompactionSummarizer AgentSessionCompactionSummarizer
+	Responder            AgentSessionResponder
+	eventListeners       []AgentSessionEventListener
 }
 
 type AgentSessionStats struct {
@@ -104,6 +111,18 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 	if resourceLoader == nil {
 		resourceLoader = NewDefaultAgentSessionResourceLoader(cwd, agentDir)
 	}
+	compactionSettings := agentharness.DefaultCompactionSettings
+	if options.CompactionSettings != nil {
+		compactionSettings = *options.CompactionSettings
+	}
+	compactionSummarizer := options.CompactionSummarizer
+	if compactionSummarizer == nil {
+		compactionSummarizer = DefaultAgentSessionCompactionSummarizer
+	}
+	responder := options.Responder
+	if responder == nil {
+		responder = DefaultAgentSessionResponder
+	}
 
 	systemPrompt := BuildSystemPrompt(BuildSystemPromptOptions{
 		CWD:           cwd,
@@ -119,10 +138,13 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		Tools:         defaultSDKTools(cwd),
 	}}
 	return &AgentSession{
-		SessionManager: sessionManager,
-		ResourceLoader: resourceLoader,
-		SystemPrompt:   systemPrompt,
-		Agent:          agent,
+		SessionManager:       sessionManager,
+		ResourceLoader:       resourceLoader,
+		SystemPrompt:         systemPrompt,
+		Agent:                agent,
+		CompactionSettings:   compactionSettings,
+		CompactionSummarizer: compactionSummarizer,
+		Responder:            responder,
 	}, nil
 }
 
