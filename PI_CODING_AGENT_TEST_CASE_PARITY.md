@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `782`
+- `已有`: `785`
 - `待实现`: `0`
-- `需要协议 runtime`: `255`
+- `需要协议 runtime`: `252`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -97,7 +97,7 @@ Status meanings:
 | `restore-sandbox-env.test.ts` | 3 | 已有 | gi-coding-agent/restore_sandbox_env_test.go |
 | `rpc-client-clone.test.ts` | 1 | 已有 | gi-coding-agent/rpc_client_test.go |
 | `rpc-jsonl.test.ts` | 4 | 已有 | gi-coding-agent/rpc_jsonl_test.go |
-| `rpc-prompt-response-semantics.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `rpc-prompt-response-semantics.test.ts` | 3 | 已有 | gi-coding-agent/rpc_prompt_response_semantics_test.go |
 | `rpc.test.ts` | 14 | 已有 | gi-coding-agent/rpc_session_host_test.go |
 | `sdk-openrouter-attribution.test.ts` | 4 | 已有 | gi-coding-agent/sdk_attribution_test.go |
 | `sdk-session-manager.test.ts` | 3 | 已有 | gi-coding-agent/sdk_session_test.go |
@@ -1515,14 +1515,14 @@ Gi coverage / implementation target: `gi-coding-agent/rpc_jsonl_test.go`
 ## `rpc-prompt-response-semantics.test.ts`
 
 Pi cases: `3`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/rpc_prompt_response_semantics_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 191 | emits one failure response when prompt preflight rejects | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 230 | emits one success response when prompt preflight succeeds | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 251 | emits one success response when prompt is queued during streaming | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 191 | emits one failure response when prompt preflight rejects | 已有 | gi-coding-agent/rpc_prompt_response_semantics_test.go |
+| 230 | emits one success response when prompt preflight succeeds | 已有 | gi-coding-agent/rpc_prompt_response_semantics_test.go |
+| 251 | emits one success response when prompt is queued during streaming | 已有 | gi-coding-agent/rpc_prompt_response_semantics_test.go |
 
 ## `rpc.test.ts`
 

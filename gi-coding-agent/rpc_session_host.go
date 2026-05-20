@@ -33,6 +33,7 @@ type RPCSessionHost struct {
 	FollowUpMode          string
 	AutoCompactionEnabled bool
 	AvailableModels       []llm.Model
+	PromptPreflight       func(RPCCommand) error
 }
 
 type RPCSessionState struct {
@@ -98,6 +99,9 @@ func (h *RPCSessionHost) handleCommand(ctx context.Context, command RPCCommand) 
 	}
 	switch command.Type {
 	case RPCCommandPrompt:
+		if err := h.runPromptPreflight(command); err != nil {
+			return nil, err
+		}
 		return nil, h.Session.Prompt(command.Message)
 	case RPCCommandNewSession:
 		h.Session.SessionManager.NewSession(NewSessionOptions{ParentSession: command.ParentSession})
@@ -138,6 +142,39 @@ func (h *RPCSessionHost) handleCommand(ctx context.Context, command RPCCommand) 
 	default:
 		return nil, errors.New("unsupported RPC command: " + command.Type)
 	}
+}
+
+func (h *RPCSessionHost) AcceptPrompt(command RPCCommand) error {
+	if h == nil || h.Session == nil {
+		return errors.New("RPC session host requires an active session")
+	}
+	if strings.TrimSpace(command.Message) == "" {
+		return errors.New("prompt is required")
+	}
+	if h.Session.IsStreaming() {
+		switch command.StreamingBehavior {
+		case "steer":
+			return h.Session.Steer(command.Message)
+		case "followUp":
+			return h.Session.FollowUp(command.Message)
+		default:
+			return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")
+		}
+	}
+	if err := h.runPromptPreflight(command); err != nil {
+		return err
+	}
+	go func() {
+		_ = h.Session.Prompt(command.Message)
+	}()
+	return nil
+}
+
+func (h *RPCSessionHost) runPromptPreflight(command RPCCommand) error {
+	if h.PromptPreflight == nil {
+		return nil
+	}
+	return h.PromptPreflight(command)
 }
 
 func (h *RPCSessionHost) GetState() RPCSessionState {
