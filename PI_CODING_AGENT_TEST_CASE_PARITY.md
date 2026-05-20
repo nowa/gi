@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `767`
+- `已有`: `768`
 - `待实现`: `0`
-- `需要协议 runtime`: `270`
+- `需要协议 runtime`: `269`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -95,7 +95,7 @@ Status meanings:
 | `prompt-templates.test.ts` | 82 | 已有 | gi-coding-agent/prompt_templates_test.go |
 | `resource-loader.test.ts` | 19 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `restore-sandbox-env.test.ts` | 3 | 已有 | gi-coding-agent/restore_sandbox_env_test.go |
-| `rpc-client-clone.test.ts` | 1 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `rpc-client-clone.test.ts` | 1 | 已有 | gi-coding-agent/rpc_client_test.go |
 | `rpc-jsonl.test.ts` | 4 | 已有 | gi-coding-agent/rpc_jsonl_test.go |
 | `rpc-prompt-response-semantics.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `rpc.test.ts` | 14 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -1492,12 +1492,12 @@ Gi coverage / implementation target: `gi-coding-agent/restore_sandbox_env_test.g
 ## `rpc-client-clone.test.ts`
 
 Pi cases: `1`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/rpc_client_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 10 | sends the clone RPC command | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 10 | sends the clone RPC command | 已有 | gi-coding-agent/rpc_client_test.go |
 
 ## `rpc-jsonl.test.ts`
 
