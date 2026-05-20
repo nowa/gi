@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `971`
+- `已有`: `973`
 - `待实现`: `0`
-- `需要协议 runtime`: `66`
+- `需要协议 runtime`: `64`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -1249,8 +1249,8 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 2013 | should not check package updates when offline | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 2022 | should report updates for installed unpinned npm packages | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 2041 | should skip pinned packages when checking for updates | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 2060 | should use npm view to fetch latest version | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 2073 | should use npmCommand argv for npm update checks | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 2060 | should use npm view to fetch latest version | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
+| 2073 | should use npmCommand argv for npm update checks | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
 | 2094 | should wait for close before resolving captured stdout | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 
 ## `path-utils.test.ts`

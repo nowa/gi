@@ -282,6 +282,24 @@ func (m *DefaultPackageManager) RunSelfUpdate(options SelfUpdateOptions) (SelfUp
 	return SelfUpdateResult{Updated: true, PackageName: updatePackageName}, nil
 }
 
+func (m *DefaultPackageManager) GetLatestNPMVersion(packageName string) (string, error) {
+	packageName = strings.TrimSpace(packageName)
+	if packageName == "" {
+		return "", fmt.Errorf("missing npm package name")
+	}
+	command := "npm"
+	args := []string{"view", packageName, "version", "--json"}
+	if npmCommand := m.globalNPMCommand(); len(npmCommand) > 0 {
+		command = npmCommand[0]
+		args = append(append([]string{}, npmCommand[1:]...), args...)
+	}
+	output, err := m.operations.RunCommandCapture(command, args, PackageCommandOptions{CWD: m.cwd})
+	if err != nil {
+		return "", err
+	}
+	return strings.Trim(strings.TrimSpace(output), `"`), nil
+}
+
 func (m *DefaultPackageManager) ResolveExtensionSources(sources []string, options ResolveExtensionSourcesOptions) ([]string, error) {
 	resolved := make([]string, 0, len(sources))
 	for _, sourceText := range sources {
