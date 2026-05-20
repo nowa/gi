@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `455`
-- `待实现`: `289`
+- `已有`: `460`
+- `待实现`: `284`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -50,7 +50,7 @@ Status meanings:
 | `block-images.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `clipboard-image-bmp-conversion.test.ts` | 1 | 已有 | gi-coding-agent/clipboard_image_test.go |
 | `clipboard-image.test.ts` | 5 | 已有 | gi-coding-agent/clipboard_image_test.go |
-| `clipboard.test.ts` | 5 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `clipboard.test.ts` | 5 | 已有 | gi-coding-agent/clipboard_test.go |
 | `compaction-extensions-example.test.ts` | 2 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `compaction-extensions.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `compaction-serialization.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -454,17 +454,17 @@ Gi coverage / implementation target: `gi-coding-agent/clipboard_image_test.go`
 
 ## `clipboard.test.ts`
 
-Pi cases: `5`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `5`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/clipboard_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 90 | local native success skips OSC 52 and shell fallbacks | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 99 | remote native success emits OSC 52 after native write | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 114 | local shell fallback success skips OSC 52 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 128 | uses OSC 52 fallback when native and shell tools fail | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 139 | does not emit oversized OSC 52 payloads | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 90 | local native success skips OSC 52 and shell fallbacks | 已有 | gi-coding-agent/clipboard_test.go |
+| 99 | remote native success emits OSC 52 after native write | 已有 | gi-coding-agent/clipboard_test.go |
+| 114 | local shell fallback success skips OSC 52 | 已有 | gi-coding-agent/clipboard_test.go |
+| 128 | uses OSC 52 fallback when native and shell tools fail | 已有 | gi-coding-agent/clipboard_test.go |
+| 139 | does not emit oversized OSC 52 payloads | 已有 | gi-coding-agent/clipboard_test.go |
 
 ## `compaction-extensions-example.test.ts`
 
