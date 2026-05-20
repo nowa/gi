@@ -19,9 +19,9 @@ otherwise.
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `997`
+- `已有`: `1001`
 - `待实现`: `0`
-- `需要协议 runtime`: `19`
+- `需要协议 runtime`: `15`
 - `不适用`: `21`
 
 ## Commit Plan
@@ -1178,7 +1178,7 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 549 | should handle directories with pi manifest | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
 | 578 | should handle directories with auto-discovery layout | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 590 | should stop recursing when a package skill directory contains SKILL.md | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
-| 605 | should emit progress events | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 605 | should emit progress events | 已有 | gi-coding-agent/package_manager_progress_test.go |
 | 621 | should avoid the shell for git so Windows paths with spaces stay single arguments | 已有 | gi-coding-agent/package_manager_git_update_test.go |
 | 632 | should use npmCommand argv for npm installs | 不适用 | Gi package v1 不支持 npm source 或隐式 npm install |
 | 653 | should install git package dependencies with --omit=dev | 不适用 | Gi package install 不默认执行 dependency install/postinstall |
@@ -1189,8 +1189,8 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 802 | should resolve pnpm global package paths from pnpm list output | 不适用 | Gi package v1 无 pnpm global package source |
 | 860 | should resolve wrapped pnpm global package paths from pnpm list output | 不适用 | Gi package v1 无 pnpm global package source |
 | 886 | should fail when pnpm global package list is malformed | 不适用 | Gi package v1 无 pnpm global package source |
-| 903 | should emit progress events on install attempt | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 920 | should recognize github URLs without git: prefix | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 903 | should emit progress events on install attempt | 已有 | gi-coding-agent/package_manager_progress_test.go |
+| 920 | should recognize github URLs without git: prefix | 已有 | gi-coding-agent/package_manager_progress_test.go |
 | 945 | should parse package source types from docs examples | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 959 | should never parse dot-relative paths as git | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 971 | should store global local packages relative to agent settings base | 已有 | gi-coding-agent/package_manager_settings_test.go |
@@ -1255,7 +1255,7 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 2041 | should skip pinned packages when checking for updates | 不适用 | Gi package v1 不支持 npm source/update |
 | 2060 | should use npm view to fetch latest version | 不适用 | Gi package v1 不调用 npm view |
 | 2073 | should use npmCommand argv for npm update checks | 不适用 | Gi package v1 无 npmCommand package update path |
-| 2094 | should wait for close before resolving captured stdout | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 2094 | should wait for close before resolving captured stdout | 已有 | gi-coding-agent/package_manager_progress_test.go |
 
 ## `path-utils.test.ts`
 

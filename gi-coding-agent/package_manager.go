@@ -15,6 +15,7 @@ type PackageManagerOptions struct {
 	AgentDir        string
 	SettingsManager *SettingsManager
 	Operations      PackageManagerOperations
+	Progress        func(PackageProgressEvent)
 }
 
 type PackageManagerOperations struct {
@@ -24,6 +25,13 @@ type PackageManagerOperations struct {
 
 type PackageCommandOptions struct {
 	CWD string
+}
+
+type PackageProgressEvent struct {
+	Type   string
+	Action string
+	Source string
+	Error  string
 }
 
 type ResolveExtensionSourcesOptions struct {
@@ -70,6 +78,7 @@ type DefaultPackageManager struct {
 	agentDir        string
 	settingsManager *SettingsManager
 	operations      PackageManagerOperations
+	progress        func(PackageProgressEvent)
 }
 
 func NewDefaultPackageManager(options PackageManagerOptions) *DefaultPackageManager {
@@ -83,6 +92,7 @@ func NewDefaultPackageManager(options PackageManagerOptions) *DefaultPackageMana
 		agentDir:        options.AgentDir,
 		settingsManager: settingsManager,
 		operations:      operations,
+		progress:        options.Progress,
 	}
 }
 
@@ -95,7 +105,13 @@ func (m *DefaultPackageManager) GetPackageIdentity(source string) string {
 }
 
 func (m *DefaultPackageManager) Install(source string, project bool) error {
+	m.emitProgress(PackageProgressEvent{Type: "start", Action: "install", Source: strings.TrimSpace(source)})
 	_, err := m.addSourceToSettings(source, project)
+	if err != nil {
+		m.emitProgress(PackageProgressEvent{Type: "error", Action: "install", Source: strings.TrimSpace(source), Error: err.Error()})
+		return err
+	}
+	m.emitProgress(PackageProgressEvent{Type: "done", Action: "install", Source: strings.TrimSpace(source)})
 	return err
 }
 
@@ -219,21 +235,27 @@ func PackageSourceIdentity(source PackageSource) string {
 }
 
 func (m *DefaultPackageManager) Update(sources ...string) error {
+	m.emitProgress(PackageProgressEvent{Type: "start", Action: "update"})
 	if len(sources) == 0 {
 		sources = settingsPackagesToStrings(m.settingsManager.GetPackages())
 	} else {
 		for _, sourceText := range sources {
 			if suggestion := m.packageUpdateSuggestion(sourceText); suggestion != "" {
-				return PackageUpdateSuggestionError{Input: sourceText, Suggestion: suggestion}
+				err := PackageUpdateSuggestionError{Input: sourceText, Suggestion: suggestion}
+				m.emitProgress(PackageProgressEvent{Type: "error", Action: "update", Source: strings.TrimSpace(sourceText), Error: err.Error()})
+				return err
 			}
 		}
 	}
 	for _, sourceText := range sources {
 		if unsupportedPackageSource(sourceText) {
-			return unsupportedPackageSourceError(sourceText)
+			err := unsupportedPackageSourceError(sourceText)
+			m.emitProgress(PackageProgressEvent{Type: "error", Action: "update", Source: strings.TrimSpace(sourceText), Error: err.Error()})
+			return err
 		}
 	}
 	for _, sourceText := range sources {
+		sourceText = strings.TrimSpace(sourceText)
 		source, ok := ParseGitURL(sourceText)
 		if !ok || source.Pinned {
 			continue
@@ -243,13 +265,30 @@ func (m *DefaultPackageManager) Update(sources ...string) error {
 			if os.IsNotExist(err) {
 				continue
 			}
+			m.emitProgress(PackageProgressEvent{Type: "error", Action: "update", Source: sourceText, Error: err.Error()})
 			return err
 		}
 		if err := m.refreshGitPackage(installedDir); err != nil {
+			m.emitProgress(PackageProgressEvent{Type: "error", Action: "update", Source: sourceText, Error: err.Error()})
 			return err
 		}
 	}
+	m.emitProgress(PackageProgressEvent{Type: "done", Action: "update"})
 	return nil
+}
+
+func (m *DefaultPackageManager) SetProgressCallback(callback func(PackageProgressEvent)) {
+	if m == nil {
+		return
+	}
+	m.progress = callback
+}
+
+func (m *DefaultPackageManager) emitProgress(event PackageProgressEvent) {
+	if m == nil || m.progress == nil {
+		return
+	}
+	m.progress(event)
 }
 
 func unsupportedPackageSource(source string) bool {
