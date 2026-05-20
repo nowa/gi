@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `601`
-- `待实现`: `165`
+- `已有`: `609`
+- `待实现`: `157`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -61,7 +61,7 @@ Status meanings:
 | `edit-tool-no-full-redraw.test.ts` | 3 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `export-html-skill-block.test.ts` | 4 | 已有 | gi-coding-agent/export_html_skill_block_test.go |
 | `export-html-whitespace.test.ts` | 3 | 已有 | gi-coding-agent/export_html_whitespace_test.go |
-| `export-html-xss.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `export-html-xss.test.ts` | 8 | 已有 | gi-coding-agent/export_html_xss_test.go |
 | `extensions-discovery.test.ts` | 27 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `extensions-input-event.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `extensions-runner.test.ts` | 27 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -630,19 +630,19 @@ Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime �
 ## `export-html-xss.test.ts`
 
 Pi cases: `8`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/export_html_xss_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 7 | overrides the marked link renderer to block javascript: protocol | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 14 | overrides the marked image renderer to block javascript: protocol | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 18 | escapes href attributes in the custom link renderer | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 23 | escapes image mimeType attributes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 29 | escapes image data attributes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 35 | escapes entry IDs before inserting them into attributes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 43 | escapes tree metadata rendered from session fields | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 57 | escapes model names in the exported header | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 7 | overrides the marked link renderer to block javascript: protocol | 已有 | gi-coding-agent/export_html_xss_test.go |
+| 14 | overrides the marked image renderer to block javascript: protocol | 已有 | gi-coding-agent/export_html_xss_test.go |
+| 18 | escapes href attributes in the custom link renderer | 已有 | gi-coding-agent/export_html_xss_test.go |
+| 23 | escapes image mimeType attributes | 已有 | gi-coding-agent/export_html_xss_test.go |
+| 29 | escapes image data attributes | 已有 | gi-coding-agent/export_html_xss_test.go |
+| 35 | escapes entry IDs before inserting them into attributes | 已有 | gi-coding-agent/export_html_xss_test.go |
+| 43 | escapes tree metadata rendered from session fields | 已有 | gi-coding-agent/export_html_xss_test.go |
+| 57 | escapes model names in the exported header | 已有 | gi-coding-agent/export_html_xss_test.go |
 
 ## `extensions-discovery.test.ts`
 

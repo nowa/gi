@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"html"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -91,6 +92,52 @@ func RenderExportHTMLUserMessage(text string) string {
 	return builder.String()
 }
 
+func RenderExportHTMLMarkdownLink(href, text string) string {
+	if !isSafeExportHTMLURL(href) {
+		return html.EscapeString(text)
+	}
+	return `<a href="` + html.EscapeString(href) + `">` + html.EscapeString(text) + `</a>`
+}
+
+func RenderExportHTMLMarkdownImage(src, alt string) string {
+	if !isSafeExportHTMLURL(src) {
+		return ""
+	}
+	return `<img src="` + html.EscapeString(src) + `" alt="` + html.EscapeString(alt) + `">`
+}
+
+func RenderExportHTMLInlineImage(mimeType, data string) string {
+	return `<img src="data:` + html.EscapeString(mimeType) + `;base64,` + html.EscapeString(data) + `">`
+}
+
+func RenderExportHTMLSessionEntryAttrs(entryID string) string {
+	escaped := html.EscapeString(entryID)
+	return `id="entry-` + escaped + `" data-entry-id="` + escaped + `"`
+}
+
+func RenderExportHTMLTreeMetadata(values map[string]string) string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if values[key] == "" {
+			continue
+		}
+		parts = append(parts, "["+html.EscapeString(key)+": "+html.EscapeString(values[key])+"]")
+	}
+	return strings.Join(parts, " ")
+}
+
+func RenderExportHTMLHeaderModels(models []string) string {
+	if len(models) == 0 {
+		return "unknown"
+	}
+	return html.EscapeString(strings.Join(models, ", "))
+}
+
 func ExportHTMLSidebarEntriesForUserMessage(text string) []ExportHTMLSidebarEntry {
 	skillBlock, ok := ParseExportHTMLSkillBlock(text)
 	if !ok {
@@ -101,6 +148,12 @@ func ExportHTMLSidebarEntriesForUserMessage(text string) []ExportHTMLSidebarEntr
 		entries = append(entries, ExportHTMLSidebarEntry{Role: "tree-role-user", Label: skillBlock.UserMessage})
 	}
 	return entries
+}
+
+func isSafeExportHTMLURL(rawURL string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(rawURL))
+	normalized = strings.ReplaceAll(normalized, "\u0000", "")
+	return !strings.HasPrefix(normalized, "javascript:") && !strings.HasPrefix(normalized, "vbscript:")
 }
 
 func parseExportHTMLSkillAttrs(raw string) map[string]string {

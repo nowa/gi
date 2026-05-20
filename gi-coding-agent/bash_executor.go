@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const defaultBashExitStdioGrace = 100 * time.Millisecond
+const defaultBashExitStdioGrace = time.Second
 const defaultBashOutputLineLimit = 2000
 
 type BashExecutorOptions struct {
