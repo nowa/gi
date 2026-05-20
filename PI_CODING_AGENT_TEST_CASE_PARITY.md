@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `957`
+- `已有`: `961`
 - `待实现`: `0`
-- `需要协议 runtime`: `80`
+- `需要协议 runtime`: `76`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -1220,12 +1220,12 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1406 | should force-include extensions with + pattern after exclusion | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1422 | should force-include overrides exclude in package filters | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 1445 | should force-include multiple resources | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
-| 1470 | should force-include after specific exclusion | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1470 | should force-include after specific exclusion | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 1484 | should handle force-include in manifest patterns | 已有 | gi-coding-agent/protocol_package_resolver_test.go (Gi manifest equivalent) |
-| 1506 | should force-include themes | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1521 | should force-include prompts | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1506 | should force-include themes | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
+| 1521 | should force-include prompts | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 1538 | should force-exclude top-level resources | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1551 | should force-exclude in package filters | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1551 | should force-exclude in package filters | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 1574 | should dedupe same local package in global and project (project wins) | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 1596 | should keep both if different packages | 已有 | gi-coding-agent/protocol_package_resolver_test.go |
 | 1612 | should dedupe SSH and HTTPS URLs for same repo | 已有 | gi-coding-agent/package_manager_source_test.go |

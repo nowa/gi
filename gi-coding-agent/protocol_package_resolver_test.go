@@ -333,6 +333,94 @@ func TestProtocolPackageResourceFilterRules(t *testing.T) {
 			t.Fatalf("skills = %#v", result.Skills)
 		}
 	})
+
+	t.Run("force-includes after a specific exclusion", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "specific-force-pkg")
+		a := filepath.Join(pkgDir, "extensions", "a.gi.json")
+		b := filepath.Join(pkgDir, "extensions", "b.gi.json")
+		writeGiProtocolExtensionDescriptor(t, a)
+		writeGiProtocolExtensionDescriptor(t, b)
+
+		result, err := manager.ResolveProtocolPackageSourceSpecs([]ProtocolPackageSourceSpec{{
+			Source:  pkgDir,
+			Filters: ProtocolPackageResourceFilters{Extensions: []string{"!extensions/b.gi.json", "+extensions/b.gi.json"}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathEnabled(result.Extensions, a) || !protocolPackagePathEnabled(result.Extensions, b) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+	})
+
+	t.Run("force-includes themes", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "theme-force-pkg")
+		dark := filepath.Join(pkgDir, "themes", "dark.json")
+		light := filepath.Join(pkgDir, "themes", "light.json")
+		special := filepath.Join(pkgDir, "themes", "special.json")
+		writeResourceFile(t, dark, "{}")
+		writeResourceFile(t, light, "{}")
+		writeResourceFile(t, special, "{}")
+
+		result, err := manager.ResolveProtocolPackageSourceSpecs([]ProtocolPackageSourceSpec{{
+			Source:  pkgDir,
+			Filters: ProtocolPackageResourceFilters{Themes: []string{"!themes/*.json", "+themes/special.json"}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathDisabled(result.Themes, dark) ||
+			!protocolPackagePathDisabled(result.Themes, light) ||
+			!protocolPackagePathEnabled(result.Themes, special) {
+			t.Fatalf("themes = %#v", result.Themes)
+		}
+	})
+
+	t.Run("force-includes prompts", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "prompt-force-pkg")
+		review := filepath.Join(pkgDir, "prompts", "review.md")
+		explain := filepath.Join(pkgDir, "prompts", "explain.md")
+		debug := filepath.Join(pkgDir, "prompts", "debug.md")
+		writeResourceFile(t, review, "Review")
+		writeResourceFile(t, explain, "Explain")
+		writeResourceFile(t, debug, "Debug")
+
+		result, err := manager.ResolveProtocolPackageSourceSpecs([]ProtocolPackageSourceSpec{{
+			Source:  pkgDir,
+			Filters: ProtocolPackageResourceFilters{Prompts: []string{"!prompts/*.md", "+prompts/debug.md"}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathDisabled(result.Prompts, review) ||
+			!protocolPackagePathDisabled(result.Prompts, explain) ||
+			!protocolPackagePathEnabled(result.Prompts, debug) {
+			t.Fatalf("prompts = %#v", result.Prompts)
+		}
+	})
+
+	t.Run("force-excludes in package filters", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "force-exclude-pkg")
+		alpha := filepath.Join(pkgDir, "extensions", "alpha.gi.json")
+		beta := filepath.Join(pkgDir, "extensions", "beta.gi.json")
+		writeGiProtocolExtensionDescriptor(t, alpha)
+		writeGiProtocolExtensionDescriptor(t, beta)
+
+		result, err := manager.ResolveProtocolPackageSourceSpecs([]ProtocolPackageSourceSpec{{
+			Source:  pkgDir,
+			Filters: ProtocolPackageResourceFilters{Extensions: []string{"extensions/*.gi.json", "+extensions/alpha.gi.json", "-extensions/alpha.gi.json"}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathDisabled(result.Extensions, alpha) || !protocolPackagePathEnabled(result.Extensions, beta) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+	})
 }
 
 func TestProtocolPackageConfiguredSourceDedupe(t *testing.T) {
