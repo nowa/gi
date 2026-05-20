@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `763`
+- `已有`: `767`
 - `待实现`: `0`
-- `需要协议 runtime`: `274`
+- `需要协议 runtime`: `270`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -96,7 +96,7 @@ Status meanings:
 | `resource-loader.test.ts` | 19 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `restore-sandbox-env.test.ts` | 3 | 已有 | gi-coding-agent/restore_sandbox_env_test.go |
 | `rpc-client-clone.test.ts` | 1 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| `rpc-jsonl.test.ts` | 4 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| `rpc-jsonl.test.ts` | 4 | 已有 | gi-coding-agent/rpc_jsonl_test.go |
 | `rpc-prompt-response-semantics.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `rpc.test.ts` | 14 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `sdk-openrouter-attribution.test.ts` | 4 | 已有 | gi-coding-agent/sdk_attribution_test.go |
@@ -1502,15 +1502,15 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 ## `rpc-jsonl.test.ts`
 
 Pi cases: `4`  
-Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/rpc_jsonl_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 6 | serializes strict JSONL records without escaping Unicode separators | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 14 | splits on LF only and preserves U+2028/U+2029 inside payloads | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 32 | handles CRLF-delimited input | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 49 | emits a final line without trailing LF | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 6 | serializes strict JSONL records without escaping Unicode separators | 已有 | gi-coding-agent/rpc_jsonl_test.go |
+| 14 | splits on LF only and preserves U+2028/U+2029 inside payloads | 已有 | gi-coding-agent/rpc_jsonl_test.go |
+| 32 | handles CRLF-delimited input | 已有 | gi-coding-agent/rpc_jsonl_test.go |
+| 49 | emits a final line without trailing LF | 已有 | gi-coding-agent/rpc_jsonl_test.go |
 
 ## `rpc-prompt-response-semantics.test.ts`
 
