@@ -23,6 +23,8 @@ type AgentSessionEvent struct {
 	DelayMs      int
 	Success      bool
 	FinalError   string
+	Steering     []string
+	FollowUp     []string
 }
 
 type AgentSessionEventListener func(AgentSessionEvent)
@@ -72,10 +74,17 @@ func (s *AgentSession) Prompt(text string) error {
 	if s == nil || s.SessionManager == nil {
 		return errors.New("session manager is required")
 	}
+	if s.isStreaming {
+		return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")
+	}
 	prompt := strings.TrimSpace(text)
 	if prompt == "" {
 		return errors.New("prompt is required")
 	}
+	s.isStreaming = true
+	defer func() {
+		s.isStreaming = false
+	}()
 	s.SessionManager.AppendMessage(sessionUserMessageValue(prompt))
 	return s.runPromptLoop(prompt)
 }
@@ -193,6 +202,68 @@ func (s *AgentSession) IsRetrying() bool {
 		return false
 	}
 	return s.isRetrying
+}
+
+func (s *AgentSession) IsStreaming() bool {
+	if s == nil {
+		return false
+	}
+	return s.isStreaming
+}
+
+func (s *AgentSession) Steer(text string) error {
+	if s == nil {
+		return errors.New("session is required")
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return errors.New("steering message is required")
+	}
+	s.steeringMessages = append(s.steeringMessages, text)
+	s.emitQueueUpdate()
+	return nil
+}
+
+func (s *AgentSession) FollowUp(text string) error {
+	if s == nil {
+		return errors.New("session is required")
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return errors.New("follow-up message is required")
+	}
+	s.followUpMessages = append(s.followUpMessages, text)
+	s.emitQueueUpdate()
+	return nil
+}
+
+func (s *AgentSession) PendingMessageCount() int {
+	if s == nil {
+		return 0
+	}
+	return len(s.steeringMessages) + len(s.followUpMessages)
+}
+
+func (s *AgentSession) GetSteeringMessages() []string {
+	if s == nil {
+		return nil
+	}
+	return append([]string(nil), s.steeringMessages...)
+}
+
+func (s *AgentSession) GetFollowUpMessages() []string {
+	if s == nil {
+		return nil
+	}
+	return append([]string(nil), s.followUpMessages...)
+}
+
+func (s *AgentSession) emitQueueUpdate() {
+	s.emit(AgentSessionEvent{
+		Type:     "queue_update",
+		Steering: append([]string(nil), s.steeringMessages...),
+		FollowUp: append([]string(nil), s.followUpMessages...),
+	})
 }
 
 func isRetryableAssistantError(message llm.Message) bool {

@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `686`
-- `待实现`: `80`
-- `需要协议 runtime`: `271`
+- `已有`: `690`
+- `待实现`: `73`
+- `需要协议 runtime`: `274`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -34,7 +34,7 @@ Status meanings:
 | `agent-session-auto-compaction-queue.test.ts` | 6 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `agent-session-branching.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_branching_test.go |
 | `agent-session-compaction.test.ts` | 5 | 已有 | gi-coding-agent/agent_session_compaction_test.go |
-| `agent-session-concurrent.test.ts` | 7 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `agent-session-concurrent.test.ts` | 7 | 部分已有 / 需要协议 runtime | gi-coding-agent/agent_session_concurrent_test.go; extension event-order cases wait for protocol runtime |
 | `agent-session-dynamic-provider.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `agent-session-dynamic-tools.test.ts` | 3 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `agent-session-retry.test.ts` | 5 | 已有 | gi-coding-agent/agent_session_retry_test.go |
@@ -167,18 +167,18 @@ Gi coverage / implementation target: `gi-coding-agent/agent_session_compaction_t
 ## `agent-session-concurrent.test.ts`
 
 Pi cases: `7`
-Status: `待实现`
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `部分已有 / 需要协议 runtime`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_concurrent_test.go; extension event-order cases wait for protocol runtime`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 130 | should throw when prompt() called while streaming | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 152 | should allow steer() while streaming | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 168 | should allow followUp() while streaming | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 184 | should queue extension-origin steering messages while streaming | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 294 | should allow prompt() after previous completes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 339 | should wait for queued agent events before emitting tool_call | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 484 | should persist message_end events in order with slow extension handlers | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 130 | should throw when prompt() called while streaming | 已有 | gi-coding-agent/agent_session_concurrent_test.go |
+| 152 | should allow steer() while streaming | 已有 | gi-coding-agent/agent_session_concurrent_test.go |
+| 168 | should allow followUp() while streaming | 已有 | gi-coding-agent/agent_session_concurrent_test.go |
+| 184 | should queue extension-origin steering messages while streaming | 需要协议 runtime | 按 protocol/spec 的 extension input event、queue_update host action 落地 |
+| 294 | should allow prompt() after previous completes | 已有 | gi-coding-agent/agent_session_concurrent_test.go |
+| 339 | should wait for queued agent events before emitting tool_call | 需要协议 runtime | 按 protocol/spec 的 extension event ordering / tool_call hook 落地 |
+| 484 | should persist message_end events in order with slow extension handlers | 需要协议 runtime | 按 protocol/spec 的 extension message_end hook ordering 落地 |
 
 ## `agent-session-dynamic-provider.test.ts`
 

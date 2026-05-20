@@ -37,6 +37,9 @@ type AgentSession struct {
 	branchSummaryAbort   chan struct{}
 	isCompacting         bool
 	isRetrying           bool
+	isStreaming          bool
+	steeringMessages     []string
+	followUpMessages     []string
 }
 
 type AgentSessionStats struct {
