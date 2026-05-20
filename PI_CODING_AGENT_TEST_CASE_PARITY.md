@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `648`
-- `待实现`: `118`
+- `已有`: `671`
+- `待实现`: `95`
 - `需要协议 runtime`: `271`
 - `不适用`: `0`
 
@@ -55,7 +55,7 @@ Status meanings:
 | `compaction-extensions.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `compaction-serialization.test.ts` | 3 | 已有 | gi-agent-core/harness/compaction_test.go |
 | `compaction-summary-reasoning.test.ts` | 4 | 已有 | gi-agent-core/harness/compaction_summary_reasoning_test.go |
-| `compaction.test.ts` | 23 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `compaction.test.ts` | 23 | 已有 | gi-agent-core/harness/compaction_test.go, gi-agent-core/harness/compaction_pi_parity_test.go |
 | `config.test.ts` | 13 | 已有 | gi-coding-agent/config_test.go |
 | `edit-tool-legacy-input.test.ts` | 8 | 已有 | gi-coding-agent/edit_tool_definition_test.go |
 | `edit-tool-no-full-redraw.test.ts` | 3 | 已有 | gi-coding-agent/edit_tool_no_full_redraw_test.go |
@@ -522,34 +522,34 @@ Gi coverage / implementation target: `gi-agent-core/harness/compaction_summary_r
 ## `compaction.test.ts`
 
 Pi cases: `23`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`
+Gi coverage / implementation target: `gi-agent-core/harness/compaction_test.go, gi-agent-core/harness/compaction_pi_parity_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 178 | should calculate total context tokens from usage | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 183 | should handle zero values | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 190 | should find the last non-aborted assistant message usage | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 203 | should skip aborted messages | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 221 | should return undefined if no assistant messages | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 228 | should return true when context exceeds threshold | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 239 | should return false when disabled | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 251 | should find cut point based on actual token differences | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 271 | should return startIndex if no valid cut points in range | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 277 | should keep everything if all messages fit within budget | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 289 | should indicate split turn when cutting at assistant message | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 313 | should load all messages when no compaction | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 327 | should handle single compaction | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 346 | should handle multiple compactions (only latest matters) | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 369 | should keep all messages when firstKeptEntryId is first entry | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 383 | should track model and thinking level changes | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 399 | should preserve kept messages across repeated compactions when they still fit | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 436 | should re-summarize previously kept messages when the recent window moves past them | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 467 | should parse the large session | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 475 | should find cut point in large session | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 485 | should load session correctly | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 499 | should generate a compaction result for the large session | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 519 | should produce valid session after compaction | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 178 | should calculate total context tokens from usage | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 183 | should handle zero values | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 190 | should find the last non-aborted assistant message usage | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 203 | should skip aborted messages | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 221 | should return undefined if no assistant messages | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 228 | should return true when context exceeds threshold | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 239 | should return false when disabled | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 251 | should find cut point based on actual token differences | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 271 | should return startIndex if no valid cut points in range | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 277 | should keep everything if all messages fit within budget | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 289 | should indicate split turn when cutting at assistant message | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 313 | should load all messages when no compaction | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 327 | should handle single compaction | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 346 | should handle multiple compactions (only latest matters) | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 369 | should keep all messages when firstKeptEntryId is first entry | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 383 | should track model and thinking level changes | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 399 | should preserve kept messages across repeated compactions when they still fit | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 436 | should re-summarize previously kept messages when the recent window moves past them | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 467 | should parse the large session | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 475 | should find cut point in large session | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 485 | should load session correctly | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 499 | should generate a compaction result for the large session | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
+| 519 | should produce valid session after compaction | 已有 | gi-agent-core/harness/compaction_pi_parity_test.go |
 
 ## `config.test.ts`
 

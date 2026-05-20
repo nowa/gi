@@ -227,9 +227,6 @@ func PrepareCompaction(pathEntries []Entry, settings CompactionSettings) (*Compa
 	if cut.FirstKeptEntryIndex < boundaryStart || cut.FirstKeptEntryIndex >= len(pathEntries) {
 		return nil, nil
 	}
-	if cut.FirstKeptEntryIndex == boundaryStart && !cut.IsSplitTurn {
-		return nil, nil
-	}
 	firstKept := pathEntries[cut.FirstKeptEntryIndex]
 	if firstKept.ID == "" {
 		return nil, newSessionError("invalid_session", "first kept entry has no ID")
@@ -242,9 +239,6 @@ func PrepareCompaction(pathEntries []Entry, settings CompactionSettings) (*Compa
 	turnPrefix := []llm.Message{}
 	if cut.IsSplitTurn && cut.TurnStartIndex >= 0 {
 		turnPrefix = entriesToMessages(pathEntries[cut.TurnStartIndex:cut.FirstKeptEntryIndex])
-	}
-	if len(messagesToSummarize) == 0 && len(turnPrefix) == 0 {
-		return nil, nil
 	}
 	fileOpsEnd := cut.FirstKeptEntryIndex
 	prep := &CompactionPreparation{
@@ -339,12 +333,12 @@ func Compact(ctx context.Context, prep CompactionPreparation, model llm.Model, a
 }
 
 func CompactWithOptions(ctx context.Context, prep CompactionPreparation, model llm.Model, options CompactOptions) (CompactionResult, error) {
-	if prep.FirstKeptEntryID == "" || (len(prep.MessagesToSummarize) == 0 && len(prep.TurnPrefixMessages) == 0) {
+	if prep.FirstKeptEntryID == "" {
 		return CompactionResult{}, newSessionError("invalid_session", "invalid compaction preparation")
 	}
 	var summary string
 	var err error
-	if len(prep.MessagesToSummarize) > 0 {
+	if len(prep.MessagesToSummarize) > 0 || !prep.IsSplitTurn {
 		summary, err = GenerateSummary(ctx, prep.MessagesToSummarize, model, prep.Settings.ReserveTokens, options.APIKey, prep.PreviousSummary, options.CustomInstructions, options.ThinkingLevel)
 		if err != nil {
 			return CompactionResult{}, err
@@ -382,8 +376,6 @@ func entryMessage(entry Entry) llm.Message {
 		return llm.Message{Role: entry.CustomType, Content: []llm.ContentPart{llm.Text(fmt.Sprint(entry.Content))}}
 	case "branch_summary":
 		return llm.Message{Role: "branchSummary", Content: []llm.ContentPart{llm.Text(entry.Summary)}}
-	case "compaction":
-		return llm.Message{Role: "compactionSummary", Content: []llm.ContentPart{llm.Text(entry.Summary)}}
 	default:
 		return llm.Message{Role: "unknown"}
 	}
