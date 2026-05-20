@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `280`
-- `待实现`: `464`
+- `已有`: `289`
+- `待实现`: `455`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -69,7 +69,7 @@ Status meanings:
 | `footer-data-provider.test.ts` | 8 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `footer-width.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `frontmatter.test.ts` | 8 | 已有 | gi-coding-agent/utils_test.go |
-| `git-ssh-url.test.ts` | 9 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `git-ssh-url.test.ts` | 9 | 已有 | gi-coding-agent/git_test.go |
 | `git-update.test.ts` | 11 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `image-processing.test.ts` | 9 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
 | `image-resize-callers.test.ts` | 2 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
@@ -795,20 +795,20 @@ Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 ## `git-ssh-url.test.ts`
 
 Pi cases: `9`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Status: `已有`  
+Gi coverage / implementation target: `gi-coding-agent/git_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 6 | should parse HTTPS URL | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 15 | should parse ssh:// URL | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 24 | should parse protocol URL with ref | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 36 | should parse git@host:path with git: prefix | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 45 | should parse host/path shorthand with git: prefix | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 54 | should parse shorthand with ref and git: prefix | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 66 | should reject git@host:path without git: prefix | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 70 | should reject host/path shorthand without git: prefix | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 74 | should reject user/repo shorthand | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 6 | should parse HTTPS URL | 已有 | gi-coding-agent/git_test.go |
+| 15 | should parse ssh:// URL | 已有 | gi-coding-agent/git_test.go |
+| 24 | should parse protocol URL with ref | 已有 | gi-coding-agent/git_test.go |
+| 36 | should parse git@host:path with git: prefix | 已有 | gi-coding-agent/git_test.go |
+| 45 | should parse host/path shorthand with git: prefix | 已有 | gi-coding-agent/git_test.go |
+| 54 | should parse shorthand with ref and git: prefix | 已有 | gi-coding-agent/git_test.go |
+| 66 | should reject git@host:path without git: prefix | 已有 | gi-coding-agent/git_test.go |
+| 70 | should reject host/path shorthand without git: prefix | 已有 | gi-coding-agent/git_test.go |
+| 74 | should reject user/repo shorthand | 已有 | gi-coding-agent/git_test.go |
 
 ## `git-update.test.ts`
 
