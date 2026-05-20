@@ -226,6 +226,143 @@ func TestProtocolExtensionRunnerRegistryProtocolContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("exposes current abort signal on extension context", func(t *testing.T) {
+		runtime := NewProtocolExtensionRuntime()
+		done := make(chan struct{})
+		runtime.SetAbortSignal(done)
+
+		var signal *ProtocolAbortSignal
+		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "signal.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
+			signal = ctx.Signal()
+			return nil
+		}})
+		if signal == nil || signal.Aborted() {
+			t.Fatalf("signal = %#v aborted=%v", signal, signal != nil && signal.Aborted())
+		}
+		close(done)
+		if !signal.Aborted() {
+			t.Fatal("expected signal to observe abort after host closes it")
+		}
+	})
+
+	t.Run("chains system prompt updates through context getter", func(t *testing.T) {
+		runtime := NewProtocolExtensionRuntime(CapabilityLifecycleEvents, CapabilitySystemPromptModify)
+		mustLoadProtocolFactories(t, runtime,
+			ProtocolExtensionFactory{Path: "first.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
+				return ctx.On("before_agent_start", func(ProtocolSessionEvent) (ProtocolEventResult, error) {
+					return ProtocolEventResult{SystemPrompt: ctx.GetSystemPrompt() + "\nfirst", SystemPromptSet: true}, nil
+				})
+			}},
+			ProtocolExtensionFactory{Path: "second.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
+				return ctx.On("before_agent_start", func(ProtocolSessionEvent) (ProtocolEventResult, error) {
+					return ProtocolEventResult{SystemPrompt: ctx.GetSystemPrompt() + "\nsecond", SystemPromptSet: true}, nil
+				})
+			}},
+		)
+
+		result, err := runtime.EmitSessionEvent(ProtocolSessionEvent{Type: "before_agent_start", Prompt: "hello", SystemPrompt: "base"})
+		if err != nil {
+			t.Fatalf("EmitSessionEvent error: %v", err)
+		}
+		if !result.SystemPromptSet || result.SystemPrompt != "base\nfirst\nsecond" {
+			t.Fatalf("result = %#v", result)
+		}
+		if got := runtime.GetSystemPrompt(); got != "" {
+			t.Fatalf("runtime prompt leaked after event = %q", got)
+		}
+	})
+
+	t.Run("rejects system prompt updates without capability", func(t *testing.T) {
+		runtime := NewProtocolExtensionRuntime(CapabilityLifecycleEvents)
+		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "prompt.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
+			return ctx.On("before_agent_start", func(ProtocolSessionEvent) (ProtocolEventResult, error) {
+				return ProtocolEventResult{SystemPrompt: "changed", SystemPromptSet: true}, nil
+			})
+		}})
+		var got []ProtocolExtensionError
+		runtime.OnError(func(event ProtocolExtensionError) {
+			got = append(got, event)
+		})
+		if _, err := runtime.EmitSessionEvent(ProtocolSessionEvent{Type: "before_agent_start", SystemPrompt: "base"}); err == nil {
+			t.Fatal("expected missing capability error")
+		}
+		if len(got) != 1 || got[0].ExtensionPath != "prompt.gi.json" || got[0].Event != "before_agent_start" || !strings.Contains(got[0].Error, CapabilitySystemPromptModify) {
+			t.Fatalf("errors = %#v", got)
+		}
+	})
+
+	t.Run("chains tool result content modifications across handlers", func(t *testing.T) {
+		runtime := NewProtocolExtensionRuntime(CapabilityLifecycleEvents)
+		mustLoadProtocolFactories(t, runtime,
+			ProtocolExtensionFactory{Path: "tool-result-1.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
+				return ctx.On("tool_result", func(event ProtocolSessionEvent) (ProtocolEventResult, error) {
+					content := append(cloneSDKContentParts(event.Content), SDKContentPart{Type: "text", Text: "ext1"})
+					return ProtocolEventResult{Content: content, ContentSet: true}, nil
+				})
+			}},
+			ProtocolExtensionFactory{Path: "tool-result-2.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
+				return ctx.On("tool_result", func(event ProtocolSessionEvent) (ProtocolEventResult, error) {
+					content := append(cloneSDKContentParts(event.Content), SDKContentPart{Type: "text", Text: "ext2"})
+					return ProtocolEventResult{Content: content, ContentSet: true}, nil
+				})
+			}},
+		)
+
+		result, err := runtime.EmitSessionEvent(ProtocolSessionEvent{
+			Type:       "tool_result",
+			ToolName:   "my_tool",
+			ToolCallID: "call-1",
+			Content:    []SDKContentPart{{Type: "text", Text: "base"}},
+			Details:    map[string]any{"initial": true},
+		})
+		if err != nil {
+			t.Fatalf("EmitSessionEvent error: %v", err)
+		}
+		if !result.ContentSet || len(result.Content) != 3 {
+			t.Fatalf("result = %#v", result)
+		}
+		if got := []string{result.Content[0].Text, result.Content[1].Text, result.Content[2].Text}; !reflect.DeepEqual(got, []string{"base", "ext1", "ext2"}) {
+			t.Fatalf("content text = %#v", got)
+		}
+	})
+
+	t.Run("preserves previous tool result modifications when later handlers return partial patches", func(t *testing.T) {
+		runtime := NewProtocolExtensionRuntime(CapabilityLifecycleEvents)
+		details := map[string]any{"source": "ext1"}
+		mustLoadProtocolFactories(t, runtime,
+			ProtocolExtensionFactory{Path: "tool-result-partial-1.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
+				return ctx.On("tool_result", func(ProtocolSessionEvent) (ProtocolEventResult, error) {
+					return ProtocolEventResult{
+						Content:    []SDKContentPart{{Type: "text", Text: "first"}},
+						ContentSet: true,
+						Details:    details,
+						DetailsSet: true,
+					}, nil
+				})
+			}},
+			ProtocolExtensionFactory{Path: "tool-result-partial-2.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {
+				return ctx.On("tool_result", func(ProtocolSessionEvent) (ProtocolEventResult, error) {
+					return ProtocolEventResult{IsError: true, IsErrorSet: true}, nil
+				})
+			}},
+		)
+
+		result, err := runtime.EmitSessionEvent(ProtocolSessionEvent{
+			Type:    "tool_result",
+			Content: []SDKContentPart{{Type: "text", Text: "base"}},
+			Details: map[string]any{"initial": true},
+		})
+		if err != nil {
+			t.Fatalf("EmitSessionEvent error: %v", err)
+		}
+		if !result.ContentSet || !result.DetailsSet || !result.IsErrorSet || !result.IsError {
+			t.Fatalf("result flags = %#v", result)
+		}
+		if len(result.Content) != 1 || result.Content[0].Text != "first" || !reflect.DeepEqual(result.Details, details) {
+			t.Fatalf("result = %#v", result)
+		}
+	})
+
 	t.Run("calls error listeners when handler throws", func(t *testing.T) {
 		runtime := NewProtocolExtensionRuntime(CapabilityLifecycleEvents)
 		mustLoadProtocolFactories(t, runtime, ProtocolExtensionFactory{Path: "throws.gi.json", Factory: func(ctx *ProtocolExtensionContext) error {

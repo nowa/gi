@@ -302,6 +302,7 @@ optional scoped arguments:
 | `tools.set_active` | Change active tool set |
 | `commands.register` | Register slash commands |
 | `shortcuts.register` | Register keyboard shortcuts |
+| `lifecycle.events` | Subscribe to lifecycle events and patch allowed results |
 | `providers.register` | Register model providers |
 | `session.read` | Read session entries, branch, metadata |
 | `session.write` | Append custom entries or labels |
@@ -411,9 +412,22 @@ Handlers MAY return mutations when the event contract allows it:
 - replace message display metadata
 - request compaction
 
-Events carry a monotonically increasing `eventSeq`. Extension responses that
-arrive after the host has invalidated the session MUST be ignored with a stale
-context diagnostic.
+Events carry a monotonically increasing `eventSeq`. Events that allow patches
+SHOULD include an `id`; the extension returns a normal response with the same
+`id` and a patch result. The host applies accepted patches before invoking the
+next handler, so later handlers see the current system prompt or tool result.
+
+Patch contracts are intentionally narrow:
+
+- `before_agent_start` MAY return `message[]` and, with
+  `system_prompt.modify`, `systemPrompt`.
+- `tool_result` MAY return `content`, `details`, or `isError`; omitted fields
+  preserve earlier handler changes.
+- cancellation is exposed as a host-owned signal reference in event params, and
+  the host emits stale/cancelled diagnostics for late responses.
+
+Extension responses that arrive after the host has invalidated the session MUST
+be ignored with a stale context diagnostic.
 
 ### Registration Calls
 

@@ -16,6 +16,7 @@ const CapabilityProvidersRegister = "providers.register"
 const CapabilityToolsRegister = "tools.register"
 const CapabilityInputEvents = "input.events"
 const CapabilityShortcutsRegister = "shortcuts.register"
+const CapabilitySystemPromptModify = "system_prompt.modify"
 
 type ProtocolExtensionRuntime struct {
 	capabilities      map[string]bool
@@ -30,6 +31,9 @@ type ProtocolExtensionRuntime struct {
 	flagValues        map[string]any
 	shortcuts         []ProtocolShortcutRegistration
 	boundSession      *AgentSession
+	abortSignal       *ProtocolAbortSignal
+	eventSystemPrompt string
+	hasEventPrompt    bool
 }
 
 type ProtocolExtensionFactory struct {
@@ -118,10 +122,18 @@ type ProtocolSessionEvent struct {
 	Reason              string
 	TargetSessionFile   string
 	PreviousSessionFile string
+	Prompt              string
+	Images              []llm.ContentPart
+	SystemPrompt        string
 	EntryID             string
 	Position            string
 	Role                string
+	ToolName            string
 	ToolCallID          string
+	Input               map[string]any
+	Content             []SDKContentPart
+	Details             any
+	IsError             bool
 	Source              string
 	Text                string
 	Steering            []string
@@ -133,8 +145,18 @@ type ProtocolSessionEvent struct {
 }
 
 type ProtocolEventResult struct {
-	Cancel     bool
-	Compaction *agentharness.CompactionResult
+	Cancel          bool
+	Compaction      *agentharness.CompactionResult
+	Messages        []llm.Message
+	MessagesSet     bool
+	SystemPrompt    string
+	SystemPromptSet bool
+	Content         []SDKContentPart
+	ContentSet      bool
+	Details         any
+	DetailsSet      bool
+	IsError         bool
+	IsErrorSet      bool
 }
 
 type ProtocolEventHandler func(ProtocolSessionEvent) (ProtocolEventResult, error)
@@ -182,8 +204,38 @@ type ProtocolRuntimeError struct {
 	Message string
 }
 
+type ProtocolAbortSignal struct {
+	done <-chan struct{}
+}
+
 func (e ProtocolRuntimeError) Error() string {
 	return e.Code + ": " + e.Message
+}
+
+func NewProtocolAbortSignal(done <-chan struct{}) *ProtocolAbortSignal {
+	if done == nil {
+		return nil
+	}
+	return &ProtocolAbortSignal{done: done}
+}
+
+func (s *ProtocolAbortSignal) Done() <-chan struct{} {
+	if s == nil {
+		return nil
+	}
+	return s.done
+}
+
+func (s *ProtocolAbortSignal) Aborted() bool {
+	if s == nil || s.done == nil {
+		return false
+	}
+	select {
+	case <-s.done:
+		return true
+	default:
+		return false
+	}
 }
 
 func NewProtocolExtensionRuntime(capabilities ...string) *ProtocolExtensionRuntime {
@@ -206,6 +258,40 @@ func (r *ProtocolExtensionRuntime) BindSession(session *AgentSession) {
 	}
 	r.boundSession = session
 	r.ApplyToSession(session)
+}
+
+func (r *ProtocolExtensionRuntime) SetAbortSignal(done <-chan struct{}) {
+	if r == nil {
+		return
+	}
+	r.abortSignal = NewProtocolAbortSignal(done)
+}
+
+func (c *ProtocolExtensionContext) Signal() *ProtocolAbortSignal {
+	if c == nil || c.runtime == nil {
+		return nil
+	}
+	return c.runtime.abortSignal
+}
+
+func (c *ProtocolExtensionContext) GetSystemPrompt() string {
+	if c == nil || c.runtime == nil {
+		return ""
+	}
+	return c.runtime.GetSystemPrompt()
+}
+
+func (r *ProtocolExtensionRuntime) GetSystemPrompt() string {
+	if r == nil {
+		return ""
+	}
+	if r.hasEventPrompt {
+		return r.eventSystemPrompt
+	}
+	if r.boundSession != nil {
+		return r.boundSession.SystemPrompt
+	}
+	return ""
 }
 
 func (c *ProtocolExtensionContext) On(eventType string, handler ProtocolEventHandler) error {
@@ -244,12 +330,29 @@ func (r *ProtocolExtensionRuntime) EmitSessionEvent(event ProtocolSessionEvent) 
 		return ProtocolEventResult{}, nil
 	}
 	var combined ProtocolEventResult
-	for _, registration := range r.handlers[event.Type] {
-		result, err := registration.handler(event)
+	currentEvent := event
+	if currentEvent.Type == "before_agent_start" {
+		if currentEvent.SystemPrompt == "" {
+			currentEvent.SystemPrompt = r.GetSystemPrompt()
+		}
+		previousPrompt := r.eventSystemPrompt
+		previousHasPrompt := r.hasEventPrompt
+		r.eventSystemPrompt = currentEvent.SystemPrompt
+		r.hasEventPrompt = true
+		defer func() {
+			r.eventSystemPrompt = previousPrompt
+			r.hasEventPrompt = previousHasPrompt
+		}()
+	}
+	for _, registration := range r.handlers[currentEvent.Type] {
+		if currentEvent.Type == "before_agent_start" {
+			r.eventSystemPrompt = currentEvent.SystemPrompt
+		}
+		result, err := registration.handler(currentEvent)
 		if err != nil {
 			r.emitExtensionError(ProtocolExtensionError{
 				ExtensionPath: registration.source.Path,
-				Event:         event.Type,
+				Event:         currentEvent.Type,
 				Error:         err.Error(),
 			})
 			return ProtocolEventResult{}, err
@@ -261,8 +364,57 @@ func (r *ProtocolExtensionRuntime) EmitSessionEvent(event ProtocolSessionEvent) 
 		if result.Compaction != nil && combined.Compaction == nil {
 			combined.Compaction = result.Compaction
 		}
+		if err := r.applyEventResult(registration.source, &currentEvent, result, &combined); err != nil {
+			return ProtocolEventResult{}, err
+		}
 	}
 	return combined, nil
+}
+
+func (r *ProtocolExtensionRuntime) applyEventResult(source ProtocolSourceInfo, event *ProtocolSessionEvent, result ProtocolEventResult, combined *ProtocolEventResult) error {
+	switch event.Type {
+	case "before_agent_start":
+		if result.MessagesSet {
+			combined.Messages = append(combined.Messages, result.Messages...)
+			combined.MessagesSet = true
+		}
+		if result.SystemPromptSet {
+			if !r.capabilities[CapabilitySystemPromptModify] {
+				err := ProtocolRuntimeError{Code: "missing_capability", Message: CapabilitySystemPromptModify}
+				r.emitExtensionError(ProtocolExtensionError{
+					ExtensionPath: source.Path,
+					Event:         event.Type,
+					Error:         err.Error(),
+				})
+				return err
+			}
+			event.SystemPrompt = result.SystemPrompt
+			r.eventSystemPrompt = result.SystemPrompt
+			combined.SystemPrompt = result.SystemPrompt
+			combined.SystemPromptSet = true
+		}
+	case "tool_result":
+		if result.ContentSet {
+			event.Content = cloneSDKContentParts(result.Content)
+			combined.Content = cloneSDKContentParts(result.Content)
+			combined.ContentSet = true
+		}
+		if result.DetailsSet {
+			event.Details = result.Details
+			combined.Details = result.Details
+			combined.DetailsSet = true
+		}
+		if result.IsErrorSet {
+			event.IsError = result.IsError
+			combined.IsError = result.IsError
+			combined.IsErrorSet = true
+		}
+	}
+	return nil
+}
+
+func cloneSDKContentParts(parts []SDKContentPart) []SDKContentPart {
+	return append([]SDKContentPart(nil), parts...)
 }
 
 func (r *ProtocolExtensionRuntime) EmitInput(text string, images []llm.ContentPart, source string) ProtocolInputResult {

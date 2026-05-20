@@ -5,6 +5,7 @@
     {"name": "tools.set_active", "profile": "gi-extension-host@1", "description": "Change the active tool set."},
     {"name": "commands.register", "profile": "gi-extension-host@1", "description": "Register slash commands."},
     {"name": "shortcuts.register", "profile": "gi-tui-host@1", "description": "Register keyboard shortcuts."},
+    {"name": "lifecycle.events", "profile": "gi-extension-host@1", "description": "Subscribe to lifecycle events and return allowed patches."},
     {"name": "providers.register", "profile": "gi-extension-host@1", "description": "Register model providers."},
     {"name": "session.read", "profile": "gi-extension-host@1", "description": "Read session entries, branch, and metadata."},
     {"name": "session.write", "profile": "gi-extension-host@1", "description": "Append custom entries or labels."},

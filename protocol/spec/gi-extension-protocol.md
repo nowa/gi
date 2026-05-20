@@ -123,6 +123,23 @@ Host actions are request/response methods under `host.*`. They are the only
 portable way for extensions to mutate host state. Required action names are
 listed in `registries/host-actions.json`.
 
+Lifecycle events that allow mutation MUST be correlated. The host sends the
+event with an `id`, then accepts a response patch with the same `id`. If
+multiple handlers are registered, the host applies each accepted patch before
+building the next event payload. This preserves Pi-style chaining while keeping
+the protocol deterministic and replayable.
+
+Required event patch contracts:
+
+- `before_agent_start`: may append `message[]`; may replace `systemPrompt` only
+  when `system_prompt.modify` is granted. `getSystemPrompt` in an SDK must read
+  the current chained value.
+- `tool_result`: may replace `content`, `details`, or `isError`. Omitted fields
+  keep the current value from previous handlers.
+- cancellation: event payloads may include a host-owned `signalId`; process
+  SDKs map it to their native cancellation primitive, and hosts reject stale
+  responses after cancellation or session replacement.
+
 ## Pi Ecosystem Compatibility Targets
 
 Protocol readiness is judged against the target categories in

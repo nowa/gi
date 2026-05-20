@@ -1,0 +1,10 @@
+{"type":"hello","protocols":["gi-ext-rpc@1"],"sdk":{"language":"go","version":"0.1.0"},"extension":{"id":"mutation-fixture","version":"1.0.0"},"requestedCapabilities":["lifecycle.events","system_prompt.modify"]}
+{"type":"hello_result","sessionId":"sess_123","protocols":{"gi-ext-rpc":"1.0.0"},"grantedCapabilities":["lifecycle.events","system_prompt.modify"],"host":{"id":"gi","name":"gi","version":"0.3.0","platform":"darwin-arm64"}}
+{"type":"event","protocol":"gi-ext-rpc@1","id":"evt_1","eventSeq":1,"method":"before_agent_start","params":{"prompt":"hello","systemPrompt":"base","signalId":"sig_1"}}
+{"type":"response","protocol":"gi-ext-rpc@1","id":"evt_1","result":{"systemPrompt":"base\nfirst"}}
+{"type":"event","protocol":"gi-ext-rpc@1","id":"evt_2","eventSeq":2,"method":"before_agent_start","params":{"prompt":"hello","systemPrompt":"base\nfirst","signalId":"sig_1"}}
+{"type":"response","protocol":"gi-ext-rpc@1","id":"evt_2","result":{"systemPrompt":"base\nfirst\nsecond"}}
+{"type":"event","protocol":"gi-ext-rpc@1","id":"evt_3","eventSeq":3,"method":"tool_result","params":{"toolName":"read","toolCallId":"call_1","input":{"path":"README.md"},"content":[{"type":"text","text":"base"}],"details":{"initial":true},"isError":false,"signalId":"sig_1"}}
+{"type":"response","protocol":"gi-ext-rpc@1","id":"evt_3","result":{"content":[{"type":"text","text":"base"},{"type":"text","text":"ext1"}],"details":{"source":"ext1"}}}
+{"type":"event","protocol":"gi-ext-rpc@1","id":"evt_4","eventSeq":4,"method":"tool_result","params":{"toolName":"read","toolCallId":"call_1","input":{"path":"README.md"},"content":[{"type":"text","text":"base"},{"type":"text","text":"ext1"}],"details":{"source":"ext1"},"isError":false,"signalId":"sig_1"}}
+{"type":"response","protocol":"gi-ext-rpc@1","id":"evt_4","result":{"isError":true}}

@@ -19,9 +19,9 @@ otherwise.
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `989`
+- `已有`: `993`
 - `待实现`: `0`
-- `需要协议 runtime`: `27`
+- `需要协议 runtime`: `23`
 - `不适用`: `21`
 
 ## Commit Plan
@@ -722,15 +722,15 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 354 | collects commands from multiple extensions | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 375 | gets command by invocation name | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 399 | suffixes duplicate extension commands in insertion order | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
-| 427 | exposes the current abort signal on ExtensionContext | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 427 | exposes the current abort signal on ExtensionContext | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 447 | calls error listeners when handler throws | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 475 | gets message renderer by type | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 495 | collects flags from extensions | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 513 | keeps first flag when two extensions register the same name | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 543 | can set flag values | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
-| 566 | keeps ctx.getSystemPrompt() in sync with chained system prompt updates | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 610 | chains content modifications across handlers | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 657 | preserves previous modifications when later handlers return partial patches | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 566 | keeps ctx.getSystemPrompt() in sync with chained system prompt updates | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 610 | chains content modifications across handlers | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
+| 657 | preserves previous modifications when later handlers return partial patches | 已有 | gi-coding-agent/protocol_extension_runner_test.go |
 | 702 | bindCore ignores invalid queued registrations and reports extension error | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 725 | pre-bind unregister removes all queued registrations for a provider | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 749 | post-bind register and unregister take effect immediately | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
