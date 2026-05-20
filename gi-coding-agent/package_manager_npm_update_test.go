@@ -143,6 +143,69 @@ func TestPackageManagerAvailableNPMUpdatesPiParity(t *testing.T) {
 	})
 }
 
+func TestPackageManagerNPMSourceUpdateProtocolPackages(t *testing.T) {
+	t.Run("updates project npm packages using latest when newer version is available", func(t *testing.T) {
+		agentDir, projectDir := createPackageManagerSettingsDirs(t)
+		writeNPMFixturePackage(t, filepath.Join(projectDir, ConfigDirName, "npm", "node_modules", "example"), "1.0.0")
+		settings := NewSettingsManager(projectDir, agentDir)
+		settings.SetProjectPackages([]any{"npm:example"})
+		var gotCommand string
+		var gotArgs []string
+		manager := NewDefaultPackageManager(PackageManagerOptions{
+			CWD:             projectDir,
+			AgentDir:        agentDir,
+			SettingsManager: settings,
+			Operations: PackageManagerOperations{
+				RunCommandCapture: func(string, []string, PackageCommandOptions) (string, error) {
+					return `"1.2.3"`, nil
+				},
+				RunCommand: func(command string, args []string, _ PackageCommandOptions) error {
+					gotCommand = command
+					gotArgs = append([]string(nil), args...)
+					return nil
+				},
+			},
+		})
+
+		if err := manager.Update("npm:example"); err != nil {
+			t.Fatal(err)
+		}
+		wantArgs := []string{"install", "example@latest", "--prefix", filepath.Join(projectDir, ConfigDirName, "npm")}
+		if gotCommand != "npm" || !reflect.DeepEqual(gotArgs, wantArgs) {
+			t.Fatalf("command=%q args=%#v, want npm %#v", gotCommand, gotArgs, wantArgs)
+		}
+	})
+
+	t.Run("skips project npm update when installed version matches latest", func(t *testing.T) {
+		agentDir, projectDir := createPackageManagerSettingsDirs(t)
+		writeNPMFixturePackage(t, filepath.Join(projectDir, ConfigDirName, "npm", "node_modules", "example"), "1.2.3")
+		settings := NewSettingsManager(projectDir, agentDir)
+		settings.SetProjectPackages([]any{"npm:example"})
+		ranInstall := false
+		manager := NewDefaultPackageManager(PackageManagerOptions{
+			CWD:             projectDir,
+			AgentDir:        agentDir,
+			SettingsManager: settings,
+			Operations: PackageManagerOperations{
+				RunCommandCapture: func(string, []string, PackageCommandOptions) (string, error) {
+					return `"1.2.3"`, nil
+				},
+				RunCommand: func(string, []string, PackageCommandOptions) error {
+					ranInstall = true
+					return nil
+				},
+			},
+		})
+
+		if err := manager.Update("npm:example"); err != nil {
+			t.Fatal(err)
+		}
+		if ranInstall {
+			t.Fatal("npm install should not run when versions match")
+		}
+	})
+}
+
 func writeNPMFixturePackage(t *testing.T, dir, version string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

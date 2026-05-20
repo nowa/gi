@@ -237,6 +237,13 @@ func (m *DefaultPackageManager) Update(sources ...string) error {
 		}
 	}
 	for _, sourceText := range sources {
+		if ParsePackageSource(sourceText).Type == "npm" {
+			if err := m.updateNPMSource(sourceText); err != nil {
+				return err
+			}
+		}
+	}
+	for _, sourceText := range sources {
 		source, ok := ParseGitURL(sourceText)
 		if !ok || source.Pinned {
 			continue
@@ -253,6 +260,40 @@ func (m *DefaultPackageManager) Update(sources ...string) error {
 		}
 	}
 	return nil
+}
+
+func (m *DefaultPackageManager) updateNPMSource(sourceText string) error {
+	match, ok := m.findConfiguredNPMUpdateSource(sourceText)
+	if !ok {
+		return nil
+	}
+	ref := parseNPMPackageRef(match.source)
+	if ref.Name == "" || ref.Pinned {
+		return nil
+	}
+	installedVersion := readInstalledNPMVersion(filepath.Join(m.npmNodeModulesDir(match.scope), filepath.FromSlash(ref.Name), "package.json"))
+	if installedVersion == "" {
+		return nil
+	}
+	latestVersion, err := m.GetLatestNPMVersion(ref.Name)
+	if err != nil {
+		return err
+	}
+	if latestVersion == "" || latestVersion == installedVersion {
+		return nil
+	}
+	command, args := m.npmInstallCommand(match.scope, ref.Name+"@latest")
+	return m.operations.RunCommand(command, args, PackageCommandOptions{})
+}
+
+func (m *DefaultPackageManager) findConfiguredNPMUpdateSource(sourceText string) (configuredNPMUpdateSource, bool) {
+	inputIdentity := PackageSourceIdentity(ParsePackageSource(sourceText))
+	for _, source := range m.configuredNPMUpdateSources() {
+		if PackageSourceIdentity(ParsePackageSource(source.source)) == inputIdentity {
+			return source, true
+		}
+	}
+	return configuredNPMUpdateSource{}, false
 }
 
 func (m *DefaultPackageManager) RunSelfUpdate(options SelfUpdateOptions) (SelfUpdateResult, error) {
@@ -432,6 +473,23 @@ func (m *DefaultPackageManager) npmNodeModulesDir(scope string) string {
 		return filepath.Join(m.cwd, ConfigDirName, "npm", "node_modules")
 	}
 	return filepath.Join(m.agentDir, "node_modules")
+}
+
+func (m *DefaultPackageManager) npmInstallCommand(scope, packageSpec string) (string, []string) {
+	command := "npm"
+	prefixArgs := []string(nil)
+	if npmCommand := m.globalNPMCommand(); len(npmCommand) > 0 {
+		command = npmCommand[0]
+		prefixArgs = append(prefixArgs, npmCommand[1:]...)
+	}
+	args := append([]string{}, prefixArgs...)
+	args = append(args, "install")
+	if scope == "user" {
+		args = append(args, "-g", packageSpec)
+		return command, args
+	}
+	args = append(args, packageSpec, "--prefix", filepath.Join(m.cwd, ConfigDirName, "npm"))
+	return command, args
 }
 
 func readInstalledNPMVersion(packageJSONPath string) string {

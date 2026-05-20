@@ -15,9 +15,9 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `976`
+- `已有`: `978`
 - `待实现`: `0`
-- `需要协议 runtime`: `61`
+- `需要协议 runtime`: `59`
 - `不适用`: `0`
 
 ## Commit Plan
@@ -648,19 +648,19 @@ Gi coverage / implementation target: `gi-coding-agent/export_html_xss_test.go`
 
 Pi cases: `27`  
 Status: `需要协议 runtime`  
-Gi coverage / implementation target: `按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地`
+Gi coverage / implementation target: `Pi 的 TS/JS extension discovery 只做协议等价移植：Gi core 发现 .gi.json descriptor 和 package.json gi.extensions，不发现或执行 .ts/.js 入口。`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 43 | discovers direct .ts files in extensions/ | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 54 | discovers direct .js files in extensions/ | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 64 | discovers subdirectory with index.ts | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 77 | discovers subdirectory with index.js | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 89 | prefers index.ts over index.js | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 102 | discovers subdirectory with package.json pi field | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 126 | package.json can declare multiple extensions | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 147 | package.json with pi field takes precedence over index.ts | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 172 | ignores package.json without pi field, falls back to index.ts | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 43 | discovers direct .ts files in extensions/ | 已有 | Gi 协议等价：发现 direct .gi.json descriptor；不发现 .ts |
+| 54 | discovers direct .js files in extensions/ | 已有 | Gi 协议等价：发现 direct .gi.json descriptor；不发现 .js |
+| 64 | discovers subdirectory with index.ts | 已有 | Gi 协议等价：发现 subdirectory index.gi.json |
+| 77 | discovers subdirectory with index.js | 已有 | Gi 协议等价：发现 subdirectory index.gi.json |
+| 89 | prefers index.ts over index.js | 已有 | Gi 协议等价：package.json gi.extensions 优先于 index.gi.json；无 TS/JS 优先级 |
+| 102 | discovers subdirectory with package.json pi field | 已有 | Gi 协议等价：package.json gi.extensions |
+| 126 | package.json can declare multiple extensions | 已有 | Gi 协议等价：package.json gi.extensions declares multiple .gi.json descriptors |
+| 147 | package.json with pi field takes precedence over index.ts | 已有 | Gi 协议等价：package.json gi.extensions takes precedence over index.gi.json |
+| 172 | ignores package.json without pi field, falls back to index.ts | 已有 | Gi 协议等价：package.json without gi field falls back to index.gi.json |
 | 191 | ignores subdirectory without index or package.json | 已有 | gi-coding-agent/extension_discovery_test.go |
 | 203 | does not recurse beyond one level | 已有 | gi-coding-agent/extension_discovery_test.go |
 | 217 | handles mixed direct files and subdirectories | 已有 | gi-coding-agent/extension_discovery_test.go |
@@ -941,13 +941,13 @@ Gi coverage / implementation target: `gi-coding-agent/interactive_status_test.go
 | 458 | abbreviates extensions in compact listing | 已有 | gi-coding-agent/interactive_status_test.go |
 | 474 | captures mixed extension layouts in compact output | 已有 | gi-coding-agent/interactive_status_test.go |
 | 490 | adds more parent folders until local extension labels are unique | 已有 | gi-coding-agent/interactive_status_test.go |
-| 536 | strips index.ts from local extension label, showing parent dir | 已有 | gi-coding-agent/interactive_status_test.go |
-| 564 | strips index.js from local extension label, showing parent dir | 已有 | gi-coding-agent/interactive_status_test.go |
-| 592 | mixed single-file and subdirectory index.ts extensions strip index.ts | 已有 | gi-coding-agent/interactive_status_test.go |
-| 629 | multiple index.ts with unique parent dirs need no disambiguation | 已有 | gi-coding-agent/interactive_status_test.go |
-| 666 | multiple index.ts with same parent dir name disambiguated with grandparent | 已有 | gi-coding-agent/interactive_status_test.go |
+| 536 | strips index.ts from local extension label, showing parent dir | 已有 | Gi 协议等价：strip index.gi.json from local extension label |
+| 564 | strips index.js from local extension label, showing parent dir | 已有 | Gi 协议等价：no JS entrypoint; covered by index.gi.json label stripping |
+| 592 | mixed single-file and subdirectory index.ts extensions strip index.ts | 已有 | Gi 协议等价：single-file .gi.json plus subdirectory index.gi.json |
+| 629 | multiple index.ts with unique parent dirs need no disambiguation | 已有 | Gi 协议等价：multiple index.gi.json with unique parent dirs |
+| 666 | multiple index.ts with same parent dir name disambiguated with grandparent | 已有 | Gi 协议等价：multiple index.gi.json with same parent dir name |
 | 703 | non-index file in subdirectory stays as filename | 已有 | gi-coding-agent/interactive_status_test.go |
-| 731 | package extensions still strip index.ts correctly (regression guard) | 已有 | gi-coding-agent/interactive_status_test.go |
+| 731 | package extensions still strip index.ts correctly (regression guard) | 已有 | Gi 协议等价：package extension labels strip index.gi.json |
 | 758 | captures mixed extension layouts in expanded output | 已有 | gi-coding-agent/interactive_status_test.go |
 | 788 | shows context paths relative to cwd while preserving full external paths | 已有 | gi-coding-agent/interactive_status_test.go |
 | 807 | shows full context paths when expanded | 已有 | gi-coding-agent/interactive_status_test.go |
@@ -1233,12 +1233,12 @@ Gi coverage / implementation target: `按 protocol/spec 的 host actions、regis
 | 1639 | should dedupe SSH URL with ssh:// protocol and git@ format | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 1652 | should dedupe all supported URL formats for same repo | 已有 | gi-coding-agent/package_manager_source_test.go |
 | 1671 | should keep different repos separate (HTTPS vs SSH) | 已有 | gi-coding-agent/package_manager_source_test.go |
-| 1686 | should only load index.ts from subdirectories, not helper modules | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 1716 | should respect package.json pi.extensions manifest in subdirectories | 已有 | gi-coding-agent/extension_discovery_test.go |
+| 1686 | should only load index.ts from subdirectories, not helper modules | 已有 | Gi 协议等价：only load index.gi.json from subdirectories, not helper descriptors |
+| 1716 | should respect package.json pi.extensions manifest in subdirectories | 已有 | Gi 协议等价：respect package.json gi.extensions manifest in subdirectories |
 | 1741 | should handle mixed top-level files and subdirectories | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 1770 | should skip subdirectories without index.ts or manifest | 已有 | gi-coding-agent/extension_discovery_test.go |
-| 1790 | should update project npm packages using @latest when newer version is available | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
-| 1813 | should skip project npm update when installed version matches latest | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
+| 1770 | should skip subdirectories without index.ts or manifest | 已有 | Gi 协议等价：skip subdirectories without index.gi.json or gi.extensions manifest |
+| 1790 | should update project npm packages using @latest when newer version is available | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
+| 1813 | should skip project npm update when installed version matches latest | 已有 | gi-coding-agent/package_manager_npm_update_test.go |
 | 1832 | should batch npm updates per scope and run git updates in parallel while skipping pinned and current packages | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | 1941 | should suggest npm source prefixes for update lookups | 已有 | gi-coding-agent/package_manager_settings_test.go |
 | 1949 | should suggest git source prefixes for update lookups | 已有 | gi-coding-agent/package_manager_settings_test.go |
