@@ -95,6 +95,9 @@ func (s *AgentSession) Prompt(text string) error {
 	}()
 	userMessage := llm.UserMessageText(prompt)
 	s.SessionManager.AppendMessage(sessionMessageValue(userMessage))
+	if err := s.emitExtensionEvent(ProtocolSessionEvent{Type: "message_end", Role: userMessage.Role}); err != nil {
+		return err
+	}
 	s.emit(AgentSessionEvent{Type: "message_end", Message: &userMessage})
 	s.emit(AgentSessionEvent{Type: "agent_start"})
 	err := s.runPromptLoop(prompt)
@@ -124,6 +127,9 @@ func (s *AgentSession) runPromptLoop(prompt string) error {
 			continue
 		}
 		s.SessionManager.AppendMessage(sessionMessageValue(assistant))
+		if err := s.emitExtensionEvent(ProtocolSessionEvent{Type: "message_end", Role: assistant.Role}); err != nil {
+			return err
+		}
 		s.emit(AgentSessionEvent{Type: "message_end", Message: &assistant})
 		if isRetryableAssistantError(assistant) {
 			if retried {
@@ -206,10 +212,19 @@ func (s *AgentSession) normalizeAssistantMessage(message llm.Message) llm.Messag
 }
 
 func (s *AgentSession) executeAssistantToolCalls(message llm.Message) error {
+	var toolCalls []llm.ContentPart
 	for _, part := range message.Content {
 		if part.Type != llm.ContentToolCall {
 			continue
 		}
+		toolCalls = append(toolCalls, part)
+	}
+	for _, part := range toolCalls {
+		if err := s.emitExtensionEvent(ProtocolSessionEvent{Type: "tool_call", ToolCallID: part.ID}); err != nil {
+			return err
+		}
+	}
+	for _, part := range toolCalls {
 		tool := s.sdkTool(part.Name)
 		if tool == nil || tool.Execute == nil {
 			continue
@@ -235,6 +250,14 @@ func (s *AgentSession) executeAssistantToolCalls(message llm.Message) error {
 		s.SessionManager.AppendMessage(sessionMessageValue(toolResult))
 	}
 	return nil
+}
+
+func (s *AgentSession) emitExtensionEvent(event ProtocolSessionEvent) error {
+	if s == nil || s.ExtensionRuntime == nil {
+		return nil
+	}
+	_, err := s.ExtensionRuntime.EmitSessionEvent(event)
+	return err
 }
 
 func (s *AgentSession) sdkTool(name string) *SDKTool {

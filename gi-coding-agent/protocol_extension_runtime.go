@@ -69,6 +69,12 @@ type ProtocolSessionEvent struct {
 	PreviousSessionFile string
 	EntryID             string
 	Position            string
+	Role                string
+	ToolCallID          string
+	Source              string
+	Text                string
+	Steering            []string
+	FollowUp            []string
 }
 
 type ProtocolEventResult struct {
@@ -76,6 +82,10 @@ type ProtocolEventResult struct {
 }
 
 type ProtocolEventHandler func(ProtocolSessionEvent) (ProtocolEventResult, error)
+
+type ProtocolSendUserMessageOptions struct {
+	DeliverAs string
+}
 
 type ProtocolRuntimeError struct {
 	Code    string
@@ -136,6 +146,30 @@ func (r *ProtocolExtensionRuntime) EmitSessionEvent(event ProtocolSessionEvent) 
 		}
 	}
 	return combined, nil
+}
+
+func (c *ProtocolExtensionContext) SendUserMessage(text string, options ProtocolSendUserMessageOptions) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	return c.runtime.SendUserMessage(text, options)
+}
+
+func (r *ProtocolExtensionRuntime) SendUserMessage(text string, options ProtocolSendUserMessageOptions) error {
+	if r == nil || r.boundSession == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime has no bound session"}
+	}
+	if _, err := r.EmitSessionEvent(ProtocolSessionEvent{Type: "input", Source: "extension", Text: text}); err != nil {
+		return err
+	}
+	switch options.DeliverAs {
+	case "steer":
+		return r.boundSession.Steer(text)
+	case "followUp":
+		return r.boundSession.FollowUp(text)
+	default:
+		return r.boundSession.Prompt(text)
+	}
 }
 
 func (r *ProtocolExtensionRuntime) LoadFactories(factories []ProtocolExtensionFactory) error {
