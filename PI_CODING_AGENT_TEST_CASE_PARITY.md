@@ -15,8 +15,8 @@ Status meanings:
 
 - Pi coding-agent test files: `91`
 - Pi explicit case definitions: `1037`
-- `已有`: `397`
-- `待实现`: `347`
+- `已有`: `403`
+- `待实现`: `341`
 - `需要协议 runtime`: `293`
 - `不适用`: `0`
 
@@ -83,7 +83,7 @@ Status meanings:
 | `keybindings-migration.test.ts` | 3 | 已有 | gi-coding-agent/keybindings_test.go |
 | `model-registry.test.ts` | 64 | 已有 | gi-coding-agent/model_registry_test.go |
 | `model-resolver.test.ts` | 31 | 已有 | gi-coding-agent/model_resolver_test.go |
-| `oauth-selector.test.ts` | 6 | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| `oauth-selector.test.ts` | 6 | 已有 | gi-coding-agent/oauth_selector_test.go |
 | `package-command-paths.test.ts` | 10 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `package-manager-ssh.test.ts` | 8 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
 | `package-manager.test.ts` | 102 | 需要协议 runtime | 按 protocol/spec 的 host actions、registry、capability、ViewTree 或 package resolver 落地 |
@@ -1093,18 +1093,18 @@ Gi coverage / implementation target: `gi-coding-agent/model_resolver_test.go`
 
 ## `oauth-selector.test.ts`
 
-Pi cases: `6`  
-Status: `待实现`  
-Gi coverage / implementation target: `补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试`
+Pi cases: `6`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/oauth_selector_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 30 | keeps built-in API key providers separate from OAuth-only providers | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 43 | shows stored OAuth auth distinctly in the API key selector | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 66 | shows environment API key auth as configured | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 84 | shows custom provider environment API key auth from status resolver | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 102 | shows models.json API key auth as configured | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
-| 120 | shows models.json command auth as configured | 待实现 | 补 Gi coding-agent 本体 host/runtime 后添加 Go 对应测试 |
+| 30 | keeps built-in API key providers separate from OAuth-only providers | 已有 | gi-coding-agent/oauth_selector_test.go |
+| 43 | shows stored OAuth auth distinctly in the API key selector | 已有 | gi-coding-agent/oauth_selector_test.go |
+| 66 | shows environment API key auth as configured | 已有 | gi-coding-agent/oauth_selector_test.go |
+| 84 | shows custom provider environment API key auth from status resolver | 已有 | gi-coding-agent/oauth_selector_test.go |
+| 102 | shows models.json API key auth as configured | 已有 | gi-coding-agent/oauth_selector_test.go |
+| 120 | shows models.json command auth as configured | 已有 | gi-coding-agent/oauth_selector_test.go |
 
 ## `package-command-paths.test.ts`
 
