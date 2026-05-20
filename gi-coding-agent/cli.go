@@ -3,16 +3,23 @@ package gicodingagent
 import (
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 type CLIOptions struct {
-	Args    []string
-	Stdout  io.Writer
-	Stderr  io.Writer
-	Startup func(stderr io.Writer) error
+	Args           []string
+	Stdout         io.Writer
+	Stderr         io.Writer
+	Startup        func(stderr io.Writer) error
+	PackageManager *DefaultPackageManager
 }
 
 func RunCLI(options CLIOptions) int {
+	if code, handled := runPackageSubcommand(options); handled {
+		return code
+	}
 	args := ParseArgs(options.Args)
 	if options.Startup != nil {
 		if err := options.Startup(nonNilWriter(options.Stderr)); err != nil {
@@ -41,6 +48,10 @@ func WriteCLIUsage(writer io.Writer) {
 	_, _ = fmt.Fprintln(writer, "  -p, --print        Run in non-interactive print mode")
 	_, _ = fmt.Fprintln(writer, "      --mode <mode>  Output mode: text, json, or rpc")
 	_, _ = fmt.Fprintln(writer, "  -h, --help         Show help")
+	_, _ = fmt.Fprintln(writer, "")
+	_, _ = fmt.Fprintln(writer, "Commands:")
+	_, _ = fmt.Fprintln(writer, "  install <source> [-l]  Install a package or extension source")
+	_, _ = fmt.Fprintln(writer, "  remove <source> [-l]   Remove a package or extension source")
 }
 
 func cliHelpWriter(args Args, options CLIOptions) io.Writer {
@@ -62,4 +73,79 @@ func nonNilWriter(writer io.Writer) io.Writer {
 		return writer
 	}
 	return io.Discard
+}
+
+func runPackageSubcommand(options CLIOptions) (int, bool) {
+	if len(options.Args) == 0 {
+		return 0, false
+	}
+	command := options.Args[0]
+	if command != "install" && command != "remove" {
+		return 0, false
+	}
+
+	var project bool
+	var source string
+	for _, arg := range options.Args[1:] {
+		switch {
+		case arg == "--help" || arg == "-h":
+			writePackageCommandUsage(nonNilWriter(options.Stdout), command)
+			return 0, true
+		case arg == "-l" || arg == "--local":
+			project = true
+		case strings.HasPrefix(arg, "-"):
+			writer := nonNilWriter(options.Stderr)
+			_, _ = fmt.Fprintf(writer, "Unknown option %s for %q.\n", arg, command)
+			_, _ = fmt.Fprintf(writer, "Use \"gi --help\" or \"gi %s <source> [-l]\".\n", command)
+			return 1, true
+		case source == "":
+			source = arg
+		}
+	}
+	if source == "" {
+		writer := nonNilWriter(options.Stderr)
+		_, _ = fmt.Fprintf(writer, "Missing %s source.\n", command)
+		writePackageCommandUsage(writer, command)
+		return 1, true
+	}
+
+	manager := options.PackageManager
+	if manager == nil {
+		manager = defaultCLIPackageManager()
+	}
+	var err error
+	if command == "install" {
+		err = manager.Install(source, project)
+	} else {
+		err = manager.Remove(source, project)
+	}
+	if err != nil {
+		writeCLIError(options.Stderr, err.Error())
+		return 1, true
+	}
+	return 0, true
+}
+
+func writePackageCommandUsage(writer io.Writer, command string) {
+	if writer == nil {
+		return
+	}
+	_, _ = fmt.Fprintln(writer, "Usage:")
+	_, _ = fmt.Fprintf(writer, "  gi %s <source> [-l]\n", command)
+}
+
+func defaultCLIPackageManager() *DefaultPackageManager {
+	cwd, err := os.Getwd()
+	if err != nil || cwd == "" {
+		cwd = "."
+	}
+	agentDir := firstNonEmptyString(os.Getenv("GI_CODING_AGENT_DIR"), os.Getenv("PI_CODING_AGENT_DIR"))
+	if agentDir != "" {
+		agentDir = ExpandPath(agentDir)
+	} else if home, err := os.UserHomeDir(); err == nil && home != "" {
+		agentDir = filepath.Join(home, ConfigDirName, "agent")
+	} else {
+		agentDir = filepath.Join(cwd, ConfigDirName, "agent")
+	}
+	return NewDefaultPackageManager(PackageManagerOptions{CWD: cwd, AgentDir: agentDir})
 }

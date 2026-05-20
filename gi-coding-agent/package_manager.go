@@ -69,6 +69,63 @@ func (m *DefaultPackageManager) GetPackageIdentity(source string) string {
 	return PackageSourceIdentity(ParsePackageSource(source))
 }
 
+func (m *DefaultPackageManager) Install(source string, project bool) error {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return fmt.Errorf("missing install source")
+	}
+	baseDir := m.settingsBaseDir(project)
+	stored := m.packageSettingsValue(source, baseDir)
+	packages := m.settingsPackages(project)
+	if !packageSettingsContains(packages, stored, source, m.cwd, baseDir) {
+		packages = append(packages, stored)
+	}
+	values := make([]any, len(packages))
+	for i, value := range packages {
+		values[i] = value
+	}
+	if project {
+		m.settingsManager.SetProjectPackages(values)
+	} else {
+		m.settingsManager.SetPackages(values)
+	}
+	return nil
+}
+
+func (m *DefaultPackageManager) Remove(source string, project bool) error {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return fmt.Errorf("missing remove source")
+	}
+	baseDir := m.settingsBaseDir(project)
+	packages := m.settingsPackages(project)
+	filtered := make([]string, 0, len(packages))
+	for _, existing := range packages {
+		if packageSettingsMatch(existing, source, m.cwd, baseDir) {
+			continue
+		}
+		filtered = append(filtered, existing)
+	}
+	values := make([]any, len(filtered))
+	for i, value := range filtered {
+		values[i] = value
+	}
+	if project {
+		m.settingsManager.SetProjectPackages(values)
+	} else {
+		m.settingsManager.SetPackages(values)
+	}
+	return nil
+}
+
+func (m *DefaultPackageManager) settingsPackages(project bool) []string {
+	settings := m.settingsManager.global
+	if project {
+		settings = m.settingsManager.project
+	}
+	return settingsPackagesToStrings(settingsSlice(settings, "packages"))
+}
+
 func ParsePackageSource(source string) PackageSource {
 	trimmed := strings.TrimSpace(source)
 	if strings.HasPrefix(trimmed, "npm:") {
@@ -203,6 +260,54 @@ func settingsPackagesToStrings(values []any) []string {
 		}
 	}
 	return sources
+}
+
+func (m *DefaultPackageManager) settingsBaseDir(project bool) string {
+	if project {
+		return filepath.Join(m.cwd, ConfigDirName)
+	}
+	return m.agentDir
+}
+
+func (m *DefaultPackageManager) packageSettingsValue(source, baseDir string) string {
+	parsed := ParsePackageSource(source)
+	if parsed.Type != "local" {
+		return source
+	}
+	absolute := ResolveToCwd(parsed.Path, m.cwd)
+	if relative, err := filepath.Rel(baseDir, absolute); err == nil {
+		return filepath.Clean(relative)
+	}
+	return absolute
+}
+
+func packageSettingsContains(existing []string, stored, source, cwd, baseDir string) bool {
+	for _, value := range existing {
+		if packageSettingsMatch(value, source, cwd, baseDir) || packageSettingsMatch(value, stored, cwd, baseDir) {
+			return true
+		}
+	}
+	return false
+}
+
+func packageSettingsMatch(existing, source, cwd, baseDir string) bool {
+	existingParsed := ParsePackageSource(existing)
+	sourceParsed := ParsePackageSource(source)
+	if existingParsed.Type != sourceParsed.Type {
+		return false
+	}
+	if existingParsed.Type == "local" {
+		return packageLocalIdentity(existingParsed.Path, baseDir) == packageLocalIdentity(sourceParsed.Path, cwd)
+	}
+	return PackageSourceIdentity(existingParsed) == PackageSourceIdentity(sourceParsed)
+}
+
+func packageLocalIdentity(path, baseDir string) string {
+	absolute := ResolveToCwd(strings.TrimRight(path, `/\`), baseDir)
+	if realPath, err := filepath.EvalSymlinks(absolute); err == nil {
+		absolute = realPath
+	}
+	return filepath.Clean(absolute)
 }
 
 func gitPackageInstallPath(agentDir string, source GitSource) string {
