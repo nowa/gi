@@ -32,16 +32,33 @@ func (p OpenAIResponsesProvider) StreamSimple(model Model, llmContext Context, o
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	reasoning := ""
+	if options.Reasoning != "" {
+		reasoning = ClampThinkingLevel(model, options.Reasoning)
+		if reasoning == "off" {
+			reasoning = ""
+		}
+	}
 	payload, err := BuildOpenAIResponsesPayloadChecked(model, llmContext, OpenAIResponsesPayloadOptions{
 		Temperature:      options.Temperature,
 		MaxTokens:        options.MaxTokens,
 		CacheRetention:   options.CacheRetention,
 		SessionID:        options.SessionID,
-		ReasoningEffort:  options.Reasoning,
+		ReasoningEffort:  reasoning,
 		ReasoningSummary: "",
 	})
 	if err != nil {
 		return streamError(model, "%s", err.Error()), nil
+	}
+	payloadAny := any(payload)
+	if options.OnPayload != nil {
+		next, replace, err := options.OnPayload(payloadAny, model)
+		if err != nil {
+			return streamError(model, "%s", err.Error()), nil
+		}
+		if replace {
+			payloadAny = next
+		}
 	}
 	headers := BuildOpenAIResponsesHeaders(model, OpenAIResponsesPayloadOptions{
 		SessionID:      options.SessionID,
@@ -50,9 +67,15 @@ func (p OpenAIResponsesProvider) StreamSimple(model Model, llmContext Context, o
 	})
 	headers["Authorization"] = "Bearer " + apiKey
 
-	response, err := postSSE(ctx, httpClientOrDefault(p.Client), responsesEndpoint(model.BaseURL), headers, payload)
+	response, err := postSSE(ctx, httpClientOrDefault(p.Client), responsesEndpoint(model.BaseURL), headers, payloadAny)
 	if err != nil {
 		return streamError(model, "request failed: %v", err), nil
+	}
+	if options.OnResponseStatus != nil {
+		if err := options.OnResponseStatus(response.StatusCode, responseHeaders(response.Header), model); err != nil {
+			response.Body.Close()
+			return streamError(model, "%s", err.Error()), nil
+		}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return responseErrorStream(model, response), nil

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	gitui "github.com/nowa/gi/gi-tui"
 )
 
 func TestOAuthSelectorPiCases(t *testing.T) {
@@ -71,6 +73,61 @@ func TestOAuthSelectorPiCases(t *testing.T) {
 				t.Fatalf("%s output = %q", tc.name, output)
 			}
 		})
+	}
+}
+
+func TestOAuthSelectorComponentUsesTUIKeybindingsPiStyle(t *testing.T) {
+	previous := gitui.GetKeybindings()
+	gitui.SetKeybindings(gitui.NewKeybindingsManager(gitui.KeybindingsConfig{
+		"tui.select.up":                 []string{"p"},
+		"tui.select.down":               []string{"n"},
+		"tui.select.confirm":            []string{"x"},
+		"tui.select.cancel":             []string{"q"},
+		"tui.editor.deleteToLineStart":  []string{"u"},
+		"tui.editor.deleteCharBackward": []string{"backspace"},
+	}))
+	t.Cleanup(func() { gitui.SetKeybindings(previous) })
+
+	selector := NewOAuthSelectorComponent(OAuthSelector{
+		Mode: "login",
+		Providers: []AuthSelectorProvider{
+			{ID: "alpha", Name: "Alpha", AuthType: "api_key"},
+			{ID: "beta", Name: "Beta", AuthType: "api_key"},
+		},
+	})
+	selected := ""
+	selector.OnSelect = func(providerID string) { selected = providerID }
+	cancelled := false
+	selector.OnCancel = func() { cancelled = true }
+
+	rendered := strings.Join(selector.Render(120), "\n")
+	for _, expected := range []string{"P/N move", "X select", "U clear", "Q cancel"} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("render missing %q:\n%s", expected, rendered)
+		}
+	}
+
+	selector.HandleInput("n")
+	selector.HandleInput("x")
+	if selected != "beta" {
+		t.Fatalf("selected = %q, want beta", selected)
+	}
+
+	selector.HandleInput("q")
+	if !cancelled {
+		t.Fatal("cancel keybinding did not call OnCancel")
+	}
+
+	selector.HandleInput("b")
+	selector.HandleInput("e")
+	rendered = strings.Join(selector.Render(120), "\n")
+	if strings.Contains(rendered, "Alpha") || !strings.Contains(rendered, "Beta") {
+		t.Fatalf("search render mismatch:\n%s", rendered)
+	}
+	selector.HandleInput("u")
+	rendered = strings.Join(selector.Render(120), "\n")
+	if !strings.Contains(rendered, "Alpha") || !strings.Contains(rendered, "Beta") {
+		t.Fatalf("clear search render mismatch:\n%s", rendered)
 	}
 }
 

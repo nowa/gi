@@ -1,6 +1,7 @@
 package gicodingagent
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -15,28 +16,76 @@ const CapabilityLifecycleEvents = "lifecycle.events"
 const CapabilityProvidersRegister = "providers.register"
 const CapabilityToolsRegister = "tools.register"
 const CapabilityInputEvents = "input.events"
+const CapabilityBashIntercept = "bash.intercept"
 const CapabilityShortcutsRegister = "shortcuts.register"
 const CapabilitySystemPromptModify = "system_prompt.modify"
+const CapabilityResourcesDiscover = "resources.discover"
+const CapabilityTUIMessageRenderer = "tui.message_renderer"
+const CapabilityTUIToolRenderer = "tui.tool_renderer"
+const CapabilityTUIAutocomplete = "tui.autocomplete"
+const CapabilityTUIWidget = "tui.widget"
+const CapabilityTUIHeader = "tui.header"
+const CapabilityTUIFooter = "tui.footer"
+const CapabilityTUIOverlay = "tui.overlay"
+const CapabilityTUIEditor = "tui.editor"
+const CapabilityTUITheme = "tui.theme"
+const CapabilityTUIToolsExpanded = "tui.tools_expanded"
+const CapabilityTUITerminalInput = "tui.terminal_input"
 
 type ProtocolExtensionRuntime struct {
-	capabilities      map[string]bool
-	commands          []ProtocolCommandRegistration
-	handlers          map[string][]protocolEventHandlerRegistration
-	inputHandlers     []protocolInputHandlerRegistration
-	errorListeners    []ProtocolErrorListener
-	providerOverrides map[string]ProtocolProviderOverride
-	pendingProviders  []protocolProviderRegistration
-	modelRegistry     *ModelRegistry
-	tools             []SDKTool
-	messageRenderers  map[string]ProtocolMessageRenderer
-	flags             []ProtocolFlagRegistration
-	flagValues        map[string]any
-	shortcuts         []ProtocolShortcutRegistration
-	boundSession      *AgentSession
-	commandContext    ProtocolCommandContextActions
-	abortSignal       *ProtocolAbortSignal
-	eventSystemPrompt string
-	hasEventPrompt    bool
+	capabilities              map[string]bool
+	commands                  []ProtocolCommandRegistration
+	handlers                  map[string][]protocolEventHandlerRegistration
+	inputHandlers             []protocolInputHandlerRegistration
+	errorListeners            []ProtocolErrorListener
+	providerOverrides         map[string]ProtocolProviderOverride
+	providerSources           map[string]ProtocolSourceInfo
+	pendingProviders          []protocolProviderRegistration
+	providerRegistrations     []protocolProviderRegistration
+	modelRegistry             *ModelRegistry
+	tools                     []SDKTool
+	messageRenderers          map[string]ProtocolMessageRenderer
+	messageSources            map[string]ProtocolSourceInfo
+	messageRegistrations      []ProtocolMessageRendererRegistration
+	messageRenderWatch        []protocolMessageRendererWatcher
+	toolRenderers             map[string]ProtocolToolRendererRegistration
+	toolRendererRegistrations []ProtocolToolRendererRegistration
+	flags                     []ProtocolFlagRegistration
+	flagValues                map[string]any
+	cliFlagValues             map[string]any
+	flagDiagnostics           []ProtocolExtensionFlagDiagnostic
+	shortcuts                 []ProtocolShortcutRegistration
+	commandWatch              []protocolCommandWatcher
+	autocomplete              []ProtocolAutocompleteProviderRegistration
+	autocompleteWatch         []protocolAutocompleteWatcher
+	viewTreeMounts            []ProtocolViewTreeMountRegistration
+	nextCommandWatch          int
+	nextMessageRender         int
+	nextAutocomplete          int
+	boundSession              *AgentSession
+	commandContext            ProtocolCommandContextActions
+	contextGeneration         int
+	abortSignal               *ProtocolAbortSignal
+	eventSystemPrompt         string
+	hasEventPrompt            bool
+	viewTreeHost              *ViewTreeHost
+	hostActionHost            *RPCSessionHost
+	hostActionSession         *AgentSession
+}
+
+type protocolAutocompleteWatcher struct {
+	id       int
+	callback func()
+}
+
+type protocolCommandWatcher struct {
+	id       int
+	callback func()
+}
+
+type protocolMessageRendererWatcher struct {
+	id       int
+	callback func()
 }
 
 type ProtocolExtensionFactory struct {
@@ -50,43 +99,73 @@ type ProtocolExtensionContext struct {
 }
 
 type ProtocolSourceInfo struct {
-	Path   string
-	Source string
-	Scope  string
-	Origin string
+	Path   string `json:"path,omitempty"`
+	Source string `json:"source,omitempty"`
+	Scope  string `json:"scope,omitempty"`
+	Origin string `json:"origin,omitempty"`
 }
 
 type ProtocolCommandDefinition struct {
-	Description string
-	Handler     func(args string) error
+	Description        string
+	ArgumentHint       string
+	Handler            func(args string) error
+	HandlerWithContext func(args string, ctx ProtocolCommandContext) error
 }
 
 type ProtocolCommandRegistration struct {
-	Name           string
-	InvocationName string
-	Description    string
-	SourceInfo     ProtocolSourceInfo
-	Handler        func(args string) error
+	Name               string
+	InvocationName     string
+	Description        string
+	ArgumentHint       string
+	SourceInfo         ProtocolSourceInfo
+	Handler            func(args string) error
+	HandlerWithContext func(args string, ctx ProtocolCommandContext) error
 }
 
 type ProtocolProviderOverride struct {
-	BaseURL      string
-	APIKey       string
-	API          string
-	Models       []ProviderModelDefinition
-	StreamSimple func(llm.Model, llm.Context, llm.SimpleStreamOptions) (*llm.AssistantMessageEventStream, error)
+	BaseURL        string
+	APIKey         string
+	API            string
+	Headers        map[string]string
+	AuthHeader     bool
+	Compat         llm.ModelCompat
+	Models         []ProviderModelDefinition
+	ModelOverrides map[string]ModelOverride
+	StreamSimple   func(llm.Model, llm.Context, llm.SimpleStreamOptions) (*llm.AssistantMessageEventStream, error)
 }
 
 type ProtocolToolDefinition struct {
-	Name             string
-	Label            string
-	Description      string
-	PromptSnippet    string
-	PromptGuidelines []string
-	Execute          func(toolCallID string, input map[string]any) (SDKToolResult, error)
+	Name               string
+	Label              string
+	Description        string
+	Parameters         llm.Schema
+	PromptSnippet      string
+	PromptGuidelines   []string
+	ExecutionMode      string
+	PrepareArguments   func(input map[string]any) map[string]any
+	Execute            func(toolCallID string, input map[string]any) (SDKToolResult, error)
+	ExecuteWithUpdates func(toolCallID string, input map[string]any, onUpdate func(SDKToolResult)) (SDKToolResult, error)
 }
 
 type ProtocolMessageRenderer func(message any, options any) []string
+
+type ProtocolMessageRendererRegistration struct {
+	CustomType string
+	SourceInfo ProtocolSourceInfo
+	Renderer   ProtocolMessageRenderer
+}
+
+type ProtocolToolRendererDefinition struct {
+	RenderCall   ToolCallRenderer
+	RenderResult ToolResultRenderer
+}
+
+type ProtocolToolRendererRegistration struct {
+	Name         string
+	SourceInfo   ProtocolSourceInfo
+	RenderCall   ToolCallRenderer
+	RenderResult ToolResultRenderer
+}
 
 type ProtocolFlagDefinition struct {
 	Description string
@@ -102,6 +181,11 @@ type ProtocolFlagRegistration struct {
 	SourceInfo  ProtocolSourceInfo
 }
 
+type ProtocolExtensionFlagDiagnostic struct {
+	Name    string
+	Message string
+}
+
 type ProtocolShortcutDefinition struct {
 	Description string
 	Handler     func() error
@@ -112,6 +196,64 @@ type ProtocolShortcutRegistration struct {
 	Description string
 	SourceInfo  ProtocolSourceInfo
 	Handler     func() error
+}
+
+type ProtocolAutocompleteRequest struct {
+	Text          string
+	Lines         []string
+	CursorLine    int
+	CursorCol     int
+	Force         bool
+	Trigger       string
+	SlashCommand  string
+	ArgumentIndex int
+}
+
+type ProtocolAutocompleteRange struct {
+	StartLine int
+	StartCol  int
+	EndLine   int
+	EndCol    int
+}
+
+type ProtocolAutocompleteItem struct {
+	ID          string
+	Value       string
+	Label       string
+	Description string
+	Kind        string
+	Range       *ProtocolAutocompleteRange
+	Detail      *ViewTreeNode
+}
+
+type ProtocolAutocompleteResult struct {
+	Items  []ProtocolAutocompleteItem
+	Prefix string
+	Start  int
+	End    int
+}
+
+type ProtocolAutocompleteProviderDefinition struct {
+	Description string
+	Priority    int
+	Handler     func(context.Context, ProtocolAutocompleteRequest) (ProtocolAutocompleteResult, error)
+}
+
+type ProtocolAutocompleteProviderRegistration struct {
+	ID          string
+	Description string
+	Priority    int
+	SourceInfo  ProtocolSourceInfo
+	Handler     func(context.Context, ProtocolAutocompleteRequest) (ProtocolAutocompleteResult, error)
+}
+
+type ProtocolViewTreeMountRegistration struct {
+	MountID    string
+	Slot       string
+	View       ViewTreeNode
+	Priority   int
+	Overlay    *ViewTreeOverlayOptions
+	SourceInfo ProtocolSourceInfo
 }
 
 type ProtocolProviderRegistration struct {
@@ -131,6 +273,7 @@ type ProtocolShortcutsResult struct {
 }
 
 type ProtocolSessionEvent struct {
+	Context             context.Context
 	Type                string
 	Reason              string
 	TargetSessionFile   string
@@ -138,9 +281,16 @@ type ProtocolSessionEvent struct {
 	Prompt              string
 	Images              []llm.ContentPart
 	SystemPrompt        string
+	Messages            []llm.Message
+	Message             *llm.Message
 	EntryID             string
 	Position            string
 	Role                string
+	Model               *llm.Model
+	PreviousModel       *llm.Model
+	SelectSource        string
+	ThinkingLevel       string
+	PreviousLevel       string
 	ToolName            string
 	ToolCallID          string
 	Input               map[string]any
@@ -149,27 +299,46 @@ type ProtocolSessionEvent struct {
 	IsError             bool
 	Source              string
 	Text                string
+	Command             string
+	CWD                 string
+	ExcludeFromContext  bool
 	Steering            []string
 	FollowUp            []string
 	Preparation         *agentharness.CompactionPreparation
 	BranchEntries       []FileEntry
 	CompactionEntry     *FileEntry
 	FromExtension       bool
+	Name                string
+	Payload             any
+	Status              int
+	Headers             map[string]string
 }
 
 type ProtocolEventResult struct {
-	Cancel          bool
-	Compaction      *agentharness.CompactionResult
-	Messages        []llm.Message
-	MessagesSet     bool
-	SystemPrompt    string
-	SystemPromptSet bool
-	Content         []SDKContentPart
-	ContentSet      bool
-	Details         any
-	DetailsSet      bool
-	IsError         bool
-	IsErrorSet      bool
+	Cancel            bool
+	Block             bool
+	Reason            string
+	Compaction        *agentharness.CompactionResult
+	Messages          []llm.Message
+	MessagesSet       bool
+	Message           *llm.Message
+	MessageSet        bool
+	CustomMessages    []ProtocolCustomMessage
+	CustomMessagesSet bool
+	SystemPrompt      string
+	SystemPromptSet   bool
+	Content           []SDKContentPart
+	ContentSet        bool
+	Details           any
+	DetailsSet        bool
+	IsError           bool
+	IsErrorSet        bool
+	BashResult        *BashResult
+	BashResultSet     bool
+	Payload           any
+	PayloadSet        bool
+	Resources         ResourceExtension
+	ResourcesSet      bool
 }
 
 type ProtocolEventHandler func(ProtocolSessionEvent) (ProtocolEventResult, error)
@@ -195,19 +364,37 @@ type protocolProviderRegistration struct {
 }
 
 type ProtocolForkOptions struct {
-	Position string
+	Position    string
+	WithSession func(ProtocolCommandContext) error
 }
 
 type ProtocolCommandForkResult struct {
 	Cancelled bool
 }
 
+type ProtocolNewSessionOptions struct {
+	ParentSession string
+	WithSession   func(ProtocolCommandContext) error
+}
+
+type ProtocolSwitchSessionOptions struct {
+	WithSession func(ProtocolCommandContext) error
+}
+
+type ProtocolCommandSwitchResult struct {
+	Cancelled bool
+}
+
 type ProtocolCommandContextActions struct {
-	Fork func(entryID string, options ProtocolForkOptions) (ProtocolCommandForkResult, error)
+	Fork          func(entryID string, options ProtocolForkOptions) (ProtocolCommandForkResult, error)
+	NewSession    func(options ProtocolNewSessionOptions) (ProtocolCommandSwitchResult, error)
+	SwitchSession func(sessionFile string, options ProtocolSwitchSessionOptions) (ProtocolCommandSwitchResult, error)
+	Reload        func() error
 }
 
 type ProtocolCommandContext struct {
-	runtime *ProtocolExtensionRuntime
+	runtime    *ProtocolExtensionRuntime
+	generation int
 }
 
 type ProtocolInputEvent struct {
@@ -228,10 +415,23 @@ type ProtocolExtensionError struct {
 	ExtensionPath string
 	Event         string
 	Error         string
+	Stack         string
 }
 
 type ProtocolSendUserMessageOptions struct {
 	DeliverAs string
+}
+
+type ProtocolCustomMessage struct {
+	CustomType string
+	Content    any
+	Display    bool
+	Details    any
+}
+
+type ProtocolSendCustomMessageOptions struct {
+	TriggerTurn bool
+	DeliverAs   string
 }
 
 type ProtocolRuntimeError struct {
@@ -278,8 +478,12 @@ func NewProtocolExtensionRuntime(capabilities ...string) *ProtocolExtensionRunti
 		capabilities:      map[string]bool{},
 		handlers:          map[string][]protocolEventHandlerRegistration{},
 		providerOverrides: map[string]ProtocolProviderOverride{},
+		providerSources:   map[string]ProtocolSourceInfo{},
 		messageRenderers:  map[string]ProtocolMessageRenderer{},
+		messageSources:    map[string]ProtocolSourceInfo{},
+		toolRenderers:     map[string]ProtocolToolRendererRegistration{},
 		flagValues:        map[string]any{},
+		cliFlagValues:     map[string]any{},
 	}
 	for _, capability := range capabilities {
 		runtime.capabilities[capability] = true
@@ -292,6 +496,10 @@ func (r *ProtocolExtensionRuntime) BindSession(session *AgentSession) {
 		return
 	}
 	r.boundSession = session
+	if r.hostActionSession != session {
+		r.hostActionHost = nil
+		r.hostActionSession = nil
+	}
 	r.ApplyToSession(session)
 }
 
@@ -313,6 +521,31 @@ func (r *ProtocolExtensionRuntime) BindModelRegistry(registry *ModelRegistry) {
 	}
 }
 
+func (r *ProtocolExtensionRuntime) BindViewTreeHost(host *ViewTreeHost) {
+	if r == nil {
+		return
+	}
+	r.viewTreeHost = host
+	if r.hostActionHost != nil && host != nil {
+		r.hostActionHost.ViewTreeHost = host
+	}
+	r.applyViewTreeMounts()
+}
+
+func (r *ProtocolExtensionRuntime) BindHostActionHost(host *RPCSessionHost) {
+	if r == nil {
+		return
+	}
+	r.hostActionHost = host
+	r.hostActionSession = nil
+	if host != nil {
+		r.hostActionSession = host.Session
+		if r.viewTreeHost != nil && host.ViewTreeHost == nil {
+			host.ViewTreeHost = r.viewTreeHost
+		}
+	}
+}
+
 func (r *ProtocolExtensionRuntime) BindCommandContext(actions ProtocolCommandContextActions) {
 	if r == nil {
 		return
@@ -321,7 +554,11 @@ func (r *ProtocolExtensionRuntime) BindCommandContext(actions ProtocolCommandCon
 }
 
 func (r *ProtocolExtensionRuntime) CreateCommandContext() ProtocolCommandContext {
-	return ProtocolCommandContext{runtime: r}
+	generation := 0
+	if r != nil {
+		generation = r.contextGeneration
+	}
+	return ProtocolCommandContext{runtime: r, generation: generation}
 }
 
 func (r *ProtocolExtensionRuntime) SetAbortSignal(done <-chan struct{}) {
@@ -345,6 +582,22 @@ func (c *ProtocolExtensionContext) GetSystemPrompt() string {
 	return c.runtime.GetSystemPrompt()
 }
 
+func (c *ProtocolExtensionContext) GetFlag(name string) any {
+	if c == nil || c.runtime == nil {
+		return nil
+	}
+	name = normalizeProtocolFlagName(name)
+	if name == "" {
+		return nil
+	}
+	for _, flag := range c.runtime.flags {
+		if flag.Name == name && protocolSourceInfoEqual(flag.SourceInfo, c.source) {
+			return c.runtime.FlagValue(name)
+		}
+	}
+	return nil
+}
+
 func (r *ProtocolExtensionRuntime) GetSystemPrompt() string {
 	if r == nil {
 		return ""
@@ -359,7 +612,10 @@ func (r *ProtocolExtensionRuntime) GetSystemPrompt() string {
 }
 
 func (c ProtocolCommandContext) Fork(entryID string, options ...ProtocolForkOptions) (ProtocolCommandForkResult, error) {
-	if c.runtime == nil || c.runtime.commandContext.Fork == nil {
+	if err := c.ensureCurrent(); err != nil {
+		return ProtocolCommandForkResult{}, err
+	}
+	if c.runtime.commandContext.Fork == nil {
 		return ProtocolCommandForkResult{Cancelled: false}, nil
 	}
 	option := ProtocolForkOptions{}
@@ -367,6 +623,72 @@ func (c ProtocolCommandContext) Fork(entryID string, options ...ProtocolForkOpti
 		option = options[0]
 	}
 	return c.runtime.commandContext.Fork(entryID, option)
+}
+
+func (c ProtocolCommandContext) NewSession(options ...ProtocolNewSessionOptions) (ProtocolCommandSwitchResult, error) {
+	if err := c.ensureCurrent(); err != nil {
+		return ProtocolCommandSwitchResult{}, err
+	}
+	if c.runtime.commandContext.NewSession == nil {
+		return ProtocolCommandSwitchResult{Cancelled: false}, nil
+	}
+	option := ProtocolNewSessionOptions{}
+	if len(options) > 0 {
+		option = options[0]
+	}
+	return c.runtime.commandContext.NewSession(option)
+}
+
+func (c ProtocolCommandContext) SwitchSession(sessionFile string, options ...ProtocolSwitchSessionOptions) (ProtocolCommandSwitchResult, error) {
+	if err := c.ensureCurrent(); err != nil {
+		return ProtocolCommandSwitchResult{}, err
+	}
+	if c.runtime.commandContext.SwitchSession == nil {
+		return ProtocolCommandSwitchResult{Cancelled: false}, nil
+	}
+	option := ProtocolSwitchSessionOptions{}
+	if len(options) > 0 {
+		option = options[0]
+	}
+	return c.runtime.commandContext.SwitchSession(sessionFile, option)
+}
+
+func (c ProtocolCommandContext) Reload() error {
+	if err := c.ensureCurrent(); err != nil {
+		return err
+	}
+	if c.runtime.commandContext.Reload == nil {
+		return nil
+	}
+	return c.runtime.commandContext.Reload()
+}
+
+func (c ProtocolCommandContext) SendUserMessage(text string, options ...ProtocolSendUserMessageOptions) error {
+	if err := c.ensureCurrent(); err != nil {
+		return err
+	}
+	option := ProtocolSendUserMessageOptions{}
+	if len(options) > 0 {
+		option = options[0]
+	}
+	return c.runtime.SendUserMessage(text, option)
+}
+
+func (c ProtocolCommandContext) ensureCurrent() error {
+	if c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension command context is unavailable"}
+	}
+	if c.generation != c.runtime.contextGeneration {
+		return ProtocolRuntimeError{Code: "stale_context", Message: "extension command context has been replaced"}
+	}
+	return nil
+}
+
+func (r *ProtocolExtensionRuntime) InvalidateCommandContexts() {
+	if r == nil {
+		return
+	}
+	r.contextGeneration++
 }
 
 func (c *ProtocolExtensionContext) On(eventType string, handler ProtocolEventHandler) error {
@@ -442,6 +764,12 @@ func (r *ProtocolExtensionRuntime) EmitSessionEvent(event ProtocolSessionEvent) 
 		if err := r.applyEventResult(registration.source, &currentEvent, result, &combined); err != nil {
 			return ProtocolEventResult{}, err
 		}
+		if currentEvent.Type == "tool_call" && combined.Block {
+			return combined, nil
+		}
+		if currentEvent.Type == ProtocolEventUserBash && combined.BashResultSet {
+			return combined, nil
+		}
 	}
 	return combined, nil
 }
@@ -452,6 +780,10 @@ func (r *ProtocolExtensionRuntime) applyEventResult(source ProtocolSourceInfo, e
 		if result.MessagesSet {
 			combined.Messages = append(combined.Messages, result.Messages...)
 			combined.MessagesSet = true
+		}
+		if result.CustomMessagesSet {
+			combined.CustomMessages = append(combined.CustomMessages, result.CustomMessages...)
+			combined.CustomMessagesSet = true
 		}
 		if result.SystemPromptSet {
 			if !r.capabilities[CapabilitySystemPromptModify] {
@@ -467,6 +799,30 @@ func (r *ProtocolExtensionRuntime) applyEventResult(source ProtocolSourceInfo, e
 			r.eventSystemPrompt = result.SystemPrompt
 			combined.SystemPrompt = result.SystemPrompt
 			combined.SystemPromptSet = true
+		}
+	case ProtocolEventMessageEnd:
+		if result.MessageSet && result.Message != nil {
+			message := *result.Message
+			event.Message = &message
+			combined.Message = &message
+			combined.MessageSet = true
+		}
+	case "context":
+		if result.MessagesSet {
+			event.Messages = append([]llm.Message(nil), result.Messages...)
+			combined.Messages = append([]llm.Message(nil), result.Messages...)
+			combined.MessagesSet = true
+		}
+	case ProtocolEventBeforeProviderRequest:
+		if result.PayloadSet {
+			event.Payload = result.Payload
+			combined.Payload = result.Payload
+			combined.PayloadSet = true
+		}
+	case "tool_call":
+		if result.Block {
+			combined.Block = true
+			combined.Reason = result.Reason
 		}
 	case "tool_result":
 		if result.ContentSet {
@@ -484,8 +840,74 @@ func (r *ProtocolExtensionRuntime) applyEventResult(source ProtocolSourceInfo, e
 			combined.IsError = result.IsError
 			combined.IsErrorSet = true
 		}
+	case ProtocolEventUserBash:
+		if result.BashResultSet || result.BashResult != nil {
+			var bashResult BashResult
+			if result.BashResult != nil {
+				bashResult = *result.BashResult
+			}
+			combined.BashResult = &bashResult
+			combined.BashResultSet = true
+		}
+	case ProtocolEventResourcesDiscover:
+		if result.ResourcesSet || len(result.Resources.ExtensionPaths) > 0 || len(result.Resources.SkillPaths) > 0 ||
+			len(result.Resources.PromptPaths) > 0 || len(result.Resources.ThemePaths) > 0 {
+			resources := resourceExtensionWithSourceDefaults(result.Resources, source)
+			combined.Resources.ExtensionPaths = append(combined.Resources.ExtensionPaths, resources.ExtensionPaths...)
+			combined.Resources.SkillPaths = append(combined.Resources.SkillPaths, resources.SkillPaths...)
+			combined.Resources.PromptPaths = append(combined.Resources.PromptPaths, resources.PromptPaths...)
+			combined.Resources.ThemePaths = append(combined.Resources.ThemePaths, resources.ThemePaths...)
+			combined.ResourcesSet = true
+		}
 	}
 	return nil
+}
+
+func resourceExtensionWithSourceDefaults(resources ResourceExtension, source ProtocolSourceInfo) ResourceExtension {
+	for index := range resources.ExtensionPaths {
+		resources.ExtensionPaths[index].Metadata = resourceMetadataWithSourceDefaults(resources.ExtensionPaths[index].Path, resources.ExtensionPaths[index].Metadata, source)
+	}
+	for index := range resources.SkillPaths {
+		resources.SkillPaths[index].Metadata = resourceMetadataWithSourceDefaults(resources.SkillPaths[index].Path, resources.SkillPaths[index].Metadata, source)
+	}
+	for index := range resources.PromptPaths {
+		resources.PromptPaths[index].Metadata = resourceMetadataWithSourceDefaults(resources.PromptPaths[index].Path, resources.PromptPaths[index].Metadata, source)
+	}
+	for index := range resources.ThemePaths {
+		resources.ThemePaths[index].Metadata = resourceMetadataWithSourceDefaults(resources.ThemePaths[index].Path, resources.ThemePaths[index].Metadata, source)
+	}
+	return resources
+}
+
+func resourceMetadataWithSourceDefaults(path string, metadata, source ProtocolSourceInfo) ProtocolSourceInfo {
+	defaultInfo := protocolDefaultSourceInfo(source)
+	if metadata.Path == "" {
+		metadata.Path = path
+	}
+	if metadata.Source == "" {
+		metadata.Source = defaultInfo.Source
+	}
+	if metadata.Scope == "" {
+		metadata.Scope = defaultInfo.Scope
+	}
+	if metadata.Origin == "" {
+		metadata.Origin = defaultInfo.Origin
+	}
+	return metadata
+}
+
+func protocolDefaultSourceInfo(source ProtocolSourceInfo) ProtocolSourceInfo {
+	info := source
+	if info.Source == "" {
+		info.Source = "inline"
+	}
+	if info.Scope == "" {
+		info.Scope = "temporary"
+	}
+	if info.Origin == "" {
+		info.Origin = "top-level"
+	}
+	return info
 }
 
 func cloneSDKContentParts(parts []SDKContentPart) []SDKContentPart {
@@ -591,6 +1013,20 @@ func (c *ProtocolExtensionContext) SendUserMessage(text string, options Protocol
 	return c.runtime.SendUserMessage(text, options)
 }
 
+func (c *ProtocolExtensionContext) SendCustomMessage(message ProtocolCustomMessage, options ProtocolSendCustomMessageOptions) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	return c.runtime.SendCustomMessage(message, options)
+}
+
+func (c *ProtocolExtensionContext) SetSessionName(name string) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	return c.runtime.SetSessionName(name)
+}
+
 func (r *ProtocolExtensionRuntime) SendUserMessage(text string, options ProtocolSendUserMessageOptions) error {
 	if r == nil || r.boundSession == nil {
 		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime has no bound session"}
@@ -600,12 +1036,31 @@ func (r *ProtocolExtensionRuntime) SendUserMessage(text string, options Protocol
 	}
 	switch options.DeliverAs {
 	case "steer":
-		return r.boundSession.Steer(text)
+		return r.boundSession.QueueExtensionUserMessage(text, "steer")
 	case "followUp":
-		return r.boundSession.FollowUp(text)
+		return r.boundSession.QueueExtensionUserMessage(text, "followUp")
 	default:
 		return r.boundSession.Prompt(text)
 	}
+}
+
+func (r *ProtocolExtensionRuntime) SendCustomMessage(message ProtocolCustomMessage, options ProtocolSendCustomMessageOptions) error {
+	if r == nil || r.boundSession == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime has no bound session"}
+	}
+	return r.boundSession.SendCustomMessage(QueuedCustomMessage{
+		CustomType: message.CustomType,
+		Content:    message.Content,
+		Display:    message.Display,
+		Details:    message.Details,
+	}, options)
+}
+
+func (r *ProtocolExtensionRuntime) SetSessionName(name string) error {
+	if r == nil || r.boundSession == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime has no bound session"}
+	}
+	return r.boundSession.SetSessionName(name)
 }
 
 func (r *ProtocolExtensionRuntime) AppendCustomEntry(customType string, data any) (string, error) {
@@ -645,6 +1100,212 @@ func (r *ProtocolExtensionRuntime) LoadFactories(factories []ProtocolExtensionFa
 	return nil
 }
 
+func (r *ProtocolExtensionRuntime) RemoveSource(source ProtocolSourceInfo) {
+	if r == nil || protocolSourceInfoKey(source) == "" {
+		return
+	}
+	if len(r.handlers) > 0 {
+		for eventType, registrations := range r.handlers {
+			filtered := registrations[:0]
+			for _, registration := range registrations {
+				if protocolSourceInfoEqual(registration.source, source) {
+					continue
+				}
+				filtered = append(filtered, registration)
+			}
+			if len(filtered) == 0 {
+				delete(r.handlers, eventType)
+			} else {
+				r.handlers[eventType] = filtered
+			}
+		}
+	}
+	if len(r.inputHandlers) > 0 {
+		filtered := r.inputHandlers[:0]
+		for _, registration := range r.inputHandlers {
+			if protocolSourceInfoEqual(registration.source, source) {
+				continue
+			}
+			filtered = append(filtered, registration)
+		}
+		r.inputHandlers = filtered
+	}
+	commandsChanged := false
+	if len(r.commands) > 0 {
+		filtered := r.commands[:0]
+		for _, registration := range r.commands {
+			if protocolSourceInfoEqual(registration.SourceInfo, source) {
+				commandsChanged = true
+				continue
+			}
+			filtered = append(filtered, registration)
+		}
+		r.commands = filtered
+	}
+
+	sessionChanged := false
+	if len(r.tools) > 0 {
+		filtered := r.tools[:0]
+		for _, tool := range r.tools {
+			if protocolSourceInfoEqual(tool.SourceInfo, source) {
+				sessionChanged = true
+				continue
+			}
+			filtered = append(filtered, tool)
+		}
+		r.tools = filtered
+	}
+	if len(r.providerRegistrations) > 0 {
+		affected := map[string]bool{}
+		filtered := r.providerRegistrations[:0]
+		for _, registration := range r.providerRegistrations {
+			if protocolSourceInfoEqual(registration.source, source) {
+				affected[registration.name] = true
+				sessionChanged = true
+				continue
+			}
+			filtered = append(filtered, registration)
+		}
+		r.providerRegistrations = filtered
+		if len(affected) > 0 {
+			r.removePendingProviderSource(source)
+			r.rebuildProviderState(affected)
+		}
+	}
+
+	messageRenderersChanged := false
+	if len(r.messageRegistrations) > 0 {
+		filtered := r.messageRegistrations[:0]
+		for _, registration := range r.messageRegistrations {
+			if protocolSourceInfoEqual(registration.SourceInfo, source) {
+				messageRenderersChanged = true
+				continue
+			}
+			filtered = append(filtered, registration)
+		}
+		r.messageRegistrations = filtered
+		if messageRenderersChanged {
+			r.rebuildMessageRenderers()
+		}
+	}
+
+	if len(r.toolRendererRegistrations) > 0 {
+		filtered := r.toolRendererRegistrations[:0]
+		toolRenderersChanged := false
+		for _, renderer := range r.toolRendererRegistrations {
+			if protocolSourceInfoEqual(renderer.SourceInfo, source) {
+				toolRenderersChanged = true
+				continue
+			}
+			filtered = append(filtered, renderer)
+		}
+		r.toolRendererRegistrations = filtered
+		if toolRenderersChanged {
+			r.rebuildToolRenderers()
+		}
+	}
+
+	if len(r.flags) > 0 {
+		visibleBefore := map[string]ProtocolSourceInfo{}
+		for _, flag := range r.Flags() {
+			visibleBefore[flag.Name] = flag.SourceInfo
+		}
+		removedVisibleNames := map[string]bool{}
+		filtered := r.flags[:0]
+		for _, flag := range r.flags {
+			if protocolSourceInfoEqual(flag.SourceInfo, source) {
+				if protocolSourceInfoEqual(visibleBefore[flag.Name], flag.SourceInfo) {
+					removedVisibleNames[flag.Name] = true
+				}
+				sessionChanged = true
+				continue
+			}
+			filtered = append(filtered, flag)
+		}
+		r.flags = filtered
+		for name := range removedVisibleNames {
+			delete(r.flagValues, name)
+			r.applyVisibleFlagValue(name)
+		}
+	}
+
+	if len(r.shortcuts) > 0 {
+		filtered := r.shortcuts[:0]
+		for _, shortcut := range r.shortcuts {
+			if protocolSourceInfoEqual(shortcut.SourceInfo, source) {
+				continue
+			}
+			filtered = append(filtered, shortcut)
+		}
+		r.shortcuts = filtered
+	}
+
+	autocompleteChanged := false
+	if len(r.autocomplete) > 0 {
+		filtered := r.autocomplete[:0]
+		for _, provider := range r.autocomplete {
+			if protocolSourceInfoEqual(provider.SourceInfo, source) {
+				autocompleteChanged = true
+				continue
+			}
+			filtered = append(filtered, provider)
+		}
+		r.autocomplete = filtered
+	}
+
+	if len(r.viewTreeMounts) > 0 {
+		filtered := r.viewTreeMounts[:0]
+		for _, mount := range r.viewTreeMounts {
+			if protocolSourceInfoEqual(mount.SourceInfo, source) {
+				if r.viewTreeHost != nil {
+					r.viewTreeHost.Unmount(mount.MountID)
+				}
+				continue
+			}
+			filtered = append(filtered, mount)
+		}
+		r.viewTreeMounts = filtered
+	}
+
+	if commandsChanged {
+		r.notifyCommandsChanged()
+	}
+	if autocompleteChanged {
+		r.notifyAutocompleteProvidersChanged()
+	}
+	if messageRenderersChanged {
+		r.notifyMessageRenderersChanged()
+	}
+	if sessionChanged {
+		r.ApplyToSession(r.boundSession)
+	}
+}
+
+func cloneProtocolSourceInfoMap(values map[string]ProtocolSourceInfo) map[string]ProtocolSourceInfo {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]ProtocolSourceInfo, len(values))
+	for key, value := range values {
+		result[key] = value
+	}
+	return result
+}
+
+func protocolSourceInfoEqual(left, right ProtocolSourceInfo) bool {
+	if left.Path != "" && right.Path != "" {
+		return left.Path == right.Path
+	}
+	return protocolSourceInfoKey(left) != "" && protocolSourceInfoKey(left) == protocolSourceInfoKey(right)
+}
+
+func protocolSourceInfoKey(source ProtocolSourceInfo) string {
+	if source.Path == "" && source.Source == "" && source.Scope == "" && source.Origin == "" {
+		return ""
+	}
+	return source.Path + "\x00" + source.Source + "\x00" + source.Scope + "\x00" + source.Origin
+}
+
 func (c *ProtocolExtensionContext) RegisterCommand(name string, definition ProtocolCommandDefinition) error {
 	if c == nil || c.runtime == nil {
 		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
@@ -652,12 +1313,23 @@ func (c *ProtocolExtensionContext) RegisterCommand(name string, definition Proto
 	if !c.runtime.capabilities[CapabilityCommandsRegister] {
 		return ProtocolRuntimeError{Code: "missing_capability", Message: CapabilityCommandsRegister}
 	}
-	c.runtime.commands = append(c.runtime.commands, ProtocolCommandRegistration{
-		Name:        name,
-		Description: definition.Description,
-		SourceInfo:  c.source,
-		Handler:     definition.Handler,
-	})
+	registration := ProtocolCommandRegistration{
+		Name:               name,
+		Description:        definition.Description,
+		ArgumentHint:       definition.ArgumentHint,
+		SourceInfo:         c.source,
+		Handler:            definition.Handler,
+		HandlerWithContext: definition.HandlerWithContext,
+	}
+	for index, existing := range c.runtime.commands {
+		if existing.Name == name && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
+			c.runtime.commands[index] = registration
+			c.runtime.notifyCommandsChanged()
+			return nil
+		}
+	}
+	c.runtime.commands = append(c.runtime.commands, registration)
+	c.runtime.notifyCommandsChanged()
 	return nil
 }
 
@@ -690,8 +1362,9 @@ func (r *ProtocolExtensionRuntime) registerProvider(source ProtocolSourceInfo, p
 	if provider == "" {
 		return nil
 	}
-	r.providerOverrides[provider] = override
 	registration := protocolProviderRegistration{source: source, name: provider, config: override}
+	r.providerRegistrations = append(r.providerRegistrations, registration)
+	r.rebuildProviderMaps()
 	if r.modelRegistry == nil {
 		r.pendingProviders = append(r.pendingProviders, registration)
 		r.ApplyToSession(r.boundSession)
@@ -712,7 +1385,13 @@ func (r *ProtocolExtensionRuntime) unregisterProvider(provider string) {
 	if provider == "" {
 		return
 	}
-	delete(r.providerOverrides, provider)
+	filteredRegistrations := r.providerRegistrations[:0]
+	for _, registration := range r.providerRegistrations {
+		if registration.name != provider {
+			filteredRegistrations = append(filteredRegistrations, registration)
+		}
+	}
+	r.providerRegistrations = filteredRegistrations
 	filtered := r.pendingProviders[:0]
 	for _, registration := range r.pendingProviders {
 		if registration.name != provider {
@@ -720,10 +1399,99 @@ func (r *ProtocolExtensionRuntime) unregisterProvider(provider string) {
 		}
 	}
 	r.pendingProviders = filtered
+	r.rebuildProviderMaps()
 	if r.modelRegistry != nil {
 		r.modelRegistry.UnregisterProvider(provider)
 	}
 	r.ApplyToSession(r.boundSession)
+}
+
+func (r *ProtocolExtensionRuntime) removePendingProviderSource(source ProtocolSourceInfo) {
+	if r == nil || len(r.pendingProviders) == 0 {
+		return
+	}
+	filtered := r.pendingProviders[:0]
+	for _, registration := range r.pendingProviders {
+		if protocolSourceInfoEqual(registration.source, source) {
+			continue
+		}
+		filtered = append(filtered, registration)
+	}
+	r.pendingProviders = filtered
+}
+
+func (r *ProtocolExtensionRuntime) rebuildProviderState(affected map[string]bool) {
+	if r == nil {
+		return
+	}
+	r.rebuildProviderMaps()
+	if r.modelRegistry == nil {
+		return
+	}
+	names := sortedBoolMapKeys(affected)
+	for _, name := range names {
+		r.modelRegistry.UnregisterProvider(name)
+		for _, registration := range r.providerRegistrations {
+			if registration.name != name {
+				continue
+			}
+			if err := r.applyProviderRegistration(registration); err != nil {
+				r.emitExtensionError(ProtocolExtensionError{
+					ExtensionPath: registration.source.Path,
+					Event:         "register_provider",
+					Error:         err.Error(),
+				})
+			}
+		}
+	}
+}
+
+func (r *ProtocolExtensionRuntime) rebuildProviderMaps() {
+	if r == nil {
+		return
+	}
+	r.providerOverrides = map[string]ProtocolProviderOverride{}
+	r.providerSources = map[string]ProtocolSourceInfo{}
+	for _, registration := range r.providerRegistrations {
+		if registration.name == "" {
+			continue
+		}
+		existing := r.providerOverrides[registration.name]
+		r.providerOverrides[registration.name] = mergeProtocolProviderOverride(existing, registration.config)
+		r.providerSources[registration.name] = registration.source
+	}
+}
+
+func mergeProtocolProviderOverride(existing, incoming ProtocolProviderOverride) ProtocolProviderOverride {
+	merged := existing
+	if incoming.BaseURL != "" {
+		merged.BaseURL = incoming.BaseURL
+	}
+	if incoming.APIKey != "" {
+		merged.APIKey = incoming.APIKey
+	}
+	if incoming.API != "" {
+		merged.API = incoming.API
+	}
+	if len(incoming.Headers) > 0 {
+		merged.Headers = cloneStringMap(incoming.Headers)
+	}
+	if incoming.AuthHeader {
+		merged.AuthHeader = incoming.AuthHeader
+	}
+	if hasCompat(incoming.Compat) {
+		merged.Compat = mergeCompat(merged.Compat, incoming.Compat)
+	}
+	if len(incoming.Models) > 0 {
+		merged.Models = append([]ProviderModelDefinition(nil), incoming.Models...)
+	}
+	if len(incoming.ModelOverrides) > 0 {
+		merged.ModelOverrides = cloneModelOverrideMap(incoming.ModelOverrides)
+	}
+	if incoming.StreamSimple != nil {
+		merged.StreamSimple = incoming.StreamSimple
+	}
+	return merged
 }
 
 func (r *ProtocolExtensionRuntime) applyProviderRegistration(registration protocolProviderRegistration) error {
@@ -735,12 +1503,39 @@ func (r *ProtocolExtensionRuntime) applyProviderRegistration(registration protoc
 
 func (o ProtocolProviderOverride) toProviderConfigInput() ProviderConfigInput {
 	return ProviderConfigInput{
-		BaseURL:      o.BaseURL,
-		APIKey:       o.APIKey,
-		API:          o.API,
-		Models:       append([]ProviderModelDefinition(nil), o.Models...),
-		StreamSimple: o.StreamSimple,
+		BaseURL:        o.BaseURL,
+		APIKey:         o.APIKey,
+		API:            o.API,
+		Headers:        cloneStringMap(o.Headers),
+		AuthHeader:     o.AuthHeader,
+		Compat:         o.Compat,
+		Models:         append([]ProviderModelDefinition(nil), o.Models...),
+		ModelOverrides: cloneModelOverrideMap(o.ModelOverrides),
+		StreamSimple:   o.StreamSimple,
 	}
+}
+
+func cloneModelOverrideMap(values map[string]ModelOverride) map[string]ModelOverride {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]ModelOverride, len(values))
+	for key, value := range values {
+		copy := value
+		if value.Reasoning != nil {
+			reasoning := *value.Reasoning
+			copy.Reasoning = &reasoning
+		}
+		if value.Cost != nil {
+			cost := *value.Cost
+			copy.Cost = &cost
+		}
+		copy.ThinkingLevelMap = cloneThinkingLevelMap(value.ThinkingLevelMap)
+		copy.Input = append([]string(nil), value.Input...)
+		copy.Headers = cloneStringMap(value.Headers)
+		result[key] = copy
+	}
+	return result
 }
 
 func (r *ProtocolExtensionRuntime) PendingProviderRegistrations() []ProtocolProviderRegistration {
@@ -770,13 +1565,24 @@ func (c *ProtocolExtensionContext) RegisterTool(definition ProtocolToolDefinitio
 		sourceInfo = ProtocolSourceInfo{Path: c.source.Path, Source: "inline", Scope: "temporary", Origin: "top-level"}
 	}
 	tool := SDKTool{
-		Name:             definition.Name,
-		Label:            definition.Label,
-		Description:      definition.Description,
-		PromptSnippet:    definition.PromptSnippet,
-		PromptGuidelines: append([]string(nil), definition.PromptGuidelines...),
-		Execute:          definition.Execute,
-		SourceInfo:       sourceInfo,
+		Name:               definition.Name,
+		Label:              definition.Label,
+		Description:        definition.Description,
+		Parameters:         definition.Parameters,
+		PromptSnippet:      definition.PromptSnippet,
+		PromptGuidelines:   append([]string(nil), definition.PromptGuidelines...),
+		ExecutionMode:      definition.ExecutionMode,
+		PrepareArguments:   definition.PrepareArguments,
+		Execute:            definition.Execute,
+		ExecuteWithUpdates: definition.ExecuteWithUpdates,
+		SourceInfo:         sourceInfo,
+	}
+	for index, existing := range c.runtime.tools {
+		if existing.Name == tool.Name && protocolSourceInfoEqual(existing.SourceInfo, sourceInfo) {
+			c.runtime.tools[index] = tool
+			c.runtime.ApplyToSession(c.runtime.boundSession)
+			return nil
+		}
 	}
 	c.runtime.tools = append(c.runtime.tools, tool)
 	c.runtime.ApplyToSession(c.runtime.boundSession)
@@ -787,13 +1593,57 @@ func (c *ProtocolExtensionContext) RegisterMessageRenderer(customType string, re
 	if c == nil || c.runtime == nil {
 		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
 	}
+	if !c.runtime.capabilities[CapabilityTUIMessageRenderer] {
+		return ProtocolRuntimeError{Code: "missing_capability", Message: CapabilityTUIMessageRenderer}
+	}
 	if strings.TrimSpace(customType) == "" || renderer == nil {
 		return nil
 	}
-	if _, exists := c.runtime.messageRenderers[customType]; exists {
+	registration := ProtocolMessageRendererRegistration{
+		CustomType: customType,
+		SourceInfo: c.source,
+		Renderer:   renderer,
+	}
+	for index, existing := range c.runtime.messageRegistrations {
+		if existing.CustomType == customType && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
+			c.runtime.messageRegistrations[index] = registration
+			c.runtime.rebuildMessageRenderers()
+			c.runtime.notifyMessageRenderersChanged()
+			return nil
+		}
+	}
+	c.runtime.messageRegistrations = append(c.runtime.messageRegistrations, registration)
+	c.runtime.rebuildMessageRenderers()
+	c.runtime.notifyMessageRenderersChanged()
+	return nil
+}
+
+func (c *ProtocolExtensionContext) RegisterToolRenderer(toolName string, definition ProtocolToolRendererDefinition) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	if !c.runtime.capabilities[CapabilityTUIToolRenderer] {
+		return ProtocolRuntimeError{Code: "missing_capability", Message: CapabilityTUIToolRenderer}
+	}
+	toolName = strings.TrimSpace(toolName)
+	if toolName == "" || (definition.RenderCall == nil && definition.RenderResult == nil) {
 		return nil
 	}
-	c.runtime.messageRenderers[customType] = renderer
+	registration := ProtocolToolRendererRegistration{
+		Name:         toolName,
+		SourceInfo:   c.source,
+		RenderCall:   definition.RenderCall,
+		RenderResult: definition.RenderResult,
+	}
+	for index, existing := range c.runtime.toolRendererRegistrations {
+		if existing.Name == toolName && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
+			c.runtime.toolRendererRegistrations[index] = registration
+			c.runtime.rebuildToolRenderers()
+			return nil
+		}
+	}
+	c.runtime.toolRendererRegistrations = append(c.runtime.toolRendererRegistrations, registration)
+	c.runtime.rebuildToolRenderers()
 	return nil
 }
 
@@ -801,14 +1651,9 @@ func (c *ProtocolExtensionContext) RegisterFlag(name string, definition Protocol
 	if c == nil || c.runtime == nil {
 		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
 	}
-	name = strings.TrimSpace(strings.TrimPrefix(name, "--"))
+	name = normalizeProtocolFlagName(name)
 	if name == "" {
 		return nil
-	}
-	for _, existing := range c.runtime.flags {
-		if existing.Name == name {
-			return nil
-		}
 	}
 	registration := ProtocolFlagRegistration{
 		Name:        name,
@@ -817,10 +1662,15 @@ func (c *ProtocolExtensionContext) RegisterFlag(name string, definition Protocol
 		Default:     definition.Default,
 		SourceInfo:  c.source,
 	}
-	c.runtime.flags = append(c.runtime.flags, registration)
-	if definition.Default != nil {
-		c.runtime.flagValues[name] = definition.Default
+	for index, existing := range c.runtime.flags {
+		if existing.Name == name && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
+			c.runtime.flags[index] = registration
+			c.runtime.applyVisibleFlagValue(name)
+			return nil
+		}
 	}
+	c.runtime.flags = append(c.runtime.flags, registration)
+	c.runtime.applyVisibleFlagValue(name)
 	return nil
 }
 
@@ -835,13 +1685,216 @@ func (c *ProtocolExtensionContext) RegisterShortcut(key string, definition Proto
 	if key == "" {
 		return nil
 	}
-	c.runtime.shortcuts = append(c.runtime.shortcuts, ProtocolShortcutRegistration{
+	registration := ProtocolShortcutRegistration{
 		Key:         key,
 		Description: definition.Description,
 		SourceInfo:  c.source,
 		Handler:     definition.Handler,
-	})
+	}
+	for index, existing := range c.runtime.shortcuts {
+		if existing.Key == key && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
+			c.runtime.shortcuts[index] = registration
+			return nil
+		}
+	}
+	c.runtime.shortcuts = append(c.runtime.shortcuts, registration)
 	return nil
+}
+
+func (c *ProtocolExtensionContext) RegisterAutocompleteProvider(id string, definition ProtocolAutocompleteProviderDefinition) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	if !c.runtime.capabilities[CapabilityTUIAutocomplete] {
+		return ProtocolRuntimeError{Code: "missing_capability", Message: CapabilityTUIAutocomplete}
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	registration := ProtocolAutocompleteProviderRegistration{
+		ID:          id,
+		Description: definition.Description,
+		Priority:    definition.Priority,
+		SourceInfo:  c.source,
+		Handler:     definition.Handler,
+	}
+	for index, existing := range c.runtime.autocomplete {
+		if existing.ID == id && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
+			c.runtime.autocomplete[index] = registration
+			c.runtime.notifyAutocompleteProvidersChanged()
+			return nil
+		}
+	}
+	c.runtime.autocomplete = append(c.runtime.autocomplete, registration)
+	c.runtime.notifyAutocompleteProvidersChanged()
+	return nil
+}
+
+func (c *ProtocolExtensionContext) MountViewTree(mountID, slot string, view ViewTreeNode, options ...ViewTreeMountOptions) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	return c.runtime.registerViewTreeMount(c.source, mountID, slot, view, options...)
+}
+
+func (r *ProtocolExtensionRuntime) registerViewTreeMount(source ProtocolSourceInfo, mountID, slot string, view ViewTreeNode, options ...ViewTreeMountOptions) error {
+	if r == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	mountID = strings.TrimSpace(mountID)
+	slot = canonicalViewTreeSlot(slot)
+	if mountID == "" {
+		return ProtocolRuntimeError{Code: "invalid_viewtree_mount", Message: "mountId is required"}
+	}
+	required := viewTreeSlotCapability(slot)
+	if !r.capabilities[required] {
+		return ProtocolRuntimeError{Code: "missing_capability", Message: required}
+	}
+	priority := 0
+	var overlay *ViewTreeOverlayOptions
+	if len(options) > 0 {
+		priority = options[0].Priority
+		overlay = options[0].Overlay
+	}
+	registration := ProtocolViewTreeMountRegistration{
+		MountID:    mountID,
+		Slot:       slot,
+		View:       view,
+		Priority:   priority,
+		Overlay:    overlay,
+		SourceInfo: source,
+	}
+	replaced := false
+	for index, existing := range r.viewTreeMounts {
+		if existing.MountID == mountID {
+			r.viewTreeMounts[index] = registration
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		r.viewTreeMounts = append(r.viewTreeMounts, registration)
+	}
+	return r.applyViewTreeMount(registration)
+}
+
+func (r *ProtocolExtensionRuntime) ViewTreeMounts() []ProtocolViewTreeMountRegistration {
+	if r == nil {
+		return nil
+	}
+	return append([]ProtocolViewTreeMountRegistration(nil), r.viewTreeMounts...)
+}
+
+func (r *ProtocolExtensionRuntime) applyViewTreeMounts() {
+	if r == nil || r.viewTreeHost == nil {
+		return
+	}
+	for _, registration := range r.viewTreeMounts {
+		_ = r.applyViewTreeMount(registration)
+	}
+}
+
+func (r *ProtocolExtensionRuntime) applyViewTreeMount(registration ProtocolViewTreeMountRegistration) error {
+	if r == nil || r.viewTreeHost == nil {
+		return nil
+	}
+	return r.viewTreeHost.MountWithOptions(
+		registration.MountID,
+		registration.Slot,
+		registration.View,
+		ViewTreeMountOptions{Priority: registration.Priority, Overlay: registration.Overlay},
+	)
+}
+
+func (r *ProtocolExtensionRuntime) OnAutocompleteProvidersChanged(callback func()) func() {
+	if r == nil || callback == nil {
+		return func() {}
+	}
+	r.nextAutocomplete++
+	id := r.nextAutocomplete
+	r.autocompleteWatch = append(r.autocompleteWatch, protocolAutocompleteWatcher{id: id, callback: callback})
+	return func() {
+		for index, watcher := range r.autocompleteWatch {
+			if watcher.id != id {
+				continue
+			}
+			r.autocompleteWatch = append(r.autocompleteWatch[:index], r.autocompleteWatch[index+1:]...)
+			return
+		}
+	}
+}
+
+func (r *ProtocolExtensionRuntime) notifyAutocompleteProvidersChanged() {
+	if r == nil {
+		return
+	}
+	watchers := append([]protocolAutocompleteWatcher(nil), r.autocompleteWatch...)
+	for _, watcher := range watchers {
+		if watcher.callback != nil {
+			watcher.callback()
+		}
+	}
+}
+
+func (r *ProtocolExtensionRuntime) OnCommandsChanged(callback func()) func() {
+	if r == nil || callback == nil {
+		return func() {}
+	}
+	r.nextCommandWatch++
+	id := r.nextCommandWatch
+	r.commandWatch = append(r.commandWatch, protocolCommandWatcher{id: id, callback: callback})
+	return func() {
+		for index, watcher := range r.commandWatch {
+			if watcher.id != id {
+				continue
+			}
+			r.commandWatch = append(r.commandWatch[:index], r.commandWatch[index+1:]...)
+			return
+		}
+	}
+}
+
+func (r *ProtocolExtensionRuntime) notifyCommandsChanged() {
+	if r == nil {
+		return
+	}
+	watchers := append([]protocolCommandWatcher(nil), r.commandWatch...)
+	for _, watcher := range watchers {
+		if watcher.callback != nil {
+			watcher.callback()
+		}
+	}
+}
+
+func (r *ProtocolExtensionRuntime) OnMessageRenderersChanged(callback func()) func() {
+	if r == nil || callback == nil {
+		return func() {}
+	}
+	r.nextMessageRender++
+	id := r.nextMessageRender
+	r.messageRenderWatch = append(r.messageRenderWatch, protocolMessageRendererWatcher{id: id, callback: callback})
+	return func() {
+		for index, watcher := range r.messageRenderWatch {
+			if watcher.id != id {
+				continue
+			}
+			r.messageRenderWatch = append(r.messageRenderWatch[:index], r.messageRenderWatch[index+1:]...)
+			return
+		}
+	}
+}
+
+func (r *ProtocolExtensionRuntime) notifyMessageRenderersChanged() {
+	if r == nil {
+		return
+	}
+	watchers := append([]protocolMessageRendererWatcher(nil), r.messageRenderWatch...)
+	for _, watcher := range watchers {
+		if watcher.callback != nil {
+			watcher.callback()
+		}
+	}
 }
 
 func (r *ProtocolExtensionRuntime) RegisteredCommands() []ProtocolCommandRegistration {
@@ -853,6 +1906,7 @@ func (r *ProtocolExtensionRuntime) RegisteredCommands() []ProtocolCommandRegistr
 		counts[command.Name]++
 	}
 	ordinals := map[string]int{}
+	takenInvocationNames := map[string]bool{}
 	result := make([]ProtocolCommandRegistration, 0, len(r.commands))
 	for _, command := range r.commands {
 		ordinals[command.Name]++
@@ -860,9 +1914,47 @@ func (r *ProtocolExtensionRuntime) RegisteredCommands() []ProtocolCommandRegistr
 		if counts[command.Name] > 1 {
 			command.InvocationName = fmt.Sprintf("%s:%d", command.Name, ordinals[command.Name])
 		}
+		if takenInvocationNames[command.InvocationName] {
+			suffix := ordinals[command.Name]
+			for {
+				suffix++
+				command.InvocationName = fmt.Sprintf("%s:%d", command.Name, suffix)
+				if !takenInvocationNames[command.InvocationName] {
+					break
+				}
+			}
+		}
+		takenInvocationNames[command.InvocationName] = true
 		result = append(result, command)
 	}
 	return result
+}
+
+func (r *ProtocolExtensionRuntime) AutocompleteProviders() []ProtocolAutocompleteProviderRegistration {
+	if r == nil {
+		return nil
+	}
+	result := append([]ProtocolAutocompleteProviderRegistration(nil), r.autocomplete...)
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].Priority > result[j].Priority
+	})
+	return result
+}
+
+func (r *ProtocolExtensionRuntime) SuggestAutocomplete(ctx context.Context, request ProtocolAutocompleteRequest) (ProtocolAutocompleteResult, error) {
+	for _, provider := range r.AutocompleteProviders() {
+		if provider.Handler == nil {
+			continue
+		}
+		result, err := provider.Handler(ctx, request)
+		if err != nil {
+			return ProtocolAutocompleteResult{}, err
+		}
+		if len(result.Items) > 0 {
+			return result, nil
+		}
+	}
+	return ProtocolAutocompleteResult{}, nil
 }
 
 func (r *ProtocolExtensionRuntime) RegisteredTools() []SDKTool {
@@ -881,6 +1973,24 @@ func (r *ProtocolExtensionRuntime) RegisteredTools() []SDKTool {
 	return result
 }
 
+func (r *ProtocolExtensionRuntime) rebuildMessageRenderers() {
+	if r == nil {
+		return
+	}
+	r.messageRenderers = map[string]ProtocolMessageRenderer{}
+	r.messageSources = map[string]ProtocolSourceInfo{}
+	for _, registration := range r.messageRegistrations {
+		if registration.CustomType == "" || registration.Renderer == nil {
+			continue
+		}
+		if _, exists := r.messageRenderers[registration.CustomType]; exists {
+			continue
+		}
+		r.messageRenderers[registration.CustomType] = registration.Renderer
+		r.messageSources[registration.CustomType] = registration.SourceInfo
+	}
+}
+
 func (r *ProtocolExtensionRuntime) GetMessageRenderer(customType string) ProtocolMessageRenderer {
 	if r == nil {
 		return nil
@@ -888,18 +1998,207 @@ func (r *ProtocolExtensionRuntime) GetMessageRenderer(customType string) Protoco
 	return r.messageRenderers[customType]
 }
 
+func (r *ProtocolExtensionRuntime) GetToolRenderer(toolName string) *ProtocolToolRendererRegistration {
+	if r == nil {
+		return nil
+	}
+	renderer, ok := r.toolRenderers[toolName]
+	if !ok {
+		return nil
+	}
+	copy := renderer
+	return &copy
+}
+
+func (r *ProtocolExtensionRuntime) rebuildToolRenderers() {
+	if r == nil {
+		return
+	}
+	r.toolRenderers = map[string]ProtocolToolRendererRegistration{}
+	for _, registration := range r.toolRendererRegistrations {
+		if registration.Name == "" || (registration.RenderCall == nil && registration.RenderResult == nil) {
+			continue
+		}
+		if _, exists := r.toolRenderers[registration.Name]; exists {
+			continue
+		}
+		r.toolRenderers[registration.Name] = registration
+	}
+}
+
+func (r *ProtocolExtensionRuntime) GetRegisteredToolDefinition(toolName string) ToolDefinition {
+	renderer := r.GetToolRenderer(toolName)
+	if renderer == nil {
+		return ToolDefinition{Name: toolName}
+	}
+	return ToolDefinition{
+		Name:         toolName,
+		RenderCall:   renderer.RenderCall,
+		RenderResult: renderer.RenderResult,
+	}
+}
+
 func (r *ProtocolExtensionRuntime) Flags() []ProtocolFlagRegistration {
 	if r == nil {
 		return nil
 	}
-	return append([]ProtocolFlagRegistration(nil), r.flags...)
+	return r.visibleFlagRegistrations()
+}
+
+func (r *ProtocolExtensionRuntime) SetCLIFlagValues(values map[string]any) []ProtocolExtensionFlagDiagnostic {
+	if r == nil || len(values) == 0 {
+		return nil
+	}
+	if r.cliFlagValues == nil {
+		r.cliFlagValues = map[string]any{}
+	}
+	keys := sortedAnyMapKeys(values)
+	for _, key := range keys {
+		name := normalizeProtocolFlagName(key)
+		if name == "" {
+			continue
+		}
+		r.cliFlagValues[name] = values[key]
+	}
+	before := len(r.flagDiagnostics)
+	for _, flag := range r.Flags() {
+		r.applyCLIFlagValueToRegistration(flag)
+	}
+	return append([]ProtocolExtensionFlagDiagnostic(nil), r.flagDiagnostics[before:]...)
+}
+
+func (r *ProtocolExtensionRuntime) FlagDiagnostics() []ProtocolExtensionFlagDiagnostic {
+	if r == nil || len(r.flagDiagnostics) == 0 {
+		return nil
+	}
+	return append([]ProtocolExtensionFlagDiagnostic(nil), r.flagDiagnostics...)
+}
+
+func (r *ProtocolExtensionRuntime) UnknownCLIFlagDiagnostics() []ProtocolExtensionFlagDiagnostic {
+	if r == nil || len(r.cliFlagValues) == 0 {
+		return nil
+	}
+	registered := map[string]bool{}
+	for _, flag := range r.Flags() {
+		registered[flag.Name] = true
+	}
+	names := make([]string, 0, len(r.cliFlagValues))
+	for name := range r.cliFlagValues {
+		if !registered[name] {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	diagnostics := make([]ProtocolExtensionFlagDiagnostic, 0, len(names))
+	for _, name := range names {
+		diagnostics = append(diagnostics, ProtocolExtensionFlagDiagnostic{
+			Name:    name,
+			Message: "Unknown option: --" + name,
+		})
+	}
+	return diagnostics
+}
+
+func (r *ProtocolExtensionRuntime) applyCLIFlagValueToRegistration(flag ProtocolFlagRegistration) {
+	if r == nil || len(r.cliFlagValues) == 0 {
+		return
+	}
+	name := normalizeProtocolFlagName(flag.Name)
+	if name == "" {
+		return
+	}
+	value, ok := r.cliFlagValues[name]
+	if !ok {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(flag.Type)) {
+	case "boolean", "bool":
+		r.flagValues[name] = true
+	case "", "string":
+		text, ok := value.(string)
+		if !ok {
+			r.appendFlagDiagnostic(ProtocolExtensionFlagDiagnostic{
+				Name:    name,
+				Message: `Extension flag "--` + name + `" requires a value`,
+			})
+			return
+		}
+		r.flagValues[name] = text
+	default:
+		r.flagValues[name] = value
+	}
+}
+
+func (r *ProtocolExtensionRuntime) applyVisibleFlagValue(name string) {
+	if r == nil {
+		return
+	}
+	name = normalizeProtocolFlagName(name)
+	if name == "" {
+		return
+	}
+	flag, ok := r.visibleFlagRegistration(name)
+	if !ok {
+		delete(r.flagValues, name)
+		return
+	}
+	if flag.Default != nil {
+		if _, exists := r.flagValues[name]; !exists {
+			r.flagValues[name] = flag.Default
+		}
+	}
+	r.applyCLIFlagValueToRegistration(flag)
+}
+
+func (r *ProtocolExtensionRuntime) visibleFlagRegistration(name string) (ProtocolFlagRegistration, bool) {
+	if r == nil {
+		return ProtocolFlagRegistration{}, false
+	}
+	name = normalizeProtocolFlagName(name)
+	if name == "" {
+		return ProtocolFlagRegistration{}, false
+	}
+	for _, flag := range r.flags {
+		if flag.Name == name {
+			return flag, true
+		}
+	}
+	return ProtocolFlagRegistration{}, false
+}
+
+func (r *ProtocolExtensionRuntime) visibleFlagRegistrations() []ProtocolFlagRegistration {
+	if r == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	result := make([]ProtocolFlagRegistration, 0, len(r.flags))
+	for _, flag := range r.flags {
+		if flag.Name == "" || seen[flag.Name] {
+			continue
+		}
+		seen[flag.Name] = true
+		result = append(result, flag)
+	}
+	return result
+}
+
+func (r *ProtocolExtensionRuntime) appendFlagDiagnostic(diagnostic ProtocolExtensionFlagDiagnostic) {
+	if r == nil || strings.TrimSpace(diagnostic.Message) == "" {
+		return
+	}
+	for _, existing := range r.flagDiagnostics {
+		if existing.Name == diagnostic.Name && existing.Message == diagnostic.Message {
+			return
+		}
+	}
+	r.flagDiagnostics = append(r.flagDiagnostics, diagnostic)
 }
 
 func (r *ProtocolExtensionRuntime) SetFlagValue(name string, value any) {
 	if r == nil {
 		return
 	}
-	name = strings.TrimSpace(strings.TrimPrefix(name, "--"))
+	name = normalizeProtocolFlagName(name)
 	if name == "" {
 		return
 	}
@@ -910,8 +2209,30 @@ func (r *ProtocolExtensionRuntime) FlagValue(name string) any {
 	if r == nil {
 		return nil
 	}
-	name = strings.TrimSpace(strings.TrimPrefix(name, "--"))
+	name = normalizeProtocolFlagName(name)
 	return r.flagValues[name]
+}
+
+func normalizeProtocolFlagName(name string) string {
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(name), "--"))
+}
+
+func sortedAnyMapKeys(values map[string]any) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedBoolMapKeys(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (r *ProtocolExtensionRuntime) ApplyToSession(session *AgentSession) {
@@ -981,20 +2302,73 @@ func (r *ProtocolExtensionRuntime) Shortcuts(keybindings KeybindingsConfig) Prot
 }
 
 var protocolReservedShortcutActions = map[string]bool{
-	"app.interrupt":          true,
-	"app.clear":              true,
-	"app.exit":               true,
-	"app.suspend":            true,
-	"app.model.cycleForward": true,
+	"app.interrupt":              true,
+	"app.clear":                  true,
+	"app.exit":                   true,
+	"app.suspend":                true,
+	"app.thinking.cycle":         true,
+	"app.model.cycleForward":     true,
+	"app.model.cycleBackward":    true,
+	"app.model.select":           true,
+	"app.tools.expand":           true,
+	"app.thinking.toggle":        true,
+	"app.editor.external":        true,
+	"app.message.followUp":       true,
+	"tui.input.submit":           true,
+	"tui.select.confirm":         true,
+	"tui.select.cancel":          true,
+	"tui.input.copy":             true,
+	"tui.editor.deleteToLineEnd": true,
 }
 
 func DefaultProtocolKeybindings() KeybindingsConfig {
 	return KeybindingsConfig{
-		"app.interrupt":            "ctrl+c",
-		"app.clear":                "ctrl+l",
-		"app.model.cycleForward":   "ctrl+p",
-		"app.clipboard.pasteImage": "ctrl+v",
-		"app.message.followUp":     "ctrl+p",
+		"app.interrupt":                 "escape",
+		"app.clear":                     "ctrl+c",
+		"app.exit":                      "ctrl+d",
+		"app.suspend":                   "ctrl+z",
+		"app.thinking.cycle":            "shift+tab",
+		"app.model.cycleForward":        "ctrl+p",
+		"app.model.cycleBackward":       "shift+ctrl+p",
+		"app.model.select":              "ctrl+l",
+		"app.tools.expand":              "ctrl+o",
+		"app.thinking.toggle":           "ctrl+t",
+		"app.session.toggleNamedFilter": "ctrl+n",
+		"app.editor.external":           "ctrl+g",
+		"app.message.followUp":          "alt+enter",
+		"app.message.dequeue":           "alt+up",
+		"app.clipboard.pasteImage":      DefaultClipboardPasteImageKey(),
+		"app.session.new":               []any{},
+		"app.session.tree":              []any{},
+		"app.session.fork":              []any{},
+		"app.session.resume":            []any{},
+		"app.tree.foldOrUp":             []any{"ctrl+left", "alt+left"},
+		"app.tree.unfoldOrDown":         []any{"ctrl+right", "alt+right"},
+		"app.tree.editLabel":            "shift+l",
+		"app.tree.toggleLabelTimestamp": "shift+t",
+		"app.session.togglePath":        "ctrl+p",
+		"app.session.toggleSort":        "ctrl+s",
+		"app.session.rename":            "ctrl+r",
+		"app.session.delete":            "ctrl+d",
+		"app.session.deleteNoninvasive": "ctrl+backspace",
+		"app.models.save":               "ctrl+s",
+		"app.models.enableAll":          "ctrl+a",
+		"app.models.clearAll":           "ctrl+x",
+		"app.models.toggleProvider":     "ctrl+p",
+		"app.models.reorderUp":          "alt+up",
+		"app.models.reorderDown":        "alt+down",
+		"app.tree.filter.default":       "ctrl+d",
+		"app.tree.filter.noTools":       "ctrl+t",
+		"app.tree.filter.userOnly":      "ctrl+u",
+		"app.tree.filter.labeledOnly":   "ctrl+l",
+		"app.tree.filter.all":           "ctrl+a",
+		"app.tree.filter.cycleForward":  "ctrl+o",
+		"app.tree.filter.cycleBackward": "shift+ctrl+o",
+		"tui.input.submit":              "enter",
+		"tui.select.confirm":            "enter",
+		"tui.select.cancel":             "escape",
+		"tui.input.copy":                "ctrl+c",
+		"tui.editor.deleteToLineEnd":    "ctrl+k",
 	}
 }
 

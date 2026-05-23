@@ -3,6 +3,8 @@ package gicodingagent
 import (
 	"reflect"
 	"testing"
+
+	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
 func TestBuildInitialMessageMergesStdinWithFirstCLIMessage(t *testing.T) {
@@ -54,6 +56,27 @@ func TestBuildInitialMessageCombinesStdinFileTextAndFirstCLIMessage(t *testing.T
 	}
 	if !reflect.DeepEqual(parsed.Messages, []string{"Second message"}) {
 		t.Fatalf("messages = %#v", parsed.Messages)
+	}
+}
+
+func TestBuildInitialMessageCarriesFileImagesWithCopy(t *testing.T) {
+	parsed := initialMessageArgs("Describe it")
+	images := []llm.ContentPart{llm.Image("abc", "image/png")}
+
+	result := BuildInitialMessage(InitialMessageInput{
+		Parsed:     &parsed,
+		FileImages: images,
+	})
+
+	if result.InitialMessage != "Describe it" {
+		t.Fatalf("initial message = %q", result.InitialMessage)
+	}
+	if !reflect.DeepEqual(result.InitialImages, images) {
+		t.Fatalf("images = %#v, want %#v", result.InitialImages, images)
+	}
+	images[0].Data = "mutated"
+	if result.InitialImages[0].Data != "abc" {
+		t.Fatalf("images alias input slice: %#v", result.InitialImages)
 	}
 }
 

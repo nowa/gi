@@ -65,13 +65,35 @@ func TestSessionManagerMigrationAndCustomSessionIDsMatchPi(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !uuidV7Pattern.MatchString(session.GetSessionID()) {
+		t.Fatalf("initial session id = %q, want uuidv7", session.GetSessionID())
+	}
 	session.NewSession(NewSessionOptions{ID: "my-custom-id"})
 	if session.GetSessionID() != "my-custom-id" || session.GetHeader().ID != "my-custom-id" {
 		t.Fatalf("custom session id not preserved: id=%q header=%#v", session.GetSessionID(), session.GetHeader())
 	}
+	session.NewSession()
+	if !uuidV7Pattern.MatchString(session.GetSessionID()) {
+		t.Fatalf("new session id = %q, want uuidv7", session.GetSessionID())
+	}
 	session.NewSession(NewSessionOptions{ParentSession: "parent.jsonl"})
 	if !uuidV7Pattern.MatchString(session.GetSessionID()) || session.GetHeader().ParentSession != "parent.jsonl" {
 		t.Fatalf("generated session header = %#v", session.GetHeader())
+	}
+
+	constructed, err := CreateSessionManager(t.TempDir(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !uuidV7Pattern.MatchString(constructed.GetSessionID()) {
+		t.Fatalf("constructed session id = %q, want uuidv7", constructed.GetSessionID())
+	}
+	leaf := constructed.AppendMessage(testUserMessage("branch source"))
+	if _, err := constructed.CreateBranchedSession(leaf); err != nil {
+		t.Fatal(err)
+	}
+	if !uuidV7Pattern.MatchString(constructed.GetSessionID()) {
+		t.Fatalf("branched session id = %q, want uuidv7", constructed.GetSessionID())
 	}
 }
 
@@ -129,6 +151,9 @@ func TestSessionManagerLabelsResetLeafAndBranchPreservationMatchPi(t *testing.T)
 		t.Fatal(err)
 	}
 	session.AppendLabelChange(msg3, "discard")
+	if _, err := session.AppendLabelChange("missing", "label"); err == nil || !strings.Contains(err.Error(), "Entry missing not found") {
+		t.Fatalf("missing label err = %v", err)
+	}
 	if got, _ := session.GetLabel(msg1); got != "second" {
 		t.Fatalf("last label = %q, want second", got)
 	}

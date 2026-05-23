@@ -2,6 +2,7 @@ package gicodingagent
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -121,6 +122,96 @@ func TestSessionSelectorSearchNameFilterExcludesWhitespaceOnlyNames(t *testing.T
 
 	if got, want := sessionSelectorIDs(result), []string{"named"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("ids = %#v, want %#v", got, want)
+	}
+}
+
+func TestSessionSelectorCtrlNTogglesNamedFilterPiStyle(t *testing.T) {
+	selector := NewSessionSelectorComponent(makeSessionSelectorNamedFilterSessions(), SessionSelectorOptions{})
+	rendered := strings.Join(selector.Render(120), "\n")
+	if !strings.Contains(rendered, "My Project") || !strings.Contains(rendered, "(no messages)") || !strings.Contains(rendered, "Ctrl+N show named sessions") {
+		t.Fatalf("initial render missing all sessions/hint:\n%s", rendered)
+	}
+
+	selector.HandleInput("\x0e")
+	rendered = strings.Join(selector.Render(120), "\n")
+	if !strings.Contains(rendered, "My Project") || strings.Contains(rendered, "(no messages)") || !strings.Contains(rendered, "Ctrl+N show all sessions") {
+		t.Fatalf("named-filter render mismatch:\n%s", rendered)
+	}
+
+	selector.HandleInput("\x0e")
+	rendered = strings.Join(selector.Render(120), "\n")
+	if !strings.Contains(rendered, "My Project") || !strings.Contains(rendered, "(no messages)") || !strings.Contains(rendered, "Ctrl+N show named sessions") {
+		t.Fatalf("restored all render mismatch:\n%s", rendered)
+	}
+}
+
+func TestSessionSelectorUsesEffectiveKeybindingsPiStyle(t *testing.T) {
+	keybindings := mergeKeybindingsConfig(DefaultProtocolKeybindings(), KeybindingsConfig{
+		"app.session.toggleNamedFilter": "m",
+		"app.session.toggleSort":        "s",
+		"app.session.togglePath":        "p",
+		"app.session.rename":            "r",
+		"app.session.delete":            "d",
+		"app.session.deleteNoninvasive": "x",
+	})
+	sessions := makeSessionSelectorNamedFilterSessions()
+	var deletePath *string
+	selector := NewSessionSelectorComponent(sessions, SessionSelectorOptions{
+		ShowRenameHint: true,
+		Keybindings:    keybindings,
+		OnDeleteConfirmationChange: func(path *string) {
+			if path == nil {
+				deletePath = nil
+				return
+			}
+			copyPath := *path
+			deletePath = &copyPath
+		},
+	})
+
+	rendered := strings.Join(selector.Render(160), "\n")
+	for _, expected := range []string{"S sort", "M show named sessions", "P path (off)", "R rename"} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("render missing %q:\n%s", expected, rendered)
+		}
+	}
+
+	selector.HandleInput("m")
+	rendered = strings.Join(selector.Render(160), "\n")
+	if !strings.Contains(rendered, "Name: named") || !strings.Contains(rendered, "M show all sessions") || strings.Contains(rendered, "(no messages)") {
+		t.Fatalf("named keybinding render mismatch:\n%s", rendered)
+	}
+
+	selector.HandleInput("s")
+	rendered = strings.Join(selector.Render(160), "\n")
+	if !strings.Contains(rendered, "Sort: recent") {
+		t.Fatalf("sort keybinding render mismatch:\n%s", rendered)
+	}
+
+	selector.HandleInput("p")
+	rendered = strings.Join(selector.Render(160), "\n")
+	if !strings.Contains(rendered, "P path (on)") || !strings.Contains(rendered, sessions[0].Path) {
+		t.Fatalf("path keybinding render mismatch:\n%s", rendered)
+	}
+
+	selector.HandleInput("r")
+	rendered = strings.Join(selector.Render(160), "\n")
+	if !strings.Contains(rendered, "Rename Session") {
+		t.Fatalf("rename keybinding render mismatch:\n%s", rendered)
+	}
+	selector.HandleInput("\x1b")
+
+	selector.HandleInput("d")
+	if deletePath == nil || *deletePath != sessions[0].Path {
+		t.Fatalf("delete path = %#v, want %q", deletePath, sessions[0].Path)
+	}
+	selector.HandleInput("\x1b")
+
+	selector.HandleInput("a")
+	selector.HandleInput("x")
+	rendered = strings.Join(selector.Render(160), "\n")
+	if !strings.Contains(rendered, "My Project") {
+		t.Fatalf("noninvasive delete key should clear search instead of deleting:\n%s", rendered)
 	}
 }
 

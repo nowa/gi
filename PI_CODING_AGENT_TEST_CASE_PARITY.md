@@ -4,9 +4,13 @@
 
 This file is the scope gate for the Gi `gi-coding-agent` port. It is generated from Pi `packages/coding-agent/test/*.test.ts` and maps every explicit `it(...)` / `test(...)` case to one of the allowed migration states.
 
+Source-level Pi coding-agent gaps that are not proven by explicit tests are
+tracked in `PI_CODING_AGENT_SOURCE_AUDIT.md`.
+
 Status meanings:
 
 - `已有`: behavior already has Gi coverage in the listed Go tests.
+- `待审计`: current Pi test case is discovered but not yet mapped to Gi evidence.
 - `待实现`: missing coding-agent host/runtime behavior; implement in Gi before marking covered.
 - `需要协议 runtime`: the Pi case touches extensions, packages, dynamic registration, RPC, or custom TUI contribution surfaces; implement through `protocol/spec` boundaries instead of private core branches.
 - `不适用`: intentionally excluded from the Go port, with the reason in the row.
@@ -17,12 +21,18 @@ path unless the row explicitly says otherwise.
 
 ## Summary
 
-- Pi coding-agent test files: `91`
-- Pi explicit case definitions: `1037`
-- `已有`: `1015`
+- Pi coding-agent test files discovered in current Pi checkout: `121`
+- Pi explicit case definitions discovered in current Pi checkout: `1225`
+- Detailed cases currently enumerated below: `1225`
+- `已有`: `1188`
 - `待实现`: `0`
 - `需要协议 runtime`: `0`
-- `不适用`: `22`
+- `不适用`: `37`
+- `待审计`: `0`
+
+## Current Audit Gap
+
+All currently discovered Pi coding-agent test cases have detailed rows. There are no remaining `待审计`, `待实现`, or `需要协议 runtime` cases in the current Pi checkout; intentionally excluded cases are marked `不适用` with per-case rationale.
 
 ## Commit Plan
 
@@ -31,16 +41,67 @@ path unless the row explicitly says otherwise.
 3. Commit protocol-backed batches when package, extension, RPC, or custom TUI cases move from `需要协议 runtime` to `已有`.
 4. Commit official packages after the Pi coding-agent parity gate is green.
 
+## Source-Level Audit Notes
+
+- `core/sdk.ts` / `core/defaults.ts`: Gi clamps default and explicit thinking levels against the selected model before provider calls; providers also omit reasoning when the clamped value is `off`.
+- `core/settings-manager.ts` / model resolution: Gi print mode now reads `defaultProvider`, `defaultModel`, and `defaultThinkingLevel` from settings when CLI args do not choose a model.
+- `core/auth-guidance.ts`: Gi uses `--api-key`, provider env vars,
+  `~/.gi/agent/auth.json`, and `~/.gi/agent/models.json`; `/login` is
+  Go-native API-key guidance with a provider selector rather than Pi's OAuth
+  browser flow.
+- `core/telemetry.ts` and `sdk-openrouter-attribution.test.ts`: Gi now has `GI_TELEMETRY` plus settings-backed install telemetry and applies attribution headers in the CLI provider path; `PI_TELEMETRY` remains only as a migration fallback.
+- `cli/file-processor.ts`: Gi now resolves `@file` inputs through the Pi-compatible read-path helper and wraps text files in `<file name="absolute-path">...</file>` blocks; image references use the resolved absolute path as well.
+- `main.ts` / CLI runtime wiring: Pi builds a `SessionManager` from `--session-dir`, `--session`, `--fork`, `--continue`, and `--resume` before creating runtime services. Gi print/RPC mode now honors `--session-dir`, `GI_CODING_AGENT_SESSION_DIR`/legacy fallback, settings `sessionDir`, path-or-ID-prefix `--session`, `--continue`, and path-or-ID-prefix `--fork`; `--resume` remains interactive-only in Gi and returns an explicit non-interactive error.
+- `main.ts` / initial input, export, and default launch: Pi skips `@file` in RPC, reads piped stdin for print/json, and handles `--export <in> [out]` before session startup. Gi now keeps stdin for RPC JSONL, merges piped stdin into print/json initial prompts, exports arbitrary session JSONL files through the standalone CLI path, starts a Go-native TTY TUI host with Pi-style flow layout for editor/footer input, Pi-style model-scope startup notice and `models.json` error warning, Pi-style startup/reload loaded-resource sections with quiet-startup diagnostics, initial prompts/editor submit/ViewTree slots, Pi-style streaming Enter steering queue, Alt+Enter follow-up queue, pending queue display, Alt+Up restore-to-editor, Ctrl+C clear/double-exit, Ctrl+D empty-editor exit, Escape streaming abort/queue restore and retry cancellation, double-Escape tree/fork routing, Shift+Tab/Ctrl+P/Ctrl+Shift+P/Ctrl+L model-thinking hotkeys, Ctrl+O tool-output expansion, Ctrl+T thinking-block visibility toggle, Ctrl+G external editor handoff, Ctrl+Z Unix suspend/restore, Ctrl+V clipboard-image paste-to-temp-file, Shift+Ctrl+D / hidden `/debug` debug snapshots, SIGTERM/SIGHUP graceful terminal restoration, auto-retry status/error messages, tmux extended-key startup warnings, built-in `/settings`/`/thinking`/`/model`/`/models`/`/scoped-models`/`/queue`/`/session`/`/hotkeys`/`/changelog`/`/export`/`/share`/`/import`/`/resume` picker plus `/resume <path>`/`/fork`/`/tree`/`/name`/`/new`/`/compact`/`/copy`/`/clone`/`/login`/`/logout`/`/reload`/`/quit` slash commands, cancellable `/share` gist creation, interactive `/model`, `/models`, `/scoped-models`, and `/thinking` searchable select-dialog routing, searchable `/settings` SettingsList routing with Pi's terminal/image/transport/editor/warnings controls plus warnings/theme/thinking submenus, `!`/`!!` bash execution, HTML and JSONL session export/share/import/resume/fork/tree navigation from the live TTY, and keeps a basic single-turn fallback for non-TTY `gi <message>` or piped stdin while full Pi TUI workflows remain tracked in `PI_CODING_AGENT_SOURCE_AUDIT.md`.
+- `model-resolver.ts` / scoped models: Gi now resolves `--models` and settings `enabledModels` into session scoped models, including glob matching against both `provider/modelId` and raw `model.id`, optional thinking-level suffixes, duplicate suppression, initial model selection, and RPC/TUI scoped model cycling.
+- `core/agent-session.ts` / prompt command expansion and queues: Gi now executes registered extension slash commands before normal prompting, passes the command argument string to the handler, runs protocol input transforms before expansion, expands `/skill:name` into the full skill block, and expands prompt templates before persisting the user message or invoking the responder. Queued `steer`/`follow_up` messages reject registered extension slash commands, reuse the same skill/template expansion, preserve RPC image content, and are delivered after the active response with Pi-style `one-at-a-time` or `all` queue modes.
+- `core/agent-session.ts` / regression suite: Gi now matches Pi's transient `"Network connection lost."` retry behavior, extension-origin queued slash-command follow-ups as raw user text, `session_info_changed` events, `session_before_tree` cancellation, extension `message_end` assistant usage replacement, and tool filtering across built-in and extension tools.
+- `modes/interactive/interactive-mode.ts` / regression suite: Gi now keeps rendered unresolved tool calls in an interactive pending-tool registry until live `tool_execution_end`, excludes completed historical tool calls from that registry, propagates scoped-model reorder callbacks, and renders the scoped model tab in configured order.
+- `core/agent-session-runtime.ts` / extension command context: Gi command handlers can receive a protocol command context with `newSession`, `fork`, `switchSession`, `reload`, and `sendUserMessage`. Session replacement invalidates old command contexts and runs `withSession` callbacks against the replacement session.
+- `core/resource-loader.ts` / regression suite: Gi reloads settings before resource reload, preserves in-memory settings across reload, reports skill collision diagnostics while keeping project > user > package precedence, and applies updated prompt filters after startup.
+- `core/tools/find.ts`: Gi's find tool now matches path globs containing `/` and scopes nested `.gitignore` files to their subtree instead of leaking rules into siblings.
+- `core/agent-session.ts` / bash persistence, retry events, and compaction: Gi now exposes session-level bash record/execute/abort/pending semantics, defers bashExecution messages while a turn is streaming, flushes them before the next prompt, persists aborted assistant turns, emits Pi-style `agent_start`/`turn_start`/message/tool/`turn_end`/`agent_end` ordering, emits extension message lifecycle events before public subscribers, supports cancellable retry sleeps through `abortRetry`, and checks model/auth preflight plus `context.Context` cancellation for manual compaction.
+- `core/session-manager.ts`: Gi now covers the full 79-case Pi session-manager nested suite: JSONL header validation/recovery, latest-session selection, v1/v2/v3 migration, append-only tree traversal, explicit reset-leaf empty context, standalone context building with omitted leaf fallback, Pi-shaped compaction/branch/custom context messages, labels, UUIDv7/custom IDs, forked sessions, and provider-context conversion of coding-agent-only messages into user messages before LLM calls.
+- `cli/config-selector.ts` / `components/config-selector.ts`: Pi's interactive selector writes +/- resource filters into settings; Gi exposes the same toggle semantics as Go host APIs over protocol package filters and top-level `.gi` / user-agent filters, and wires them into the default TTY `/resources` selector with live resource reload after changes.
+- `package-manager-cli.ts`: Gi keeps package command semantics that fit the protocol boundary (`install`, `remove`/`uninstall`, `config`, `list`, `update --extensions`, `update --extension`, `update --self`) while intentionally rejecting `npm:` sources and Node package-manager self-updates.
+- `modes/rpc/rpc-mode.ts`: Gi's CLI RPC entrypoint now rejects `@file` like Pi, returns JSONL parse errors instead of dropping bad input, ignores `extension_ui_response` when no request is pending, streams session events to stdout, rebinds event forwarding after session fork/switch, marshals shared LLM/session event types plus compaction/bash/context/session-stat result payloads with Pi-style lowerCamelCase JSON fields, preserves image content on RPC prompt user messages, and wires the main command surface for prompting, queue modes, model/thinking updates, compaction/retry toggles, bash, session export/fork/switch/clone, message reads, and command discovery across extension commands, prompt templates, and skills.
+- `modes/rpc/rpc-client.ts`: Gi's Go `RPCClient` now exposes typed methods for the same command families rather than only the clone helper, using the Go `RPCCommandSender` interface instead of spawning a Node child process.
+- `core/output-guard.ts`: Pi monkey-patches global `process.stdout`; Gi uses explicit `io.Writer` injection and stdout-cleanliness tests instead of global stdout takeover.
+- `core/diagnostics.ts`: resource diagnostics are represented through Gi resource/interactive diagnostic structs and remain tied to `.gi` discovery and protocol package metadata.
+- `protocol ViewTree`: Gi now has a minimal Go `ViewTreeHost` for mounting, patching, unmounting, rendering, protocol slot aliases, keyed status text, focus state, input/focus event dispatch, and change notifications for declarative package UI trees, plus `gi-ext-rpc@1` host actions for tools list/set-active, commands list, session entries/labels/name/action/custom append, agent send-user-message/run/spawn/abort with child progress status/events and running child cancellation, model list/select, thinking get/set, cwd-scoped `host.fs.read` / `host.fs.write`, policy-gated `host.process.exec`, `host.tui.mount` / `host.tui.patch` / `host.tui.unmount` / `host.tui.status`, notify/confirm/searchable-select/input/editor `host.tui.dialog`, `host.tui.editor` read/set/insert/submit/cursor/focus/custom-state/autocomplete-context bridging, and priority-ordered autocomplete provider registration. The TTY TUI host renders ViewTree slot, overlay, and editor-slot mounts inside the live TUI tree, supports overlay anchor/size/margin/non-capturing options, refreshes runtime mount/patch/unmount/status changes, maps registered autocomplete providers into the live default editor before and after startup, consumes registered custom message renderers or `[customType]` fallback for displayable custom session messages, suppresses `display:false` custom messages, consumes registered tool call/result renderers for live tool components, and renders aborted/error assistant tool calls as completed errors rather than leaving them pending. RPC processing now negotiates extension `hello`, accepts host-action notifications, replays the package ViewTree JSONL example, parses `gi.package.json` process extension entries, supervises stdio NDJSON package processes in default TTY TUI activation with capability-gated host actions, fans out `session_start` and `session_shutdown` lifecycle events, routes live TTY ViewTree focus/key/blur/unmount events back to owning package processes as `tui.event`, supports package-process `host.tui.editor` set/insert/submit actions, supports process `register_command` plus `command.invoke` event dispatch, supports process `register_provider` / `unregister_provider`, supports process `register_tool` plus `tool.invoke` request/response results, supports process `register_message_renderer` plus `message.render` request/response lines or ViewTree, supports process `register_tool_renderer` plus `tool.render_call` / `tool.render_result`, and supports process `register_autocomplete_provider` plus `autocomplete.suggest` request/response suggestions. The Go descriptor/runtime path can also record static descriptor `viewTrees`, bind a live `ViewTreeHost`, and mount official package widgets/footer segments without bypassing the same slot renderer.
+- `official packages`: Gi official packages are protocol package artifacts, not
+  private core branches. Current coverage proves slash-command UI feedback for
+  stateful `gi-plan-mode`, pending approvals in `gi-approval-gate`,
+  `gi-todo-widget`, active-tool display in `gi-tools-ui`, and recorded-check
+  status in `gi-git-guard` through custom-message renderers and command-scoped
+  ViewTree slot mounts. `gi-subagents` now
+  proves a stronger official package path by routing `subagent_spawn` through
+  the same child-session implementation as `host.agent.spawn` and rendering
+  completed subagent status. `gi-mcp-adapter` now proves a real stdio MCP
+  bridge by running `initialize`, `tools/list`, and `tools/call` against a
+  helper server and rendering discovered tool/call state through `/mcp`.
+- `trusted in-process components`: Gi now has a Go-native
+  `InProcessUIRegistry` for official/embedded slot components. Tests verify
+  live TTY mounting, context injection, disposer lifecycle, and render panic
+  recovery without routing third-party packages around the ViewTree/RPC
+  boundary.
+
 ## File-Level Scope
 
 | Pi file | Cases | Status | Gi coverage / next step |
 |---|---:|---|---|
 | `agent-session-auto-compaction-queue.test.ts` | 6 | 已有 | gi-coding-agent/agent_session_auto_compaction_test.go |
+| `suite/agent-session-bash-persistence.test.ts` | 8 | 已有 | gi-coding-agent/agent_session_bash.go; gi-coding-agent/agent_session_bash_persistence_test.go |
+| `suite/agent-session-retry-events.test.ts` | 14 | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| `suite/agent-session-compaction.test.ts` | 11 | 已有 | gi-coding-agent/agent_session_compaction_suite_test.go |
 | `agent-session-branching.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_branching_test.go |
 | `agent-session-compaction.test.ts` | 5 | 已有 | gi-coding-agent/agent_session_compaction_test.go |
 | `agent-session-concurrent.test.ts` | 7 | 已有 | gi-coding-agent/agent_session_concurrent_test.go; gi-coding-agent/agent_session_concurrent_extension_test.go |
 | `agent-session-dynamic-provider.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
 | `agent-session-dynamic-tools.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
+| `agent-session-model-extension.test.ts` | 10 | 已有 | gi-coding-agent/rpc_session_host_test.go; gi-coding-agent/agent_session_model_extension_test.go; gi-coding-agent/agent_session_prompt_expansion_test.go; gi-coding-agent/agent_session_runtime_events_test.go |
+| `agent-session-prompt.test.ts` | 11 | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go; gi-coding-agent/test_harness_test.go |
+| `agent-session-queue.test.ts` | 13 | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
 | `agent-session-retry.test.ts` | 5 | 已有 | gi-coding-agent/agent_session_retry_test.go |
 | `agent-session-runtime-events.test.ts` | 4 | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
 | `agent-session-stats.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_stats_test.go |
@@ -60,7 +121,7 @@ path unless the row explicitly says otherwise.
 | `compaction-serialization.test.ts` | 3 | 已有 | gi-agent-core/harness/compaction_test.go |
 | `compaction-summary-reasoning.test.ts` | 4 | 已有 | gi-agent-core/harness/compaction_summary_reasoning_test.go |
 | `compaction.test.ts` | 23 | 已有 | gi-agent-core/harness/compaction_test.go, gi-agent-core/harness/compaction_pi_parity_test.go |
-| `config.test.ts` | 13 | 已有 | gi-coding-agent/config_test.go |
+| `config.test.ts` | 13 | 已有 / 不适用 | gi-coding-agent/config_test.go; Gi detects legacy Node installs for diagnostics but does not support npm/pnpm/yarn/bun self-update |
 | `edit-tool-legacy-input.test.ts` | 8 | 已有 | gi-coding-agent/edit_tool_definition_test.go |
 | `edit-tool-no-full-redraw.test.ts` | 3 | 已有 | gi-coding-agent/edit_tool_no_full_redraw_test.go |
 | `export-html-skill-block.test.ts` | 4 | 已有 | gi-coding-agent/export_html_skill_block_test.go |
@@ -83,12 +144,12 @@ path unless the row explicitly says otherwise.
 | `interactive-mode-compaction.test.ts` | 1 | 已有 | gi-coding-agent/interactive_mode_test.go |
 | `interactive-mode-import-command.test.ts` | 6 | 已有 | gi-coding-agent/interactive_mode_test.go |
 | `interactive-mode-status.test.ts` | 25 | 已有 | gi-coding-agent/interactive_status_test.go |
-| `interactive-mode-suspend.test.ts` | 3 | 已有 | gi-coding-agent/interactive_mode_test.go |
+| `interactive-mode-suspend.test.ts` | 3 | 已有 | gi-coding-agent/interactive_mode_test.go; gi-coding-agent/cli_interactive_tui_test.go |
 | `keybindings-migration.test.ts` | 3 | 已有 | gi-coding-agent/keybindings_test.go |
 | `model-registry.test.ts` | 64 | 已有 | gi-coding-agent/model_registry_test.go |
 | `model-resolver.test.ts` | 31 | 已有 | gi-coding-agent/model_resolver_test.go |
 | `oauth-selector.test.ts` | 6 | 已有 | gi-coding-agent/oauth_selector_test.go |
-| `package-command-paths.test.ts` | 10 | 已有 | gi-coding-agent/package_command_paths_test.go |
+| `package-command-paths.test.ts` | 10 | 已有 / 不适用 | gi-coding-agent/package_command_paths_test.go; npm-style self-update cases are intentionally rejected in Gi |
 | `package-manager-ssh.test.ts` | 8 | 已有 | gi-coding-agent/package_manager_source_test.go |
 | `package-manager.test.ts` | 102 | 已有 | gi-coding-agent/package_manager_*_test.go |
 | `path-utils.test.ts` | 11 | 已有 | gi-coding-agent/utils_test.go |
@@ -98,6 +159,22 @@ path unless the row explicitly says otherwise.
 | `print-mode.test.ts` | 3 | 已有 | gi-coding-agent/print_mode_test.go |
 | `prompt-templates.test.ts` | 82 | 已有 | gi-coding-agent/prompt_templates_test.go |
 | `resource-loader.test.ts` | 19 | 已有 | gi-coding-agent/resource_loader_test.go |
+| `suite/regressions/4167-thinking-toggle-pending-tool-render.test.ts` | 2 | 已有 | gi-coding-agent/interactive_mode_test.go; gi-coding-agent/interactive_mode.go |
+| `suite/regressions/3616-settings-inmemory-reload.test.ts` | 3 | 已有 | gi-coding-agent/settings_manager_test.go; gi-coding-agent/resource_loader_test.go |
+| `suite/regressions/3303-find-nested-gitignore.test.ts` | 2 | 已有 | gi-coding-agent/tools_search_test.go; gi-coding-agent/search_tools.go |
+| `suite/regressions/3217-scoped-model-order.test.ts` | 2 | 已有 | gi-coding-agent/model_selector_component_test.go; gi-coding-agent/model_selector_component.go |
+| `suite/regressions/2791-fswatch-error-crash.test.ts` | 1 | 不适用 | Gi does not use Node FSWatcher/theme watcher; footer git watcher retry is covered separately |
+| `suite/regressions/3688-tree-cancel-compacting.test.ts` | 1 | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
+| `suite/regressions/2781-skill-collision-precedence.test.ts` | 4 | 已有 | gi-coding-agent/resource_loader_test.go; gi-coding-agent/resource_loader.go |
+| `suite/regressions/2835-tools-allowlist-filters-extension-tools.test.ts` | 2 | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go; gi-coding-agent/sdk_session.go |
+| `suite/regressions/3302-find-path-glob.test.ts` | 4 | 已有 | gi-coding-agent/tools_search_test.go; gi-coding-agent/search_tools.go |
+| `suite/regressions/2753-reload-stale-resource-settings.test.ts` | 1 | 已有 | gi-coding-agent/resource_loader_test.go |
+| `suite/regressions/3982-message-end-cost-override.test.ts` | 1 | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
+| `suite/regressions/3686-session-name-event.test.ts` | 2 | 已有 | gi-coding-agent/rpc_session_host_test.go; gi-coding-agent/agent_session_runtime.go |
+| `suite/regressions/2023-queued-slash-command-followup.test.ts` | 1 | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go; gi-coding-agent/protocol_extension_runtime.go |
+| `suite/regressions/2860-replaced-session-context.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_runtime_events_test.go; gi-coding-agent/protocol_extension_runtime.go |
+| `suite/regressions/3592-no-builtin-tools-keeps-extension-tools.test.ts` | 3 | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go; gi-coding-agent/sdk_session.go |
+| `suite/regressions/3317-network-connection-lost-retry.test.ts` | 1 | 已有 | gi-coding-agent/agent_session_retry_test.go |
 | `restore-sandbox-env.test.ts` | 3 | 已有 | gi-coding-agent/restore_sandbox_env_test.go |
 | `rpc-client-clone.test.ts` | 1 | 已有 | gi-coding-agent/rpc_client_test.go |
 | `rpc-jsonl.test.ts` | 4 | 已有 | gi-coding-agent/rpc_jsonl_test.go |
@@ -107,6 +184,13 @@ path unless the row explicitly says otherwise.
 | `sdk-session-manager.test.ts` | 3 | 已有 | gi-coding-agent/sdk_session_test.go |
 | `sdk-skills.test.ts` | 3 | 已有 | gi-coding-agent/sdk_session_test.go |
 | `session-cwd.test.ts` | 3 | 已有 | gi-coding-agent/session_cwd_test.go |
+| `session-manager/build-context.test.ts` | 14 | 已有 | gi-coding-agent/session_manager_context_suite_test.go; gi-coding-agent/session_manager.go |
+| `session-manager/custom-session-id.test.ts` | 7 | 已有 | gi-coding-agent/session_manager_migration_list_test.go; gi-coding-agent/session_manager_tree_test.go |
+| `session-manager/file-operations.test.ts` | 17 | 已有 | gi-coding-agent/session_manager_test.go |
+| `session-manager/labels.test.ts` | 8 | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| `session-manager/migration.test.ts` | 2 | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| `session-manager/save-entry.test.ts` | 1 | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| `session-manager/tree-traversal.test.ts` | 30 | 已有 | gi-coding-agent/session_manager_tree_test.go; gi-coding-agent/session_manager_context_suite_test.go |
 | `session-info-modified-timestamp.test.ts` | 1 | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
 | `session-selector-path-delete.test.ts` | 7 | 已有 | gi-coding-agent/session_selector_path_delete_test.go |
 | `session-selector-rename.test.ts` | 3 | 已有 | gi-coding-agent/session_selector_rename_test.go |
@@ -127,6 +211,183 @@ path unless the row explicitly says otherwise.
 | `user-message.test.ts` | 1 | 已有 | gi-coding-agent/message_components_test.go |
 | `version-check.test.ts` | 5 | 已有 | gi-coding-agent/version_check_test.go |
 
+## `suite/regressions/4167-thinking-toggle-pending-tool-render.test.ts`
+
+Pi cases: `2`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/interactive_mode_test.go; gi-coding-agent/interactive_mode.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 127 | keeps unresolved rendered tool calls registered for live completion events | 已有 | gi-coding-agent/interactive_mode_test.go |
+| 150 | does not keep completed historical tool calls registered as pending | 已有 | gi-coding-agent/interactive_mode_test.go |
+
+## `suite/regressions/3616-settings-inmemory-reload.test.ts`
+
+Pi cases: `3`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/settings_manager_test.go; gi-coding-agent/resource_loader_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 24 | preserves initial settings after direct reload | 已有 | gi-coding-agent/settings_manager_test.go |
+| 43 | preserves initial settings when DefaultResourceLoader reloads | 已有 | gi-coding-agent/settings_manager_test.go; gi-coding-agent/resource_loader_test.go |
+| 67 | preserves initial settings after unrelated setter, flush, reload | 已有 | gi-coding-agent/settings_manager_test.go |
+
+## `suite/regressions/3303-find-nested-gitignore.test.ts`
+
+Pi cases: `2`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/tools_search_test.go; gi-coding-agent/search_tools.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 52 | nested a/.gitignore scoped | 已有 | gi-coding-agent/tools_search_test.go |
+| 75 | each .gitignore subtree | 已有 | gi-coding-agent/tools_search_test.go |
+
+## `suite/regressions/3217-scoped-model-order.test.ts`
+
+Pi cases: `2`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/model_selector_component_test.go; gi-coding-agent/model_selector_component.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 38 | propagates reordered scoped models back to session state | 已有 | gi-coding-agent/model_selector_component_test.go |
+| 69 | preserves scoped model order in /model scoped tab | 已有 | gi-coding-agent/model_selector_component_test.go |
+
+## `suite/regressions/2791-fswatch-error-crash.test.ts`
+
+Pi cases: `1`
+Status: `不适用`
+Gi coverage / implementation target: no Node FSWatcher/theme watcher in Gi
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 41 | process should survive theme FSWatcher error | 不适用 | Gi has no Node FSWatcher/theme watcher; footer watcher retry is covered by gi-coding-agent/footer_data_provider_test.go |
+
+## `suite/regressions/3688-tree-cancel-compacting.test.ts`
+
+Pi cases: `1`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_tree_navigation_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 14 | clears branch summary state when session_before_tree cancels navigation | 已有 | gi-coding-agent/agent_session_tree_navigation_test.go |
+
+## `suite/regressions/2781-skill-collision-precedence.test.ts`
+
+Pi cases: `4`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/resource_loader_test.go; gi-coding-agent/resource_loader.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 61 | user auto-discovered skill should override package skill with same name | 已有 | gi-coding-agent/resource_loader_test.go |
+| 76 | project auto-discovered skill should override package skill with same name | 已有 | gi-coding-agent/resource_loader_test.go |
+| 91 | project skill should override user skill which should override package skill | 已有 | gi-coding-agent/resource_loader_test.go |
+| 107 | collision diagnostics should report package skill as loser when user skill wins | 已有 | gi-coding-agent/resource_loader.go; gi-coding-agent/resource_loader_test.go |
+
+## `suite/regressions/2835-tools-allowlist-filters-extension-tools.test.ts`
+
+Pi cases: `2`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_dynamic_provider_tools_test.go; gi-coding-agent/sdk_session.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 68 | allows only explicitly listed built-in and extension tools | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
+| 85 | disables all tools when allowlist empty | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
+
+## `suite/regressions/3302-find-path-glob.test.ts`
+
+Pi cases: `4`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/tools_search_test.go; gi-coding-agent/search_tools.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 50 | basename pattern still matches | 已有 | gi-coding-agent/tools_search_test.go |
+| 55 | directory-prefixed pattern with ** tail matches subtree | 已有 | gi-coding-agent/tools_search_test.go |
+| 62 | leading ** wildcard with path segments matches | 已有 | gi-coding-agent/tools_search_test.go |
+| 68 | src/**/*.spec.ts matches nested spec file | 已有 | gi-coding-agent/tools_search_test.go |
+
+## `suite/regressions/2753-reload-stale-resource-settings.test.ts`
+
+Pi cases: `1`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/resource_loader_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 24 | applies updated top-level prompt settings on reload after startup | 已有 | gi-coding-agent/resource_loader_test.go |
+
+## `suite/regressions/3982-message-end-cost-override.test.ts`
+
+Pi cases: `1`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_runtime_events_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 14 | allows extensions to replace finalized assistant usage cost | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
+
+## `suite/regressions/3686-session-name-event.test.ts`
+
+Pi cases: `2`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/rpc_session_host_test.go; gi-coding-agent/agent_session_runtime.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 14 | emits session_info_changed when AgentSession.setSessionName is called | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 24 | emits session_info_changed when extension calls pi.setSessionName | 已有 | gi-coding-agent/rpc_session_host_test.go |
+
+## `suite/regressions/2023-queued-slash-command-followup.test.ts`
+
+Pi cases: `1`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_prompt_expansion_test.go; gi-coding-agent/protocol_extension_runtime.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 17 | extension-origin queued slash-command follow-ups as raw user text | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+
+## `suite/regressions/2860-replaced-session-context.test.ts`
+
+Pi cases: `3`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_runtime_events_test.go; gi-coding-agent/protocol_extension_runtime.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 142 | rebinds before withSession, targets replacement, invalidates stale ctx | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
+| 205 | supports withSession for fork | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
+| 238 | supports withSession for switchSession | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
+
+## `suite/regressions/3592-no-builtin-tools-keeps-extension-tools.test.ts`
+
+Pi cases: `3`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_dynamic_provider_tools_test.go; gi-coding-agent/sdk_session.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 73 | keeps extension tools active when built-in defaults disabled | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
+| 89 | still disables all tools when noTools all | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
+| 98 | propagates noTools through service-based session creation | 已有 | Gi equivalent: AgentSessionOptions and CLI path in gi-coding-agent/sdk_session.go and gi-coding-agent/cli_print_mode.go |
+
+## `suite/regressions/3317-network-connection-lost-retry.test.ts`
+
+Pi cases: `1`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_retry_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 14 | retries transient "Network connection lost." failures | 已有 | gi-coding-agent/agent_session_retry_test.go |
+
 ## `agent-session-auto-compaction-queue.test.ts`
 
 Pi cases: `6`  
@@ -141,6 +402,23 @@ Gi coverage / implementation target: `gi-coding-agent/agent_session_auto_compact
 | 238 | should trigger threshold compaction for error messages using last successful usage | 已有 | gi-coding-agent/agent_session_auto_compaction_test.go |
 | 308 | should not trigger threshold compaction for error messages when no prior usage exists | 已有 | gi-coding-agent/agent_session_auto_compaction_test.go |
 | 356 | should not trigger threshold compaction for error messages when only kept pre-compaction usage exists | 已有 | gi-coding-agent/agent_session_auto_compaction_test.go |
+
+## `suite/agent-session-bash-persistence.test.ts`
+
+Pi cases: `8`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_bash.go; gi-coding-agent/agent_session_bash_persistence_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 22 | records bash results immediately while idle | 已有 | gi-coding-agent/agent_session_bash_persistence_test.go |
+| 38 | defers bash results while streaming and flushes them before the next prompt | 已有 | gi-coding-agent/agent_session_bash_persistence_test.go |
+| 98 | executes bash commands and records the result | 已有 | gi-coding-agent/agent_session_bash_persistence_test.go |
+| 108 | cancels running bash commands with abortBash | 已有 | gi-coding-agent/agent_session_bash_persistence_test.go |
+| 135 | persists user, assistant, toolResult, and custom messages in order | 已有 | gi-coding-agent/agent_session_bash_persistence_test.go |
+| 178 | does not emit message_end for bash execution messages | 已有 | gi-coding-agent/agent_session_bash_persistence_test.go |
+| 198 | persists aborted assistant messages | 已有 | gi-coding-agent/agent_session_bash_persistence_test.go |
+| 227 | records bash output through custom operations | 已有 | gi-coding-agent/agent_session_bash_persistence_test.go |
 
 ## `agent-session-branching.test.ts`
 
@@ -167,6 +445,26 @@ Gi coverage / implementation target: `gi-coding-agent/agent_session_compaction_t
 | 134 | should persist compaction to session file | 已有 | gi-coding-agent/agent_session_compaction_test.go |
 | 162 | should work with --no-session mode (in-memory only) | 已有 | gi-coding-agent/agent_session_compaction_test.go |
 | 184 | should emit compaction events during manual compaction | 已有 | gi-coding-agent/agent_session_compaction_test.go |
+
+## `suite/agent-session-compaction.test.ts`
+
+Pi cases: `11`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_compaction_suite_test.go; gi-coding-agent/agent_session_auto_compaction_test.go; gi-coding-agent/agent_session_compaction_extensions_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 55 | manually compacts using an extension-provided summary | 已有 | gi-coding-agent/agent_session_compaction_suite_test.go |
+| 83 | throws when compacting without a model | 已有 | gi-coding-agent/agent_session_compaction_suite_test.go |
+| 91 | throws when compacting without configured auth | 已有 | gi-coding-agent/agent_session_compaction_suite_test.go |
+| 98 | cancels in-progress manual compaction when abortCompaction is called | 已有 | gi-coding-agent/agent_session_compaction_suite_test.go |
+| 122 | resumes after threshold compaction when only agent-level queued messages exist | 已有 | gi-coding-agent/agent_session_compaction_suite_test.go |
+| 161 | does not retry overflow recovery more than once | 已有 | gi-coding-agent/agent_session_compaction_suite_test.go |
+| 187 | ignores stale pre-compaction assistant usage on pre-prompt checks | 已有 | gi-coding-agent/agent_session_compaction_suite_test.go |
+| 225 | triggers threshold compaction for error messages using the last successful usage | 已有 | gi-coding-agent/agent_session_compaction_suite_test.go |
+| 253 | does not trigger threshold compaction for error messages when no prior usage exists | 已有 | gi-coding-agent/agent_session_compaction_suite_test.go |
+| 274 | does not trigger threshold compaction when only kept pre-compaction usage exists | 已有 | gi-coding-agent/agent_session_compaction_suite_test.go |
+| 319 | does not trigger threshold compaction below the threshold or when disabled | 已有 | gi-coding-agent/agent_session_compaction_suite_test.go |
 
 ## `agent-session-concurrent.test.ts`
 
@@ -196,6 +494,28 @@ Gi coverage / implementation target: `gi-coding-agent/agent_session_dynamic_prov
 | 80 | applies session_start registerProvider overrides to the active model | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
 | 97 | applies command-time registerProvider overrides without reload | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
 
+## `agent-session-queue.test.ts`
+
+Pi cases: `13`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_prompt_expansion_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 69 | dispatches extension commands immediately when prompted while idle | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 92 | delivers extension-origin steering messages before the next LLM call | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 125 | delivers follow-up messages only after the current run finishes | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 158 | delivers multiple steering messages in order in one-at-a-time mode | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 179 | delivers multiple follow-up messages in order in one-at-a-time mode | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 206 | delivers all steering messages in one batch in all mode | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 233 | delivers all follow-up messages in one batch in all mode | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 261 | queues custom messages with deliverAs steer while streaming | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 294 | queues custom messages with deliverAs followUp while streaming | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 328 | injects nextTurn custom messages into the next prompt | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 356 | updates pendingMessageCount and removes queued text before message_start is emitted | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 387 | throws when queueing an extension command with steer | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 405 | throws when queueing an extension command with followUp | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+
 ## `agent-session-dynamic-tools.test.ts`
 
 Pi cases: `3`  
@@ -207,6 +527,45 @@ Gi coverage / implementation target: `gi-coding-agent/agent_session_dynamic_prov
 | 28 | refreshes tool registry when tools are registered after initialization | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
 | 94 | returns source metadata for SDK custom tools | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
 | 137 | keeps custom tools active but omits them from available tools when promptSnippet is not provided | 已有 | gi-coding-agent/agent_session_dynamic_provider_tools_test.go |
+
+## `agent-session-model-extension.test.ts`
+
+Pi cases: `10`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/rpc_session_host_test.go; gi-coding-agent/agent_session_model_extension_test.go; gi-coding-agent/agent_session_prompt_expansion_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 17 | setModel saves the model and emits model_select | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 47 | cycles through scoped models and preserves the scoped thinking preference | 已有 | gi-coding-agent/agent_session_model_extension_test.go |
+| 72 | clamps thinking levels to model capabilities and cycles available levels | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 81 | throws when setModel is called without configured auth | 已有 | gi-coding-agent/rpc_session_host_test.go |
+| 96 | allows extension tool_call handlers to block tool execution | 已有 | gi-coding-agent/agent_session_model_extension_test.go |
+| 138 | allows extension tool_result handlers to modify tool results | 已有 | gi-coding-agent/agent_session_model_extension_test.go |
+| 184 | allows extension context handlers to modify messages before the LLM call | 已有 | gi-coding-agent/agent_session_model_extension_test.go |
+| 224 | allows extension input handlers to transform or handle input | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 263 | allows before_agent_start handlers to inject custom messages and modify the system prompt | 已有 | gi-coding-agent/agent_session_model_extension_test.go |
+| 304 | bindExtensions emits session_start and reload emits session_shutdown then session_start | 已有 | gi-coding-agent/agent_session_runtime_events_test.go |
+
+## `agent-session-prompt.test.ts`
+
+Pi cases: `11`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_prompt_expansion_test.go; gi-coding-agent/test_harness_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 29 | prompts while idle and records a single text response | 已有 | gi-coding-agent/rpc_session_host_test.go; gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 42 | handles a tool call turn and waits for the follow-up LLM response | 已有 | gi-coding-agent/test_harness_test.go |
+| 79 | executes multiple tool calls from one response and continues with a single follow-up response | 已有 | gi-coding-agent/agent_session_concurrent_extension_test.go |
+| 117 | preserves image attachments in the provider context | 已有 | gi-coding-agent/rpc_session_host_test.go; gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 146 | expands skill commands before sending the prompt | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 193 | expands prompt templates before sending the prompt | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 226 | dispatches extension commands without consuming a provider response | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 250 | sendUserMessage while idle triggers a turn | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 262 | throws when prompted during streaming without a streamingBehavior | 已有 | gi-coding-agent/agent_session_concurrent_test.go |
+| 307 | throws when prompting without a model | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
+| 315 | throws when prompting without configured auth | 已有 | gi-coding-agent/agent_session_prompt_expansion_test.go |
 
 ## `agent-session-retry.test.ts`
 
@@ -221,6 +580,29 @@ Gi coverage / implementation target: `gi-coding-agent/agent_session_retry_test.g
 | 164 | prompt waits for retry completion even when assistant message_end handling is delayed | 已有 | gi-coding-agent/agent_session_retry_test.go |
 | 173 | retries provider network_error failures | 已有 | gi-coding-agent/agent_session_retry_test.go |
 | 231 | prompt waits for full agent loop when retry produces tool calls | 已有 | gi-coding-agent/agent_session_retry_test.go |
+
+## `suite/agent-session-retry-events.test.ts`
+
+Pi cases: `14`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/agent_session_runtime.go; gi-coding-agent/agent_session_retry_events_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 33 | retries after a transient error and succeeds | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 54 | retries multiple transient failures and succeeds on the final attempt | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 75 | exhausts max retries and emits a failure event | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 97 | prompt waits for retry completion even when assistant message_end handling is delayed | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 122 | does not retry when retry is disabled | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 133 | does not retry non-retryable errors | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 144 | cancels retry sleep when abortRetry is called | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 168 | waits for the full loop when retry recovery produces tool calls | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 201 | emits extension events before public event subscribers | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 237 | emits the expected event order for a single prompt | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 257 | emits the expected event order for a tool call turn | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 302 | emits streaming deltas for text, thinking, and tool calls in message_update events | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 322 | emits agent_end for error responses | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
+| 332 | emits agent_end for aborted runs and persists the aborted assistant message | 已有 | gi-coding-agent/agent_session_retry_events_test.go |
 
 ## `agent-session-runtime-events.test.ts`
 
@@ -270,7 +652,7 @@ Gi coverage / implementation target: `gi-coding-agent/agent_session_tree_navigat
 
 Pi cases: `5`  
 Status: `已有`
-Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
+Gi coverage / implementation target: `gi-coding-agent/utils_test.go; Gi uses gi/... User-Agent and keeps GetPiUserAgent as a compatibility alias`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -558,24 +940,24 @@ Gi coverage / implementation target: `gi-agent-core/harness/compaction_test.go, 
 ## `config.test.ts`
 
 Pi cases: `13`  
-Status: `已有`
-Gi coverage / implementation target: `gi-coding-agent/config_test.go`
+Status: `已有 / 不适用`
+Gi coverage / implementation target: `gi-coding-agent/config_test.go; Gi keeps legacy Node install detection only for diagnostics and intentionally does not generate npm/pnpm/yarn/bun self-update commands`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 143 | detects pnpm from Windows .pnpm install paths | 已有 | gi-coding-agent/config_test.go |
+| 143 | detects pnpm from Windows .pnpm install paths | 已有 | Gi equivalent: gi-coding-agent/config_test.go detects legacy Node install paths but reports self-update unsupported |
 | 154 | does not self-update unknown wrapper installs | 已有 | gi-coding-agent/config_test.go |
-| 164 | self-updates npm installs from custom prefixes | 已有 | gi-coding-agent/config_test.go |
-| 177 | self-updates renamed packages from the current install prefix | 已有 | gi-coding-agent/config_test.go |
-| 201 | self-update respects configured npmCommand | 已有 | gi-coding-agent/config_test.go |
-| 213 | self-update treats empty npmCommand as unset | 已有 | gi-coding-agent/config_test.go |
-| 221 | quotes npm self-update display paths | 已有 | gi-coding-agent/config_test.go |
-| 229 | does not infer Windows npm custom prefixes from package paths | 已有 | gi-coding-agent/config_test.go |
-| 240 | self-updates bun global installs from bun pm bin | 已有 | gi-coding-agent/config_test.go |
-| 253 | self-updates renamed pnpm global installs by removing the old package first | 已有 | gi-coding-agent/config_test.go |
-| 278 | self-updates renamed yarn global installs by removing the old package first | 已有 | gi-coding-agent/config_test.go |
-| 303 | self-updates renamed bun global installs by removing the old package first | 已有 | gi-coding-agent/config_test.go |
-| 328 | does not self-update when npm install path is not writable | 已有 | gi-coding-agent/config_test.go |
+| 164 | self-updates npm installs from custom prefixes | 不适用 | Gi 不支持 npm self-update；gi-coding-agent/config_test.go 覆盖 unsupported diagnostic |
+| 177 | self-updates renamed packages from the current install prefix | 不适用 | Gi 不支持 npm self-update 或 npm package rename install |
+| 201 | self-update respects configured npmCommand | 不适用 | Gi 不支持 npmCommand self-update path |
+| 213 | self-update treats empty npmCommand as unset | 不适用 | Gi 不支持 npmCommand self-update path |
+| 221 | quotes npm self-update display paths | 不适用 | Gi 不生成 npm self-update command display |
+| 229 | does not infer Windows npm custom prefixes from package paths | 不适用 | Gi 不推断 npm prefix；legacy path only feeds unsupported diagnostic |
+| 240 | self-updates bun global installs from bun pm bin | 不适用 | Gi 不支持 bun self-update |
+| 253 | self-updates renamed pnpm global installs by removing the old package first | 不适用 | Gi 不支持 pnpm self-update |
+| 278 | self-updates renamed yarn global installs by removing the old package first | 不适用 | Gi 不支持 yarn self-update |
+| 303 | self-updates renamed bun global installs by removing the old package first | 不适用 | Gi 不支持 bun self-update |
+| 328 | does not self-update when npm install path is not writable | 不适用 | Gi 不生成 npm self-update commands, so writability gate is unnecessary |
 
 ## `edit-tool-legacy-input.test.ts`
 
@@ -892,7 +1274,7 @@ Gi coverage / implementation target: `gi-coding-agent/anthropic_warning_test.go`
 
 Pi cases: `2`  
 Status: `已有`
-Gi coverage / implementation target: `gi-coding-agent/interactive_mode_test.go`
+Gi coverage / implementation target: `gi-coding-agent/interactive_mode_test.go`; `gi-coding-agent/cli_interactive_tui_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -935,13 +1317,41 @@ Gi coverage / implementation target: `gi-coding-agent/interactive_status_test.go
 | 41 | coalesces immediately-sequential status messages | 已有 | gi-coding-agent/interactive_status_test.go |
 | 60 | appends a new status line if something else was added in between | 已有 | gi-coding-agent/interactive_status_test.go |
 | 83 | applies expansion state to the active header and chat entries | 已有 | gi-coding-agent/interactive_status_test.go |
+| n/a | Gi extensions can read and set live tool-output expansion through `host.tui.tools_expanded` | 已有 | gi-coding-agent/host_actions_test.go; gi-coding-agent/cli_interactive_tui_test.go; gi-coding-agent/protocol_extension_process_test.go |
 | 104 | persists theme changes to settings manager | 已有 | gi-coding-agent/interactive_status_test.go |
 | 129 | does not persist invalid theme names | 已有 | gi-coding-agent/interactive_status_test.go |
+| n/a | Gi process extensions can list and switch host themes through `host.tui.theme` | 已有 | gi-coding-agent/host_actions_test.go; gi-coding-agent/cli_interactive_tui_test.go; gi-coding-agent/protocol_extension_process_test.go |
 | 152 | stores wrapper factories and rebuilds autocomplete immediately | 已有 | gi-coding-agent/interactive_status_test.go |
 | 168 | stacks wrapper factories over a fresh base provider | 已有 | gi-coding-agent/interactive_status_test.go |
 | 407 | shows a compact resource listing by default | 已有 | gi-coding-agent/interactive_status_test.go |
 | 423 | shows full resource listing when expanded | 已有 | gi-coding-agent/interactive_status_test.go |
 | 440 | shows full resource listing on verbose startup even when tool output is collapsed | 已有 | gi-coding-agent/interactive_status_test.go |
+| n/a | Gi startup host renders Pi-style context/skills/prompts/extensions/themes sections from `AgentSession.ResourceLoader` and expands the startup help/resource listing with Ctrl+O | 已有 | gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Gi package processes mount header/footer/overlay contributions through `tui.header`/`tui.footer`/`tui.overlay` into the live TTY layout | 已有 | gi-coding-agent/protocol_extension_process_test.go; gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Gi package processes register shortcuts through `shortcuts.register`; the live TTY host consumes matching keys and emits `shortcut.invoke` back to the process | 已有 | gi-coding-agent/protocol_extension_process_test.go; gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Gi package processes register CLI flags through `register_flag` with normalized names, default values, and pending CLI-provided flag values | 已有 | gi-coding-agent/protocol_extension_process_test.go |
+| n/a | Gi applies CLI unknown long flags to descriptor extension flags and reports unknown extension flags when no deferred registration is allowed | 已有 | gi-coding-agent/resource_loader_test.go; gi-coding-agent/protocol_extension_runner_test.go |
+| n/a | Gi protocol-backed extension dialogs keep Pi-style `Ctrl+O` tool-output expansion toggling while overlays are focused and support timeout auto-cancel countdowns | 已有 | gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Gi protocol-backed extension notifications preserve Pi-style `info` / `warning` / `error` status severity | 已有 | gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Gi package processes can request `host.session.action` `reload` through the host-action protocol and default print/TUI host runtime callback | 已有 | gi-coding-agent/host_actions_test.go |
+| n/a | Gi package processes can request `host.session.action` `navigate_tree` through the host-action protocol | 已有 | gi-coding-agent/host_actions_test.go |
+| n/a | Gi startup host suppresses resource sections but keeps diagnostics when `quietStartup` is enabled | 已有 | gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Gi `/reload` rebuilds resources, extension runtime, and slash commands before re-rendering loaded sections | 已有 | gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Gi startup host shows scoped-model summary when scoped models are configured and startup is not quiet | 已有 | gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Gi startup host surfaces `models.json` parse/load errors through chat status | 已有 | gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Gi startup host shows full or collapsed Pi-style changelog notices only after a previously seen version | 已有 | gi-coding-agent/changelog_test.go; gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Gi startup host shows Pi-style new-version notification from an injected release checker | 已有 | gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Gi startup host shows Pi-style package-update notification through Gi git package update checks | 已有 | gi-coding-agent/package_manager_git_update_test.go; gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Gi startup host shows Pi-style Anthropic subscription-auth warning in the live TTY | 已有 | gi-coding-agent/anthropic_warning_test.go; gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Official `gi-mcp-adapter` captures MCP progress and tools-list-changed notifications from stdio servers and renders them through `/mcp` state | 已有 | gi-coding-agent/official_packages_test.go |
+| n/a | Official `gi-mcp-adapter` projects discovered MCP tools into Gi dynamic tools that call back through the approved stdio server command | 已有 | gi-coding-agent/official_packages_test.go |
+| n/a | Gi TTY host sets and refreshes Pi-style terminal title with cwd/session name | 已有 | gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Protocol extensions set live terminal title through `host.tui.title` | 已有 | gi-coding-agent/host_actions_test.go; gi-coding-agent/protocol_extension_process_test.go; gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Protocol editor host action supports Pi-style `pasteToEditor` semantics | 已有 | gi-coding-agent/protocol_extension_process_test.go; gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Protocol extensions configure live working loader state through `host.tui.working` | 已有 | gi-coding-agent/host_actions_test.go; gi-coding-agent/protocol_extension_process_test.go; gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Protocol extensions set hidden thinking label through `host.tui.thinking_label` | 已有 | gi-coding-agent/host_actions_test.go; gi-coding-agent/protocol_extension_process_test.go; gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Protocol ViewTree mount authorization is slot-capability aware | 已有 | gi-coding-agent/host_actions_test.go; gi-coding-agent/cli_interactive_tui_test.go |
+| n/a | Protocol status updates feed both ViewTree footer mounts and footer data provider state | 已有 | gi-coding-agent/host_actions_test.go; gi-coding-agent/cli_interactive_tui_test.go |
 | 458 | abbreviates extensions in compact listing | 已有 | gi-coding-agent/interactive_status_test.go |
 | 474 | captures mixed extension layouts in compact output | 已有 | gi-coding-agent/interactive_status_test.go |
 | 490 | adds more parent folders until local extension labels are unique | 已有 | gi-coding-agent/interactive_status_test.go |
@@ -967,7 +1377,7 @@ Gi coverage / implementation target: `gi-coding-agent/interactive_mode_test.go`
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
 | 31 | shows a status message and skips suspend on Windows | 已有 | gi-coding-agent/interactive_mode_test.go |
-| 65 | keeps the process alive while suspended and restores the TUI on SIGCONT | 已有 | gi-coding-agent/interactive_mode_test.go |
+| 65 | keeps the process alive while suspended and restores the TUI on SIGCONT | 已有 | gi-coding-agent/interactive_mode_test.go; gi-coding-agent/cli_interactive_tui_test.go |
 | 115 | cleans up the temporary handlers if suspension fails | 已有 | gi-coding-agent/interactive_mode_test.go |
 
 ## `keybindings-migration.test.ts`
@@ -1061,6 +1471,10 @@ Pi cases: `31`
 Status: `已有`
 Gi coverage / implementation target: `gi-coding-agent/model_resolver_test.go`
 
+Additional source-only coverage: Gi also covers Pi's `resolveModelScope`
+behavior for glob scopes, thinking suffixes, duplicate suppression, and
+`--models` / `enabledModels` session wiring.
+
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
 | 70 | exact match returns model with undefined thinking level | 已有 | gi-coding-agent/model_resolver_test.go |
@@ -1099,7 +1513,9 @@ Gi coverage / implementation target: `gi-coding-agent/model_resolver_test.go`
 
 Pi cases: `6`
 Status: `已有`
-Gi coverage / implementation target: `gi-coding-agent/oauth_selector_test.go`
+Gi coverage / implementation target: `gi-coding-agent/oauth_selector_test.go`;
+live `/login` and `/logout` TTY selector mounting is covered by
+`gi-coding-agent/cli_interactive_tui_test.go`.
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -1113,7 +1529,7 @@ Gi coverage / implementation target: `gi-coding-agent/oauth_selector_test.go`
 ## `package-command-paths.test.ts`
 
 Pi cases: `10`
-Status: `已有`
+Status: `已有 / 不适用`
 Gi coverage / implementation target: `gi-coding-agent/package_command_paths_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
@@ -1123,10 +1539,10 @@ Gi coverage / implementation target: `gi-coding-agent/package_command_paths_test
 | 88 | shows install subcommand help | 已有 | gi-coding-agent/package_command_paths_test.go |
 | 106 | shows a friendly error for unknown install options | 已有 | gi-coding-agent/package_command_paths_test.go |
 | 121 | shows a friendly error for missing install source | 已有 | gi-coding-agent/package_command_paths_test.go |
-| 137 | uses global npmCommand and current package name for forced self updates without checking the api | 已有 | gi-coding-agent/package_command_paths_test.go |
-| 187 | uses the current package name when the update check omits packageName | 已有 | gi-coding-agent/package_command_paths_test.go |
-| 229 | installs the active package name from the update check during self-update | 已有 | gi-coding-agent/package_command_paths_test.go |
-| 280 | fails self-update when renamed npm package installation fails | 已有 | gi-coding-agent/package_command_paths_test.go |
+| 137 | uses global npmCommand and current package name for forced self updates without checking the api | 不适用 | Gi rejects legacy npm-style self-update without checking the API; covered by gi-coding-agent/package_command_paths_test.go |
+| 187 | uses the current package name when the update check omits packageName | 已有 | Gi equivalent: performs version check, then rejects legacy npm-style self-update without installing; covered by gi-coding-agent/package_command_paths_test.go |
+| 229 | installs the active package name from the update check during self-update | 不适用 | Gi does not install npm package names during self-update |
+| 280 | fails self-update when renamed npm package installation fails | 不适用 | Gi never executes renamed npm package installation |
 | 336 | suggests the configured source when update input omits the npm prefix | 不适用 | npm source 已移除；git source suggestion 覆盖在 package-manager.test.ts:1949 |
 
 ## `package-manager-ssh.test.ts`
@@ -1306,7 +1722,7 @@ Gi coverage / implementation target: `gi-coding-agent/utils_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
-| 5 | formats the user agent expected by pi.dev | 已有 | gi-coding-agent/utils_test.go |
+| 5 | formats the user agent expected by pi.dev | 已有 | Gi equivalent: gi-coding-agent/utils_test.go verifies gi/... User-Agent and legacy alias behavior |
 
 ## `plan-mode-utils.test.ts`
 
@@ -1555,7 +1971,7 @@ Gi coverage / implementation target: `gi-coding-agent/rpc_session_host_test.go`
 
 Pi cases: `4`  
 Status: `已有`
-Gi coverage / implementation target: `gi-coding-agent/sdk_attribution_test.go`
+Gi coverage / implementation target: `gi-coding-agent/sdk_attribution_test.go; gi-coding-agent/telemetry_test.go; gi-coding-agent/cli_print_mode_test.go`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -1599,6 +2015,148 @@ Gi coverage / implementation target: `gi-coding-agent/session_cwd_test.go`
 | 37 | detects missing session cwd from persisted sessions | 已有 | gi-coding-agent/session_cwd_test.go |
 | 54 | supports overriding the effective cwd when opening a session | 已有 | gi-coding-agent/session_cwd_test.go |
 | 67 | throws a controlled error before runtime creation when the stored cwd is missing | 已有 | gi-coding-agent/session_cwd_test.go |
+
+## `session-manager/build-context.test.ts`
+
+Pi cases: `14`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/session_manager_context_suite_test.go; gi-coding-agent/session_manager.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 65 | empty entries returns empty context | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 72 | single user message | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 79 | simple conversation | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 91 | tracks thinking level changes | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 102 | tracks model from assistant message | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 108 | tracks model from model change entry | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 121 | includes summary before kept messages | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 142 | handles compaction keeping from first message | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 156 | multiple compactions uses latest | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 175 | follows path to specified leaf | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 195 | includes branch summary in path | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 210 | complex tree with multiple branches and compaction | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 252 | uses last entry when leafId not found | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+| 258 | handles orphaned entries gracefully | 已有 | gi-coding-agent/session_manager_context_suite_test.go |
+
+## `session-manager/custom-session-id.test.ts`
+
+Pi cases: `7`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/session_manager_migration_list_test.go; gi-coding-agent/session_manager_tree_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 10 | uses the provided id instead of generating one | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 16 | generates a UUIDv7 id when no id is provided | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 25 | generates a UUIDv7 id when options is provided without id | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 34 | includes the custom id in the session header | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 43 | generates a UUIDv7 id when constructed without an explicit id | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 49 | generates a UUIDv7 id when creating a branched session | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 63 | generates a UUIDv7 id when forking from another session file | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+
+## `session-manager/file-operations.test.ts`
+
+Pi cases: `17`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/session_manager_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 19 | returns empty array for non-existent file | 已有 | gi-coding-agent/session_manager_test.go |
+| 24 | returns empty array for empty file | 已有 | gi-coding-agent/session_manager_test.go |
+| 30 | returns empty array for file without valid session header | 已有 | gi-coding-agent/session_manager_test.go |
+| 36 | returns empty array for malformed JSON | 已有 | gi-coding-agent/session_manager_test.go |
+| 42 | loads valid session file | 已有 | gi-coding-agent/session_manager_test.go |
+| 55 | skips malformed lines but keeps valid ones | 已有 | gi-coding-agent/session_manager_test.go |
+| 80 | returns null for empty directory | 已有 | gi-coding-agent/session_manager_test.go |
+| 84 | returns null for non-existent directory | 已有 | gi-coding-agent/session_manager_test.go |
+| 88 | ignores non-jsonl files | 已有 | gi-coding-agent/session_manager_test.go |
+| 94 | ignores jsonl files without valid session header | 已有 | gi-coding-agent/session_manager_test.go |
+| 99 | returns single valid session file | 已有 | gi-coding-agent/session_manager_test.go |
+| 105 | returns most recently modified session | 已有 | gi-coding-agent/session_manager_test.go |
+| 117 | skips invalid files and returns valid one | 已有 | gi-coding-agent/session_manager_test.go |
+| 141 | truncates and rewrites empty file with valid header | 已有 | gi-coding-agent/session_manager_test.go |
+| 161 | truncates and rewrites file without valid header | 已有 | gi-coding-agent/session_manager_test.go |
+| 185 | preserves explicit session file path when recovering from corrupted file | 已有 | gi-coding-agent/session_manager_test.go |
+| 195 | subsequent loads of recovered file work correctly | 已有 | gi-coding-agent/session_manager_test.go |
+
+## `session-manager/labels.test.ts`
+
+Pi cases: `8`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/session_manager_migration_list_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 5 | sets and gets labels | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 26 | clears labels with undefined | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 39 | last label wins | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 57 | labels are included in tree nodes | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 98 | labels are preserved in createBranchedSession | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 145 | labels not on path are not preserved in createBranchedSession | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 182 | labels are not included in buildSessionContext | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 193 | throws when labeling non-existent entry | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+
+## `session-manager/migration.test.ts`
+
+Pi cases: `2`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/session_manager_migration_list_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 5 | should add id/parentId to v1 entries | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+| 43 | should be idempotent (skip already migrated) | 已有 | gi-coding-agent/session_manager_migration_list_test.go |
+
+## `session-manager/save-entry.test.ts`
+
+Pi cases: `1`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/session_manager_tree_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 5 | saves custom entries and includes them in tree traversal | 已有 | gi-coding-agent/session_manager_tree_test.go |
+
+## `session-manager/tree-traversal.test.ts`
+
+Pi cases: `30`
+Status: `已有`
+Gi coverage / implementation target: `gi-coding-agent/session_manager_tree_test.go; gi-coding-agent/session_manager_context_suite_test.go`
+
+| Pi line | Pi test case | Status | Gi coverage / next step |
+|---:|---|---|---|
+| 10 | appendMessage creates entry with correct parentId chain | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 31 | appendThinkingLevelChange integrates into tree | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 49 | appendModelChange integrates into tree | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 69 | appendCompaction integrates into tree | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 91 | appendCustomEntry integrates into tree | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 109 | leaf pointer advances after each append | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 126 | returns empty array for empty session | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 131 | returns single entry path | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 140 | returns full path from root to leaf | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 153 | returns path from specified entry to root | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 168 | returns empty array for empty session | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 173 | returns single root for linear session | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 192 | returns tree with branches after branch | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 219 | handles multiple branches at same point | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 246 | handles deep branching | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 279 | moves leaf pointer to specified entry | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 292 | throws for non-existent entry | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 299 | new appends become children of branch point | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 315 | inserts branch summary and advances leaf | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 335 | throws for non-existent entry | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 344 | returns undefined for empty session | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 349 | returns current leaf entry | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 362 | returns undefined for non-existent id | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 367 | returns entry by id | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 389 | returns messages from current branch only | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 412 | throws for non-existent entry | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 419 | creates new session with path to specified leaf (in-memory) | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 443 | extracts correct path from branched tree | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 464 | does not duplicate entries when forking from first user message | 已有 | gi-coding-agent/session_manager_tree_test.go |
+| 508 | writes file immediately when forking from a point with assistant messages | 已有 | gi-coding-agent/session_manager_tree_test.go |
 
 ## `session-info-modified-timestamp.test.ts`
 
@@ -1914,7 +2472,9 @@ Gi coverage / implementation target: `gi-coding-agent/tools_read_test.go, gi-cod
 
 Pi cases: `15`  
 Status: `已有`
-Gi coverage / implementation target: `gi-coding-agent/tree_selector_test.go`
+Gi coverage / implementation target: `gi-coding-agent/tree_selector_test.go`;
+live `/tree` TTY mounting is covered by
+`gi-coding-agent/cli_interactive_tui_test.go`.
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
@@ -1973,12 +2533,12 @@ Gi coverage / implementation target: `gi-coding-agent/message_components_test.go
 
 Pi cases: `5`  
 Status: `已有`
-Gi coverage / implementation target: `gi-coding-agent/version_check_test.go`
+Gi coverage / implementation target: `gi-coding-agent/version_check_test.go; Gi defaults to the GitHub Releases payload shape and keeps Pi-named helpers as compatibility aliases`
 
 | Pi line | Pi test case | Status | Gi coverage / next step |
 |---:|---|---|---|
 | 28 | compares package versions | 已有 | gi-coding-agent/version_check_test.go |
 | 36 | returns only newer versions | 已有 | gi-coding-agent/version_check_test.go |
-| 44 | uses the pi.dev version check api with a pi user agent | 已有 | gi-coding-agent/version_check_test.go |
+| 44 | uses the pi.dev version check api with a pi user agent | 已有 | Gi equivalent: gi-coding-agent/version_check_test.go verifies GitHub/Gi release URL behavior, gi/... User-Agent, and legacy helper aliases |
 | 60 | returns the active package name from the version check api | 已有 | gi-coding-agent/version_check_test.go |
 | 67 | skips api calls when version checks are disabled | 已有 | gi-coding-agent/version_check_test.go |

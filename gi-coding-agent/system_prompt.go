@@ -17,6 +17,12 @@ type SystemPromptSkill struct {
 	Content     string
 }
 
+type SystemPromptDocumentationPath struct {
+	Label  string
+	Path   string
+	Detail string
+}
+
 type BuildSystemPromptOptions struct {
 	CustomPrompt       string
 	SelectedTools      []string
@@ -26,6 +32,7 @@ type BuildSystemPromptOptions struct {
 	CWD                string
 	ContextFiles       []SystemPromptContextFile
 	Skills             []SystemPromptSkill
+	DocumentationPaths []SystemPromptDocumentationPath
 	Now                time.Time
 }
 
@@ -78,6 +85,8 @@ In addition to the tools above, you may have access to other custom tools depend
 
 Guidelines:
 ` + strings.Join(guidelines, "\n")
+
+	prompt += formatSystemPromptDocumentation(options.DocumentationPaths)
 
 	prompt += appendSection
 	prompt += formatProjectContext(options.ContextFiles)
@@ -157,6 +166,33 @@ func formatSystemPromptSkills(skills []SystemPromptSkill) string {
 		}
 		b.WriteString("\n")
 	}
+	return b.String()
+}
+
+func formatSystemPromptDocumentation(paths []SystemPromptDocumentationPath) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nGi documentation (read only when the user asks about Gi itself, its protocol, packages, extensions, skills, custom tools, or TUI):\n")
+	for _, doc := range paths {
+		label := strings.TrimSpace(doc.Label)
+		path := strings.TrimSpace(doc.Path)
+		if label == "" || path == "" {
+			continue
+		}
+		b.WriteString("- ")
+		b.WriteString(label)
+		b.WriteString(": ")
+		b.WriteString(path)
+		if detail := strings.TrimSpace(doc.Detail); detail != "" {
+			b.WriteString(" (")
+			b.WriteString(detail)
+			b.WriteString(")")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("- When working on Gi topics, read the relevant docs first and follow cross-references before implementing")
 	return b.String()
 }
 

@@ -48,21 +48,26 @@ type FileToolResult struct {
 }
 
 type FileToolDetails struct {
-	Truncation     *ReadToolTruncation
-	Diff           string
-	FullOutputPath string
+	Truncation           *ReadToolTruncation `json:"truncation,omitempty"`
+	Diff                 string              `json:"diff,omitempty"`
+	FirstChangedLine     int                 `json:"firstChangedLine,omitempty"`
+	FullOutputPath       string              `json:"fullOutputPath,omitempty"`
+	MatchLimitReached    int                 `json:"matchLimitReached,omitempty"`
+	ResultLimitReached   int                 `json:"resultLimitReached,omitempty"`
+	EntryLimitReached    int                 `json:"entryLimitReached,omitempty"`
+	SearchLinesTruncated bool                `json:"searchLinesTruncated,omitempty"`
 }
 
 type EditDiffResult struct {
-	Diff  string
-	Error string
+	Diff  string `json:"diff,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 type ReadToolTruncation struct {
-	Truncated   bool
-	TruncatedBy string
-	TotalLines  int
-	OutputLines int
+	Truncated   bool   `json:"truncated"`
+	TruncatedBy string `json:"truncatedBy"`
+	TotalLines  int    `json:"totalLines"`
+	OutputLines int    `json:"outputLines"`
 }
 
 type EditTool struct {
@@ -128,7 +133,7 @@ func (t EditTool) Execute(_ string, input EditToolInput) (FileToolResult, error)
 		if err != nil {
 			return formatEditAccessError(input.Path, err)
 		}
-		editResult, err := applyEditsAgainstOriginal(string(content), input.Edits)
+		editResult, err := applyEditsAgainstOriginal(string(content), input.Edits, input.Path)
 		if err != nil {
 			return err
 		}
@@ -139,7 +144,7 @@ func (t EditTool) Execute(_ string, input EditToolInput) (FileToolResult, error)
 		result = FileToolResult{
 			Text:    text,
 			Content: []llm.ContentPart{llm.Text(text)},
-			Details: &FileToolDetails{Diff: editResult.Diff},
+			Details: &FileToolDetails{Diff: editResult.Diff, FirstChangedLine: editResult.FirstChangedLine},
 		}
 		return nil
 	})
@@ -180,7 +185,7 @@ func ComputeEditsDiff(path string, edits []Edit, cwd string, operations ...FileT
 	if err != nil {
 		return EditDiffResult{Error: formatEditAccessError(path, err).Error()}
 	}
-	editResult, err := applyEditsAgainstOriginal(string(content), edits)
+	editResult, err := applyEditsAgainstOriginal(string(content), edits, path)
 	if err != nil {
 		return EditDiffResult{Error: err.Error()}
 	}
@@ -264,8 +269,9 @@ func normalizeFileToolOperations(operations ...FileToolOperations) FileToolOpera
 }
 
 type editApplyResult struct {
-	Content string
-	Diff    string
+	Content          string
+	Diff             string
+	FirstChangedLine int
 }
 
 type editRange struct {
@@ -280,33 +286,46 @@ type editOccurrence struct {
 	end   int
 }
 
-func applyEditsAgainstOriginal(content string, edits []Edit) (editApplyResult, error) {
+type editRangeLineInfo struct {
+	editRange
+	oldStartLine int
+	oldEndLine   int
+	newStartLine int
+	newEndLine   int
+}
+
+type editDiffHunk struct {
+	startLine int
+	endLine   int
+	ranges    []editRangeLineInfo
+}
+
+func applyEditsAgainstOriginal(content string, edits []Edit, path string) (editApplyResult, error) {
+	bom, matchContent := splitUTF8BOM(content)
 	ranges := make([]editRange, 0, len(edits))
-	for _, edit := range edits {
+	for index, edit := range edits {
 		if edit.OldText == "" {
-			return editApplyResult{}, fmt.Errorf("oldText must not be empty")
+			return editApplyResult{}, editEmptyOldTextError(path, index, len(edits))
 		}
-		occurrences := findEditOccurrences(content, edit.OldText)
+		occurrences := findEditOccurrences(matchContent, edit.OldText)
 		var occurrence editOccurrence
 		fuzzy := false
 		if len(occurrences) == 0 {
-			fuzzyOccurrences := findFuzzyEditOccurrences(content, edit.OldText)
+			fuzzyOccurrences := findFuzzyEditOccurrences(matchContent, edit.OldText)
 			if len(fuzzyOccurrences) == 0 {
-				return editApplyResult{}, fmt.Errorf("Could not find the exact text to replace")
+				return editApplyResult{}, editNotFoundError(path, index, len(edits))
 			}
 			if len(fuzzyOccurrences) > 1 {
-				return editApplyResult{}, fmt.Errorf("Found %d occurrences of oldText; expected exactly one", len(fuzzyOccurrences))
+				return editApplyResult{}, editDuplicateError(path, index, len(edits), len(fuzzyOccurrences))
 			}
 			occurrence = fuzzyOccurrences[0]
 			fuzzy = true
 		} else {
 			if len(occurrences) > 1 {
-				return editApplyResult{}, fmt.Errorf("Found %d occurrences of oldText; expected exactly one", len(occurrences))
+				return editApplyResult{}, editDuplicateError(path, index, len(edits), len(occurrences))
 			}
-			if strings.Contains(edit.OldText, "\n") {
-				if fuzzyOccurrences := findFuzzyEditOccurrences(content, edit.OldText); len(fuzzyOccurrences) > 1 {
-					return editApplyResult{}, fmt.Errorf("Found %d occurrences of oldText; expected exactly one", len(fuzzyOccurrences))
-				}
+			if fuzzyOccurrences := findFuzzyEditOccurrences(matchContent, edit.OldText); len(fuzzyOccurrences) > 1 {
+				return editApplyResult{}, editDuplicateError(path, index, len(edits), len(fuzzyOccurrences))
 			}
 			occurrence = editOccurrence{start: occurrences[0], end: occurrences[0] + len(edit.OldText)}
 		}
@@ -314,7 +333,7 @@ func applyEditsAgainstOriginal(content string, edits []Edit) (editApplyResult, e
 		start := occurrence.start
 		end := occurrence.end
 		if fuzzy {
-			if strings.Contains(content[start:end], "\r\n") {
+			if strings.Contains(matchContent[start:end], "\r\n") {
 				replacement = strings.ReplaceAll(replacement, "\n", "\r\n")
 			}
 		}
@@ -323,19 +342,35 @@ func applyEditsAgainstOriginal(content string, edits []Edit) (editApplyResult, e
 	sortEditRanges(ranges)
 	for i := 1; i < len(ranges); i++ {
 		if ranges[i].start < ranges[i-1].end {
-			return editApplyResult{}, fmt.Errorf("edit regions overlap")
+			return editApplyResult{}, fmt.Errorf("edits[%d] and edits[%d] overlap in %s. Merge them into one edit or target disjoint regions.", i-1, i, path)
 		}
 	}
 
 	var builder strings.Builder
 	cursor := 0
 	for _, r := range ranges {
-		builder.WriteString(content[cursor:r.start])
+		builder.WriteString(matchContent[cursor:r.start])
 		builder.WriteString(r.replacement)
 		cursor = r.end
 	}
-	builder.WriteString(content[cursor:])
-	return editApplyResult{Content: builder.String(), Diff: buildEditDiff(content, ranges)}, nil
+	builder.WriteString(matchContent[cursor:])
+	newContent := builder.String()
+	if newContent == matchContent {
+		return editApplyResult{}, editNoChangeError(path, len(edits))
+	}
+	return editApplyResult{
+		Content:          bom + newContent,
+		Diff:             buildEditDiff(matchContent, newContent, ranges),
+		FirstChangedLine: firstChangedLine(matchContent, ranges),
+	}, nil
+}
+
+func splitUTF8BOM(content string) (string, string) {
+	const bom = "\ufeff"
+	if strings.HasPrefix(content, bom) {
+		return bom, strings.TrimPrefix(content, bom)
+	}
+	return "", content
 }
 
 func findEditOccurrences(content, oldText string) []int {
@@ -358,18 +393,207 @@ func sortEditRanges(ranges []editRange) {
 	})
 }
 
-func buildEditDiff(content string, ranges []editRange) string {
-	var lines []string
-	previousEnd := 0
-	for index, r := range ranges {
-		if index > 0 && r.start-previousEnd > 200 {
-			lines = append(lines, "...")
-		}
-		lines = append(lines, prefixEditDiffLines("-", content[r.start:r.end])...)
-		lines = append(lines, prefixEditDiffLines("+", r.replacement)...)
-		previousEnd = r.end
+func buildEditDiff(content, newContent string, ranges []editRange) string {
+	const contextLines = 4
+	contentLines := splitEditDiffLines(content)
+	newContentLines := splitEditDiffLines(newContent)
+	totalLines := len(contentLines)
+	if totalLines == 0 {
+		totalLines = 1
 	}
-	return strings.Join(lines, "\n")
+	maxLineNumber := totalLines
+	if len(newContentLines) > maxLineNumber {
+		maxLineNumber = len(newContentLines)
+	}
+	lineWidth := len(fmt.Sprintf("%d", maxLineNumber))
+	infos := editRangeLineInfos(content, ranges)
+	hunks := editDiffHunks(infos, totalLines, contextLines)
+	var output []string
+	previousEnd := 0
+	for _, hunk := range hunks {
+		if hunk.startLine > 1 && (previousEnd == 0 || hunk.startLine > previousEnd+1) {
+			output = append(output, editDiffEllipsis(lineWidth))
+		}
+		firstRange := hunk.ranges[0]
+		lastRange := hunk.ranges[len(hunk.ranges)-1]
+		newStartLine := hunk.startLine + (firstRange.newStartLine - firstRange.oldStartLine)
+		newEndLine := hunk.endLine + (lastRange.newEndLine - lastRange.oldEndLine)
+		output = append(output, formatEditDiffWindow(
+			contentLines,
+			newContentLines,
+			hunk.startLine,
+			hunk.endLine,
+			newStartLine,
+			newEndLine,
+			lineWidth,
+		)...)
+		previousEnd = hunk.endLine
+	}
+	if previousEnd > 0 && previousEnd < totalLines {
+		output = append(output, editDiffEllipsis(lineWidth))
+	}
+	return strings.Join(output, "\n")
+}
+
+func editRangeLineInfos(content string, ranges []editRange) []editRangeLineInfo {
+	infos := make([]editRangeLineInfo, 0, len(ranges))
+	lineDelta := 0
+	for _, r := range ranges {
+		oldStartLine := strings.Count(content[:r.start], "\n") + 1
+		oldLineCount := len(splitEditDiffLines(content[r.start:r.end]))
+		newLineCount := len(splitEditDiffLines(r.replacement))
+		if oldLineCount == 0 {
+			oldLineCount = 1
+		}
+		newStartLine := oldStartLine + lineDelta
+		newEndLine := newStartLine + newLineCount - 1
+		if newLineCount == 0 {
+			newEndLine = newStartLine - 1
+		}
+		infos = append(infos, editRangeLineInfo{
+			editRange:    r,
+			oldStartLine: oldStartLine,
+			oldEndLine:   oldStartLine + oldLineCount - 1,
+			newStartLine: newStartLine,
+			newEndLine:   newEndLine,
+		})
+		lineDelta += newLineCount - oldLineCount
+	}
+	return infos
+}
+
+func editDiffHunks(infos []editRangeLineInfo, totalLines, contextLines int) []editDiffHunk {
+	var hunks []editDiffHunk
+	for _, info := range infos {
+		start := info.oldStartLine - contextLines
+		if start < 1 {
+			start = 1
+		}
+		end := info.oldEndLine + contextLines
+		if end > totalLines {
+			end = totalLines
+		}
+		if len(hunks) == 0 || start > hunks[len(hunks)-1].endLine+1 {
+			hunks = append(hunks, editDiffHunk{startLine: start, endLine: end, ranges: []editRangeLineInfo{info}})
+			continue
+		}
+		last := &hunks[len(hunks)-1]
+		if end > last.endLine {
+			last.endLine = end
+		}
+		last.ranges = append(last.ranges, info)
+	}
+	return hunks
+}
+
+func splitEditDiffLines(value string) []string {
+	if value == "" {
+		return nil
+	}
+	trimmed := strings.TrimSuffix(value, "\n")
+	if trimmed == "" {
+		return []string{""}
+	}
+	return strings.Split(trimmed, "\n")
+}
+
+func formatEditDiffWindow(oldLines, newLines []string, oldStartLine, oldEndLine, newStartLine, newEndLine, width int) []string {
+	oldWindow := editDiffLineWindow(oldLines, oldStartLine, oldEndLine)
+	newWindow := editDiffLineWindow(newLines, newStartLine, newEndLine)
+	operations := editDiffLineOperations(oldWindow, newWindow)
+	output := make([]string, 0, len(operations))
+	oldLine := oldStartLine
+	newLine := newStartLine
+	for _, operation := range operations {
+		switch operation.kind {
+		case "equal":
+			output = append(output, formatEditDiffLine(" ", oldLine, width, operation.line))
+			oldLine++
+			newLine++
+		case "remove":
+			output = append(output, formatEditDiffLine("-", oldLine, width, operation.line))
+			oldLine++
+		case "add":
+			output = append(output, formatEditDiffLine("+", newLine, width, operation.line))
+			newLine++
+		}
+	}
+	return output
+}
+
+func editDiffLineWindow(lines []string, startLine, endLine int) []string {
+	if startLine < 1 {
+		startLine = 1
+	}
+	if endLine < startLine {
+		return nil
+	}
+	start := startLine - 1
+	if start >= len(lines) {
+		return nil
+	}
+	end := endLine
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return lines[start:end]
+}
+
+type editDiffLineOperation struct {
+	kind string
+	line string
+}
+
+func editDiffLineOperations(oldLines, newLines []string) []editDiffLineOperation {
+	lcs := make([][]int, len(oldLines)+1)
+	for i := range lcs {
+		lcs[i] = make([]int, len(newLines)+1)
+	}
+	for i := len(oldLines) - 1; i >= 0; i-- {
+		for j := len(newLines) - 1; j >= 0; j-- {
+			if oldLines[i] == newLines[j] {
+				lcs[i][j] = lcs[i+1][j+1] + 1
+			} else if lcs[i+1][j] >= lcs[i][j+1] {
+				lcs[i][j] = lcs[i+1][j]
+			} else {
+				lcs[i][j] = lcs[i][j+1]
+			}
+		}
+	}
+	var operations []editDiffLineOperation
+	i, j := 0, 0
+	for i < len(oldLines) || j < len(newLines) {
+		switch {
+		case i < len(oldLines) && j < len(newLines) && oldLines[i] == newLines[j]:
+			operations = append(operations, editDiffLineOperation{kind: "equal", line: oldLines[i]})
+			i++
+			j++
+		case j < len(newLines) && (i == len(oldLines) || lcs[i][j+1] > lcs[i+1][j]):
+			operations = append(operations, editDiffLineOperation{kind: "add", line: newLines[j]})
+			j++
+		case i < len(oldLines):
+			operations = append(operations, editDiffLineOperation{kind: "remove", line: oldLines[i]})
+			i++
+		default:
+			j++
+		}
+	}
+	return operations
+}
+
+func formatEditDiffLine(prefix string, lineNumber, width int, line string) string {
+	return fmt.Sprintf("%s%*d %s", prefix, width, lineNumber, line)
+}
+
+func editDiffEllipsis(width int) string {
+	return " " + strings.Repeat(" ", width) + " ..."
+}
+
+func firstChangedLine(content string, ranges []editRange) int {
+	if len(ranges) == 0 {
+		return 0
+	}
+	return strings.Count(content[:ranges[0].start], "\n") + 1
 }
 
 func findFuzzyEditOccurrences(content, oldText string) []editOccurrence {
@@ -417,6 +641,12 @@ func normalizeEditText(input string) (string, []int) {
 			index += size + 1
 			continue
 		}
+		if r == '\r' {
+			pendingSpaces = nil
+			appendNormalized("\n", index)
+			index += size
+			continue
+		}
 		if r == '\n' {
 			pendingSpaces = nil
 			appendNormalized("\n", index)
@@ -444,15 +674,15 @@ func normalizeEditText(input string) (string, []int) {
 
 func normalizeEditRune(r rune) (string, bool) {
 	switch r {
-	case '\u0301':
+	case '\u0300', '\u0301', '\u0302', '\u0303', '\u0304', '\u0306', '\u0308', '\u030a', '\u0327':
 		return "", false
-	case '\u00a0', '\u202f':
+	case '\u00a0', '\u2002', '\u2003', '\u2004', '\u2005', '\u2006', '\u2007', '\u2008', '\u2009', '\u200a', '\u202f', '\u205f', '\u3000':
 		return " ", true
-	case '\u2018', '\u2019':
+	case '\u2018', '\u2019', '\u201a', '\u201b':
 		return "'", true
-	case '\u201c', '\u201d':
+	case '\u201c', '\u201d', '\u201e', '\u201f':
 		return "\"", true
-	case '\u2010', '\u2011', '\u2012', '\u2013', '\u2014', '\u2212':
+	case '\u2010', '\u2011', '\u2012', '\u2013', '\u2014', '\u2015', '\u2212':
 		return "-", true
 	case 'é', 'É':
 		return "e", true
@@ -463,16 +693,32 @@ func normalizeEditRune(r rune) (string, bool) {
 	return string(r), true
 }
 
-func prefixEditDiffLines(prefix, value string) []string {
-	value = strings.TrimSuffix(value, "\n")
-	if value == "" {
-		return []string{prefix}
+func editNotFoundError(path string, editIndex, totalEdits int) error {
+	if totalEdits == 1 {
+		return fmt.Errorf("Could not find the exact text in %s. The old text must match exactly including all whitespace and newlines.", path)
 	}
-	lines := strings.Split(value, "\n")
-	for i, line := range lines {
-		lines[i] = prefix + " " + line
+	return fmt.Errorf("Could not find edits[%d] in %s. The oldText must match exactly including all whitespace and newlines.", editIndex, path)
+}
+
+func editDuplicateError(path string, editIndex, totalEdits, occurrences int) error {
+	if totalEdits == 1 {
+		return fmt.Errorf("Found %d occurrences of the text in %s. The text must be unique. Please provide more context to make it unique.", occurrences, path)
 	}
-	return lines
+	return fmt.Errorf("Found %d occurrences of edits[%d] in %s. Each oldText must be unique. Please provide more context to make it unique.", occurrences, editIndex, path)
+}
+
+func editEmptyOldTextError(path string, editIndex, totalEdits int) error {
+	if totalEdits == 1 {
+		return fmt.Errorf("oldText must not be empty in %s.", path)
+	}
+	return fmt.Errorf("edits[%d].oldText must not be empty in %s.", editIndex, path)
+}
+
+func editNoChangeError(path string, totalEdits int) error {
+	if totalEdits == 1 {
+		return fmt.Errorf("No changes made to %s. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected.", path)
+	}
+	return fmt.Errorf("No changes made to %s. The replacements produced identical content.", path)
 }
 
 func formatEditAccessError(path string, err error) error {

@@ -10,13 +10,13 @@ func TestSessionSelectorPiRenameHint(t *testing.T) {
 	sessions := []SessionInfo{makeSessionSelectorSession("a", "Old")}
 	interactive := NewSessionSelectorComponent(sessions, SessionSelectorOptions{ShowRenameHint: true})
 	output := strings.Join(interactive.Render(120), "\n")
-	if !strings.Contains(output, "ctrl+r") || !strings.Contains(output, "rename") {
+	if !strings.Contains(output, "Ctrl+R") || !strings.Contains(output, "rename") {
 		t.Fatalf("interactive output = %q", output)
 	}
 
 	resumeFlag := NewSessionSelectorComponent(sessions, SessionSelectorOptions{ShowRenameHint: false})
 	output = strings.Join(resumeFlag.Render(120), "\n")
-	if strings.Contains(output, "ctrl+r") || strings.Contains(output, "rename") {
+	if strings.Contains(output, "Ctrl+R") || strings.Contains(output, "rename") {
 		t.Fatalf("resume flag output = %q", output)
 	}
 }
@@ -44,6 +44,10 @@ func TestSessionSelectorPiRenameModeSubmit(t *testing.T) {
 	selector.HandleInput("\r")
 	if renamedPath != sessions[0].Path || renamedName != "XOld" {
 		t.Fatalf("renamed path/name = %q %q", renamedPath, renamedName)
+	}
+	output = strings.Join(selector.Render(120), "\n")
+	if !strings.Contains(output, "XOld") {
+		t.Fatalf("renamed session should update visible list: %q", output)
 	}
 }
 

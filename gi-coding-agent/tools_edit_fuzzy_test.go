@@ -66,6 +66,27 @@ func TestEditToolFuzzyMatchingPiMatrix(t *testing.T) {
 			newText:    "hello universe",
 			wantSubstr: "hello universe",
 		},
+		{
+			name:       "special-unicode-space",
+			initial:    "hello\u2003world\n",
+			oldText:    "hello world",
+			newText:    "hello universe",
+			wantSubstr: "hello universe",
+		},
+		{
+			name:       "low-smart-quotes",
+			initial:    "console.log(\u201ahello\u201b);\nconst msg = \u201eHello\u201f;\n",
+			oldText:    "console.log('hello');\nconst msg = \"Hello\";",
+			newText:    "console.log('world');\nconst msg = \"World\";",
+			wantSubstr: "World",
+		},
+		{
+			name:       "horizontal-bar",
+			initial:    "range: 1\u20155\n",
+			oldText:    "range: 1-5",
+			newText:    "range: 10-50",
+			wantSubstr: "range: 10-50",
+		},
 	}
 
 	for _, tc := range cases {
@@ -116,6 +137,15 @@ func TestEditToolFuzzyMatchingPiMatrix(t *testing.T) {
 		Edits: []Edit{{OldText: "hello world", NewText: "replaced"}},
 	}); err == nil || !strings.Contains(err.Error(), "Found 2 occurrences") {
 		t.Fatalf("fuzzy dup err = %v", err)
+	}
+
+	exactAndFuzzyDupsFile := filepath.Join(dir, "exact-and-fuzzy-dups.txt")
+	writeEditToolFile(t, exactAndFuzzyDupsFile, "console.log('hello');\nconsole.log(\u2018hello\u2019);\n")
+	if _, err := tool.Execute("test-fuzzy-exact-dups", EditToolInput{
+		Path:  exactAndFuzzyDupsFile,
+		Edits: []Edit{{OldText: "console.log('hello');", NewText: "console.log('world');"}},
+	}); err == nil || !strings.Contains(err.Error(), "Found 2 occurrences") {
+		t.Fatalf("exact fuzzy dup err = %v", err)
 	}
 
 	multiFile := filepath.Join(dir, "fuzzy-multi.txt")
@@ -190,6 +220,18 @@ func TestEditToolCRLFPiMatrix(t *testing.T) {
 	}
 	if content := readEditToolFile(t, bomFile); content != "\ufefffirst\r\nREPLACED\r\nthird\r\n" {
 		t.Fatalf("BOM content = %q", content)
+	}
+
+	bomFirstLineFile := filepath.Join(dir, "bom-first-line.txt")
+	writeEditToolFile(t, bomFirstLineFile, "\ufefffirst\r\nsecond\r\n")
+	if _, err := tool.Execute("test-bom-first-line", EditToolInput{
+		Path:  bomFirstLineFile,
+		Edits: []Edit{{OldText: "first\n", NewText: "FIRST\n"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if content := readEditToolFile(t, bomFirstLineFile); content != "\ufeffFIRST\r\nsecond\r\n" {
+		t.Fatalf("BOM first line content = %q", content)
 	}
 
 	multiFile := filepath.Join(dir, "bom-crlf-multi.txt")

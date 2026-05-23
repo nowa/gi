@@ -1,7 +1,9 @@
 package gicodingagent
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 	llm "github.com/nowa/gi/gi-llm-provider"
@@ -133,6 +135,59 @@ func TestAgentSessionCompactEmitsEvents(t *testing.T) {
 	}
 	if len(filterSessionEvents(events, "message_end")) == 0 {
 		t.Fatal("message_end should be emitted for prompt response")
+	}
+}
+
+func TestAgentSessionCompactAbortEmitsPiStyleAbortedEvent(t *testing.T) {
+	session, _ := createCompactionTestSession(t, false)
+	defer session.Dispose()
+	mustPrompt(t, session, "Say hello")
+	mustPrompt(t, session, "Say goodbye")
+
+	compactionStarted := make(chan struct{})
+	releaseCompaction := make(chan struct{})
+	session.CompactionSummarizer = func(preparation agentharness.CompactionPreparation, _ string) (agentharness.CompactionResult, error) {
+		close(compactionStarted)
+		<-releaseCompaction
+		return agentharness.CompactionResult{
+			Summary:          "should be discarded",
+			FirstKeptEntryID: preparation.FirstKeptEntryID,
+			TokensBefore:     preparation.TokensBefore,
+		}, nil
+	}
+
+	var events []AgentSessionEvent
+	session.Subscribe(func(event AgentSessionEvent) {
+		events = append(events, event)
+	})
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := session.Compact()
+		errCh <- err
+	}()
+	select {
+	case <-compactionStarted:
+	case <-time.After(time.Second):
+		t.Fatal("compaction did not start")
+	}
+	session.AbortCompaction()
+	close(releaseCompaction)
+	select {
+	case err := <-errCh:
+		if err == nil || !strings.Contains(err.Error(), "Compaction cancelled") {
+			t.Fatalf("compact error = %v, want cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("compaction did not finish")
+	}
+
+	compactionEvents := filterSessionEvents(events, "compaction_start", "compaction_end")
+	if len(compactionEvents) != 2 {
+		t.Fatalf("compaction events = %d, want 2: %#v", len(compactionEvents), compactionEvents)
+	}
+	end := compactionEvents[1]
+	if end.Type != "compaction_end" || end.Reason != "manual" || !end.Aborted || end.Result != nil || end.ErrorMessage != "Compaction cancelled" {
+		t.Fatalf("end event = %#v, want Pi-style cancelled compaction_end", end)
 	}
 }
 

@@ -38,6 +38,61 @@ func TestExecuteBashResolvesAfterShellExitWithInheritedStdio(t *testing.T) {
 	}
 }
 
+func TestExecuteBashCancelKillsBackgroundProcessGroup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test command uses POSIX sh")
+	}
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "background.pid")
+	command := "sleep 30 & echo $! > " + bashExecutorShellQuote(pidFile) + "; wait"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	defer cleanupBashGrandchild(t, pidFile)
+
+	done := make(chan struct {
+		result BashResult
+		err    error
+	}, 1)
+	go func() {
+		result, err := ExecuteBash(command, dir, BashExecutorOptions{Context: ctx, ExitStdioGrace: 25 * time.Millisecond})
+		done <- struct {
+			result BashResult
+			err    error
+		}{result: result, err: err}
+	}()
+
+	var pid int
+	waitUntil(t, func() bool {
+		content, err := os.ReadFile(pidFile)
+		if err != nil {
+			return false
+		}
+		parsed, err := strconv.Atoi(strings.TrimSpace(string(content)))
+		if err != nil || parsed <= 0 {
+			return false
+		}
+		pid = parsed
+		return bashProcessRunning(pid)
+	})
+	cancel()
+
+	select {
+	case completed := <-done:
+		if completed.err != nil {
+			t.Fatalf("ExecuteBash err = %v", completed.err)
+		}
+		if !completed.result.Cancelled {
+			t.Fatalf("cancelled result = %#v", completed.result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ExecuteBash did not return after cancellation")
+	}
+
+	waitUntil(t, func() bool {
+		return !bashProcessRunning(pid)
+	})
+}
+
 func TestSDKBashToolResolvesAfterShellExitWithInheritedStdio(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test command uses POSIX sh")
@@ -96,6 +151,13 @@ func cleanupBashGrandchild(t *testing.T, pidFile string) {
 		return
 	}
 	_ = exec.Command("kill", strconv.Itoa(pid)).Run()
+}
+
+func bashProcessRunning(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	return exec.Command("kill", "-0", strconv.Itoa(pid)).Run() == nil
 }
 
 func mustInMemorySessionManager(t *testing.T, cwd string) *SessionManager {

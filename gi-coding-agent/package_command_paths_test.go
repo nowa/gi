@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestPackageCommandPathsPiBasics(t *testing.T) {
+func TestPackageCommandPathsGiProtocolBasics(t *testing.T) {
 	t.Run("persists global relative local package paths relative to settings.json", func(t *testing.T) {
 		agentDir, projectDir := createPackageCommandPathDirs(t)
 		relativePkgDir := filepath.Join(projectDir, "packages", "local-package")
@@ -59,6 +59,30 @@ func TestPackageCommandPathsPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("uninstall aliases remove", func(t *testing.T) {
+		agentDir, projectDir := createPackageCommandPathDirs(t)
+		packageDir := filepath.Join(filepath.Dir(agentDir), "local-package")
+		if err := os.MkdirAll(packageDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		_, stderr, code := runPackageCommandCLI(t, []string{"install", packageDir}, projectDir, agentDir)
+		if code != 0 {
+			t.Fatalf("install exit code = %d, stderr = %q", code, stderr)
+		}
+
+		stdout, stderr, code := runPackageCommandCLI(t, []string{"uninstall", packageDir}, projectDir, agentDir)
+		if code != 0 {
+			t.Fatalf("uninstall exit code = %d, stderr = %q", code, stderr)
+		}
+		if !strings.Contains(stdout, "Removed "+packageDir) {
+			t.Fatalf("stdout = %q", stdout)
+		}
+		if packages := packageCommandSettingsPackages(t, filepath.Join(agentDir, "settings.json")); len(packages) != 0 {
+			t.Fatalf("packages = %#v", packages)
+		}
+	})
+
 	t.Run("shows install subcommand help", func(t *testing.T) {
 		stdout, stderr, code := runPackageCommandCLI(t, []string{"install", "--help"}, t.TempDir(), t.TempDir())
 		if code != 0 {
@@ -102,17 +126,79 @@ func TestPackageCommandPathsPiBasics(t *testing.T) {
 		}
 	})
 
-	t.Run("uses global npmCommand and current package name for forced self updates without checking the api", func(t *testing.T) {
+	t.Run("lists user and project packages with installed paths", func(t *testing.T) {
+		agentDir, projectDir := createPackageCommandPathDirs(t)
+		settingsPath := filepath.Join(agentDir, "settings.json")
+		projectSettingsPath := filepath.Join(projectDir, ConfigDirName, "settings.json")
+		writeSettingsJSON(t, settingsPath, map[string]any{"packages": []any{
+			"official:gi-tools-ui",
+			map[string]any{"source": "git:github.com/gi-packages/formatter", "skills": []any{"SKILL.md"}},
+		}})
+		writeSettingsJSON(t, projectSettingsPath, map[string]any{"packages": []any{"./local-package"}})
+
+		stdout, stderr, code := runPackageCommandCLI(t, []string{"list"}, projectDir, agentDir)
+		if code != 0 {
+			t.Fatalf("code=%d stderr=%q", code, stderr)
+		}
+		for _, expected := range []string{
+			"User packages:",
+			"official:gi-tools-ui",
+			filepath.Join(agentDir, "official-packages", "gi-tools-ui"),
+			"git:github.com/gi-packages/formatter (filtered)",
+			filepath.Join(agentDir, "git", "github.com", "gi-packages", "formatter"),
+			"Project packages:",
+			"./local-package",
+			filepath.Join(projectDir, ConfigDirName, "local-package"),
+		} {
+			if !strings.Contains(stdout, expected) {
+				t.Fatalf("stdout = %q, want %q", stdout, expected)
+			}
+		}
+	})
+
+	t.Run("list reports empty package settings", func(t *testing.T) {
+		stdout, stderr, code := runPackageCommandCLI(t, []string{"list"}, t.TempDir(), t.TempDir())
+		if code != 0 || stderr != "" {
+			t.Fatalf("code=%d stderr=%q", code, stderr)
+		}
+		if strings.TrimSpace(stdout) != "No packages installed." {
+			t.Fatalf("stdout = %q", stdout)
+		}
+	})
+
+	t.Run("config opens package resource selector host", func(t *testing.T) {
+		agentDir, projectDir := createPackageCommandPathDirs(t)
+		var got PackageResourceConfigOptions
+		var called bool
+		stdout, stderr, code := runPackageCommandCLIWithOptions(t, []string{"config"}, projectDir, agentDir, func(options *CLIOptions) {
+			options.ConfigHostFactory = func(config PackageResourceConfigOptions) (CLIConfigRuntimeHost, error) {
+				called = true
+				got = config
+				return fakeCLIConfigHost{}, nil
+			}
+		})
+		if code != 0 || strings.TrimSpace(stdout) != "" || strings.TrimSpace(stderr) != "" {
+			t.Fatalf("config code=%d stdout=%q stderr=%q", code, stdout, stderr)
+		}
+		if !called || got.CWD != projectDir || got.AgentDir != agentDir {
+			t.Fatalf("config host called=%v options=%#v", called, got)
+		}
+	})
+
+	t.Run("shows config subcommand help", func(t *testing.T) {
+		stdout, stderr, code := runPackageCommandCLI(t, []string{"config", "--help"}, t.TempDir(), t.TempDir())
+		if code != 0 || strings.TrimSpace(stderr) != "" {
+			t.Fatalf("config help code=%d stderr=%q", code, stderr)
+		}
+		if !strings.Contains(stdout, "gi config") || !strings.Contains(stdout, "resource configuration") {
+			t.Fatalf("stdout = %q", stdout)
+		}
+	})
+
+	t.Run("rejects forced self updates for legacy npm-style installs without checking the api", func(t *testing.T) {
 		agentDir, projectDir := createPackageCommandPathDirs(t)
 		globalPrefix := filepath.Join(filepath.Dir(agentDir), "global-prefix")
-		projectPrefix := filepath.Join(filepath.Dir(agentDir), "project-prefix")
 		selfPackageDir := packageCommandSelfPackageDir(t, globalPrefix, DefaultCodingAgentPackageName)
-		writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{
-			"npmCommand": []any{"fake-npm", "--prefix", globalPrefix},
-		})
-		writeSettingsJSON(t, filepath.Join(projectDir, ConfigDirName, "settings.json"), map[string]any{
-			"npmCommand": []any{"fake-npm", "--prefix", projectPrefix},
-		})
 		ops := newPackageCommandOps(globalPrefix)
 		versionChecked := false
 
@@ -120,33 +206,29 @@ func TestPackageCommandPathsPiBasics(t *testing.T) {
 			options.PackageManager = packageCommandManager(projectDir, agentDir, ops.operations())
 			options.InstallEnvironment = packageCommandInstallEnvironment(selfPackageDir, globalPrefix)
 			options.PackageName = DefaultCodingAgentPackageName
-			options.VersionCheck = func(string, VersionCheckOptions) (LatestPiRelease, bool) {
+			options.VersionCheck = func(string, VersionCheckOptions) (LatestGiRelease, bool) {
 				versionChecked = true
-				return LatestPiRelease{}, false
+				return LatestGiRelease{}, false
 			}
 		})
-		if code != 0 || stderr != "" {
+		if code != 1 {
 			t.Fatalf("code=%d stderr=%q", code, stderr)
 		}
 		if versionChecked {
 			t.Fatal("forced self-update should not check latest version")
 		}
-		if len(ops.calls) != 1 {
+		if len(ops.calls) != 0 {
 			t.Fatalf("calls = %#v", ops.calls)
 		}
-		args := ops.calls[0].Args
-		if !containsString(args, globalPrefix) || !containsString(args, DefaultCodingAgentPackageName) || containsString(args, projectPrefix) {
-			t.Fatalf("args = %#v", args)
+		if !strings.Contains(stderr, "does not support npm, pnpm, yarn, or bun self-updates") {
+			t.Fatalf("stderr=%q", stderr)
 		}
 	})
 
-	t.Run("uses the current package name when the update check omits packageName", func(t *testing.T) {
+	t.Run("rejects self-update after version check instead of installing npm package names", func(t *testing.T) {
 		agentDir, projectDir := createPackageCommandPathDirs(t)
 		globalPrefix := filepath.Join(filepath.Dir(agentDir), "global-prefix")
 		selfPackageDir := packageCommandSelfPackageDir(t, globalPrefix, "@mariozechner/pi-coding-agent")
-		writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{
-			"npmCommand": []any{"fake-npm", "--prefix", globalPrefix},
-		})
 		ops := newPackageCommandOps(globalPrefix)
 		versionChecks := 0
 
@@ -155,85 +237,45 @@ func TestPackageCommandPathsPiBasics(t *testing.T) {
 			options.InstallEnvironment = packageCommandInstallEnvironment(selfPackageDir, globalPrefix)
 			options.PackageName = DefaultCodingAgentPackageName
 			options.Version = "0.72.0"
-			options.VersionCheck = func(string, VersionCheckOptions) (LatestPiRelease, bool) {
+			options.VersionCheck = func(string, VersionCheckOptions) (LatestGiRelease, bool) {
 				versionChecks++
-				return LatestPiRelease{Version: "0.73.0"}, true
-			}
-		})
-		if code != 0 || stderr != "" {
-			t.Fatalf("code=%d stderr=%q", code, stderr)
-		}
-		if versionChecks != 1 {
-			t.Fatalf("version checks = %d", versionChecks)
-		}
-		if len(ops.calls) != 1 || !containsString(ops.calls[0].Args, DefaultCodingAgentPackageName) {
-			t.Fatalf("calls = %#v", ops.calls)
-		}
-	})
-
-	t.Run("installs the active package name from the update check during self-update", func(t *testing.T) {
-		agentDir, projectDir := createPackageCommandPathDirs(t)
-		globalPrefix := filepath.Join(filepath.Dir(agentDir), "global-prefix")
-		selfPackageDir := packageCommandSelfPackageDir(t, globalPrefix, "@mariozechner/pi-coding-agent")
-		activePackageName := "@new-scope/pi"
-		writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{
-			"npmCommand": []any{"fake-npm", "--prefix", globalPrefix},
-		})
-		ops := newPackageCommandOps(globalPrefix)
-
-		_, stderr, code := runPackageCommandCLIWithOptions(t, []string{"update", "--self"}, projectDir, agentDir, func(options *CLIOptions) {
-			options.PackageManager = packageCommandManager(projectDir, agentDir, ops.operations())
-			options.InstallEnvironment = packageCommandInstallEnvironment(selfPackageDir, globalPrefix)
-			options.PackageName = DefaultCodingAgentPackageName
-			options.Version = "0.72.0"
-			options.VersionCheck = func(string, VersionCheckOptions) (LatestPiRelease, bool) {
-				return LatestPiRelease{PackageName: activePackageName, Version: "0.73.0"}, true
-			}
-		})
-		if code != 0 || stderr != "" {
-			t.Fatalf("code=%d stderr=%q", code, stderr)
-		}
-		want := []packageCommandCall{
-			{Command: "fake-npm", Args: []string{"--prefix", globalPrefix, "uninstall", "-g", DefaultCodingAgentPackageName}},
-			{Command: "fake-npm", Args: []string{"--prefix", globalPrefix, "install", "-g", activePackageName}},
-		}
-		if !reflect.DeepEqual(ops.calls, want) {
-			t.Fatalf("calls = %#v, want %#v", ops.calls, want)
-		}
-	})
-
-	t.Run("fails self-update when renamed npm package installation fails", func(t *testing.T) {
-		agentDir, projectDir := createPackageCommandPathDirs(t)
-		globalPrefix := filepath.Join(filepath.Dir(agentDir), "global-prefix")
-		selfPackageDir := packageCommandSelfPackageDir(t, globalPrefix, "@mariozechner/pi-coding-agent")
-		activePackageName := "@new-scope/pi"
-		writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{
-			"npmCommand": []any{"fake-npm", "--prefix", globalPrefix},
-		})
-		ops := newPackageCommandOps(globalPrefix)
-		ops.failInstall = true
-
-		stdout, stderr, code := runPackageCommandCLIWithOptions(t, []string{"update", "--self"}, projectDir, agentDir, func(options *CLIOptions) {
-			options.PackageManager = packageCommandManager(projectDir, agentDir, ops.operations())
-			options.InstallEnvironment = packageCommandInstallEnvironment(selfPackageDir, globalPrefix)
-			options.PackageName = DefaultCodingAgentPackageName
-			options.Version = "0.72.0"
-			options.VersionCheck = func(string, VersionCheckOptions) (LatestPiRelease, bool) {
-				return LatestPiRelease{PackageName: activePackageName, Version: "0.73.0"}, true
+				return LatestGiRelease{Version: "0.73.0"}, true
 			}
 		})
 		if code != 1 {
 			t.Fatalf("code=%d stderr=%q", code, stderr)
 		}
-		if strings.Contains(stdout, "Updated") || !strings.Contains(stderr, "exited with code 23") {
-			t.Fatalf("stdout=%q stderr=%q", stdout, stderr)
+		if versionChecks != 1 {
+			t.Fatalf("version checks = %d", versionChecks)
 		}
-		want := []packageCommandCall{
-			{Command: "fake-npm", Args: []string{"--prefix", globalPrefix, "uninstall", "-g", DefaultCodingAgentPackageName}},
-			{Command: "fake-npm", Args: []string{"--prefix", globalPrefix, "install", "-g", activePackageName}},
+		if len(ops.calls) != 0 {
+			t.Fatalf("calls = %#v", ops.calls)
 		}
-		if !reflect.DeepEqual(ops.calls, want) {
-			t.Fatalf("calls = %#v, want %#v", ops.calls, want)
+		if !strings.Contains(stderr, "does not support npm, pnpm, yarn, or bun self-updates") ||
+			strings.Contains(stderr, "@new-scope/pi") {
+			t.Fatalf("stderr=%q", stderr)
+		}
+	})
+
+	t.Run("updates a single package with --extension source", func(t *testing.T) {
+		agentDir, projectDir := createPackageCommandPathDirs(t)
+		source := "git:github.com/gi-packages/formatter"
+		stdout, stderr, code := runPackageCommandCLI(t, []string{"update", "--extension", source}, projectDir, agentDir)
+		if code != 0 {
+			t.Fatalf("code=%d stderr=%q", code, stderr)
+		}
+		if strings.TrimSpace(stdout) != "Updated "+source {
+			t.Fatalf("stdout = %q", stdout)
+		}
+	})
+
+	t.Run("rejects conflicting update extension target forms", func(t *testing.T) {
+		_, stderr, code := runPackageCommandCLI(t, []string{"update", "--extension", "official:gi-tools-ui", "official:gi-plan-mode"}, t.TempDir(), t.TempDir())
+		if code != 1 {
+			t.Fatalf("code=%d stderr=%q", code, stderr)
+		}
+		if !strings.Contains(stderr, "--extension cannot be combined with a positional source") {
+			t.Fatalf("stderr = %q", stderr)
 		}
 	})
 
@@ -277,9 +319,11 @@ func runPackageCommandCLIWithOptions(t *testing.T, args []string, projectDir, ag
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	options := CLIOptions{
-		Args:   args,
-		Stdout: &stdout,
-		Stderr: &stderr,
+		Args:     args,
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		CWD:      projectDir,
+		AgentDir: agentDir,
 		PackageManager: NewDefaultPackageManager(PackageManagerOptions{
 			CWD:      projectDir,
 			AgentDir: agentDir,
@@ -291,6 +335,10 @@ func runPackageCommandCLIWithOptions(t *testing.T, args []string, projectDir, ag
 	code := RunCLI(options)
 	return stdout.String(), stderr.String(), code
 }
+
+type fakeCLIConfigHost struct{}
+
+func (fakeCLIConfigHost) Run() error { return nil }
 
 func packageCommandSettingsPackages(t *testing.T, settingsPath string) []string {
 	t.Helper()

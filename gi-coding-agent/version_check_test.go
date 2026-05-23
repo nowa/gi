@@ -30,17 +30,17 @@ func TestVersionChecksReturnOnlyNewerVersions(t *testing.T) {
 	client := latestVersionClient(t, func(_ *http.Request) map[string]any {
 		return map[string]any{"version": "1.2.3"}
 	})
-	options := VersionCheckOptions{URL: LatestPiVersionURL, HTTPClient: client}
+	options := VersionCheckOptions{URL: LatestGiVersionURL, HTTPClient: client}
 
-	if got, ok := CheckForNewPiVersion("1.2.3", options); ok || got != "" {
+	if got, ok := CheckForNewGiVersion("1.2.3", options); ok || got != "" {
 		t.Fatalf("same latest = %q, %v", got, ok)
 	}
-	if got, ok := CheckForNewPiVersion("1.2.2", options); !ok || got != "1.2.3" {
+	if got, ok := CheckForNewGiVersion("1.2.2", options); !ok || got != "1.2.3" {
 		t.Fatalf("new latest = %q, %v", got, ok)
 	}
 }
 
-func TestVersionChecksUsePiDevAPIWithPiUserAgent(t *testing.T) {
+func TestVersionChecksUseGiReleaseAPIWithGiUserAgent(t *testing.T) {
 	var userAgent string
 	var accept string
 	client := latestVersionClient(t, func(r *http.Request) map[string]any {
@@ -49,10 +49,10 @@ func TestVersionChecksUsePiDevAPIWithPiUserAgent(t *testing.T) {
 		return map[string]any{"version": "1.2.4"}
 	})
 
-	if got, ok := GetLatestPiVersion("1.2.3", VersionCheckOptions{URL: LatestPiVersionURL, HTTPClient: client}); !ok || got != "1.2.4" {
+	if got, ok := GetLatestGiVersion("1.2.3", VersionCheckOptions{URL: LatestGiVersionURL, HTTPClient: client}); !ok || got != "1.2.4" {
 		t.Fatalf("latest version = %q, %v", got, ok)
 	}
-	if !strings.HasPrefix(userAgent, "pi/1.2.3 ") {
+	if !strings.HasPrefix(userAgent, "gi/1.2.3 ") {
 		t.Fatalf("user agent = %q", userAgent)
 	}
 	if accept != "application/json" {
@@ -65,8 +65,19 @@ func TestVersionChecksReturnActivePackageName(t *testing.T) {
 		return map[string]any{"packageName": "@new-scope/pi", "version": "1.2.4"}
 	})
 
-	release, ok := GetLatestPiRelease("1.2.3", VersionCheckOptions{URL: LatestPiVersionURL, HTTPClient: client})
+	release, ok := GetLatestGiRelease("1.2.3", VersionCheckOptions{URL: LatestGiVersionURL, HTTPClient: client})
 	if !ok || release.Version != "1.2.4" || release.PackageName != "@new-scope/pi" {
+		t.Fatalf("release = %#v, %v", release, ok)
+	}
+}
+
+func TestVersionChecksAcceptGitHubReleasePayloads(t *testing.T) {
+	client := latestVersionClient(t, func(_ *http.Request) map[string]any {
+		return map[string]any{"tag_name": "v1.2.4"}
+	})
+
+	release, ok := GetLatestGiRelease("1.2.3", VersionCheckOptions{URL: LatestGiVersionURL, HTTPClient: client})
+	if !ok || release.Version != "v1.2.4" {
 		t.Fatalf("release = %#v, %v", release, ok)
 	}
 }
@@ -78,15 +89,15 @@ func TestVersionChecksSkipAPICallsWhenDisabled(t *testing.T) {
 		return map[string]any{"version": "1.2.4"}
 	})
 
-	if got, ok := GetLatestPiVersion("1.2.3", VersionCheckOptions{URL: LatestPiVersionURL, HTTPClient: client, Skip: true}); ok || got != "" {
+	if got, ok := GetLatestGiVersion("1.2.3", VersionCheckOptions{URL: LatestGiVersionURL, HTTPClient: client, Skip: true}); ok || got != "" {
 		t.Fatalf("latest version = %q, %v", got, ok)
 	}
 	if called {
 		t.Fatalf("server should not have been called")
 	}
 
-	t.Setenv("PI_SKIP_VERSION_CHECK", "1")
-	if got, ok := GetLatestPiVersion("1.2.3", VersionCheckOptions{URL: LatestPiVersionURL, HTTPClient: client}); ok || got != "" {
+	t.Setenv("GI_SKIP_VERSION_CHECK", "1")
+	if got, ok := GetLatestGiVersion("1.2.3", VersionCheckOptions{URL: LatestGiVersionURL, HTTPClient: client}); ok || got != "" {
 		t.Fatalf("latest version with env skip = %q, %v", got, ok)
 	}
 }

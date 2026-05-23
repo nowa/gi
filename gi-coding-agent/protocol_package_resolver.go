@@ -16,10 +16,23 @@ type ProtocolPackageResource struct {
 }
 
 type ProtocolPackageResources struct {
-	Extensions []ProtocolPackageResource
-	Skills     []ProtocolPackageResource
-	Prompts    []ProtocolPackageResource
-	Themes     []ProtocolPackageResource
+	Extensions        []ProtocolPackageResource
+	ProcessExtensions []ProtocolPackageProcessExtension
+	Skills            []ProtocolPackageResource
+	Prompts           []ProtocolPackageResource
+	Themes            []ProtocolPackageResource
+}
+
+type ProtocolPackageProcessExtension struct {
+	ID           string
+	Path         string
+	PackageDir   string
+	Command      []string
+	Transport    string
+	Protocol     string
+	Capabilities []string
+	Env          map[string]string
+	Metadata     ProtocolSourceInfo
 }
 
 type ProtocolPackageSourceSpec struct {
@@ -36,10 +49,20 @@ type ProtocolPackageResourceFilters struct {
 }
 
 type protocolPackageManifest struct {
-	Extensions []string
-	Skills     []string
-	Prompts    []string
-	Themes     []string
+	Extensions        []string
+	ProcessExtensions []protocolPackageManifestProcessExtension
+	Skills            []string
+	Prompts           []string
+	Themes            []string
+}
+
+type protocolPackageManifestProcessExtension struct {
+	ID           string
+	Command      []string
+	Transport    string
+	Protocol     string
+	Capabilities []string
+	Env          map[string]string
 }
 
 func (m *DefaultPackageManager) ResolveProtocolPackageResources(sources []string) (ProtocolPackageResources, error) {
@@ -61,11 +84,13 @@ func (m *DefaultPackageManager) ResolveProtocolPackageSourceSpecs(specs []Protoc
 			continue
 		}
 		result.Extensions = append(result.Extensions, applyProtocolPackageFilters(packageDir, resolved.Extensions, spec.Filters.Extensions)...)
+		result.ProcessExtensions = append(result.ProcessExtensions, applyProtocolPackageProcessFilters(packageDir, resolved.ProcessExtensions, spec.Filters.Extensions)...)
 		result.Skills = append(result.Skills, applyProtocolPackageFilters(packageDir, resolved.Skills, spec.Filters.Skills)...)
 		result.Prompts = append(result.Prompts, applyProtocolPackageFilters(packageDir, resolved.Prompts, spec.Filters.Prompts)...)
 		result.Themes = append(result.Themes, applyProtocolPackageFilters(packageDir, resolved.Themes, spec.Filters.Themes)...)
 	}
 	result.Extensions = dedupeProtocolPackageResources(result.Extensions)
+	result.ProcessExtensions = dedupeProtocolPackageProcessExtensions(result.ProcessExtensions)
 	result.Skills = dedupeProtocolPackageResources(result.Skills)
 	result.Prompts = dedupeProtocolPackageResources(result.Prompts)
 	result.Themes = dedupeProtocolPackageResources(result.Themes)
@@ -220,12 +245,12 @@ func readProtocolPackageManifestFile(path string) (protocolPackageManifest, bool
 		}
 	}
 	manifest := protocolPackageManifest{
-		Extensions: protocolManifestStringList(raw["extensions"]),
-		Skills:     protocolManifestStringList(raw["skills"]),
-		Prompts:    protocolManifestStringList(raw["prompts"]),
-		Themes:     protocolManifestStringList(raw["themes"]),
+		Skills:  protocolManifestStringList(raw["skills"]),
+		Prompts: protocolManifestStringList(raw["prompts"]),
+		Themes:  protocolManifestStringList(raw["themes"]),
 	}
-	return manifest, len(manifest.Extensions)+len(manifest.Skills)+len(manifest.Prompts)+len(manifest.Themes) > 0
+	manifest.Extensions, manifest.ProcessExtensions = protocolManifestExtensionEntries(raw["extensions"])
+	return manifest, len(manifest.Extensions)+len(manifest.ProcessExtensions)+len(manifest.Skills)+len(manifest.Prompts)+len(manifest.Themes) > 0
 }
 
 func protocolManifestStringList(raw json.RawMessage) []string {
@@ -243,10 +268,64 @@ func protocolManifestStringList(raw json.RawMessage) []string {
 	return nil
 }
 
+func protocolManifestExtensionEntries(raw json.RawMessage) ([]string, []protocolPackageManifestProcessExtension) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var entries []json.RawMessage
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		var value string
+		if err := json.Unmarshal(raw, &value); err == nil && strings.TrimSpace(value) != "" {
+			return []string{value}, nil
+		}
+		return nil, nil
+	}
+	var descriptorPaths []string
+	var processEntries []protocolPackageManifestProcessExtension
+	for _, entry := range entries {
+		var path string
+		if err := json.Unmarshal(entry, &path); err == nil && strings.TrimSpace(path) != "" {
+			descriptorPaths = append(descriptorPaths, path)
+			continue
+		}
+		var object struct {
+			ID    string `json:"id"`
+			Entry struct {
+				Kind      string   `json:"kind"`
+				Command   []string `json:"command"`
+				Transport string   `json:"transport"`
+				Protocol  string   `json:"protocol"`
+			} `json:"entry"`
+			Capabilities []string          `json:"capabilities"`
+			Env          map[string]string `json:"env"`
+		}
+		if err := json.Unmarshal(entry, &object); err != nil {
+			continue
+		}
+		if strings.TrimSpace(object.Entry.Kind) != "process" {
+			continue
+		}
+		processEntries = append(processEntries, protocolPackageManifestProcessExtension{
+			ID:           strings.TrimSpace(object.ID),
+			Command:      cleanStringSlice(object.Entry.Command),
+			Transport:    strings.TrimSpace(object.Entry.Transport),
+			Protocol:     strings.TrimSpace(object.Entry.Protocol),
+			Capabilities: cleanStringSlice(object.Capabilities),
+			Env:          cloneStringMap(object.Env),
+		})
+	}
+	return descriptorPaths, processEntries
+}
+
 func resolveProtocolPackageManifest(packageDir string, metadata ProtocolSourceInfo, manifest protocolPackageManifest) ProtocolPackageResources {
 	var result ProtocolPackageResources
 	for _, path := range resolveProtocolPackageEntries(packageDir, manifest.Extensions, "extensions") {
 		result.Extensions = append(result.Extensions, protocolPackageResource(path, metadata))
+	}
+	for _, extension := range manifest.ProcessExtensions {
+		if process := protocolPackageProcessExtension(packageDir, metadata, extension); process.ID != "" {
+			result.ProcessExtensions = append(result.ProcessExtensions, process)
+		}
 	}
 	for _, path := range resolveProtocolPackageEntries(packageDir, manifest.Skills, "skills") {
 		result.Skills = append(result.Skills, protocolPackageResource(path, metadata))
@@ -359,6 +438,50 @@ func applyProtocolPackageFilters(packageDir string, resources []ProtocolPackageR
 		}
 	}
 	return result
+}
+
+func applyProtocolPackageProcessFilters(packageDir string, resources []ProtocolPackageProcessExtension, filters []string) []ProtocolPackageProcessExtension {
+	if len(filters) == 0 {
+		return resources
+	}
+	filtered := make([]ProtocolPackageProcessExtension, 0, len(resources))
+	for _, resource := range resources {
+		if protocolPackageProcessEnabled(packageDir, resource, filters) {
+			filtered = append(filtered, resource)
+		}
+	}
+	return filtered
+}
+
+func protocolPackageProcessEnabled(packageDir string, resource ProtocolPackageProcessExtension, filters []string) bool {
+	hasPositive := false
+	for _, filter := range filters {
+		filter = strings.TrimSpace(filter)
+		if filter != "" && filter[0] != '!' && filter[0] != '-' && filter[0] != '+' {
+			hasPositive = true
+			break
+		}
+	}
+	enabled := !hasPositive
+	for _, filter := range filters {
+		filter = strings.TrimSpace(filter)
+		if filter == "" {
+			continue
+		}
+		nextEnabled := true
+		patternText := filter
+		switch filter[0] {
+		case '-', '!':
+			nextEnabled = false
+			patternText = strings.TrimSpace(filter[1:])
+		case '+':
+			patternText = strings.TrimSpace(filter[1:])
+		}
+		if protocolPackagePatternMatches(packageDir, resource.Path, patternText) || patternText == resource.ID {
+			enabled = nextEnabled
+		}
+	}
+	return enabled
 }
 
 func filterProtocolPackagePaths(packageDir string, paths []string, excludePatterns []string) []string {
@@ -531,6 +654,26 @@ func protocolPackageResource(path string, metadata ProtocolSourceInfo) ProtocolP
 	return ProtocolPackageResource{Path: filepath.Clean(path), Enabled: true, Metadata: metadata}
 }
 
+func protocolPackageProcessExtension(packageDir string, metadata ProtocolSourceInfo, extension protocolPackageManifestProcessExtension) ProtocolPackageProcessExtension {
+	id := strings.TrimSpace(extension.ID)
+	if id == "" || len(extension.Command) == 0 {
+		return ProtocolPackageProcessExtension{}
+	}
+	processPath := filepath.Join(packageDir, "gi.package.json") + "#" + id
+	metadata.Path = processPath
+	return ProtocolPackageProcessExtension{
+		ID:           id,
+		Path:         processPath,
+		PackageDir:   filepath.Clean(packageDir),
+		Command:      append([]string(nil), extension.Command...),
+		Transport:    firstNonEmptyString(extension.Transport, "stdio-ndjson"),
+		Protocol:     firstNonEmptyString(extension.Protocol, "gi-ext-rpc@1"),
+		Capabilities: append([]string(nil), extension.Capabilities...),
+		Env:          cloneStringMap(extension.Env),
+		Metadata:     metadata,
+	}
+}
+
 func dedupeProtocolPackageResources(resources []ProtocolPackageResource) []ProtocolPackageResource {
 	seen := map[string]struct{}{}
 	var result []ProtocolPackageResource
@@ -544,6 +687,31 @@ func dedupeProtocolPackageResources(resources []ProtocolPackageResource) []Proto
 		}
 		seen[key] = struct{}{}
 		result = append(result, resource)
+	}
+	return result
+}
+
+func dedupeProtocolPackageProcessExtensions(resources []ProtocolPackageProcessExtension) []ProtocolPackageProcessExtension {
+	seen := map[string]struct{}{}
+	result := make([]ProtocolPackageProcessExtension, 0, len(resources))
+	for _, resource := range resources {
+		key := filepath.Clean(resource.PackageDir) + "\x00" + resource.ID
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, resource)
+	}
+	return result
+}
+
+func cleanStringSlice(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			result = append(result, value)
+		}
 	}
 	return result
 }

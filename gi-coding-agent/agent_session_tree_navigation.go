@@ -33,6 +33,17 @@ func (s *AgentSession) NavigateTree(targetID string, options AgentSessionNavigat
 	if target == nil {
 		return AgentSessionNavigateTreeResult{}, errors.New("Entry " + targetID + " not found")
 	}
+	if s.ExtensionRuntime != nil {
+		result, err := s.ExtensionRuntime.EmitSessionEvent(ProtocolSessionEvent{Type: ProtocolEventSessionBeforeTree, EntryID: targetID})
+		if err != nil {
+			return AgentSessionNavigateTreeResult{}, err
+		}
+		if result.Cancel {
+			s.isCompacting = false
+			s.branchSummaryAbort = nil
+			return AgentSessionNavigateTreeResult{Cancelled: true}, nil
+		}
+	}
 
 	var summary string
 	if options.Summarize {
@@ -83,6 +94,10 @@ func (s *AgentSession) AbortBranchSummary() {
 	}
 	close(s.branchSummaryAbort)
 	s.branchSummaryAbort = nil
+}
+
+func (s *AgentSession) IsBranchSummaryRunning() bool {
+	return s != nil && s.branchSummaryAbort != nil
 }
 
 func (s *AgentSession) IsCompacting() bool {

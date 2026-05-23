@@ -24,6 +24,11 @@ func TestEditToolPiExactMatching(t *testing.T) {
 	if !strings.Contains(readToolText(result), "Successfully replaced") || result.Details == nil || !strings.Contains(result.Details.Diff, "testing") {
 		t.Fatalf("edit result = %#v", result)
 	}
+	if !strings.Contains(result.Details.Diff, "-1 Hello, world!") ||
+		!strings.Contains(result.Details.Diff, "+1 Hello, testing!") ||
+		result.Details.FirstChangedLine != 1 {
+		t.Fatalf("line-numbered diff = %#v", result.Details)
+	}
 	if content := readEditToolFile(t, testFile); content != "Hello, testing!" {
 		t.Fatalf("content = %q", content)
 	}
@@ -53,6 +58,15 @@ func TestEditToolPiExactMatching(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "Found 3 occurrences") {
 		t.Fatalf("duplicate err = %v", err)
+	}
+
+	writeEditToolFile(t, testFile, "already changed\n")
+	_, err = tool.Execute("test-call-7b", EditToolInput{
+		Path:  testFile,
+		Edits: []Edit{{OldText: "already changed\n", NewText: "already changed\n"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "No changes made") {
+		t.Fatalf("no change err = %v", err)
 	}
 }
 

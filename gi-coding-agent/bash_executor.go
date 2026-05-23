@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 )
 
 const defaultBashExitStdioGrace = time.Second
@@ -31,8 +33,8 @@ type BashExecOptions struct {
 }
 
 type BashOperationResult struct {
-	ExitCode  int
-	Cancelled bool
+	ExitCode  int  `json:"exitCode"`
+	Cancelled bool `json:"cancelled"`
 }
 
 type BashOperations struct {
@@ -44,14 +46,17 @@ type BashLocalOperationsOptions struct {
 }
 
 type BashResult struct {
-	Output         string
-	ExitCode       int
-	Cancelled      bool
-	Truncated      bool
-	TruncatedBy    string
-	FullOutputPath string
-	TotalLines     int
-	OutputLines    int
+	Output          string `json:"output"`
+	ExitCode        int    `json:"exitCode"`
+	Cancelled       bool   `json:"cancelled"`
+	Truncated       bool   `json:"truncated"`
+	TruncatedBy     string `json:"truncatedBy,omitempty"`
+	FullOutputPath  string `json:"fullOutputPath,omitempty"`
+	TotalLines      int    `json:"totalLines,omitempty"`
+	TotalBytes      int    `json:"totalBytes,omitempty"`
+	OutputLines     int    `json:"outputLines,omitempty"`
+	OutputBytes     int    `json:"outputBytes,omitempty"`
+	LastLinePartial bool   `json:"lastLinePartial,omitempty"`
 }
 
 func ExecuteBash(command, cwd string, options ...BashExecutorOptions) (BashResult, error) {
@@ -74,7 +79,11 @@ func ExecuteBashWithOperations(command, cwd string, operations BashOperations, o
 
 	operations = normalizeBashOperations(operations)
 	var mu sync.Mutex
-	var rawOutput bytes.Buffer
+	outputAccumulator := newBashOutputAccumulator(bashOutputAccumulatorOptions{
+		MaxLines:       defaultBashOutputLineLimit,
+		MaxBytes:       agentharness.DefaultMaxBytes,
+		TempFilePrefix: "gi-bash-output",
+	})
 	operationResult, err := operations.Exec(command, cwd, BashExecOptions{
 		Context:        ctx,
 		ExitStdioGrace: grace,
@@ -84,7 +93,7 @@ func ExecuteBashWithOperations(command, cwd string, operations BashOperations, o
 			}
 			copied := append([]byte(nil), data...)
 			mu.Lock()
-			rawOutput.Write(copied)
+			outputAccumulator.Append(copied)
 			mu.Unlock()
 			if opts.OnChunk != nil {
 				opts.OnChunk(sanitizeBashOutputBytes(copied))
@@ -93,18 +102,22 @@ func ExecuteBashWithOperations(command, cwd string, operations BashOperations, o
 	})
 
 	mu.Lock()
-	fullOutput := sanitizeBashOutputBytes(rawOutput.Bytes())
+	snapshot := outputAccumulator.Snapshot(true)
+	outputAccumulator.Close()
 	mu.Unlock()
-	output, truncation := formatBashOutput(fullOutput)
+	output, truncation := formatBashOutputSnapshot(snapshot)
 	result := BashResult{
-		Output:         output,
-		ExitCode:       operationResult.ExitCode,
-		Cancelled:      operationResult.Cancelled,
-		Truncated:      truncation.Truncated,
-		TruncatedBy:    truncation.TruncatedBy,
-		FullOutputPath: truncation.FullOutputPath,
-		TotalLines:     truncation.TotalLines,
-		OutputLines:    truncation.OutputLines,
+		Output:          output,
+		ExitCode:        operationResult.ExitCode,
+		Cancelled:       operationResult.Cancelled,
+		Truncated:       truncation.Truncated,
+		TruncatedBy:     truncation.TruncatedBy,
+		FullOutputPath:  truncation.FullOutputPath,
+		TotalLines:      truncation.TotalLines,
+		TotalBytes:      truncation.TotalBytes,
+		OutputLines:     truncation.OutputLines,
+		OutputBytes:     truncation.OutputBytes,
+		LastLinePartial: truncation.LastLinePartial,
 	}
 	return result, err
 }
@@ -150,23 +163,36 @@ func execLocalBash(command, cwd string, localOptions BashLocalOperationsOptions,
 
 	cmd := exec.CommandContext(ctx, shell, "-c", command)
 	cmd.Dir = cwd
+	configureLocalBashCommand(cmd)
+	cmd.Cancel = func() error {
+		return cancelLocalBashCommand(cmd.Process)
+	}
 	if len(options.Env) > 0 {
 		cmd.Env = mergeBashEnv(options.Env)
 	}
-	stdout, err := cmd.StdoutPipe()
+	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		return BashOperationResult{}, err
 	}
-	stderr, err := cmd.StderrPipe()
+	defer stdoutReader.Close()
+	stderrReader, stderrWriter, err := os.Pipe()
 	if err != nil {
+		_ = stdoutWriter.Close()
 		return BashOperationResult{}, err
 	}
+	defer stderrReader.Close()
+	cmd.Stdout = stdoutWriter
+	cmd.Stderr = stderrWriter
 	if err := cmd.Start(); err != nil {
+		_ = stdoutWriter.Close()
+		_ = stderrWriter.Close()
 		if os.IsNotExist(err) {
 			return BashOperationResult{}, fmt.Errorf("ENOENT: %w", err)
 		}
 		return BashOperationResult{}, err
 	}
+	_ = stdoutWriter.Close()
+	_ = stderrWriter.Close()
 
 	readDone := make(chan struct{}, 2)
 	readPipe := func(pipe io.ReadCloser) {
@@ -176,7 +202,7 @@ func execLocalBash(command, cwd string, localOptions BashLocalOperationsOptions,
 			n, err := pipe.Read(buffer)
 			if n > 0 {
 				if options.OnData != nil {
-					options.OnData(buffer[:n])
+					options.OnData(append([]byte(nil), buffer[:n]...))
 				}
 			}
 			if err != nil {
@@ -184,11 +210,11 @@ func execLocalBash(command, cwd string, localOptions BashLocalOperationsOptions,
 			}
 		}
 	}
-	go readPipe(stdout)
-	go readPipe(stderr)
+	go readPipe(stdoutReader)
+	go readPipe(stderrReader)
 
 	waitErr := cmd.Wait()
-	waitForBashPipesOrClose(stdout, stderr, readDone, grace)
+	waitForBashPipesOrClose(stdoutReader, stderrReader, readDone, grace)
 
 	result := BashOperationResult{ExitCode: 0, Cancelled: errors.Is(ctx.Err(), context.Canceled)}
 	if cmd.ProcessState != nil {
@@ -201,11 +227,14 @@ func execLocalBash(command, cwd string, localOptions BashLocalOperationsOptions,
 }
 
 type bashOutputTruncation struct {
-	Truncated      bool
-	TruncatedBy    string
-	FullOutputPath string
-	TotalLines     int
-	OutputLines    int
+	Truncated       bool
+	TruncatedBy     string
+	FullOutputPath  string
+	TotalLines      int
+	TotalBytes      int
+	OutputLines     int
+	OutputBytes     int
+	LastLinePartial bool
 }
 
 func sanitizeBashOutputBytes(data []byte) string {
@@ -217,27 +246,91 @@ func sanitizeBashOutputBytes(data []byte) string {
 }
 
 func formatBashOutput(fullOutput string) (string, bashOutputTruncation) {
-	lines := splitBashOutputLines(fullOutput)
-	totalLines := len(lines)
-	if totalLines <= defaultBashOutputLineLimit {
-		return fullOutput, bashOutputTruncation{TotalLines: totalLines, OutputLines: totalLines}
+	truncation := agentharness.TruncateTail(fullOutput, agentharness.TruncationOptions{
+		MaxLines: defaultBashOutputLineLimit,
+		MaxBytes: agentharness.DefaultMaxBytes,
+	})
+	fullOutputPath := ""
+	if truncation.Truncated {
+		fullOutputPath = persistBashFullOutput(fullOutput)
 	}
-	startLine := totalLines - defaultBashOutputLineLimit + 1
-	outputLines := lines[startLine-1:]
-	fullOutputPath := persistBashFullOutput(fullOutput)
-	summary := fmt.Sprintf("[Showing lines %d-%d of %d. Full output: %s]", startLine, totalLines, totalLines, fullOutputPath)
-	display := strings.Join(outputLines, "\n")
+	return formatBashOutputSnapshot(bashOutputSnapshot{
+		Content:        truncation.Content,
+		Truncation:     truncation,
+		FullOutputPath: fullOutputPath,
+		LastLineBytes:  lastBashLineBytes(fullOutput),
+	})
+}
+
+func formatBashOutputSnapshot(snapshot bashOutputSnapshot) (string, bashOutputTruncation) {
+	truncation := snapshot.Truncation
+	if !truncation.Truncated {
+		return snapshot.Content, bashOutputTruncation{
+			TotalLines:  truncation.TotalLines,
+			TotalBytes:  truncation.TotalBytes,
+			OutputLines: truncation.OutputLines,
+			OutputBytes: truncation.OutputBytes,
+		}
+	}
+
+	startLine := truncation.TotalLines - truncation.OutputLines + 1
+	endLine := truncation.TotalLines
+	var summary string
+	switch {
+	case truncation.LastLinePartial:
+		summary = fmt.Sprintf(
+			"[Showing last %s of line %d (line is %s). Full output: %s]",
+			formatBashOutputSize(truncation.OutputBytes),
+			endLine,
+			formatBashOutputSize(snapshot.LastLineBytes),
+			snapshot.FullOutputPath,
+		)
+	case truncation.TruncatedBy == agentharness.TruncatedByLines:
+		summary = fmt.Sprintf("[Showing lines %d-%d of %d. Full output: %s]", startLine, endLine, truncation.TotalLines, snapshot.FullOutputPath)
+	default:
+		summary = fmt.Sprintf(
+			"[Showing lines %d-%d of %d (%s limit). Full output: %s]",
+			startLine,
+			endLine,
+			truncation.TotalLines,
+			formatBashOutputSize(truncation.MaxBytes),
+			snapshot.FullOutputPath,
+		)
+	}
+	display := truncation.Content
 	if display != "" {
-		display += "\n"
+		display += "\n\n"
 	}
 	display += summary
 	return display, bashOutputTruncation{
-		Truncated:      true,
-		TruncatedBy:    "lines",
-		FullOutputPath: fullOutputPath,
-		TotalLines:     totalLines,
-		OutputLines:    defaultBashOutputLineLimit,
+		Truncated:       true,
+		TruncatedBy:     truncation.TruncatedBy,
+		FullOutputPath:  snapshot.FullOutputPath,
+		TotalLines:      truncation.TotalLines,
+		TotalBytes:      truncation.TotalBytes,
+		OutputLines:     truncation.OutputLines,
+		OutputBytes:     truncation.OutputBytes,
+		LastLinePartial: truncation.LastLinePartial,
 	}
+}
+
+func formatBashOutputSize(bytes int) string {
+	switch {
+	case bytes < 1024:
+		return fmt.Sprintf("%dB", bytes)
+	case bytes < 1024*1024:
+		return fmt.Sprintf("%.1fKB", float64(bytes)/1024)
+	default:
+		return fmt.Sprintf("%.1fMB", float64(bytes)/(1024*1024))
+	}
+}
+
+func lastBashLineBytes(output string) int {
+	index := strings.LastIndex(output, "\n")
+	if index < 0 {
+		return len([]byte(output))
+	}
+	return len([]byte(output[index+1:]))
 }
 
 func splitBashOutputLines(output string) []string {

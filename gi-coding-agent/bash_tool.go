@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
@@ -26,6 +27,8 @@ type BashToolInput struct {
 	Command string
 	Timeout int
 }
+
+const bashUpdateThrottle = 100 * time.Millisecond
 
 func NewBashTool(cwd string, options ...BashToolOptions) BashTool {
 	opts := BashToolOptions{}
@@ -67,26 +70,39 @@ func (t BashTool) ExecuteWithUpdates(_ string, input BashToolInput, onUpdate fun
 	}
 	defer cancel()
 
-	var updateText strings.Builder
+	var updateAccumulator *bashOutputAccumulator
+	if onUpdate != nil {
+		updateAccumulator = newBashOutputAccumulator(bashOutputAccumulatorOptions{
+			MaxLines:       defaultBashOutputLineLimit,
+			MaxBytes:       agentharness.DefaultMaxBytes,
+			TempFilePrefix: "gi-bash-update",
+		})
+		defer updateAccumulator.Close()
+	}
 	lastUpdate := time.Now()
+	emitUpdate := func() {
+		if onUpdate == nil || updateAccumulator == nil {
+			return
+		}
+		snapshot := updateAccumulator.Snapshot(true)
+		onUpdate(bashSnapshotFileToolResult(snapshot))
+	}
 	result, err := ExecuteBashWithOperations(command, t.cwd, t.operations, BashExecutorOptions{
 		Context: ctx,
 		OnChunk: func(chunk string) {
-			if onUpdate == nil {
+			if onUpdate == nil || updateAccumulator == nil {
 				return
 			}
-			updateText.WriteString(chunk)
-			if time.Since(lastUpdate) < 50*time.Millisecond {
+			updateAccumulator.Append([]byte(chunk))
+			if time.Since(lastUpdate) < bashUpdateThrottle {
 				return
 			}
 			lastUpdate = time.Now()
-			text := updateText.String()
-			onUpdate(FileToolResult{Text: text, Content: []llm.ContentPart{llm.Text(text)}})
+			emitUpdate()
 		},
 	})
-	if onUpdate != nil && updateText.Len() > 0 {
-		text := updateText.String()
-		onUpdate(FileToolResult{Text: text, Content: []llm.ContentPart{llm.Text(text)}})
+	if onUpdate != nil && updateAccumulator != nil && updateAccumulator.totalRawBytes > 0 {
+		emitUpdate()
 	}
 	if ctx.Err() == context.DeadlineExceeded {
 		return FileToolResult{}, formatBashToolError(fmt.Sprintf("Command timed out after %d seconds", input.Timeout), result)
@@ -99,6 +115,22 @@ func (t BashTool) ExecuteWithUpdates(_ string, input BashToolInput, onUpdate fun
 	}
 	details := bashToolDetails(result)
 	return FileToolResult{Text: result.Output, Content: []llm.ContentPart{llm.Text(result.Output)}, Details: details}, nil
+}
+
+func bashSnapshotFileToolResult(snapshot bashOutputSnapshot) FileToolResult {
+	text := snapshot.Content
+	result := FileToolResult{Text: text, Content: []llm.ContentPart{llm.Text(text)}}
+	details := bashToolDetails(BashResult{
+		Truncated:      snapshot.Truncation.Truncated,
+		TruncatedBy:    snapshot.Truncation.TruncatedBy,
+		FullOutputPath: snapshot.FullOutputPath,
+		TotalLines:     snapshot.Truncation.TotalLines,
+		OutputLines:    snapshot.Truncation.OutputLines,
+	})
+	if details != nil {
+		result.Details = details
+	}
+	return result
 }
 
 func formatBashOperationError(err error) string {

@@ -19,6 +19,10 @@ func (e MissingSessionCwdError) Error() string {
 	return fmt.Sprintf("session cwd does not exist: %s", e.Issue.SessionCwd)
 }
 
+func formatMissingSessionCwdPrompt(issue MissingSessionCwdIssue) string {
+	return fmt.Sprintf("cwd from session file does not exist\n%s\n\ncontinue in current cwd\n%s", issue.SessionCwd, issue.FallbackCwd)
+}
+
 type AgentSessionRuntimeOptions struct {
 	CWD            string
 	AgentDir       string

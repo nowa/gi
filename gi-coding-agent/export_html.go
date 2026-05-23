@@ -1,7 +1,10 @@
 package gicodingagent
 
 import (
+	"errors"
 	"html"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -38,6 +41,58 @@ func RenderCustomToolResultHTML(lines []string) string {
 		end--
 	}
 	return AnsiLinesToHTML(lines[start:end])
+}
+
+func DefaultSessionExportHTMLName(inputPath string) string {
+	base := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
+	if strings.TrimSpace(base) == "" {
+		base = "session"
+	}
+	return "gi-session-" + base + ".html"
+}
+
+func ExportSessionFileToHTML(inputPath, outputPath string) (string, error) {
+	inputPath = strings.TrimSpace(inputPath)
+	if inputPath == "" {
+		return "", errors.New("session file path is required")
+	}
+	if _, err := os.Stat(inputPath); err != nil {
+		if os.IsNotExist(err) {
+			return "", errors.New("File not found: " + inputPath)
+		}
+		return "", err
+	}
+	sessionManager, err := OpenSessionManager(inputPath)
+	if err != nil {
+		return "", err
+	}
+	outputPath = strings.TrimSpace(outputPath)
+	if outputPath == "" {
+		outputPath = DefaultSessionExportHTMLName(inputPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(outputPath, []byte(RenderSessionManagerHTML(sessionManager)), 0o644); err != nil {
+		return "", err
+	}
+	return outputPath, nil
+}
+
+func RenderSessionManagerHTML(sessionManager *SessionManager) string {
+	var builder strings.Builder
+	builder.WriteString("<!doctype html><html><body>\n")
+	if sessionManager != nil {
+		for _, message := range sessionManager.BuildSessionContext().Messages {
+			builder.WriteString(`<section data-role="`)
+			builder.WriteString(html.EscapeString(messageRole(message)))
+			builder.WriteString(`">`)
+			builder.WriteString(html.EscapeString(extractMessageText(message)))
+			builder.WriteString("</section>\n")
+		}
+	}
+	builder.WriteString("</body></html>\n")
+	return builder.String()
 }
 
 type ExportHTMLSkillBlock struct {

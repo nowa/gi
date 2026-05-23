@@ -1,6 +1,7 @@
 package gicodingagent
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -86,8 +87,21 @@ type InteractiveExtensionResource struct {
 }
 
 type InteractiveSkillResource struct {
-	FilePath string
-	Name     string
+	FilePath   string
+	Name       string
+	SourceInfo *InteractiveSourceInfo
+}
+
+type InteractivePromptResource struct {
+	FilePath   string
+	Name       string
+	SourceInfo *InteractiveSourceInfo
+}
+
+type InteractiveThemeResource struct {
+	SourcePath string
+	Name       string
+	SourceInfo *InteractiveSourceInfo
 }
 
 type InteractiveResourceDiagnostic struct {
@@ -101,14 +115,19 @@ type InteractiveContextFile struct {
 }
 
 type InteractiveLoadedResources struct {
-	QuietStartup       bool
-	Verbose            bool
-	ToolOutputExpanded bool
-	CWD                string
-	ContextFiles       []InteractiveContextFile
-	Extensions         []InteractiveExtensionResource
-	Skills             []InteractiveSkillResource
-	SkillDiagnostics   []InteractiveResourceDiagnostic
+	QuietStartup         bool
+	Verbose              bool
+	ToolOutputExpanded   bool
+	CWD                  string
+	ContextFiles         []InteractiveContextFile
+	Extensions           []InteractiveExtensionResource
+	Skills               []InteractiveSkillResource
+	Prompts              []InteractivePromptResource
+	Themes               []InteractiveThemeResource
+	SkillDiagnostics     []InteractiveResourceDiagnostic
+	PromptDiagnostics    []InteractiveResourceDiagnostic
+	ExtensionDiagnostics []InteractiveResourceDiagnostic
+	ThemeDiagnostics     []InteractiveResourceDiagnostic
 }
 
 type InteractiveShowLoadedResourcesOptions struct {
@@ -176,6 +195,19 @@ func (c InteractiveExtensionUIContext) SetTheme(theme string) InteractiveThemeRe
 	return InteractiveThemeResult{Success: true}
 }
 
+func (c InteractiveExtensionUIContext) GetToolsExpanded() bool {
+	if c.mode == nil {
+		return false
+	}
+	return c.mode.ToolOutputExpanded
+}
+
+func (c InteractiveExtensionUIContext) SetToolsExpanded(expanded bool) {
+	if c.mode != nil {
+		c.mode.SetToolsExpanded(expanded)
+	}
+}
+
 func (c InteractiveExtensionUIContext) AddAutocompleteProvider(wrapper AutocompleteProviderFactory) {
 	if c.mode == nil || wrapper == nil {
 		return
@@ -219,21 +251,38 @@ func (m *InteractiveMode) ShowLoadedResources(options InteractiveShowLoadedResou
 	if m == nil || m.Chat == nil {
 		return
 	}
-	resources := m.LoadedResources
-	diagnostics := formatInteractiveDiagnostics(resources.SkillDiagnostics)
-	if resources.QuietStartup && !options.Force && !resources.Verbose {
-		if options.ShowDiagnosticsWhenQuiet && diagnostics != "" {
-			m.Chat.AddText(diagnostics)
-		}
-		return
+	output := m.FormatLoadedResources(options)
+	if output != "" {
+		m.Chat.AddText(output)
 	}
-	expanded := resources.ToolOutputExpanded || resources.Verbose || m.ToolOutputExpanded
+}
+
+func (m *InteractiveMode) FormatLoadedResources(options InteractiveShowLoadedResourcesOptions) string {
+	if m == nil {
+		return ""
+	}
+	resources := m.LoadedResources
+	return formatInteractiveLoadedResources(resources, options, m.ToolOutputExpanded)
+}
+
+func formatInteractiveLoadedResources(resources InteractiveLoadedResources, options InteractiveShowLoadedResourcesOptions, toolOutputExpanded bool) string {
+	expanded := resources.ToolOutputExpanded || resources.Verbose || toolOutputExpanded
+	diagnostics := formatInteractiveResourceDiagnostics(resources, expanded)
+	if resources.QuietStartup && !options.Force && !resources.Verbose {
+		if options.ShowDiagnosticsWhenQuiet {
+			return diagnostics
+		}
+		return ""
+	}
 	sections := []string{}
-	if diagnostics != "" && (!resources.QuietStartup || options.ShowDiagnosticsWhenQuiet) {
-		sections = append(sections, diagnostics)
+	if len(resources.ContextFiles) > 0 {
+		sections = append(sections, formatInteractiveContextFiles(resources.ContextFiles, resources.CWD, expanded))
 	}
 	if len(resources.Skills) > 0 {
 		sections = append(sections, formatInteractiveSkills(resources.Skills, expanded))
+	}
+	if len(resources.Prompts) > 0 {
+		sections = append(sections, formatInteractivePrompts(resources.Prompts, expanded))
 	}
 	if len(resources.Extensions) > 0 {
 		if expanded {
@@ -242,29 +291,100 @@ func (m *InteractiveMode) ShowLoadedResources(options InteractiveShowLoadedResou
 			sections = append(sections, formatInteractiveExtensionsCompact(resources.Extensions))
 		}
 	}
-	if len(resources.ContextFiles) > 0 {
-		sections = append(sections, formatInteractiveContextFiles(resources.ContextFiles, resources.CWD, expanded))
+	if len(resources.Themes) > 0 {
+		sections = append(sections, formatInteractiveThemes(resources.Themes, expanded))
+	}
+	if diagnostics != "" && (!resources.QuietStartup || options.ShowDiagnosticsWhenQuiet) {
+		sections = append(sections, diagnostics)
 	}
 	if len(sections) > 0 {
-		m.Chat.AddText(strings.Join(sections, "\n"))
+		return strings.Join(sections, "\n")
 	}
+	return ""
 }
 
 func formatInteractiveDiagnostics(diagnostics []InteractiveResourceDiagnostic) string {
+	return formatInteractiveDiagnosticsSection("[Skill conflicts]", diagnostics, false)
+}
+
+func formatInteractiveDiagnosticsSection(header string, diagnostics []InteractiveResourceDiagnostic, expanded bool) string {
 	if len(diagnostics) == 0 {
 		return ""
 	}
-	lines := []string{"[Skill conflicts]"}
+	lines := []string{header}
+	if !expanded && len(diagnostics) > 1 {
+		lines = append(lines, fmt.Sprintf("  %d issue(s). Ctrl+O shows details.", len(diagnostics)))
+		return strings.Join(lines, "\n")
+	}
 	for _, diagnostic := range diagnostics {
-		lines = append(lines, "  "+diagnostic.Message)
+		message := diagnostic.Message
+		if !expanded {
+			message = compactInteractiveDiagnosticMessage(message)
+		}
+		lines = append(lines, "  "+message)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func compactInteractiveDiagnosticMessage(message string) string {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return ""
+	}
+	if strings.Contains(message, "overridden") {
+		message = strings.Join(strings.Fields(message), " ")
+	} else {
+		lines := strings.FieldsFunc(message, func(r rune) bool { return r == '\n' || r == '\r' })
+		if len(lines) > 0 {
+			message = strings.TrimSpace(lines[0])
+		}
+	}
+	limit := 60
+	if strings.Contains(message, "overridden") {
+		limit = 100
+	}
+	runes := []rune(message)
+	if len(runes) <= limit {
+		return message
+	}
+	if strings.Contains(message, "overridden") {
+		suffix := " ... overridden"
+		maxPrefix := max(0, limit-len([]rune(suffix)))
+		return string(runes[:maxPrefix]) + suffix
+	}
+	return string(runes[:max(0, limit-3)]) + "..."
+}
+
+func formatInteractiveResourceDiagnostics(resources InteractiveLoadedResources, expanded bool) string {
+	sections := []string{}
+	if formatted := formatInteractiveDiagnosticsSection("[Skill conflicts]", resources.SkillDiagnostics, expanded); formatted != "" {
+		sections = append(sections, formatted)
+	}
+	if formatted := formatInteractiveDiagnosticsSection("[Prompt conflicts]", resources.PromptDiagnostics, expanded); formatted != "" {
+		sections = append(sections, formatted)
+	}
+	if formatted := formatInteractiveDiagnosticsSection("[Extension issues]", resources.ExtensionDiagnostics, expanded); formatted != "" {
+		sections = append(sections, formatted)
+	}
+	if formatted := formatInteractiveDiagnosticsSection("[Theme conflicts]", resources.ThemeDiagnostics, expanded); formatted != "" {
+		sections = append(sections, formatted)
+	}
+	return strings.Join(sections, "\n")
 }
 
 func formatInteractiveSkills(skills []InteractiveSkillResource, expanded bool) string {
 	lines := []string{"[Skills]"}
 	if expanded {
-		lines = append(lines, "  resource-list")
+		paths := make([]string, 0, len(skills))
+		for _, skill := range skills {
+			if skill.FilePath != "" {
+				paths = append(paths, formatInteractiveHomePath(skill.FilePath))
+			}
+		}
+		sort.Strings(paths)
+		for _, path := range paths {
+			lines = append(lines, "  "+path)
+		}
 		return strings.Join(lines, "\n")
 	}
 	names := make([]string, 0, len(skills))
@@ -272,12 +392,72 @@ func formatInteractiveSkills(skills []InteractiveSkillResource, expanded bool) s
 		names = append(names, skill.Name)
 	}
 	sort.Strings(names)
+	if len(names) > 8 {
+		lines = append(lines, fmt.Sprintf("  %d skills loaded. Ctrl+O shows details.", len(names)))
+		return strings.Join(lines, "\n")
+	}
 	lines = append(lines, "  "+strings.Join(names, ", "))
+	return strings.Join(lines, "\n")
+}
+
+func formatInteractivePrompts(prompts []InteractivePromptResource, expanded bool) string {
+	lines := []string{"[Prompts]"}
+	if expanded {
+		paths := make([]string, 0, len(prompts))
+		for _, prompt := range prompts {
+			if prompt.FilePath != "" {
+				paths = append(paths, formatInteractiveHomePath(prompt.FilePath))
+			}
+		}
+		sort.Strings(paths)
+		for _, path := range paths {
+			lines = append(lines, "  "+path)
+		}
+		return strings.Join(lines, "\n")
+	}
+	names := make([]string, 0, len(prompts))
+	for _, prompt := range prompts {
+		name := strings.TrimSpace(prompt.Name)
+		if name != "" {
+			names = append(names, "/"+strings.TrimPrefix(name, "/"))
+		}
+	}
+	sort.Strings(names)
+	if len(names) > 8 {
+		lines = append(lines, fmt.Sprintf("  %d prompts loaded. Ctrl+O shows details.", len(names)))
+		return strings.Join(lines, "\n")
+	}
+	lines = append(lines, "  "+strings.Join(names, ", "))
+	return strings.Join(lines, "\n")
+}
+
+func formatInteractiveThemes(themes []InteractiveThemeResource, expanded bool) string {
+	lines := []string{"[Themes]"}
+	values := make([]string, 0, len(themes))
+	for _, theme := range themes {
+		if expanded && theme.SourcePath != "" {
+			values = append(values, formatInteractiveHomePath(theme.SourcePath))
+			continue
+		}
+		name := strings.TrimSpace(theme.Name)
+		if name != "" {
+			values = append(values, name)
+		}
+	}
+	sort.Strings(values)
+	if len(values) > 8 && !expanded {
+		lines = append(lines, fmt.Sprintf("  %d themes loaded. Ctrl+O shows details.", len(values)))
+		return strings.Join(lines, "\n")
+	}
+	lines = append(lines, "  "+strings.Join(values, ", "))
 	return strings.Join(lines, "\n")
 }
 
 func formatInteractiveExtensionsCompact(extensions []InteractiveExtensionResource) string {
 	labels := compactInteractiveExtensionLabels(extensions)
+	if len(labels) > 8 {
+		return fmt.Sprintf("[Extensions]\n  %d extensions loaded. Ctrl+O shows details.", len(labels))
+	}
 	return "[Extensions]\n  " + strings.Join(labels, ", ")
 }
 

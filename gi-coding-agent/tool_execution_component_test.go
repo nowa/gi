@@ -8,6 +8,7 @@ import (
 	"time"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
+	gitui "github.com/nowa/gi/gi-tui"
 )
 
 func TestToolExecutionComponentPiRendererParity(t *testing.T) {
@@ -45,6 +46,37 @@ func TestToolExecutionComponentPiRendererParity(t *testing.T) {
 		}
 		if strings.Contains(rendered, ":1") {
 			t.Fatalf("edit override should not render firstChangedLine marker: %q", rendered)
+		}
+	})
+
+	t.Run("uses built-in rendering for search tools like Pi", func(t *testing.T) {
+		var grepLines []string
+		for i := 0; i < 16; i++ {
+			grepLines = append(grepLines, "match")
+		}
+		grep := NewToolExecutionComponent("grep", "tool-search-grep", map[string]any{"pattern": "needle", "path": ".", "glob": "*.go", "limit": 5}, ToolDefinition{}, t.TempDir())
+		grep.UpdateResult(FileToolResult{
+			Content: []llm.ContentPart{llm.Text(strings.Join(grepLines, "\n"))},
+			Details: &FileToolDetails{MatchLimitReached: 5},
+		}, false)
+		rendered := toolExecutionRendered(grep)
+		if !strings.Contains(rendered, "grep /needle/ in . (*.go) limit 5") ||
+			!strings.Contains(rendered, "... (1 more lines, Ctrl+O to expand)") ||
+			!strings.Contains(rendered, "[Truncated: 5 matches limit]") ||
+			strings.Contains(rendered, `"pattern"`) {
+			t.Fatalf("grep render = %q", rendered)
+		}
+
+		find := NewToolExecutionComponent("find", "tool-search-find", map[string]any{"pattern": "**/*.go", "path": "src", "limit": 3}, ToolDefinition{}, t.TempDir())
+		find.UpdateResult(FileToolResult{Content: []llm.ContentPart{llm.Text("a.go\nb.go")}}, false)
+		if rendered := toolExecutionRendered(find); !strings.Contains(rendered, "find **/*.go in src (limit 3)") || strings.Contains(rendered, `"pattern"`) {
+			t.Fatalf("find render = %q", rendered)
+		}
+
+		ls := NewToolExecutionComponent("ls", "tool-search-ls", map[string]any{"path": ".", "limit": 2}, ToolDefinition{}, t.TempDir())
+		ls.UpdateResult(FileToolResult{Content: []llm.ContentPart{llm.Text("a\nb")}}, false)
+		if rendered := toolExecutionRendered(ls); !strings.Contains(rendered, "ls . (limit 2)") || strings.Contains(rendered, `"path"`) {
+			t.Fatalf("ls render = %q", rendered)
 		}
 	})
 
@@ -124,6 +156,64 @@ func TestToolExecutionComponentPiRendererParity(t *testing.T) {
 		}
 	})
 
+	t.Run("renders image fallbacks when terminal images are unavailable like Pi", func(t *testing.T) {
+		gitui.SetCapabilities(gitui.TerminalCapabilities{Images: false, Protocol: gitui.ImageProtocolNone})
+		defer gitui.ResetCapabilitiesCache()
+
+		imageData := testPNGBase64(t, 2, 2)
+		component := NewToolExecutionComponent("read", "tool-image", map[string]any{"path": "image.png"}, ToolDefinition{Name: "read"}, t.TempDir())
+		component.UpdateResult(FileToolResult{Content: []llm.ContentPart{llm.Image(imageData, "image/png")}}, false)
+
+		rendered := toolExecutionRendered(component)
+		if !strings.Contains(rendered, "[Image: [image/png] 2x2]") {
+			t.Fatalf("image fallback render = %q", rendered)
+		}
+	})
+
+	t.Run("uses terminal image protocol when enabled and show-images is true", func(t *testing.T) {
+		gitui.SetCapabilities(gitui.TerminalCapabilities{Images: true, Protocol: gitui.ImageProtocolKitty})
+		defer gitui.ResetCapabilitiesCache()
+
+		showImages := true
+		imageData := testPNGBase64(t, 2, 2)
+		component := NewToolExecutionComponent(
+			"custom_tool",
+			"tool-image-protocol",
+			map[string]any{},
+			ToolDefinition{Name: "custom_tool"},
+			t.TempDir(),
+			ToolExecutionOptions{ShowImages: &showImages, ImageWidthCells: 24},
+		)
+		component.UpdateResult(FileToolResult{Content: []llm.ContentPart{llm.Image(imageData, "image/png")}}, false)
+
+		rendered := toolExecutionRendered(component)
+		if !gitui.IsImageLine(rendered) || strings.Contains(rendered, "[Image:") {
+			t.Fatalf("image protocol render = %q", rendered)
+		}
+	})
+
+	t.Run("keeps fallback when show-images is disabled even with image-capable terminal", func(t *testing.T) {
+		gitui.SetCapabilities(gitui.TerminalCapabilities{Images: true, Protocol: gitui.ImageProtocolKitty})
+		defer gitui.ResetCapabilitiesCache()
+
+		showImages := false
+		imageData := testPNGBase64(t, 2, 2)
+		component := NewToolExecutionComponent(
+			"read",
+			"tool-image-hidden",
+			map[string]any{"path": "image.png"},
+			ToolDefinition{Name: "read"},
+			t.TempDir(),
+			ToolExecutionOptions{ShowImages: &showImages, ImageWidthCells: 24},
+		)
+		component.UpdateResult(FileToolResult{Content: []llm.ContentPart{llm.Image(imageData, "image/png")}}, false)
+
+		rendered := toolExecutionRendered(component)
+		if gitui.IsImageLine(rendered) || !strings.Contains(rendered, "[Image: [image/png] 2x2]") {
+			t.Fatalf("disabled image render = %q", rendered)
+		}
+	})
+
 	t.Run("shares renderer state across custom call and result slots", func(t *testing.T) {
 		definition := ToolDefinition{
 			Name: "custom_tool",
@@ -159,12 +249,74 @@ func TestToolExecutionComponentPiRendererParity(t *testing.T) {
 		}
 	})
 
+	t.Run("exposes showImages in renderer context like Pi", func(t *testing.T) {
+		definition := ToolDefinition{
+			Name: "custom_tool",
+			RenderCall: func(_ any, context ToolRenderContext) []string {
+				if context.ShowImages {
+					return []string{"call images:on"}
+				}
+				return []string{"call images:off"}
+			},
+			RenderResult: func(_ FileToolResult, _ ToolRenderResultOptions, context ToolRenderContext) []string {
+				if context.ShowImages {
+					return []string{"result images:on"}
+				}
+				return []string{"result images:off"}
+			},
+		}
+		showImages := false
+		component := NewToolExecutionComponent(
+			"custom_tool",
+			"tool-5c",
+			map[string]any{},
+			definition,
+			t.TempDir(),
+			ToolExecutionOptions{ShowImages: &showImages},
+		)
+		component.UpdateResult(FileToolResult{Content: []llm.ContentPart{llm.Text("done")}}, false)
+		rendered := toolExecutionRendered(component)
+		if !strings.Contains(rendered, "call images:off") || !strings.Contains(rendered, "result images:off") {
+			t.Fatalf("showImages context = %q", rendered)
+		}
+	})
+
 	t.Run("falls back when custom renderers are absent", func(t *testing.T) {
 		component := NewToolExecutionComponent("custom_tool", "tool-6", map[string]any{"foo": "bar"}, ToolDefinition{Name: "custom_tool"}, t.TempDir())
 		component.UpdateResult(FileToolResult{Content: []llm.ContentPart{llm.Text("done")}}, false)
 		rendered := toolExecutionRendered(component)
-		if !strings.Contains(rendered, "custom_tool") || !strings.Contains(rendered, "done") {
+		if !strings.Contains(rendered, "custom_tool") || !strings.Contains(rendered, `"foo": "bar"`) || !strings.Contains(rendered, "done") {
 			t.Fatalf("fallback render = %q", rendered)
+		}
+	})
+
+	t.Run("falls back when custom call renderer panics like Pi", func(t *testing.T) {
+		definition := ToolDefinition{
+			Name: "custom_tool",
+			RenderCall: func(any, ToolRenderContext) []string {
+				panic("renderer failed")
+			},
+		}
+		component := NewToolExecutionComponent("custom_tool", "tool-6b", map[string]any{"foo": "bar"}, definition, t.TempDir())
+		rendered := toolExecutionRendered(component)
+		if !strings.Contains(rendered, "custom_tool") || !strings.Contains(rendered, `"foo": "bar"`) {
+			t.Fatalf("panic call fallback render = %q", rendered)
+		}
+	})
+
+	t.Run("falls back when custom result renderer panics like Pi", func(t *testing.T) {
+		definition := ToolDefinition{
+			Name:       "custom_tool",
+			RenderCall: func(any, ToolRenderContext) []string { return []string{"custom call"} },
+			RenderResult: func(FileToolResult, ToolRenderResultOptions, ToolRenderContext) []string {
+				panic("renderer failed")
+			},
+		}
+		component := NewToolExecutionComponent("custom_tool", "tool-6c", map[string]any{"foo": "bar"}, definition, t.TempDir())
+		component.UpdateResult(FileToolResult{Content: []llm.ContentPart{llm.Text("fallback result")}}, false)
+		rendered := toolExecutionRendered(component)
+		if !strings.Contains(rendered, "custom call") || !strings.Contains(rendered, "fallback result") {
+			t.Fatalf("panic result fallback render = %q", rendered)
 		}
 	})
 }
@@ -193,6 +345,51 @@ func TestToolExecutionComponentPiBuiltinDisplayParity(t *testing.T) {
 		}
 	})
 
+	t.Run("expands tabs in read results like Pi", func(t *testing.T) {
+		component := NewToolExecutionComponent("read", "tool-read-tabs", map[string]any{"path": "notes.txt"}, CreateReadToolDefinition(t.TempDir()), t.TempDir())
+		component.UpdateResult(FileToolResult{Content: []llm.ContentPart{llm.Text("one\ttwo")}}, false)
+		rendered := toolExecutionRendered(component)
+		if !strings.Contains(rendered, "one   two") || strings.Contains(rendered, "\t") {
+			t.Fatalf("read tabs render = %q", rendered)
+		}
+	})
+
+	t.Run("shows read truncation summary after collapsed output like Pi", func(t *testing.T) {
+		var lines []string
+		for i := 0; i < 12; i++ {
+			lines = append(lines, "line")
+		}
+		component := NewToolExecutionComponent("read", "tool-read-truncated", map[string]any{"path": "notes.txt"}, CreateReadToolDefinition(t.TempDir()), t.TempDir())
+		component.UpdateResult(FileToolResult{
+			Content: []llm.ContentPart{llm.Text(strings.Join(lines, "\n"))},
+			Details: &FileToolDetails{Truncation: &ReadToolTruncation{
+				Truncated:   true,
+				TruncatedBy: "lines",
+				TotalLines:  2500,
+				OutputLines: 2000,
+			}},
+		}, false)
+		rendered := toolExecutionRendered(component)
+		if !strings.Contains(rendered, "... (2 more lines, Ctrl+O to expand)") ||
+			!strings.Contains(rendered, "[Truncated: showing 2000 of 2500 lines (2000 line limit)]") {
+			t.Fatalf("read truncation render = %q", rendered)
+		}
+	})
+
+	t.Run("normalizes write preview CR and tabs like Pi", func(t *testing.T) {
+		component := NewToolExecutionComponent(
+			"write",
+			"tool-write-tabs",
+			map[string]any{"path": "notes.txt", "content": "one\ttwo\r\nthree\r"},
+			CreateWriteToolDefinition(t.TempDir()),
+			t.TempDir(),
+		)
+		rendered := toolExecutionRendered(component)
+		if !strings.Contains(rendered, "one   two\nthree") || strings.Contains(rendered, "\t") || strings.Contains(rendered, "\r") {
+			t.Fatalf("write preview render = %q", rendered)
+		}
+	})
+
 	for _, scenario := range []struct {
 		title   string
 		path    func(string) string
@@ -215,6 +412,13 @@ func TestToolExecutionComponentPiBuiltinDisplayParity(t *testing.T) {
 			content: "Hidden resource instructions",
 			compact: "read resource .gi/AGENTS.md",
 			hidden:  "Hidden resource instructions",
+		},
+		{
+			title:   "CLAUDE.md",
+			path:    func(dir string) string { return filepath.Join(dir, "CLAUDE.md") },
+			content: "Hidden Claude resource instructions",
+			compact: "read resource CLAUDE.md",
+			hidden:  "Hidden Claude resource instructions",
 		},
 		{
 			title:   "outside AGENTS.md",
@@ -302,6 +506,37 @@ func TestBashToolPiInitialPartialUpdate(t *testing.T) {
 	}
 	if len(updates) == 0 || fileToolResultText(updates[0]) != "" || len(updates[0].Content) != 0 || updates[0].Details != nil {
 		t.Fatalf("initial update = %#v", updates)
+	}
+}
+
+func TestToolRenderContextParamsIncludesPiShowImages(t *testing.T) {
+	params := toolRenderContextParams(ToolRenderContext{
+		Args:       map[string]any{"foo": "bar"},
+		ToolCallID: "tool-context-1",
+		ShowImages: true,
+	})
+	if params["showImages"] != true {
+		t.Fatalf("showImages param = %#v in %#v", params["showImages"], params)
+	}
+}
+
+func TestToolResultTextSanitizesPiStyle(t *testing.T) {
+	result := FileToolResult{Content: []llm.ContentPart{
+		llm.Text("\x1b[31mred\x1b[0m\r\nnul\x00ok\tkeep\ufff9drop"),
+	}}
+	if got := fileToolResultText(result); got != "red\nnulok\tkeepdrop" {
+		t.Fatalf("sanitized text = %q", got)
+	}
+}
+
+func TestShortenDisplayPathUsesHomeLikePi(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	got := shortenDisplayPath(filepath.Join(home, "project", "README.md"))
+	if got != "~/project/README.md" {
+		t.Fatalf("short path = %q", got)
 	}
 }
 

@@ -17,6 +17,10 @@
         "id": {
           "type": "string"
         },
+        "capabilities": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
         "commands": {
           "type": "array",
           "items": {
@@ -25,7 +29,8 @@
             "additionalProperties": false,
             "properties": {
               "name": {"type": "string"},
-              "description": {"type": "string"}
+              "description": {"type": "string"},
+              "argumentHint": {"type": "string"}
             }
           }
         },
@@ -51,6 +56,20 @@
             "additionalProperties": false,
             "properties": {
               "type": {"type": "string"}
+            }
+          }
+        },
+        "viewTrees": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["mountId", "slot", "view"],
+            "additionalProperties": false,
+            "properties": {
+              "mountId": {"type": "string", "minLength": 1},
+              "slot": {"type": "string"},
+              "priority": {"type": "integer"},
+              "view": {"$ref": "https://gi.dev/protocol/spec/schemas/viewtree.schema.json"}
             }
           }
         },
@@ -93,6 +112,10 @@
               "items": {"type": "string"}
             },
             "prompts": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "themes": {
               "type": "array",
               "items": {"type": "string"}
             }

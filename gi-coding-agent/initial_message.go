@@ -1,15 +1,17 @@
 package gicodingagent
 
+import llm "github.com/nowa/gi/gi-llm-provider"
+
 type InitialMessageInput struct {
 	Parsed       *Args
 	FileText     string
-	FileImages   []any
+	FileImages   []llm.ContentPart
 	StdinContent *string
 }
 
 type InitialMessageResult struct {
 	InitialMessage string
-	InitialImages  []any
+	InitialImages  []llm.ContentPart
 }
 
 func BuildInitialMessage(input InitialMessageInput) InitialMessageResult {
@@ -29,7 +31,7 @@ func BuildInitialMessage(input InitialMessageInput) InitialMessageResult {
 		result.InitialMessage += part
 	}
 	if len(input.FileImages) > 0 {
-		result.InitialImages = append([]any(nil), input.FileImages...)
+		result.InitialImages = append([]llm.ContentPart(nil), input.FileImages...)
 	}
 	return result
 }

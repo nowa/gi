@@ -1,6 +1,7 @@
 package gitui
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"sync"
@@ -9,14 +10,15 @@ import (
 )
 
 type fakeTerminal struct {
-	mu      sync.Mutex
-	output  strings.Builder
-	cols    int
-	rows    int
-	moves   []int
-	input   func(string)
-	resize  func()
-	stopped bool
+	mu       sync.Mutex
+	output   strings.Builder
+	cols     int
+	rows     int
+	moves    []int
+	input    func(string)
+	resize   func()
+	stopped  bool
+	writeErr error
 }
 
 func newFakeTerminal(cols, rows int) *fakeTerminal {
@@ -34,6 +36,9 @@ func (f *fakeTerminal) DrainInput(_, _ time.Duration) error {
 func (f *fakeTerminal) Write(data string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.writeErr != nil {
+		return f.writeErr
+	}
 	_, _ = f.output.WriteString(data)
 	return nil
 }
@@ -66,6 +71,45 @@ func (f *fakeTerminal) Moves() []int {
 	out := make([]int, len(f.moves))
 	copy(out, f.moves)
 	return out
+}
+
+func TestTUIReportsTerminalWriteErrors(t *testing.T) {
+	terminal := newFakeTerminal(40, 10)
+	terminal.writeErr = errors.New("write failed")
+	ui := NewTUI(terminal)
+	ui.AddChild(&lineComponent{lines: []string{"hello"}})
+	errCh := make(chan error, 1)
+	ui.SetTerminalErrorHandler(func(err error) {
+		select {
+		case errCh <- err:
+		default:
+		}
+	})
+
+	ui.Start()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, terminal.writeErr) {
+			t.Fatalf("terminal error = %v, want %v", err, terminal.writeErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("TUI did not report terminal write error")
+	}
+}
+
+func TestTUIStopWithoutRenderSkipsCursorRestore(t *testing.T) {
+	terminal := newFakeTerminal(40, 10)
+	ui := NewTUI(terminal)
+	ui.AddChild(&lineComponent{lines: []string{"hello"}})
+	ui.Start()
+	terminal.ClearOutput()
+
+	ui.StopWithoutRender()
+
+	if output := terminal.String(); strings.Contains(output, "\x1b[?25h") || strings.Contains(output, "\r\n") {
+		t.Fatalf("StopWithoutRender should avoid layout/cursor writes, output=%q", output)
+	}
 }
 
 type lineComponent struct {
@@ -536,6 +580,53 @@ func TestTUIStartInitialRenderDoesNotClearScreen(t *testing.T) {
 	}
 	if !strings.Contains(output, "alpha") || !strings.Contains(output, "bravo") {
 		t.Fatalf("initial Start render missing content: %q", output)
+	}
+}
+
+func TestTUINonClearingStartKeepsInputDiffRelativeToInitialFrame(t *testing.T) {
+	terminal := NewVirtualTerminal(40, 8)
+	if err := terminal.Write("shell prompt\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	editor := NewEditor(EditorTheme{}, EditorOptions{Borderless: true})
+	ui := NewTUI(terminal)
+	ui.AddChild(&lineComponent{lines: []string{"Gi"}})
+	ui.AddChild(editor)
+	ui.SetFocus(editor)
+	ui.Start()
+	t.Cleanup(ui.Stop)
+
+	terminal.SendInput("/")
+	terminal.WaitForRender()
+	viewport := terminal.GetViewport()
+	giRow, slashRow := -1, -1
+	for idx, line := range viewport {
+		if strings.TrimSpace(line) == "Gi" {
+			giRow = idx
+		}
+		if strings.HasPrefix(strings.TrimSpace(line), "/") {
+			slashRow = idx
+		}
+	}
+	if giRow < 0 || slashRow <= giRow {
+		t.Fatalf("slash input should render below the existing frame, viewport:\n%s", strings.Join(viewport, "\n"))
+	}
+}
+
+func TestTUIStartWithOptionsCanDeferInitialRender(t *testing.T) {
+	terminal := newFakeTerminal(20, 5)
+	ui := NewTUI(terminal)
+	ui.AddChild(&lineComponent{lines: []string{"alpha", "bravo"}})
+
+	ui.StartWithOptions(TUIStartOptions{InitialRender: false})
+
+	if output := terminal.String(); strings.Contains(output, "alpha") || strings.Contains(output, "bravo") {
+		t.Fatalf("deferred initial render should not write component content, got %q", output)
+	}
+	ui.RequestRender(true)
+	output := terminal.String()
+	if !strings.Contains(output, "alpha") || !strings.Contains(output, "bravo") {
+		t.Fatalf("forced render after deferred start missing content: %q", output)
 	}
 }
 

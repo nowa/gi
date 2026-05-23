@@ -3,10 +3,12 @@ package gicodingagent
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
+	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
 func TestInteractiveModeCloneCommandMatchesPi(t *testing.T) {
@@ -228,6 +230,74 @@ func TestInteractiveModeCompactionEndRebuildsChatAndSummaryMatchesPi(t *testing.
 	}
 }
 
+func TestInteractiveModeRenderSessionContextPendingToolPiRegression(t *testing.T) {
+	const toolCallID = "tool-4167"
+	const toolName = "slow_tool"
+	assistant := llm.Message{
+		Role:    llm.RoleAssistant,
+		Content: []llm.ContentPart{llm.ToolCall(toolCallID, toolName, map[string]any{"delayMs": 10000})},
+	}
+	result := llm.Message{
+		Role:       llm.RoleToolResult,
+		ToolCallID: toolCallID,
+		ToolName:   toolName,
+		Content:    []llm.ContentPart{llm.Text("FINAL_RESULT")},
+	}
+
+	t.Run("keeps unresolved rendered tool calls registered for live completion events", func(t *testing.T) {
+		chat := &fakeInteractiveContainer{}
+		mode := &InteractiveMode{Chat: chat, Footer: &fakeInteractiveFooter{}, UI: &fakeInteractiveUI{}}
+
+		mode.RenderSessionContext(SessionContext{Messages: []any{assistant}})
+
+		if mode.PendingTools[toolCallID] == nil {
+			t.Fatalf("pending tools = %#v, want %q", mode.PendingTools, toolCallID)
+		}
+		if err := mode.HandleEvent(AgentSessionEvent{
+			Type:       "tool_execution_end",
+			ToolCallID: toolCallID,
+			ToolName:   toolName,
+			ToolResult: &result,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if mode.PendingTools[toolCallID] != nil {
+			t.Fatalf("pending tools after result = %#v, want cleared", mode.PendingTools)
+		}
+		if len(mode.PendingToolChatIndexes) != 0 {
+			t.Fatalf("pending tool indexes after result = %#v, want cleared", mode.PendingToolChatIndexes)
+		}
+		if !strings.Contains(strings.Join(chat.text, "\n"), "FINAL_RESULT") {
+			t.Fatalf("chat = %#v, want final result", chat.text)
+		}
+		if len(chat.text) != 1 {
+			t.Fatalf("chat entries = %#v, want one updated tool block", chat.text)
+		}
+	})
+
+	t.Run("does not keep completed historical tool calls registered as pending", func(t *testing.T) {
+		chat := &fakeInteractiveContainer{}
+		mode := &InteractiveMode{Chat: chat, Footer: &fakeInteractiveFooter{}}
+		historical := result
+		historical.Content = []llm.ContentPart{llm.Text("HISTORICAL_RESULT")}
+
+		mode.RenderSessionContext(SessionContext{Messages: []any{assistant, historical}})
+
+		if len(mode.PendingTools) != 0 {
+			t.Fatalf("pending tools = %#v, want empty", mode.PendingTools)
+		}
+		if len(mode.PendingToolChatIndexes) != 0 {
+			t.Fatalf("pending tool indexes = %#v, want empty", mode.PendingToolChatIndexes)
+		}
+		if !strings.Contains(strings.Join(chat.text, "\n"), "HISTORICAL_RESULT") {
+			t.Fatalf("chat = %#v, want historical result", chat.text)
+		}
+		if len(chat.text) != 1 {
+			t.Fatalf("chat entries = %#v, want one updated historical tool block", chat.text)
+		}
+	})
+}
+
 func TestInteractiveModeSuspendMatchesPi(t *testing.T) {
 	t.Run("shows a status message and skips suspend on Windows", func(t *testing.T) {
 		ui := &fakeInteractiveUI{}
@@ -390,10 +460,21 @@ type fakeInteractiveContainer struct {
 
 func (c *fakeInteractiveContainer) Clear() {
 	c.clearCount++
+	c.text = nil
 }
 
 func (c *fakeInteractiveContainer) AddText(text string) {
 	c.text = append(c.text, text)
+}
+
+func (c *fakeInteractiveContainer) Len() int {
+	return len(c.text)
+}
+
+func (c *fakeInteractiveContainer) SetTextAt(index int, text string) {
+	if index >= 0 && index < len(c.text) {
+		c.text[index] = text
+	}
 }
 
 type fakeInteractiveFooter struct {

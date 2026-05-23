@@ -121,10 +121,7 @@ func (p *CombinedAutocompleteProvider) GetSuggestionsContext(ctx context.Context
 		return nil, err
 	}
 	fallbackProviderSuggestions := func() (*AutocompleteSuggestions, error) {
-		if suggestions := p.providerSuggestions(lines, cursorLine, cursorCol); suggestions != nil {
-			return suggestions, nil
-		}
-		return nil, nil
+		return p.providerSuggestionsContext(ctx, lines, cursorLine, cursorCol, force)
 	}
 	currentLine := ""
 	if cursorLine >= 0 && cursorLine < len(lines) {
@@ -208,18 +205,43 @@ func (p *CombinedAutocompleteProvider) GetSuggestionsContext(ctx context.Context
 }
 
 func (p *CombinedAutocompleteProvider) providerSuggestions(lines []string, cursorLine, cursorCol int) *AutocompleteSuggestions {
+	suggestions, _ := p.providerSuggestionsContext(context.Background(), lines, cursorLine, cursorCol, false)
+	return suggestions
+}
+
+func (p *CombinedAutocompleteProvider) providerSuggestionsContext(ctx context.Context, lines []string, cursorLine, cursorCol int, force bool) (*AutocompleteSuggestions, error) {
 	if len(p.providers) == 0 {
-		return nil
+		return nil, nil
 	}
 	text := strings.Join(lines, "\n")
 	cursor := cursorFromLineCol(lines, cursorLine, cursorCol)
 	for _, provider := range p.providers {
+		if provider, ok := provider.(editorAutocompleteContextProvider); ok {
+			suggestions, err := provider.GetSuggestionsContext(ctx, lines, cursorLine, cursorCol, force)
+			if err != nil {
+				return nil, err
+			}
+			if suggestions != nil && len(suggestions.Items) > 0 {
+				return suggestions, nil
+			}
+			continue
+		}
+		if provider, ok := provider.(editorAutocompleteFullProvider); ok {
+			suggestions, err := provider.GetSuggestions(lines, cursorLine, cursorCol, force)
+			if err != nil {
+				return nil, err
+			}
+			if suggestions != nil && len(suggestions.Items) > 0 {
+				return suggestions, nil
+			}
+			continue
+		}
 		suggestions := provider.Suggestions(text, cursor)
 		if len(suggestions.Items) > 0 {
-			return &suggestions
+			return &suggestions, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 type CompletionResult struct {

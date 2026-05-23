@@ -14,25 +14,30 @@ type DefaultResourceLoaderOptions struct {
 	CWD                      string
 	AgentDir                 string
 	SettingsManager          *SettingsManager
+	NoExtensions             bool
 	NoContextFiles           bool
 	NoSkills                 bool
+	NoPromptTemplates        bool
+	NoThemes                 bool
 	AdditionalExtensionPaths []string
 	AdditionalSkillPaths     []string
 	AdditionalPromptPaths    []string
+	AdditionalThemePaths     []string
+	SystemPrompt             string
+	AppendSystemPrompt       []string
 	SkillsOverride           func() ResourceSkillsResult
 	SystemPromptOverride     func() string
+	ExtensionFactories       []ProtocolExtensionFactory
 }
 
 type ResourceExtensionsResult struct {
-	Extensions []ProtocolExtensionSource
-	Errors     []ProtocolExtensionDiscoveryError
-	Runtime    *ProtocolExtensionRuntime
+	Extensions        []ProtocolExtensionSource
+	ProcessExtensions []ProtocolPackageProcessExtension
+	Errors            []ProtocolExtensionDiscoveryError
+	Runtime           *ProtocolExtensionRuntime
 }
 
-type ResourceSkillsResult struct {
-	Skills      []agentharness.Skill
-	Diagnostics []agentharness.SkillDiagnostic
-}
+type ResourceSkillsResult = AgentSessionSkillsResult
 
 type ResourcePromptsResult struct {
 	Prompts []PromptTemplate
@@ -48,7 +53,8 @@ type ResourceThemesResult struct {
 }
 
 type ResourceContextFile struct {
-	Path string
+	Path    string
+	Content string
 }
 
 type ResourceAgentsFilesResult struct {
@@ -70,23 +76,36 @@ type ResourcePromptPath struct {
 	Metadata ProtocolSourceInfo
 }
 
+type ResourceThemePath struct {
+	Path     string
+	Metadata ProtocolSourceInfo
+}
+
 type ResourceExtension struct {
 	ExtensionPaths []ResourceExtensionPath
 	SkillPaths     []ResourceSkillPath
 	PromptPaths    []ResourcePromptPath
+	ThemePaths     []ResourceThemePath
 }
 
 type DefaultResourceLoader struct {
 	cwd                      string
 	agentDir                 string
 	settingsManager          *SettingsManager
+	noExtensions             bool
 	noContextFiles           bool
 	noSkills                 bool
+	noPromptTemplates        bool
+	noThemes                 bool
 	additionalExtensionPaths []string
 	additionalSkillPaths     []string
 	additionalPromptPaths    []string
+	additionalThemePaths     []string
+	systemPromptSource       string
+	appendSystemSources      []string
 	skillsOverride           func() ResourceSkillsResult
 	systemPromptOverride     func() string
+	extensionFactories       []ProtocolExtensionFactory
 
 	extensions       ResourceExtensionsResult
 	skills           ResourceSkillsResult
@@ -97,11 +116,17 @@ type DefaultResourceLoader struct {
 	appendSystem     string
 	extensionSkills  []ResourceSkillPath
 	extensionPrompts []ResourcePromptPath
+	extensionThemes  []ResourceThemePath
+	runtimeSkills    []ResourceSkillPath
+	runtimePrompts   []ResourcePromptPath
+	runtimeThemes    []ResourceThemePath
 	packageResources ProtocolPackageResources
 	packageLoadError error
 	extendedSkills   []ResourceSkillPath
 	extendedPrompts  []ResourcePromptPath
+	extendedThemes   []ResourceThemePath
 	extendedExtPaths []ResourceExtensionPath
+	reloadCount      int
 }
 
 func NewDefaultResourceLoader(options DefaultResourceLoaderOptions) *DefaultResourceLoader {
@@ -117,20 +142,36 @@ func NewDefaultResourceLoader(options DefaultResourceLoaderOptions) *DefaultReso
 		cwd:                      cwd,
 		agentDir:                 options.AgentDir,
 		settingsManager:          settingsManager,
+		noExtensions:             options.NoExtensions,
 		noContextFiles:           options.NoContextFiles,
 		noSkills:                 options.NoSkills,
+		noPromptTemplates:        options.NoPromptTemplates,
+		noThemes:                 options.NoThemes,
 		additionalExtensionPaths: append([]string(nil), options.AdditionalExtensionPaths...),
 		additionalSkillPaths:     append([]string(nil), options.AdditionalSkillPaths...),
 		additionalPromptPaths:    append([]string(nil), options.AdditionalPromptPaths...),
+		additionalThemePaths:     append([]string(nil), options.AdditionalThemePaths...),
+		systemPromptSource:       options.SystemPrompt,
+		appendSystemSources:      append([]string(nil), options.AppendSystemPrompt...),
 		skillsOverride:           options.SkillsOverride,
 		systemPromptOverride:     options.SystemPromptOverride,
+		extensionFactories:       append([]ProtocolExtensionFactory(nil), options.ExtensionFactories...),
 		extensions:               ResourceExtensionsResult{Runtime: NewDefaultProtocolExtensionRuntime()},
 	}
 }
 
 func (l *DefaultResourceLoader) Reload() {
+	reason := "startup"
+	if l.reloadCount > 0 {
+		reason = "reload"
+	}
+	l.reloadCount++
+	if l.settingsManager != nil {
+		l.settingsManager.Reload()
+	}
 	l.packageResources, l.packageLoadError = l.loadPackageResources()
 	l.extensions = l.loadExtensions()
+	l.discoverRuntimeResources(reason)
 	l.skills = l.loadSkills()
 	l.prompts = ResourcePromptsResult{Prompts: l.loadPrompts()}
 	l.themes = ResourceThemesResult{Themes: l.loadThemes()}
@@ -143,13 +184,41 @@ func (l *DefaultResourceLoader) ExtendResources(resources ResourceExtension) {
 	l.extendedExtPaths = append(l.extendedExtPaths, resources.ExtensionPaths...)
 	l.extendedSkills = append(l.extendedSkills, resources.SkillPaths...)
 	l.extendedPrompts = append(l.extendedPrompts, resources.PromptPaths...)
-	l.extensions = l.loadExtensions()
+	l.extendedThemes = append(l.extendedThemes, resources.ThemePaths...)
+	if len(resources.ExtensionPaths) > 0 {
+		l.extensions = l.loadExtensions()
+		l.discoverRuntimeResources("reload")
+	}
 	l.skills = l.loadSkills()
 	l.prompts = ResourcePromptsResult{Prompts: l.loadPrompts()}
+	l.themes = ResourceThemesResult{Themes: l.loadThemes()}
 }
 
 func (l *DefaultResourceLoader) GetExtensions() ResourceExtensionsResult {
 	return l.extensions
+}
+
+func (l *DefaultResourceLoader) ApplyExtensionFlagValues(values map[string]any, allowDeferred bool) []ProtocolExtensionDiscoveryError {
+	if l == nil || len(values) == 0 || l.extensions.Runtime == nil {
+		return nil
+	}
+	var diagnostics []ProtocolExtensionFlagDiagnostic
+	diagnostics = append(diagnostics, l.extensions.Runtime.SetCLIFlagValues(values)...)
+	if !allowDeferred {
+		diagnostics = append(diagnostics, l.extensions.Runtime.UnknownCLIFlagDiagnostics()...)
+	}
+	if len(diagnostics) == 0 {
+		return nil
+	}
+	errors := make([]ProtocolExtensionDiscoveryError, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		errors = append(errors, ProtocolExtensionDiscoveryError{
+			Path:  "extension flags",
+			Error: diagnostic.Message,
+		})
+	}
+	l.extensions.Errors = append(l.extensions.Errors, errors...)
+	return errors
 }
 
 func (l *DefaultResourceLoader) GetSkills() ResourceSkillsResult {
@@ -181,37 +250,69 @@ func (l *DefaultResourceLoader) loadExtensions() ResourceExtensionsResult {
 	for _, source := range l.extendedExtPaths {
 		combined.Extensions = append(combined.Extensions, ProtocolExtensionSource{Path: source.Path, BaseDir: filepath.Dir(source.Path), Metadata: source.Metadata})
 	}
-	for _, resource := range l.packageResources.Extensions {
-		if !resource.Enabled {
-			continue
+	if !l.noExtensions {
+		for _, resource := range l.packageResources.Extensions {
+			if !resource.Enabled {
+				continue
+			}
+			combined.Extensions = append(combined.Extensions, ProtocolExtensionSource{Path: resource.Path, BaseDir: filepath.Dir(resource.Path), Metadata: resource.Metadata})
 		}
-		combined.Extensions = append(combined.Extensions, ProtocolExtensionSource{Path: resource.Path, BaseDir: filepath.Dir(resource.Path), Metadata: resource.Metadata})
-	}
-	if l.packageLoadError != nil {
-		combined.Errors = append(combined.Errors, ProtocolExtensionDiscoveryError{Path: "packages", Error: l.packageLoadError.Error()})
-	}
-	for _, source := range l.settingsExtensionSources() {
-		combined.Extensions = append(combined.Extensions, source)
+		if l.packageLoadError != nil {
+			combined.Errors = append(combined.Errors, ProtocolExtensionDiscoveryError{Path: "packages", Error: l.packageLoadError.Error()})
+		}
+		for _, source := range l.settingsExtensionSources() {
+			combined.Extensions = append(combined.Extensions, source)
+		}
 	}
 	explicit := LoadProtocolExtensionSources(l.additionalExtensionPaths, l.cwd)
 	combined.Extensions = append(combined.Extensions, explicit.Extensions...)
 	combined.Errors = append(combined.Errors, explicit.Errors...)
-	for _, dir := range []string{filepath.Join(l.cwd, ConfigDirName, "extensions"), filepath.Join(l.agentDir, "extensions")} {
-		discovered := discoverProtocolExtensionsInDir(dir)
-		combined.Extensions = append(combined.Extensions, discovered.Extensions...)
-		combined.Errors = append(combined.Errors, discovered.Errors...)
+	if !l.noExtensions {
+		for _, dir := range []string{filepath.Join(l.cwd, ConfigDirName, "extensions"), filepath.Join(l.agentDir, "extensions")} {
+			discovered := discoverProtocolExtensionsInDir(dir)
+			combined.Extensions = append(combined.Extensions, discovered.Extensions...)
+			combined.Errors = append(combined.Errors, discovered.Errors...)
+		}
 	}
 	filtered := filterProtocolExtensions(combined.Extensions, l.resourceFilters("extensions"), l.cwd, l.agentDir)
 	extensions := dedupeProtocolExtensionSources(filtered)
 	runtime := NewDefaultProtocolExtensionRuntime()
 	loaded := LoadProtocolExtensionDescriptors(extensions, runtime)
+	if len(l.extensionFactories) > 0 {
+		if err := runtime.LoadFactories(l.extensionFactories); err != nil {
+			loaded.Errors = append(loaded.Errors, ProtocolExtensionDiscoveryError{Path: "extension factories", Error: err.Error()})
+		}
+	}
 	l.extensionSkills = loaded.Resources.SkillPaths
 	l.extensionPrompts = loaded.Resources.PromptPaths
+	l.extensionThemes = loaded.Resources.ThemePaths
 	return ResourceExtensionsResult{
-		Extensions: extensions,
-		Errors:     append(combined.Errors, loaded.Errors...),
-		Runtime:    runtime,
+		Extensions:        extensions,
+		ProcessExtensions: append([]ProtocolPackageProcessExtension(nil), l.packageResources.ProcessExtensions...),
+		Errors:            append(combined.Errors, loaded.Errors...),
+		Runtime:           runtime,
 	}
+}
+
+func (l *DefaultResourceLoader) discoverRuntimeResources(reason string) {
+	l.runtimeSkills = nil
+	l.runtimePrompts = nil
+	l.runtimeThemes = nil
+	runtime := l.extensions.Runtime
+	if runtime == nil || !runtime.HasHandlers(ProtocolEventResourcesDiscover) {
+		return
+	}
+	result, err := runtime.EmitSessionEvent(ProtocolSessionEvent{Type: ProtocolEventResourcesDiscover, Reason: reason, CWD: l.cwd})
+	if err != nil {
+		l.extensions.Errors = append(l.extensions.Errors, ProtocolExtensionDiscoveryError{Path: "resources_discover", Error: err.Error()})
+		return
+	}
+	if !result.ResourcesSet {
+		return
+	}
+	l.runtimeSkills = append(l.runtimeSkills, result.Resources.SkillPaths...)
+	l.runtimePrompts = append(l.runtimePrompts, result.Resources.PromptPaths...)
+	l.runtimeThemes = append(l.runtimeThemes, result.Resources.ThemePaths...)
 }
 
 func (l *DefaultResourceLoader) loadSkills() ResourceSkillsResult {
@@ -219,42 +320,46 @@ func (l *DefaultResourceLoader) loadSkills() ResourceSkillsResult {
 		return l.skillsOverride()
 	}
 	var result ResourceSkillsResult
-	for _, resource := range l.packageResources.Skills {
-		if !resource.Enabled {
-			continue
+	if !l.noSkills {
+		for _, resource := range l.packageResources.Skills {
+			if !resource.Enabled {
+				continue
+			}
+			loaded := loadResourceSkillsWithMetadata(resource.Path, resource.Metadata)
+			result.Skills = append(result.Skills, loaded.Skills...)
+			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 		}
-		loaded := loadResourceSkillsWithMetadata(resource.Path, resource.Metadata)
-		result.Skills = append(result.Skills, loaded.Skills...)
-		result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 	}
 	if !l.noSkills {
 		for _, dir := range l.settingsResourcePaths("skills") {
-			loaded := agentharness.LoadSkills(dir)
+			loaded := loadResourceSkillsWithMetadata(dir, skillSourceMetadata(dir, "temporary"))
 			result.Skills = append(result.Skills, loaded.Skills...)
 			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 		}
 		for _, dir := range []string{filepath.Join(l.agentDir, "skills")} {
-			loaded := agentharness.LoadSkills(dir)
+			loaded := loadResourceSkillsWithMetadata(dir, skillSourceMetadata(dir, "user"))
 			result.Skills = append(result.Skills, loaded.Skills...)
 			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 		}
 		userAgentsDir := userAgentsDirFromAgentDir(l.agentDir)
 		if userAgentsDir != "" {
-			loaded := agentharness.LoadSkillsWithOptions(agentharness.LoadSkillsOptions{RespectGitignore: true}, filepath.Join(userAgentsDir, "skills"))
+			dir := filepath.Join(userAgentsDir, "skills")
+			loaded := loadResourceSkillsWithMetadataOptions(dir, skillSourceMetadata(dir, "user"), agentharness.LoadSkillsOptions{RespectGitignore: true})
 			result.Skills = append(result.Skills, loaded.Skills...)
 			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 		}
 		for _, dir := range projectAgentsSkillDirs(l.cwd, userAgentsDir) {
-			loaded := agentharness.LoadSkillsWithOptions(agentharness.LoadSkillsOptions{RespectGitignore: true}, dir)
+			loaded := loadResourceSkillsWithMetadataOptions(dir, skillSourceMetadata(dir, "project"), agentharness.LoadSkillsOptions{RespectGitignore: true})
 			result.Skills = append(result.Skills, loaded.Skills...)
 			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 		}
-		loaded := agentharness.LoadSkills(filepath.Join(l.cwd, ConfigDirName, "skills"))
+		loaded := loadResourceSkillsWithMetadata(filepath.Join(l.cwd, ConfigDirName, "skills"), skillSourceMetadata(filepath.Join(l.cwd, ConfigDirName, "skills"), "project"))
 		result.Skills = append(result.Skills, loaded.Skills...)
 		result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 	}
 	for _, path := range l.additionalSkillPaths {
-		loaded := agentharness.LoadSkills(ResolveToCwd(path, l.cwd))
+		resolved := ResolveToCwd(path, l.cwd)
+		loaded := loadResourceSkillsWithMetadata(resolved, skillSourceMetadata(resolved, "temporary"))
 		result.Skills = append(result.Skills, loaded.Skills...)
 		result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 	}
@@ -268,7 +373,13 @@ func (l *DefaultResourceLoader) loadSkills() ResourceSkillsResult {
 		result.Skills = append(result.Skills, loaded.Skills...)
 		result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 	}
+	for _, path := range l.runtimeSkills {
+		loaded := loadResourceSkillsWithMetadata(ResolveToCwd(path.Path, l.cwd), path.Metadata)
+		result.Skills = append(result.Skills, loaded.Skills...)
+		result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
+	}
 	result.Skills = filterSkills(result.Skills, l.resourceFilters("skills"), l.cwd, l.agentDir)
+	result.Diagnostics = append(result.Diagnostics, skillCollisionDiagnostics(result.Skills)...)
 	result.Skills = dedupeSkillsByName(result.Skills)
 	return result
 }
@@ -324,16 +435,18 @@ func isFilesystemRoot(path string) bool {
 
 func (l *DefaultResourceLoader) loadPrompts() []PromptTemplate {
 	var prompts []PromptTemplate
-	for _, resource := range l.packageResources.Prompts {
-		if resource.Enabled {
-			prompts = append(prompts, loadResourcePromptsWithMetadata(resource.Path, resource.Metadata)...)
+	if !l.noPromptTemplates {
+		for _, resource := range l.packageResources.Prompts {
+			if resource.Enabled {
+				prompts = append(prompts, loadResourcePromptsWithMetadata(resource.Path, resource.Metadata)...)
+			}
 		}
+		for _, path := range l.settingsResourcePaths("prompts") {
+			prompts = append(prompts, LoadPromptTemplates(LoadPromptTemplatesOptions{Cwd: l.cwd, PromptPaths: []string{path}})...)
+		}
+		prompts = append(prompts, loadPromptTemplatesFromDir(filepath.Join(l.agentDir, "prompts"), sourceInfoForPromptPath(filepath.Join(l.agentDir, "prompts"), filepath.Join(l.agentDir, "prompts"), filepath.Join(l.cwd, ConfigDirName, "prompts")))...)
+		prompts = append(prompts, loadPromptTemplatesFromDir(filepath.Join(l.cwd, ConfigDirName, "prompts"), sourceInfoForPromptPath(filepath.Join(l.cwd, ConfigDirName, "prompts"), filepath.Join(l.agentDir, "prompts"), filepath.Join(l.cwd, ConfigDirName, "prompts")))...)
 	}
-	for _, path := range l.settingsResourcePaths("prompts") {
-		prompts = append(prompts, LoadPromptTemplates(LoadPromptTemplatesOptions{Cwd: l.cwd, PromptPaths: []string{path}})...)
-	}
-	prompts = append(prompts, loadPromptTemplatesFromDir(filepath.Join(l.agentDir, "prompts"), sourceInfoForPromptPath(filepath.Join(l.agentDir, "prompts"), filepath.Join(l.agentDir, "prompts"), filepath.Join(l.cwd, ConfigDirName, "prompts")))...)
-	prompts = append(prompts, loadPromptTemplatesFromDir(filepath.Join(l.cwd, ConfigDirName, "prompts"), sourceInfoForPromptPath(filepath.Join(l.cwd, ConfigDirName, "prompts"), filepath.Join(l.agentDir, "prompts"), filepath.Join(l.cwd, ConfigDirName, "prompts")))...)
 	for _, path := range l.additionalPromptPaths {
 		prompts = append(prompts, LoadPromptTemplates(LoadPromptTemplatesOptions{Cwd: l.cwd, PromptPaths: []string{path}})...)
 	}
@@ -343,16 +456,23 @@ func (l *DefaultResourceLoader) loadPrompts() []PromptTemplate {
 	for _, path := range l.extensionPrompts {
 		prompts = append(prompts, loadResourcePromptsWithMetadata(ResolveToCwd(path.Path, l.cwd), path.Metadata)...)
 	}
+	for _, path := range l.runtimePrompts {
+		prompts = append(prompts, loadResourcePromptsWithMetadata(ResolveToCwd(path.Path, l.cwd), path.Metadata)...)
+	}
 	prompts = filterPrompts(prompts, l.resourceFilters("prompts"), l.cwd, l.agentDir)
 	return dedupePromptsByName(prompts)
 }
 
 func loadResourceSkillsWithMetadata(path string, metadata ProtocolSourceInfo) agentharness.SkillResult {
+	return loadResourceSkillsWithMetadataOptions(path, metadata, agentharness.LoadSkillsOptions{IncludeRootMarkdownFiles: true})
+}
+
+func loadResourceSkillsWithMetadataOptions(path string, metadata ProtocolSourceInfo, options agentharness.LoadSkillsOptions) agentharness.SkillResult {
 	loadPath := path
 	if filepath.Base(path) == "SKILL.md" {
 		loadPath = filepath.Dir(path)
 	}
-	loaded := agentharness.LoadSkills(loadPath)
+	loaded := agentharness.LoadSkillsWithOptions(options, loadPath)
 	for index := range loaded.Skills {
 		info := metadata
 		info.Path = loaded.Skills[index].FilePath
@@ -362,6 +482,10 @@ func loadResourceSkillsWithMetadata(path string, metadata ProtocolSourceInfo) ag
 		loaded.Diagnostics[index].Source = metadata
 	}
 	return loaded
+}
+
+func skillSourceMetadata(path, scope string) ProtocolSourceInfo {
+	return ProtocolSourceInfo{Path: path, Source: "local", Scope: scope, Origin: "top-level"}
 }
 
 func loadResourcePromptsWithMetadata(path string, metadata ProtocolSourceInfo) []PromptTemplate {
@@ -399,16 +523,43 @@ func sourceInfoFromProtocolMetadata(metadata ProtocolSourceInfo) SourceInfo {
 
 func (l *DefaultResourceLoader) loadThemes() []ResourceTheme {
 	var themes []ResourceTheme
-	for _, resource := range l.packageResources.Themes {
-		if resource.Enabled {
-			themes = append(themes, loadThemeFile(resource.Path)...)
+	if !l.noThemes {
+		for _, resource := range l.packageResources.Themes {
+			if resource.Enabled {
+				themes = append(themes, loadThemeFile(resource.Path)...)
+			}
+		}
+		for _, dir := range []string{filepath.Join(l.agentDir, "themes"), filepath.Join(l.cwd, ConfigDirName, "themes")} {
+			themes = append(themes, loadThemesFromDir(dir)...)
 		}
 	}
-	for _, dir := range []string{filepath.Join(l.agentDir, "themes"), filepath.Join(l.cwd, ConfigDirName, "themes")} {
-		themes = append(themes, loadThemesFromDir(dir)...)
+	for _, path := range l.additionalThemePaths {
+		resolved := ResolveToCwd(path, l.cwd)
+		if info, err := os.Stat(resolved); err == nil && info.IsDir() {
+			themes = append(themes, loadThemesFromDir(resolved)...)
+		} else {
+			themes = append(themes, loadThemeFile(resolved)...)
+		}
+	}
+	for _, path := range l.extendedThemes {
+		themes = append(themes, loadThemeResourcePath(path, l.cwd)...)
+	}
+	for _, path := range l.extensionThemes {
+		themes = append(themes, loadThemeResourcePath(path, l.cwd)...)
+	}
+	for _, path := range l.runtimeThemes {
+		themes = append(themes, loadThemeResourcePath(path, l.cwd)...)
 	}
 	themes = filterThemes(themes, l.resourceFilters("themes"), l.cwd, l.agentDir)
 	return dedupeThemesByName(themes)
+}
+
+func loadThemeResourcePath(path ResourceThemePath, cwd string) []ResourceTheme {
+	resolved := ResolveToCwd(path.Path, cwd)
+	if info, err := os.Stat(resolved); err == nil && info.IsDir() {
+		return loadThemesFromDir(resolved)
+	}
+	return loadThemeFile(resolved)
 }
 
 func (l *DefaultResourceLoader) loadPackageResources() (ProtocolPackageResources, error) {
@@ -424,24 +575,85 @@ func (l *DefaultResourceLoader) loadAgentsFiles() []ResourceContextFile {
 	if l.noContextFiles {
 		return nil
 	}
+	return loadProjectContextResourceFiles(l.cwd, l.agentDir)
+}
+
+func loadProjectContextResourceFiles(cwd, agentDir string) []ResourceContextFile {
 	var files []ResourceContextFile
-	for _, name := range []string{"AGENTS.md", "CLAUDE.md"} {
-		path := filepath.Join(l.cwd, name)
-		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
-			files = append(files, ResourceContextFile{Path: path})
+	seen := map[string]struct{}{}
+	add := func(file *ResourceContextFile) {
+		if file == nil {
+			return
 		}
+		clean := filepath.Clean(file.Path)
+		if _, ok := seen[clean]; ok {
+			return
+		}
+		seen[clean] = struct{}{}
+		files = append(files, *file)
+	}
+	add(loadContextFileFromDir(agentDir))
+
+	var ancestors []ResourceContextFile
+	current := filepath.Clean(cwd)
+	for {
+		if file := loadContextFileFromDir(current); file != nil {
+			ancestors = append([]ResourceContextFile{*file}, ancestors...)
+		}
+		if isFilesystemRoot(current) {
+			break
+		}
+		next := filepath.Dir(current)
+		if next == current {
+			break
+		}
+		current = next
+	}
+	for i := range ancestors {
+		add(&ancestors[i])
 	}
 	return files
+}
+
+func loadContextFileFromDir(dir string) *ResourceContextFile {
+	if dir == "" {
+		return nil
+	}
+	for _, name := range []string{"AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"} {
+		path := filepath.Join(dir, name)
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		return &ResourceContextFile{Path: path, Content: string(content)}
+	}
+	return nil
 }
 
 func (l *DefaultResourceLoader) loadSystemPrompt() string {
 	if l.systemPromptOverride != nil {
 		return l.systemPromptOverride()
 	}
+	if strings.TrimSpace(l.systemPromptSource) != "" {
+		return resolvePromptInput(l.systemPromptSource)
+	}
 	return strings.TrimSpace(readOptionalFile(filepath.Join(l.cwd, ConfigDirName, "SYSTEM.md")))
 }
 
 func (l *DefaultResourceLoader) loadAppendSystemPrompt() string {
+	if len(l.appendSystemSources) > 0 {
+		var parts []string
+		for _, source := range l.appendSystemSources {
+			if resolved := strings.TrimSpace(resolvePromptInput(source)); resolved != "" {
+				parts = append(parts, resolved)
+			}
+		}
+		return strings.Join(parts, "\n\n")
+	}
 	return readOptionalFile(filepath.Join(l.cwd, ConfigDirName, "APPEND_SYSTEM.md"))
 }
 
@@ -573,6 +785,42 @@ func dedupeSkillsByName(skills []agentharness.Skill) []agentharness.Skill {
 	return result
 }
 
+func skillCollisionDiagnostics(skills []agentharness.Skill) []agentharness.SkillDiagnostic {
+	lastByName := map[string]agentharness.Skill{}
+	countByName := map[string]int{}
+	for _, skill := range skills {
+		if skill.Name == "" {
+			continue
+		}
+		countByName[skill.Name]++
+		lastByName[skill.Name] = skill
+	}
+	var diagnostics []agentharness.SkillDiagnostic
+	reportedLoser := map[string]bool{}
+	for _, skill := range skills {
+		if countByName[skill.Name] <= 1 {
+			continue
+		}
+		winner := lastByName[skill.Name]
+		if skill.FilePath == winner.FilePath {
+			continue
+		}
+		key := skill.Name + "\x00" + skill.FilePath
+		if reportedLoser[key] {
+			continue
+		}
+		reportedLoser[key] = true
+		diagnostics = append(diagnostics, agentharness.SkillDiagnostic{
+			Type:    "collision",
+			Code:    "skill_collision",
+			Message: `skill "` + skill.Name + `" from ` + skill.FilePath + ` was overridden by ` + winner.FilePath,
+			Path:    skill.FilePath,
+			Source:  skill.SourceInfo,
+		})
+	}
+	return diagnostics
+}
+
 func dedupePromptsByName(prompts []PromptTemplate) []PromptTemplate {
 	byName := map[string]PromptTemplate{}
 	var order []string
@@ -658,4 +906,15 @@ func readOptionalFile(path string) string {
 		return ""
 	}
 	return string(content)
+}
+
+func resolvePromptInput(input string) string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return ""
+	}
+	if content, err := os.ReadFile(input); err == nil {
+		return string(content)
+	}
+	return input
 }

@@ -229,7 +229,7 @@ func (v *VirtualTerminal) HideCursor() error      { return v.Write("\x1b[?25l") 
 func (v *VirtualTerminal) ShowCursor() error      { return v.Write("\x1b[?25h") }
 func (v *VirtualTerminal) ClearLine() error       { return v.Write("\x1b[K") }
 func (v *VirtualTerminal) ClearFromCursor() error { return v.Write("\x1b[J") }
-func (v *VirtualTerminal) ClearScreen() error     { return v.Write("\x1b[2J\x1b[H") }
+func (v *VirtualTerminal) ClearScreen() error     { return v.Write("\x1b[2J\x1b[H\x1b[3J") }
 func (v *VirtualTerminal) SetTitle(title string) error {
 	return v.Write("\x1b]0;" + title + "\x07")
 }

@@ -329,23 +329,30 @@ func (h *overlayHandle) IsFocused() bool { return h.t.FocusedComponent() == h.en
 // TUI manages component focus, input routing, overlays, and terminal rendering.
 type TUI struct {
 	*Container
-	terminal          Terminal
-	previousLines     []string
-	previousWidth     int
-	previousHeight    int
-	cursorPosition    terminalCursorPosition
-	hardwareCursorRow int
-	focusedComponent  Component
-	listeners         []inputListenerEntry
-	nextListenerID    int
-	overlays          []*overlayEntry
-	focusCounter      int
-	stopped           bool
-	clearOnShrink     bool
-	showCursor        bool
-	fullRedraws       int
-	onDebug           func()
-	mu                sync.Mutex
+	terminal               Terminal
+	previousLines          []string
+	previousWidth          int
+	previousHeight         int
+	cursorPosition         terminalCursorPosition
+	hardwareCursorRow      int
+	originAnchored         bool
+	focusedComponent       Component
+	listeners              []inputListenerEntry
+	nextListenerID         int
+	overlays               []*overlayEntry
+	focusCounter           int
+	stopped                bool
+	clearOnShrink          bool
+	showCursor             bool
+	fullRedraws            int
+	onDebug                func()
+	onTerminalError        func(error)
+	mu                     sync.Mutex
+	terminalErrorHandlerMu sync.RWMutex
+}
+
+type TUIStartOptions struct {
+	InitialRender bool
 }
 
 type terminalCursorPosition struct {
@@ -424,7 +431,7 @@ func (t *TUI) ShowOverlay(component Component, options ...OverlayOptions) Overla
 	if !opts.NonCapturing && t.isOverlayVisibleLocked(entry) {
 		t.setFocusLocked(component)
 	}
-	_ = t.terminal.HideCursor()
+	t.reportTerminalError(t.terminal.HideCursor())
 	t.requestRenderLocked(false)
 	return &overlayHandle{t: t, entry: entry}
 }
@@ -513,18 +520,31 @@ func (t *TUI) nextFocusOrder() int {
 }
 
 func (t *TUI) Start() {
+	t.StartWithOptions(TUIStartOptions{InitialRender: true})
+}
+
+func (t *TUI) StartWithOptions(options TUIStartOptions) {
 	t.mu.Lock()
 	t.stopped = false
 	t.mu.Unlock()
-	t.terminal.Start(func(data string) { t.HandleInput(data) }, func() { t.RequestRender(false) })
-	_ = t.terminal.HideCursor()
+	var resizeRenderEnabled atomic.Bool
+	resizeRenderEnabled.Store(options.InitialRender)
+	t.terminal.Start(func(data string) { t.HandleInput(data) }, func() {
+		if resizeRenderEnabled.Load() {
+			t.RequestRender(false)
+		}
+	})
+	resizeRenderEnabled.Store(true)
+	t.reportTerminalError(t.terminal.HideCursor())
 	t.queryCellSize()
-	t.RequestRender(false)
+	if options.InitialRender {
+		t.RequestRender(false)
+	}
 }
 
 func (t *TUI) queryCellSize() {
 	if GetCapabilities().Images {
-		_ = t.terminal.Write("\x1b[16t")
+		t.reportTerminalError(t.terminal.Write("\x1b[16t"))
 	}
 }
 
@@ -539,10 +559,21 @@ func (t *TUI) Stop() {
 	hardwareCursorRow := t.hardwareCursorRow
 	t.mu.Unlock()
 	if lines > 0 {
-		_ = t.terminal.MoveBy(lines - hardwareCursorRow)
-		_ = t.terminal.Write("\r\n")
+		t.reportTerminalError(t.terminal.MoveBy(lines - hardwareCursorRow))
+		t.reportTerminalError(t.terminal.Write("\r\n"))
 	}
-	_ = t.terminal.ShowCursor()
+	t.reportTerminalError(t.terminal.ShowCursor())
+	t.terminal.Stop()
+}
+
+func (t *TUI) StopWithoutRender() {
+	t.mu.Lock()
+	if t.stopped {
+		t.mu.Unlock()
+		return
+	}
+	t.stopped = true
+	t.mu.Unlock()
 	t.terminal.Stop()
 }
 
@@ -669,6 +700,24 @@ func (t *TUI) SetOnDebug(fn func()) {
 	t.onDebug = fn
 }
 
+func (t *TUI) SetTerminalErrorHandler(fn func(error)) {
+	t.terminalErrorHandlerMu.Lock()
+	defer t.terminalErrorHandlerMu.Unlock()
+	t.onTerminalError = fn
+}
+
+func (t *TUI) reportTerminalError(err error) {
+	if err == nil {
+		return
+	}
+	t.terminalErrorHandlerMu.RLock()
+	handler := t.onTerminalError
+	t.terminalErrorHandlerMu.RUnlock()
+	if handler != nil {
+		go handler(err)
+	}
+}
+
 func (t *TUI) Invalidate() {
 	t.Container.Invalidate()
 	t.mu.Lock()
@@ -710,9 +759,12 @@ func (t *TUI) requestRenderLocked(force bool) {
 	firstRender := len(t.previousLines) == 0
 	full := force || firstRender || widthChanged || heightChanged || shrunk || viewportMovedUp || changedAboveViewport
 	if !full && equalLines(lines, t.previousLines) {
-		output := t.hardwareCursorBuffer(len(lines), height)
+		output := t.hardwareCursorBuffer(len(lines), height, t.hardwareCursorRow, t.originAnchored)
 		if output != "" {
-			_ = t.terminal.Write(output)
+			if err := t.terminal.Write(output); err != nil {
+				t.reportTerminalError(err)
+				return
+			}
 			if t.cursorPosition.ok {
 				t.hardwareCursorRow = terminalCursorContentRow(lines, height, t.cursorPosition)
 			}
@@ -723,12 +775,16 @@ func (t *TUI) requestRenderLocked(force bool) {
 	if full {
 		clear := force || widthChanged || heightChanged || shrunk || viewportMovedUp || changedAboveViewport
 		result = t.fullRenderBuffer(lines, clear)
+		t.originAnchored = clear
 		t.fullRedraws++
 	} else {
 		result = t.diffRenderBuffer(lines)
 	}
-	output := result.output + t.hardwareCursorBuffer(len(lines), height)
-	_ = t.terminal.Write(output)
+	output := result.output + t.hardwareCursorBuffer(len(lines), height, result.finalRow, t.originAnchored)
+	if err := t.terminal.Write(output); err != nil {
+		t.reportTerminalError(err)
+		return
+	}
 	if t.cursorPosition.ok {
 		t.hardwareCursorRow = terminalCursorContentRow(lines, height, t.cursorPosition)
 	} else {
@@ -787,8 +843,12 @@ func (t *TUI) diffRenderBuffer(lines []string) renderBuffer {
 	if first < len(t.previousLines) {
 		b.WriteString(deleteImageIDsFromLines(t.previousLines[first:min(last+1, len(t.previousLines))]))
 	}
-	b.WriteString("\x1b[H")
-	moveToLine(&b, first)
+	if t.originAnchored {
+		b.WriteString("\x1b[H")
+		moveToLine(&b, first)
+	} else {
+		moveRelativeToLine(&b, t.hardwareCursorRow, first)
+	}
 	renderEnd := min(last, len(lines)-1)
 	finalRow := max(0, renderEnd)
 	if first < len(lines) {
@@ -862,6 +922,19 @@ func moveToLine(b *strings.Builder, row int) {
 	b.WriteString("\x1b[")
 	b.WriteString(strconv.Itoa(row))
 	b.WriteString("B")
+}
+
+func moveRelativeToLine(b *strings.Builder, from, to int) {
+	switch delta := to - from; {
+	case delta > 0:
+		b.WriteString("\x1b[")
+		b.WriteString(strconv.Itoa(delta))
+		b.WriteString("B")
+	case delta < 0:
+		b.WriteString("\x1b[")
+		b.WriteString(strconv.Itoa(-delta))
+		b.WriteString("A")
+	}
 }
 
 func isPureAppend(oldLines, newLines []string) bool {
@@ -1021,18 +1094,28 @@ func extractTerminalCursorPosition(lines []string, width, height int) terminalCu
 	return position
 }
 
-func (t *TUI) hardwareCursorBuffer(lineCount, height int) string {
+func (t *TUI) hardwareCursorBuffer(lineCount, height, currentRow int, anchored bool) string {
 	if !t.cursorPosition.ok {
 		return "\x1b[?25l"
 	}
 	row := max(0, min(t.cursorPosition.row, max(0, min(lineCount, height)-1)))
 	col := max(0, t.cursorPosition.col)
 	var b strings.Builder
-	b.WriteString("\x1b[")
-	b.WriteString(strconv.Itoa(row + 1))
-	b.WriteString(";")
-	b.WriteString(strconv.Itoa(col + 1))
-	b.WriteString("H")
+	if anchored {
+		b.WriteString("\x1b[")
+		b.WriteString(strconv.Itoa(row + 1))
+		b.WriteString(";")
+		b.WriteString(strconv.Itoa(col + 1))
+		b.WriteString("H")
+	} else {
+		moveRelativeToLine(&b, currentRow, row)
+		b.WriteString("\r")
+		if col > 0 {
+			b.WriteString("\x1b[")
+			b.WriteString(strconv.Itoa(col))
+			b.WriteString("C")
+		}
+	}
 	if t.showCursor {
 		b.WriteString("\x1b[?25h")
 	} else {
@@ -1232,7 +1315,7 @@ func (t *TUI) SetShowHardwareCursor(enabled bool) {
 	terminal := t.terminal
 	t.mu.Unlock()
 	if !enabled {
-		_ = terminal.HideCursor()
+		t.reportTerminalError(terminal.HideCursor())
 	}
 	t.RequestRender(false)
 }

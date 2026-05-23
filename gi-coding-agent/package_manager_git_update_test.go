@@ -63,6 +63,24 @@ func TestDefaultPackageManagerGitUpdatePiNormalAndForcePush(t *testing.T) {
 		}
 	})
 
+	t.Run("checks available git package updates without resetting checkout", func(t *testing.T) {
+		env.reset(t)
+		env.setupRemoteAndInstall(t, "")
+		initialHead := packageManagerGitHead(t, env.installedDir)
+		createPackageManagerCommit(t, env.remoteDir, "extension.ts", "// v2", "Second commit")
+
+		updates, err := env.manager.CheckForAvailableUpdates()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(updates) != 1 || updates[0].DisplayName != "github.com/test/extension" || updates[0].Type != "git" {
+			t.Fatalf("updates = %#v", updates)
+		}
+		if got := packageManagerGitHead(t, env.installedDir); got != initialHead {
+			t.Fatalf("check should not mutate checkout head = %s, want %s", got, initialHead)
+		}
+	})
+
 	t.Run("handles multiple commits ahead", func(t *testing.T) {
 		env.reset(t)
 		env.setupRemoteAndInstall(t, "")

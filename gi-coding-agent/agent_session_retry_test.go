@@ -112,6 +112,41 @@ func TestAgentSessionRetryProviderNetworkError(t *testing.T) {
 	}
 }
 
+func TestAgentSessionRetryNetworkConnectionLostPiRegression(t *testing.T) {
+	callCount := 0
+	session := createRetryTestSessionWithResponder(t, 3, func(_ string, _ []llm.Message, _ llm.Model) (llm.Message, error) {
+		callCount++
+		if callCount == 1 {
+			return retryAssistantError("Network connection lost."), nil
+		}
+		return retryAssistantText("recovered after reconnect"), nil
+	})
+	defer session.Dispose()
+	var retryErrors []string
+	var retryEnds []bool
+	session.Subscribe(func(event AgentSessionEvent) {
+		if event.Type == "auto_retry_start" {
+			retryErrors = append(retryErrors, event.ErrorMessage)
+		}
+		if event.Type == "auto_retry_end" {
+			retryEnds = append(retryEnds, event.Success)
+		}
+	})
+
+	if err := session.Prompt("test"); err != nil {
+		t.Fatal(err)
+	}
+	if callCount != 2 {
+		t.Fatalf("calls = %d, want 2", callCount)
+	}
+	if len(retryErrors) != 1 || retryErrors[0] != "Network connection lost." {
+		t.Fatalf("retry errors = %#v", retryErrors)
+	}
+	if len(retryEnds) != 1 || !retryEnds[0] {
+		t.Fatalf("retry end events = %#v", retryEnds)
+	}
+}
+
 func TestAgentSessionPromptWaitsForRetryToolLoop(t *testing.T) {
 	callCount := 0
 	toolExecuted := false

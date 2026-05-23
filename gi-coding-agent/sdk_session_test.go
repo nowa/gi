@@ -31,6 +31,36 @@ func TestCreateAgentSessionUsesAgentDirForDefaultPersistedSessionPath(t *testing
 	}
 }
 
+func TestCreateAgentSessionClampsDefaultThinkingLikePi(t *testing.T) {
+	reasoningModel := sdkTestModel()
+	reasoningModel.Reasoning = true
+	session, err := CreateAgentSession(AgentSessionOptions{
+		CWD:      t.TempDir(),
+		Model:    reasoningModel,
+		AgentDir: filepath.Join(t.TempDir(), "agent"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Agent.State.ThinkingLevel != string(DefaultThinkingLevel) {
+		t.Fatalf("reasoning model thinking = %q, want %q", session.Agent.State.ThinkingLevel, DefaultThinkingLevel)
+	}
+
+	plainModel := sdkTestModel()
+	session, err = CreateAgentSession(AgentSessionOptions{
+		CWD:           t.TempDir(),
+		Model:         plainModel,
+		ThinkingLevel: string(ThinkingHigh),
+		AgentDir:      filepath.Join(t.TempDir(), "agent"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Agent.State.ThinkingLevel != string(ThinkingOff) {
+		t.Fatalf("plain model thinking = %q, want off", session.Agent.State.ThinkingLevel)
+	}
+}
+
 func TestCreateAgentSessionKeepsExplicitSessionManagerOverride(t *testing.T) {
 	tempDir := t.TempDir()
 	cwd := filepath.Join(tempDir, "project")
@@ -97,6 +127,173 @@ func TestCreateAgentSessionDerivesCwdFromExplicitSessionManagerWhenOmitted(t *te
 	output := sdkToolText(result)
 	if filepath.Clean(output) != filepath.Clean(sessionCwd) {
 		t.Fatalf("bash pwd output = %q, want %q", output, sessionCwd)
+	}
+}
+
+func TestCreateAgentSessionSystemPromptConsumesResourceLoaderContext(t *testing.T) {
+	tempDir := t.TempDir()
+	cwd := filepath.Join(tempDir, "project")
+	agentDir := filepath.Join(tempDir, "agent")
+	mkdirAllForSDKTest(t, cwd, agentDir)
+	writeResourceFile(t, filepath.Join(cwd, "AGENTS.md"), "Project rule")
+	loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD:                cwd,
+		AgentDir:           agentDir,
+		SystemPrompt:       "Custom base prompt",
+		AppendSystemPrompt: []string{"Extra A", "Extra B"},
+	})
+	loader.Reload()
+
+	session, err := CreateAgentSession(AgentSessionOptions{
+		CWD:            cwd,
+		AgentDir:       agentDir,
+		Model:          sdkTestModel(),
+		ResourceLoader: loader,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Dispose()
+
+	for _, want := range []string{"Custom base prompt", "Extra A\n\nExtra B", "# Project Context", "Project rule", "Current working directory: " + cwd} {
+		if !strings.Contains(session.SystemPrompt, want) {
+			t.Fatalf("system prompt missing %q:\n%s", want, session.SystemPrompt)
+		}
+	}
+	if strings.Contains(session.SystemPrompt, "Available tools:") {
+		t.Fatalf("custom prompt should replace default tool prompt:\n%s", session.SystemPrompt)
+	}
+}
+
+func TestCreateAgentSessionDefaultFileToolsExecuteLikePi(t *testing.T) {
+	tempDir := t.TempDir()
+	session, err := CreateAgentSession(AgentSessionOptions{
+		CWD:      tempDir,
+		AgentDir: filepath.Join(t.TempDir(), "agent"),
+		Model:    sdkTestModel(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Dispose()
+
+	writeTool, ok := findSDKTool(session.Agent.State.Tools, "write")
+	if !ok || writeTool.Execute == nil {
+		t.Fatalf("write tool = %#v", writeTool)
+	}
+	writeResult, err := writeTool.Execute("write-1", map[string]any{
+		"file_path": "notes.txt",
+		"content":   "before\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sdkToolText(writeResult), "Successfully wrote") {
+		t.Fatalf("write result = %#v", writeResult)
+	}
+
+	readTool, ok := findSDKTool(session.Agent.State.Tools, "read")
+	if !ok || readTool.Execute == nil {
+		t.Fatalf("read tool = %#v", readTool)
+	}
+	readResult, err := readTool.Execute("read-1", map[string]any{"file_path": "notes.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sdkToolText(readResult) != "before" {
+		t.Fatalf("read result = %#v", readResult)
+	}
+
+	editTool, ok := findSDKTool(session.Agent.State.Tools, "edit")
+	if !ok || editTool.Execute == nil {
+		t.Fatalf("edit tool = %#v", editTool)
+	}
+	editResult, err := editTool.Execute("edit-1", map[string]any{
+		"path":    "notes.txt",
+		"oldText": "before",
+		"newText": "after",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sdkToolText(editResult), "Successfully replaced") {
+		t.Fatalf("edit result = %#v", editResult)
+	}
+	details, ok := editResult.Details.(*FileToolDetails)
+	if !ok || details.Diff == "" || details.FirstChangedLine != 1 {
+		t.Fatalf("edit details = %#v", editResult.Details)
+	}
+	if content, err := os.ReadFile(filepath.Join(tempDir, "notes.txt")); err != nil || string(content) != "after\n" {
+		t.Fatalf("content = %q err=%v", content, err)
+	}
+}
+
+func TestAgentSessionActiveLLMToolsExposeSchemasForProviderCalls(t *testing.T) {
+	session, err := CreateAgentSession(AgentSessionOptions{
+		CWD:      t.TempDir(),
+		AgentDir: filepath.Join(t.TempDir(), "agent"),
+		Model:    sdkTestModel(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Dispose()
+
+	tools := session.GetActiveLLMTools()
+	read := findLLMTool(tools, "read")
+	if read == nil || read.Parameters.Properties["path"].Type != "string" {
+		t.Fatalf("read tool schema = %#v", read)
+	}
+	edit := findLLMTool(tools, "edit")
+	if edit == nil {
+		t.Fatalf("edit tool missing from %#v", tools)
+	}
+	if _, ok := edit.Parameters.Properties["oldText"]; ok {
+		t.Fatalf("edit provider schema leaked legacy oldText: %#v", edit.Parameters)
+	}
+	if edit.Parameters.Properties["edits"].Type != "array" {
+		t.Fatalf("edit edits schema = %#v", edit.Parameters.Properties["edits"])
+	}
+	grep := findLLMTool(tools, "grep")
+	if grep == nil || grep.Parameters.Properties["pattern"].Type != "string" {
+		t.Fatalf("grep tool schema = %#v", grep)
+	}
+}
+
+func TestAgentSessionPrepareArgumentsRunsBeforeSDKToolExecution(t *testing.T) {
+	session, err := CreateAgentSession(AgentSessionOptions{
+		CWD:      t.TempDir(),
+		AgentDir: filepath.Join(t.TempDir(), "agent"),
+		Model:    sdkTestModel(),
+		CustomTools: []SDKTool{{
+			Name: "prepared_tool",
+			PrepareArguments: func(input map[string]any) map[string]any {
+				prepared := cloneSettingsMap(input)
+				prepared["path"] = prepared["file_path"]
+				delete(prepared, "file_path")
+				return prepared
+			},
+			Execute: func(_ string, input map[string]any) (SDKToolResult, error) {
+				return SDKToolResult{Details: input}, nil
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Dispose()
+
+	tool := session.sdkTool("prepared_tool")
+	if tool == nil {
+		t.Fatal("prepared_tool missing")
+	}
+	result, err := session.executeSDKToolWithUpdates(tool, llm.ToolCall("call-1", "prepared_tool", map[string]any{"file_path": "README.md"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	details, ok := result.Details.(map[string]any)
+	if !ok || details["path"] != "README.md" || details["file_path"] != nil {
+		t.Fatalf("prepared details = %#v", result.Details)
 	}
 }
 
@@ -226,6 +423,16 @@ func findSDKTool(tools []SDKTool, name string) (SDKTool, bool) {
 		}
 	}
 	return SDKTool{}, false
+}
+
+func findLLMTool(tools []llm.Tool, name string) *llm.Tool {
+	for _, tool := range tools {
+		if tool.Name == name {
+			copy := tool
+			return &copy
+		}
+	}
+	return nil
 }
 
 func sdkToolText(result SDKToolResult) string {

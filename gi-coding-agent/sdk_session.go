@@ -1,6 +1,7 @@
 package gicodingagent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,8 @@ type AgentSessionOptions struct {
 	CWD                  string
 	AgentDir             string
 	Model                llm.Model
+	ThinkingLevel        string
+	Preflight            AgentSessionPreflight
 	SessionManager       *SessionManager
 	ResourceLoader       AgentSessionResourceLoader
 	CompactionSettings   *agentharness.CompactionSettings
@@ -24,11 +27,16 @@ type AgentSessionOptions struct {
 	AgentContinue        func() error
 	Responder            AgentSessionResponder
 	CustomTools          []SDKTool
+	ScopedModels         []ScopedModel
+	Tools                []string
+	ToolsSet             bool
+	NoTools              string
 }
 
 type AgentSession struct {
 	SessionManager       *SessionManager
 	ResourceLoader       AgentSessionResourceLoader
+	BaseSystemPrompt     string
 	SystemPrompt         string
 	Agent                *SDKAgent
 	CompactionSettings   agentharness.CompactionSettings
@@ -38,10 +46,18 @@ type AgentSession struct {
 	AutoCompactionRunner AgentSessionAutoCompactionRunner
 	AgentContinue        func() error
 	Responder            AgentSessionResponder
+	Preflight            AgentSessionPreflight
 	ExtensionRuntime     *ProtocolExtensionRuntime
 	DynamicTools         []SDKTool
+	ScopedModels         []ScopedModel
+	Tools                []string
+	ToolsSet             bool
+	NoTools              string
+	SteeringMode         string
+	FollowUpMode         string
 	eventListeners       []AgentSessionEventListener
 	branchSummaryAbort   chan struct{}
+	compactionCancel     context.CancelFunc
 	isCompacting         bool
 	isRetrying           bool
 	isStreaming          bool
@@ -49,17 +65,39 @@ type AgentSession struct {
 	agentQueuedMessages  []llm.Message
 	steeringMessages     []string
 	followUpMessages     []string
+	steeringQueue        []QueuedUserMessage
+	followUpQueue        []QueuedUserMessage
+	pendingNextTurn      []QueuedCustomMessage
+	pendingBashMessages  []map[string]any
+	bashAbort            func()
+	retryAbort           func()
+	abortRequested       bool
 }
 
 type AgentSessionStats struct {
-	Tokens       llm.Usage
-	ContextUsage *AgentContextUsage
+	Tokens       llm.Usage          `json:"tokens"`
+	ContextUsage *AgentContextUsage `json:"contextUsage,omitempty"`
 }
 
+type AgentSessionPreflight func(model llm.Model) error
+
 type AgentContextUsage struct {
-	Tokens        *int
-	ContextWindow int
-	Percent       *float64
+	Tokens        *int     `json:"tokens"`
+	ContextWindow int      `json:"contextWindow"`
+	Percent       *float64 `json:"percent"`
+}
+
+type QueuedUserMessage struct {
+	Text   string               `json:"text"`
+	Images []llm.ContentPart    `json:"images,omitempty"`
+	Custom *QueuedCustomMessage `json:"custom,omitempty"`
+}
+
+type QueuedCustomMessage struct {
+	CustomType string `json:"customType"`
+	Content    any    `json:"content,omitempty"`
+	Display    bool   `json:"display,omitempty"`
+	Details    any    `json:"details,omitempty"`
 }
 
 type SDKAgent struct {
@@ -74,17 +112,22 @@ type SDKAgentState struct {
 }
 
 type SDKTool struct {
-	Name             string
-	Label            string
-	Description      string
-	PromptSnippet    string
-	PromptGuidelines []string
-	SourceInfo       ProtocolSourceInfo
-	Execute          func(toolCallID string, input map[string]any) (SDKToolResult, error)
+	Name               string
+	Label              string
+	Description        string
+	Parameters         llm.Schema
+	PromptSnippet      string
+	PromptGuidelines   []string
+	ExecutionMode      string
+	SourceInfo         ProtocolSourceInfo
+	PrepareArguments   func(input map[string]any) map[string]any
+	Execute            func(toolCallID string, input map[string]any) (SDKToolResult, error)
+	ExecuteWithUpdates func(toolCallID string, input map[string]any, onUpdate func(SDKToolResult)) (SDKToolResult, error)
 }
 
 type SDKToolResult struct {
 	Content []SDKContentPart
+	Details any
 }
 
 type SDKContentPart struct {
@@ -94,6 +137,19 @@ type SDKContentPart struct {
 
 type AgentSessionResourceLoader interface {
 	GetSkills() AgentSessionSkillsResult
+}
+
+type AgentSessionPromptResourceLoader interface {
+	GetPrompts() ResourcePromptsResult
+}
+
+type AgentSessionContextResourceLoader interface {
+	GetAgentsFiles() ResourceAgentsFilesResult
+}
+
+type AgentSessionSystemPromptResourceLoader interface {
+	GetSystemPrompt() string
+	GetAppendSystemPrompt() string
 }
 
 type AgentSessionSkillsResult struct {
@@ -163,16 +219,22 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		}
 		tools = append(tools, tool)
 	}
-	systemPrompt := buildAgentSessionSystemPrompt(cwd, resourceLoader, tools)
+	systemPrompt := buildAgentSessionSystemPrompt(cwd, resourceLoader, activeToolsForPolicy(tools, nil, options.Tools, options.ToolsSet, options.NoTools))
+	thinkingLevel := options.ThinkingLevel
+	if thinkingLevel == "" {
+		thinkingLevel = string(DefaultThinkingLevel)
+	}
+	thinkingLevel = llm.ClampThinkingLevel(options.Model, thinkingLevel)
 	agent := &SDKAgent{State: SDKAgentState{
 		SystemPrompt:  systemPrompt,
 		Model:         options.Model,
-		ThinkingLevel: "off",
+		ThinkingLevel: thinkingLevel,
 		Tools:         tools,
 	}}
 	return &AgentSession{
 		SessionManager:       sessionManager,
 		ResourceLoader:       resourceLoader,
+		BaseSystemPrompt:     systemPrompt,
 		SystemPrompt:         systemPrompt,
 		Agent:                agent,
 		CompactionSettings:   compactionSettings,
@@ -182,10 +244,26 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		AutoCompactionRunner: options.AutoCompactionRunner,
 		AgentContinue:        options.AgentContinue,
 		Responder:            responder,
+		Preflight:            options.Preflight,
+		ScopedModels:         append([]ScopedModel(nil), options.ScopedModels...),
+		Tools:                append([]string(nil), options.Tools...),
+		ToolsSet:             options.ToolsSet,
+		NoTools:              options.NoTools,
+		SteeringMode:         "one-at-a-time",
+		FollowUpMode:         "one-at-a-time",
 	}, nil
 }
 
-func (s *AgentSession) Dispose() {}
+func (s *AgentSession) Dispose() {
+	_ = s.Abort()
+}
+
+func (s *AgentSession) SetScopedModels(scopedModels []ScopedModel) {
+	if s == nil {
+		return
+	}
+	s.ScopedModels = append([]ScopedModel(nil), scopedModels...)
+}
 
 func (s *AgentSession) GetSessionStats() AgentSessionStats {
 	branch := s.sessionBranch()
@@ -264,6 +342,26 @@ func (l *DefaultAgentSessionResourceLoader) GetSkills() AgentSessionSkillsResult
 	return result
 }
 
+func (l *DefaultAgentSessionResourceLoader) GetPrompts() ResourcePromptsResult {
+	agentPrompts := filepath.Join(l.agentDir, "prompts")
+	projectPrompts := filepath.Join(l.cwd, ConfigDirName, "prompts")
+	prompts := loadPromptTemplatesFromDir(agentPrompts, sourceInfoForPromptPath(agentPrompts, agentPrompts, projectPrompts))
+	prompts = append(prompts, loadPromptTemplatesFromDir(projectPrompts, sourceInfoForPromptPath(projectPrompts, agentPrompts, projectPrompts))...)
+	return ResourcePromptsResult{Prompts: dedupePromptsByName(prompts)}
+}
+
+func (l *DefaultAgentSessionResourceLoader) GetAgentsFiles() ResourceAgentsFilesResult {
+	return ResourceAgentsFilesResult{AgentsFiles: loadProjectContextResourceFiles(l.cwd, l.agentDir)}
+}
+
+func (l *DefaultAgentSessionResourceLoader) GetSystemPrompt() string {
+	return strings.TrimSpace(readOptionalFile(filepath.Join(l.cwd, ConfigDirName, "SYSTEM.md")))
+}
+
+func (l *DefaultAgentSessionResourceLoader) GetAppendSystemPrompt() string {
+	return readOptionalFile(filepath.Join(l.cwd, ConfigDirName, "APPEND_SYSTEM.md"))
+}
+
 func GetAgentDirSessionDir(cwd, agentDir string) string {
 	safePath := strings.TrimLeft(cwd, `/\`)
 	replacer := strings.NewReplacer("/", "-", `\`, "-", ":", "-")
@@ -274,6 +372,9 @@ func defaultSDKToolSnippets() map[string]string {
 	return map[string]string{
 		"read":  "Read file contents",
 		"bash":  "Execute bash commands",
+		"grep":  "Search file contents",
+		"find":  "Find files by glob pattern",
+		"ls":    "List directory entries",
 		"edit":  "Make surgical edits",
 		"write": "Create or overwrite files",
 	}
@@ -281,23 +382,151 @@ func defaultSDKToolSnippets() map[string]string {
 
 func defaultSDKTools(cwd string) []SDKTool {
 	return []SDKTool{
-		{Name: "read", PromptSnippet: "Read file contents", SourceInfo: ProtocolSourceInfo{Path: "<builtin:read>", Source: "builtin", Scope: "temporary", Origin: "top-level"}},
+		sdkToolFromFileToolDefinition(CreateReadToolDefinition(cwd), "Read file contents", ProtocolSourceInfo{Path: "<builtin:read>", Source: "builtin", Scope: "temporary", Origin: "top-level"}),
 		{
 			Name:          "bash",
+			Description:   "Execute bash commands",
+			Parameters:    CreateBashToolDefinition(cwd).Parameters,
 			PromptSnippet: "Execute bash commands",
 			SourceInfo:    ProtocolSourceInfo{Path: "<builtin:bash>", Source: "builtin", Scope: "temporary", Origin: "top-level"},
-			Execute: func(_ string, input map[string]any) (SDKToolResult, error) {
-				command, _ := input["command"].(string)
-				if strings.TrimSpace(command) == "" {
-					return SDKToolResult{}, fmt.Errorf("bash command is required")
-				}
-				result, err := ExecuteBash(command, cwd)
-				return SDKToolResult{Content: []SDKContentPart{{Type: "text", Text: result.Output}}}, err
+			Execute: func(toolCallID string, input map[string]any) (SDKToolResult, error) {
+				return executeDefaultSDKBashTool(toolCallID, input, cwd, nil)
+			},
+			ExecuteWithUpdates: func(toolCallID string, input map[string]any, onUpdate func(SDKToolResult)) (SDKToolResult, error) {
+				return executeDefaultSDKBashTool(toolCallID, input, cwd, onUpdate)
 			},
 		},
-		{Name: "edit", PromptSnippet: "Make surgical edits", SourceInfo: ProtocolSourceInfo{Path: "<builtin:edit>", Source: "builtin", Scope: "temporary", Origin: "top-level"}},
-		{Name: "write", PromptSnippet: "Create or overwrite files", SourceInfo: ProtocolSourceInfo{Path: "<builtin:write>", Source: "builtin", Scope: "temporary", Origin: "top-level"}},
+		{
+			Name:          "grep",
+			Description:   "Search file contents",
+			Parameters:    grepSDKToolParameters(),
+			PromptSnippet: "Search file contents",
+			SourceInfo:    ProtocolSourceInfo{Path: "<builtin:grep>", Source: "builtin", Scope: "temporary", Origin: "top-level"},
+			Execute: func(_ string, input map[string]any) (SDKToolResult, error) {
+				result, err := NewGrepTool(cwd).Execute("", GrepToolInput{
+					Pattern:    stringFromToolInput(input, "pattern"),
+					Path:       stringFromToolInput(input, "path"),
+					Glob:       stringFromToolInput(input, "glob"),
+					IgnoreCase: boolFromToolInput(input, "ignoreCase"),
+					Literal:    boolFromToolInput(input, "literal"),
+					Limit:      intFromToolInput(input, "limit"),
+					Context:    intFromToolInput(input, "context"),
+				})
+				return sdkToolResultFromFileToolResult(result), err
+			},
+		},
+		{
+			Name:          "find",
+			Description:   "Find files by glob pattern",
+			Parameters:    findSDKToolParameters(),
+			PromptSnippet: "Find files by glob pattern",
+			SourceInfo:    ProtocolSourceInfo{Path: "<builtin:find>", Source: "builtin", Scope: "temporary", Origin: "top-level"},
+			Execute: func(_ string, input map[string]any) (SDKToolResult, error) {
+				result, err := NewFindTool(cwd).Execute("", FindToolInput{
+					Pattern: stringFromToolInput(input, "pattern"),
+					Path:    stringFromToolInput(input, "path"),
+					Limit:   intFromToolInput(input, "limit"),
+				})
+				return sdkToolResultFromFileToolResult(result), err
+			},
+		},
+		{
+			Name:          "ls",
+			Description:   "List directory entries",
+			Parameters:    lsSDKToolParameters(),
+			PromptSnippet: "List directory entries",
+			SourceInfo:    ProtocolSourceInfo{Path: "<builtin:ls>", Source: "builtin", Scope: "temporary", Origin: "top-level"},
+			Execute: func(_ string, input map[string]any) (SDKToolResult, error) {
+				result, err := NewLsTool(cwd).Execute("", LsToolInput{Path: stringFromToolInput(input, "path"), Limit: intFromToolInput(input, "limit")})
+				return sdkToolResultFromFileToolResult(result), err
+			},
+		},
+		sdkToolFromFileToolDefinition(CreateEditToolDefinition(cwd), "Make surgical edits", ProtocolSourceInfo{Path: "<builtin:edit>", Source: "builtin", Scope: "temporary", Origin: "top-level"}),
+		sdkToolFromFileToolDefinition(CreateWriteToolDefinition(cwd), "Create or overwrite files", ProtocolSourceInfo{Path: "<builtin:write>", Source: "builtin", Scope: "temporary", Origin: "top-level"}),
 	}
+}
+
+func sdkToolFromFileToolDefinition(definition ToolDefinition, promptSnippet string, sourceInfo ProtocolSourceInfo) SDKTool {
+	prepare := func(input map[string]any) map[string]any {
+		if definition.PrepareArguments == nil {
+			return input
+		}
+		return mapFromPreparedToolArguments(definition.PrepareArguments(input), input)
+	}
+	return SDKTool{
+		Name:             definition.Name,
+		Description:      definition.Description,
+		Parameters:       definition.Parameters,
+		PromptSnippet:    promptSnippet,
+		SourceInfo:       sourceInfo,
+		PrepareArguments: prepare,
+		Execute: func(toolCallID string, input map[string]any) (SDKToolResult, error) {
+			result, err := definition.Execute(toolCallID, prepare(input))
+			return sdkToolResultFromFileToolResult(result), err
+		},
+	}
+}
+
+func mapFromPreparedToolArguments(prepared any, fallback map[string]any) map[string]any {
+	values, ok := prepared.(map[string]any)
+	if !ok {
+		return fallback
+	}
+	return values
+}
+
+func grepSDKToolParameters() llm.Schema {
+	return llm.Object(map[string]llm.Schema{
+		"pattern":    llm.String(),
+		"path":       llm.String(),
+		"glob":       llm.String(),
+		"ignoreCase": llm.Boolean(),
+		"literal":    llm.Boolean(),
+		"limit":      llm.Integer(),
+		"context":    llm.Integer(),
+	}, "pattern")
+}
+
+func findSDKToolParameters() llm.Schema {
+	return llm.Object(map[string]llm.Schema{
+		"pattern": llm.String(),
+		"path":    llm.String(),
+		"limit":   llm.Integer(),
+	}, "pattern")
+}
+
+func lsSDKToolParameters() llm.Schema {
+	return llm.Object(map[string]llm.Schema{
+		"path":  llm.String(),
+		"limit": llm.Integer(),
+	}, "path")
+}
+
+func executeDefaultSDKBashTool(toolCallID string, input map[string]any, cwd string, onUpdate func(SDKToolResult)) (SDKToolResult, error) {
+	command, _ := input["command"].(string)
+	if strings.TrimSpace(command) == "" {
+		return SDKToolResult{}, fmt.Errorf("bash command is required")
+	}
+	tool := NewBashTool(cwd)
+	result, err := tool.ExecuteWithUpdates(toolCallID, BashToolInput{Command: command, Timeout: intFromToolInput(input, "timeout")}, func(partial FileToolResult) {
+		if onUpdate != nil {
+			onUpdate(sdkToolResultFromFileToolResult(partial))
+		}
+	})
+	return sdkToolResultFromFileToolResult(result), err
+}
+
+func sdkToolResultFromFileToolResult(result FileToolResult) SDKToolResult {
+	content := make([]SDKContentPart, 0, len(result.Content))
+	for _, part := range result.Content {
+		if part.Type == llm.ContentText {
+			content = append(content, SDKContentPart{Type: "text", Text: part.Text})
+		}
+	}
+	if len(content) == 0 && result.Text != "" {
+		content = append(content, SDKContentPart{Type: "text", Text: result.Text})
+	}
+	return SDKToolResult{Content: content, Details: result.Details}
 }
 
 func (s *AgentSession) GetAllTools() []SDKTool {
@@ -306,11 +535,11 @@ func (s *AgentSession) GetAllTools() []SDKTool {
 	}
 	tools := append([]SDKTool(nil), s.Agent.State.Tools...)
 	tools = append(tools, s.DynamicTools...)
-	return tools
+	return allToolsForPolicy(tools, s.Tools, s.ToolsSet, s.NoTools)
 }
 
 func (s *AgentSession) GetActiveToolNames() []string {
-	tools := s.GetAllTools()
+	tools := s.GetActiveTools()
 	names := make([]string, 0, len(tools))
 	for _, tool := range tools {
 		names = append(names, tool.Name)
@@ -318,13 +547,119 @@ func (s *AgentSession) GetActiveToolNames() []string {
 	return names
 }
 
+func (s *AgentSession) GetActiveTools() []SDKTool {
+	if s == nil || s.Agent == nil {
+		return nil
+	}
+	tools := append([]SDKTool(nil), s.Agent.State.Tools...)
+	tools = append(tools, s.DynamicTools...)
+	return activeToolsForPolicy(tools, nil, s.Tools, s.ToolsSet, s.NoTools)
+}
+
+func (s *AgentSession) GetActiveLLMTools() []llm.Tool {
+	if s == nil {
+		return nil
+	}
+	return llmToolsFromSDKTools(s.GetActiveTools())
+}
+
 func (s *AgentSession) RefreshSystemPrompt() {
 	if s == nil || s.Agent == nil || s.SessionManager == nil {
 		return
 	}
-	prompt := buildAgentSessionSystemPrompt(s.SessionManager.GetCWD(), s.ResourceLoader, s.GetAllTools())
+	prompt := buildAgentSessionSystemPrompt(s.SessionManager.GetCWD(), s.ResourceLoader, s.GetActiveTools())
 	s.SystemPrompt = prompt
 	s.Agent.State.SystemPrompt = prompt
+}
+
+func allToolsForPolicy(tools []SDKTool, allowlist []string, allowlistSet bool, noTools string) []SDKTool {
+	if noTools == "all" {
+		return nil
+	}
+	if allowlistSet {
+		return filterToolsByAllowlist(tools, allowlist)
+	}
+	return append([]SDKTool(nil), tools...)
+}
+
+func activeToolsForPolicy(tools []SDKTool, dynamic []SDKTool, allowlist []string, allowlistSet bool, noTools string) []SDKTool {
+	combined := append([]SDKTool(nil), tools...)
+	combined = append(combined, dynamic...)
+	filtered := allToolsForPolicy(combined, allowlist, allowlistSet, noTools)
+	if noTools != "builtin" {
+		return filtered
+	}
+	result := make([]SDKTool, 0, len(filtered))
+	for _, tool := range filtered {
+		if tool.SourceInfo.Source == "builtin" {
+			continue
+		}
+		result = append(result, tool)
+	}
+	return result
+}
+
+func filterToolsByAllowlist(tools []SDKTool, allowlist []string) []SDKTool {
+	allowed := map[string]bool{}
+	for _, name := range allowlist {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			allowed[name] = true
+		}
+	}
+	result := make([]SDKTool, 0, len(tools))
+	for _, tool := range tools {
+		if allowed[tool.Name] {
+			result = append(result, tool)
+		}
+	}
+	return result
+}
+
+func llmToolsFromSDKTools(tools []SDKTool) []llm.Tool {
+	result := make([]llm.Tool, 0, len(tools))
+	seen := map[string]bool{}
+	for _, tool := range tools {
+		name := strings.TrimSpace(tool.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		result = append(result, llm.Tool{
+			Name:        name,
+			Description: firstNonEmptyString(tool.Description, tool.PromptSnippet, tool.Label),
+			Parameters:  sdkToolParametersOrEmptyObject(tool.Parameters),
+		})
+	}
+	return result
+}
+
+func sdkToolParametersOrEmptyObject(schema llm.Schema) llm.Schema {
+	if schema.Type != nil || len(schema.Properties) > 0 || len(schema.Required) > 0 || schema.Items != nil || len(schema.Enum) > 0 {
+		return schema
+	}
+	return llm.Object(map[string]llm.Schema{})
+}
+
+func stringFromToolInput(input map[string]any, key string) string {
+	value, _ := input[key].(string)
+	return value
+}
+
+func intFromToolInput(input map[string]any, key string) int {
+	switch value := input[key].(type) {
+	case int:
+		return value
+	case float64:
+		return int(value)
+	default:
+		return 0
+	}
+}
+
+func boolFromToolInput(input map[string]any, key string) bool {
+	value, _ := input[key].(bool)
+	return value
 }
 
 func buildAgentSessionSystemPrompt(cwd string, resourceLoader AgentSessionResourceLoader, tools []SDKTool) string {
@@ -339,16 +674,35 @@ func buildAgentSessionSystemPrompt(cwd string, resourceLoader AgentSessionResour
 		guidelines = append(guidelines, tool.PromptGuidelines...)
 	}
 	var skills []agentharness.Skill
+	var contextFiles []SystemPromptContextFile
+	customPrompt := ""
+	appendSystemPrompt := ""
 	if resourceLoader != nil {
 		skills = resourceLoader.GetSkills().Skills
+		if contextLoader, ok := resourceLoader.(AgentSessionContextResourceLoader); ok {
+			for _, file := range contextLoader.GetAgentsFiles().AgentsFiles {
+				content := file.Content
+				if content == "" && strings.TrimSpace(file.Path) != "" {
+					content = readOptionalFile(file.Path)
+				}
+				contextFiles = append(contextFiles, SystemPromptContextFile{Path: file.Path, Content: content})
+			}
+		}
+		if promptLoader, ok := resourceLoader.(AgentSessionSystemPromptResourceLoader); ok {
+			customPrompt = promptLoader.GetSystemPrompt()
+			appendSystemPrompt = promptLoader.GetAppendSystemPrompt()
+		}
 	}
 	return BuildSystemPrompt(BuildSystemPromptOptions{
-		CWD:              cwd,
-		ContextFiles:     []SystemPromptContextFile{},
-		Skills:           toSystemPromptSkills(skills),
-		ToolSnippets:     snippets,
-		SelectedTools:    selected,
-		PromptGuidelines: guidelines,
+		CustomPrompt:       customPrompt,
+		CWD:                cwd,
+		AppendSystemPrompt: appendSystemPrompt,
+		ContextFiles:       contextFiles,
+		Skills:             toSystemPromptSkills(skills),
+		ToolSnippets:       snippets,
+		SelectedTools:      selected,
+		PromptGuidelines:   guidelines,
+		DocumentationPaths: defaultGiDocumentationPaths(cwd),
 	})
 }
 
@@ -432,9 +786,33 @@ func usageFromSessionMessageValue(value any) (llm.Usage, bool) {
 			CacheWrite:  intFromSessionUsageValue(usage["cacheWrite"]),
 			TotalTokens: intFromSessionUsageValue(usage["totalTokens"]),
 		}
+		if cost, ok := usage["cost"].(map[string]any); ok {
+			result.Cost = llm.UsageCost{
+				Input:      floatFromSessionUsageValue(cost["input"]),
+				Output:     floatFromSessionUsageValue(cost["output"]),
+				CacheRead:  floatFromSessionUsageValue(cost["cacheRead"]),
+				CacheWrite: floatFromSessionUsageValue(cost["cacheWrite"]),
+				Total:      floatFromSessionUsageValue(cost["total"]),
+			}
+		}
 		return result, usageTokenTotal(result) > 0
 	default:
 		return llm.Usage{}, false
+	}
+}
+
+func floatFromSessionUsageValue(value any) float64 {
+	switch number := value.(type) {
+	case int:
+		return float64(number)
+	case int64:
+		return float64(number)
+	case float64:
+		return number
+	case float32:
+		return float64(number)
+	default:
+		return 0
 	}
 }
 

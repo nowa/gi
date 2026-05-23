@@ -12,8 +12,8 @@ func GetAttributionHeaders(model llm.Model, installTelemetryEnabled bool) map[st
 	}
 	if model.Provider == "openrouter" || strings.Contains(model.BaseURL, "openrouter.ai") {
 		return map[string]string{
-			"HTTP-Referer":            "https://pi.dev",
-			"X-OpenRouter-Title":      "pi",
+			"HTTP-Referer":            "https://github.com/nowa/gi",
+			"X-OpenRouter-Title":      "gi",
 			"X-OpenRouter-Categories": "cli-agent",
 		}
 	}
@@ -21,7 +21,7 @@ func GetAttributionHeaders(model llm.Model, installTelemetryEnabled bool) map[st
 		model.Provider == "cloudflare-ai-gateway" ||
 		strings.Contains(model.BaseURL, "api.cloudflare.com") ||
 		strings.Contains(model.BaseURL, "gateway.ai.cloudflare.com") {
-		return map[string]string{"User-Agent": "pi-coding-agent"}
+		return map[string]string{"User-Agent": "gi-coding-agent"}
 	}
 	return nil
 }

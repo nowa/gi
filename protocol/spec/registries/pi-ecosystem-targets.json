@@ -28,7 +28,7 @@
     },
     {
       "name": "mcp-adapter",
-      "features": ["host.process.exec", "tools.register", "tool.update", "network:<scope>", "diagnostic"],
+      "features": ["process.stdio:<scope>", "tools.register", "tool.update", "network:<scope>", "diagnostic"],
       "description": "Bridge external MCP servers into Gi tools with schema and streaming support."
     },
     {

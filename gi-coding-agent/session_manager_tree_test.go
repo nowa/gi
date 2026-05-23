@@ -27,6 +27,9 @@ func testAssistantMessage(text string) map[string]any {
 
 func messageText(message any) string {
 	value, _ := message.(map[string]any)
+	if summary, _ := value["summary"].(string); summary != "" {
+		return summary
+	}
 	content := value["content"]
 	if text, ok := content.(string); ok {
 		return text
@@ -47,6 +50,12 @@ func TestSessionManagerTreeAppendAndBranchMatchesPi(t *testing.T) {
 	}
 	if session.GetLeafID() != nil {
 		t.Fatalf("new in-memory leaf = %v, want nil", *session.GetLeafID())
+	}
+	if session.GetLeafEntry() != nil {
+		t.Fatalf("new in-memory leaf entry = %#v, want nil", session.GetLeafEntry())
+	}
+	if session.GetEntry("missing") != nil {
+		t.Fatalf("missing entry should be nil")
 	}
 
 	id1 := session.AppendMessage(testUserMessage("first"))
@@ -103,6 +112,35 @@ func TestSessionManagerTreeAppendAndBranchMatchesPi(t *testing.T) {
 
 	if err := session.Branch("missing"); err == nil || !strings.Contains(err.Error(), "Entry missing not found") {
 		t.Fatalf("missing branch err = %v", err)
+	}
+	if _, err := session.BranchWithSummary(stringPtr("missing"), "summary"); err == nil || !strings.Contains(err.Error(), "Entry missing not found") {
+		t.Fatalf("missing branch summary err = %v", err)
+	}
+	if _, err := session.CreateBranchedSession("missing"); err == nil || !strings.Contains(err.Error(), "Entry missing not found") {
+		t.Fatalf("missing branched session err = %v", err)
+	}
+}
+
+func TestSessionManagerAppendCompactionPiParity(t *testing.T) {
+	session, err := InMemorySessionManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id1 := session.AppendMessage(testUserMessage("first"))
+	id2 := session.AppendMessage(testAssistantMessage("second"))
+	compactionID := session.AppendCompaction("summary", id1, 1000)
+	id3 := session.AppendMessage(testUserMessage("third"))
+
+	compaction := session.GetEntry(compactionID)
+	if compaction == nil || compaction.Type != "compaction" || compaction.ParentID == nil || *compaction.ParentID != id2 {
+		t.Fatalf("compaction entry = %#v", compaction)
+	}
+	if compaction.Summary != "summary" || compaction.FirstKeptID != id1 || compaction.TokensBefore != 1000 {
+		t.Fatalf("compaction fields = %#v", compaction)
+	}
+	third := session.GetEntry(id3)
+	if third == nil || third.ParentID == nil || *third.ParentID != compactionID {
+		t.Fatalf("post-compaction entry = %#v", third)
 	}
 }
 

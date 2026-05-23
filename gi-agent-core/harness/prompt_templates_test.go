@@ -28,6 +28,30 @@ func TestLoadPromptTemplatesLoadsMarkdownNonRecursively(t *testing.T) {
 	}
 }
 
+func TestLoadPromptTemplatesAcceptsLiteralFrontmatterDescription(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "literal.md")
+	mustWrite(t, path, `---
+description: |
+  Line one
+  Line two
+metadata:
+  owner: test
+---
+Body`)
+
+	result := LoadPromptTemplates(path)
+	if len(result.Diagnostics) != 0 {
+		t.Fatalf("diagnostics = %#v", result.Diagnostics)
+	}
+	if len(result.PromptTemplates) != 1 {
+		t.Fatalf("prompt templates = %#v", result.PromptTemplates)
+	}
+	if result.PromptTemplates[0].Description != "Line one\nLine two" {
+		t.Fatalf("description = %q", result.PromptTemplates[0].Description)
+	}
+}
+
 func TestLoadSourcedPromptTemplatesPreservesSource(t *testing.T) {
 	root := t.TempDir()
 	mustMkdir(t, filepath.Join(root, "prompts"))

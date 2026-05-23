@@ -40,6 +40,7 @@ type Args struct {
 	Mode               Mode
 	NoSession          bool
 	Session            string
+	SessionCwdOverride string
 	Fork               string
 	SessionDir         string
 	Models             []string

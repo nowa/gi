@@ -10,48 +10,48 @@ import (
 )
 
 type CompactionSettings struct {
-	Enabled          bool
-	ReserveTokens    int
-	KeepRecentTokens int
+	Enabled          bool `json:"enabled"`
+	ReserveTokens    int  `json:"reserveTokens"`
+	KeepRecentTokens int  `json:"keepRecentTokens"`
 }
 
 var DefaultCompactionSettings = CompactionSettings{Enabled: true, ReserveTokens: 10_000, KeepRecentTokens: 20_000}
 
 type ContextTokenEstimate struct {
-	Tokens         int
-	UsageTokens    int
-	EstimateTokens int
-	LastUsageIndex *int
+	Tokens         int  `json:"tokens"`
+	UsageTokens    int  `json:"usageTokens"`
+	EstimateTokens int  `json:"estimateTokens"`
+	LastUsageIndex *int `json:"lastUsageIndex"`
 }
 
 type CutPoint struct {
-	FirstKeptEntryIndex int
-	TurnStartIndex      int
-	IsSplitTurn         bool
+	FirstKeptEntryIndex int  `json:"firstKeptEntryIndex"`
+	TurnStartIndex      int  `json:"turnStartIndex"`
+	IsSplitTurn         bool `json:"isSplitTurn"`
 }
 
 type FileOps struct {
-	Read    map[string]bool
-	Written map[string]bool
-	Edited  map[string]bool
+	Read    map[string]bool `json:"read"`
+	Written map[string]bool `json:"written"`
+	Edited  map[string]bool `json:"edited"`
 }
 
 type CompactionPreparation struct {
-	FirstKeptEntryID    string
-	MessagesToSummarize []llm.Message
-	TurnPrefixMessages  []llm.Message
-	IsSplitTurn         bool
-	TokensBefore        int
-	PreviousSummary     string
-	FileOps             FileOps
-	Settings            CompactionSettings
+	FirstKeptEntryID    string             `json:"firstKeptEntryId"`
+	MessagesToSummarize []llm.Message      `json:"messagesToSummarize"`
+	TurnPrefixMessages  []llm.Message      `json:"turnPrefixMessages"`
+	IsSplitTurn         bool               `json:"isSplitTurn"`
+	TokensBefore        int                `json:"tokensBefore"`
+	PreviousSummary     string             `json:"previousSummary,omitempty"`
+	FileOps             FileOps            `json:"fileOps"`
+	Settings            CompactionSettings `json:"settings"`
 }
 
 type CompactionResult struct {
-	Summary          string
-	FirstKeptEntryID string
-	TokensBefore     int
-	Details          map[string]any
+	Summary          string         `json:"summary"`
+	FirstKeptEntryID string         `json:"firstKeptEntryId"`
+	TokensBefore     int            `json:"tokensBefore"`
+	Details          map[string]any `json:"details,omitempty"`
 }
 
 type CompactOptions struct {

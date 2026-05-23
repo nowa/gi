@@ -30,6 +30,10 @@ type SettingsManager struct {
 	modifiedProject map[string]struct{}
 }
 
+type WarningSettings struct {
+	AnthropicExtraUsage bool
+}
+
 func NewSettingsManager(cwd, agentDir string) *SettingsManager {
 	manager := &SettingsManager{
 		cwd:             cwd,
@@ -146,6 +150,12 @@ func cloneSettingsValue(value any) any {
 }
 
 func (s *SettingsManager) Reload() {
+	if s.inMemory {
+		clear(s.modifiedGlobal)
+		clear(s.modifiedProject)
+		s.refreshMerged()
+		return
+	}
 	if settings, err := loadSettingsFile(s.globalPath); err != nil {
 		s.globalLoadErr = err
 		s.errors = append(s.errors, SettingsError{Scope: "global", Err: err})
@@ -187,12 +197,32 @@ func (s *SettingsManager) GetDefaultModel() string {
 	return settingsString(s.merged, "defaultModel")
 }
 
+func (s *SettingsManager) SetDefaultModel(model string) {
+	s.setGlobal("defaultModel", model)
+}
+
+func (s *SettingsManager) GetDefaultProvider() string {
+	return settingsString(s.merged, "defaultProvider")
+}
+
+func (s *SettingsManager) SetDefaultProvider(provider string) {
+	s.setGlobal("defaultProvider", provider)
+}
+
 func (s *SettingsManager) GetDefaultThinkingLevel() string {
 	return settingsString(s.merged, "defaultThinkingLevel")
 }
 
 func (s *SettingsManager) SetDefaultThinkingLevel(level string) {
 	s.setGlobal("defaultThinkingLevel", level)
+}
+
+func (s *SettingsManager) GetTransport() string {
+	return settingsEnum(s.merged, "transport", "auto", []string{"sse", "websocket", "websocket-cached", "auto"})
+}
+
+func (s *SettingsManager) SetTransport(transport string) {
+	s.setGlobal("transport", normalizeSettingsEnum(transport, "auto", []string{"sse", "websocket", "websocket-cached", "auto"}))
 }
 
 func (s *SettingsManager) GetShellCommandPrefix() string {
@@ -221,6 +251,181 @@ func (s *SettingsManager) GetBlockImages() bool {
 
 func (s *SettingsManager) SetBlockImages(blocked bool) {
 	s.setGlobalNested("images", "blockImages", blocked)
+}
+
+func (s *SettingsManager) GetShowImages() bool {
+	return settingsNestedBool(s.merged, "terminal", "showImages", true)
+}
+
+func (s *SettingsManager) SetShowImages(enabled bool) {
+	s.setGlobalNested("terminal", "showImages", enabled)
+}
+
+func (s *SettingsManager) GetImageWidthCells() int {
+	width := settingsNestedInt(s.merged, "terminal", "imageWidthCells", 60)
+	if width <= 0 {
+		return 60
+	}
+	return width
+}
+
+func (s *SettingsManager) SetImageWidthCells(width int) {
+	if width <= 0 {
+		width = 60
+	}
+	s.setGlobalNested("terminal", "imageWidthCells", width)
+}
+
+func (s *SettingsManager) GetClearOnShrink() bool {
+	return settingsNestedBool(s.merged, "terminal", "clearOnShrink", false)
+}
+
+func (s *SettingsManager) SetClearOnShrink(enabled bool) {
+	s.setGlobalNested("terminal", "clearOnShrink", enabled)
+}
+
+func (s *SettingsManager) GetShowTerminalProgress() bool {
+	return settingsNestedBool(s.merged, "terminal", "showTerminalProgress", false)
+}
+
+func (s *SettingsManager) SetShowTerminalProgress(enabled bool) {
+	s.setGlobalNested("terminal", "showTerminalProgress", enabled)
+}
+
+func (s *SettingsManager) GetEnableInstallTelemetry() bool {
+	return settingsBool(s.merged, "enableInstallTelemetry", true)
+}
+
+func (s *SettingsManager) SetEnableInstallTelemetry(enabled bool) {
+	s.setGlobal("enableInstallTelemetry", enabled)
+}
+
+func (s *SettingsManager) GetEnableSkillCommands() bool {
+	return settingsBool(s.merged, "enableSkillCommands", true)
+}
+
+func (s *SettingsManager) SetEnableSkillCommands(enabled bool) {
+	s.setGlobal("enableSkillCommands", enabled)
+}
+
+func (s *SettingsManager) GetHideThinkingBlock() bool {
+	return settingsBool(s.merged, "hideThinkingBlock", false)
+}
+
+func (s *SettingsManager) SetHideThinkingBlock(hidden bool) {
+	s.setGlobal("hideThinkingBlock", hidden)
+}
+
+func (s *SettingsManager) GetCollapseChangelog() bool {
+	return settingsBool(s.merged, "collapseChangelog", false)
+}
+
+func (s *SettingsManager) SetCollapseChangelog(collapsed bool) {
+	s.setGlobal("collapseChangelog", collapsed)
+}
+
+func (s *SettingsManager) GetLastChangelogVersion() string {
+	return settingsString(s.merged, "lastChangelogVersion")
+}
+
+func (s *SettingsManager) SetLastChangelogVersion(version string) {
+	s.setGlobal("lastChangelogVersion", version)
+}
+
+func (s *SettingsManager) GetQuietStartup() bool {
+	return settingsBool(s.merged, "quietStartup", false)
+}
+
+func (s *SettingsManager) SetQuietStartup(enabled bool) {
+	s.setGlobal("quietStartup", enabled)
+}
+
+func (s *SettingsManager) GetDoubleEscapeAction() string {
+	return settingsEnum(s.merged, "doubleEscapeAction", "tree", []string{"tree", "fork", "none"})
+}
+
+func (s *SettingsManager) SetDoubleEscapeAction(action string) {
+	s.setGlobal("doubleEscapeAction", normalizeSettingsEnum(action, "tree", []string{"tree", "fork", "none"}))
+}
+
+func (s *SettingsManager) GetTreeFilterMode() string {
+	return settingsEnum(s.merged, "treeFilterMode", "default", []string{"default", "no-tools", "user-only", "labeled-only", "all"})
+}
+
+func (s *SettingsManager) SetTreeFilterMode(mode string) {
+	s.setGlobal("treeFilterMode", normalizeSettingsEnum(mode, "default", []string{"default", "no-tools", "user-only", "labeled-only", "all"}))
+}
+
+func (s *SettingsManager) GetBranchSummarySkipPrompt() bool {
+	return settingsNestedBool(s.merged, "branchSummary", "skipPrompt", false)
+}
+
+func (s *SettingsManager) SetBranchSummarySkipPrompt(skip bool) {
+	s.setGlobalNested("branchSummary", "skipPrompt", skip)
+}
+
+func (s *SettingsManager) GetEditorPaddingX() int {
+	padding := settingsInt(s.merged, "editorPaddingX", 0)
+	if padding < 0 {
+		return 0
+	}
+	return padding
+}
+
+func (s *SettingsManager) SetEditorPaddingX(padding int) {
+	if padding < 0 {
+		padding = 0
+	}
+	s.setGlobal("editorPaddingX", padding)
+}
+
+func (s *SettingsManager) GetAutocompleteMaxVisible() int {
+	visible := settingsInt(s.merged, "autocompleteMaxVisible", 5)
+	if visible <= 0 {
+		return 5
+	}
+	return visible
+}
+
+func (s *SettingsManager) SetAutocompleteMaxVisible(visible int) {
+	if visible <= 0 {
+		visible = 5
+	}
+	s.setGlobal("autocompleteMaxVisible", visible)
+}
+
+func (s *SettingsManager) GetShowHardwareCursor() bool {
+	return settingsBool(s.merged, "showHardwareCursor", false)
+}
+
+func (s *SettingsManager) SetShowHardwareCursor(enabled bool) {
+	s.setGlobal("showHardwareCursor", enabled)
+}
+
+func (s *SettingsManager) GetWarnings() WarningSettings {
+	return WarningSettings{
+		AnthropicExtraUsage: settingsNestedBool(s.merged, "warnings", "anthropicExtraUsage", true),
+	}
+}
+
+func (s *SettingsManager) SetWarnings(warnings WarningSettings) {
+	s.setGlobal("warnings", map[string]any{"anthropicExtraUsage": warnings.AnthropicExtraUsage})
+}
+
+func (s *SettingsManager) SetWarningAnthropicExtraUsage(enabled bool) {
+	s.setGlobalNested("warnings", "anthropicExtraUsage", enabled)
+}
+
+func (s *SettingsManager) GetEnabledModels() []string {
+	return settingsStringSlice(s.merged, "enabledModels")
+}
+
+func (s *SettingsManager) SetEnabledModels(models []string) {
+	values := make([]any, len(models))
+	for i, model := range models {
+		values[i] = model
+	}
+	s.setGlobal("enabledModels", values)
 }
 
 func (s *SettingsManager) GetPackages() []any {
@@ -328,6 +533,19 @@ func settingsString(settings map[string]any, key string) string {
 	return value
 }
 
+func settingsEnum(settings map[string]any, key, defaultValue string, allowed []string) string {
+	return normalizeSettingsEnum(settingsString(settings, key), defaultValue, allowed)
+}
+
+func normalizeSettingsEnum(value, defaultValue string, allowed []string) string {
+	for _, allowedValue := range allowed {
+		if value == allowedValue {
+			return value
+		}
+	}
+	return defaultValue
+}
+
 func settingsNestedBool(settings map[string]any, key, nestedKey string, defaultValue bool) bool {
 	nested, ok := settings[key].(map[string]any)
 	if !ok {
@@ -338,6 +556,44 @@ func settingsNestedBool(settings map[string]any, key, nestedKey string, defaultV
 		return defaultValue
 	}
 	return value
+}
+
+func settingsBool(settings map[string]any, key string, defaultValue bool) bool {
+	value, ok := settings[key].(bool)
+	if !ok {
+		return defaultValue
+	}
+	return value
+}
+
+func settingsInt(settings map[string]any, key string, defaultValue int) int {
+	return settingsValueInt(settings[key], defaultValue)
+}
+
+func settingsNestedInt(settings map[string]any, key, nestedKey string, defaultValue int) int {
+	nested, ok := settings[key].(map[string]any)
+	if !ok {
+		return defaultValue
+	}
+	return settingsValueInt(nested[nestedKey], defaultValue)
+}
+
+func settingsValueInt(value any, defaultValue int) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		if typed == float64(int(typed)) {
+			return int(typed)
+		}
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			return int(parsed)
+		}
+	}
+	return defaultValue
 }
 
 func settingsSlice(settings map[string]any, key string) []any {

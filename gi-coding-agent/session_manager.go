@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -609,7 +610,7 @@ func ContinueRecentSession(cwd string, sessionDir ...string) (*SessionManager, e
 		}
 	}
 	if recent := FindMostRecentSession(dir); recent != "" {
-		return newSessionManager(cwd, dir, recent, true)
+		return OpenSessionManager(recent, dir)
 	}
 	return newSessionManager(cwd, dir, "", true)
 }
@@ -1002,13 +1003,21 @@ func (s *SessionManager) AppendCustomEntry(customType string, data any) string {
 }
 
 func (s *SessionManager) AppendCustomMessageEntry(customType string, content any, display bool, details any) string {
+	return s.AppendCustomMessageEntryWithContext(customType, content, display, details, false)
+}
+
+func (s *SessionManager) AppendCustomMessageEntryWithContext(customType string, content any, display bool, details any, includeInContext bool) string {
 	parentID := cloneStringPtr(s.leafID)
-	entry := newSessionEntry("custom_message", parentID, map[string]any{
+	message := map[string]any{
 		"customType": customType,
 		"content":    content,
 		"display":    display,
 		"details":    details,
-	})
+	}
+	if includeInContext {
+		message["includeInContext"] = true
+	}
+	entry := newSessionEntry("custom_message", parentID, message)
 	entry.CustomType = customType
 	entry.Content = content
 	entry.Display = display
@@ -1109,6 +1118,9 @@ func (s *SessionManager) GetBranch(fromID ...string) []FileEntry {
 }
 
 func (s *SessionManager) BuildSessionContext() SessionContext {
+	if s.leafID == nil {
+		return SessionContext{ThinkingLevel: "off"}
+	}
 	return BuildSessionContext(s.GetEntries(), s.leafID, s.byID)
 }
 
@@ -1122,12 +1134,11 @@ func BuildSessionContext(entries []FileEntry, leafID *string, byID map[string]Fi
 		}
 	}
 	context := SessionContext{ThinkingLevel: "off"}
-	if leafID == nil {
-		return context
-	}
 	var leaf FileEntry
 	var ok bool
-	leaf, ok = byID[*leafID]
+	if leafID != nil {
+		leaf, ok = byID[*leafID]
+	}
 	if !ok && len(entries) > 0 {
 		leaf = entries[len(entries)-1]
 		ok = true
@@ -1173,17 +1184,20 @@ func BuildSessionContext(entries []FileEntry, leafID *string, byID map[string]Fi
 			context.Messages = append(context.Messages, entry.Message)
 		case "custom_message":
 			context.Messages = append(context.Messages, map[string]any{
-				"role":      entry.CustomType,
-				"content":   []any{map[string]any{"type": "text", "text": entry.Content}},
-				"timestamp": entry.Timestamp,
-				"details":   entry.Details,
+				"role":       "custom",
+				"customType": entry.CustomType,
+				"content":    entry.Content,
+				"display":    entry.Display,
+				"timestamp":  sessionEntryTimestampMillis(entry.Timestamp),
+				"details":    entry.Details,
 			})
 		case "branch_summary":
 			if entry.Summary != "" {
 				context.Messages = append(context.Messages, map[string]any{
 					"role":      "branchSummary",
-					"content":   []any{map[string]any{"type": "text", "text": entry.Summary}},
-					"timestamp": entry.Timestamp,
+					"summary":   entry.Summary,
+					"fromId":    entry.FromID,
+					"timestamp": sessionEntryTimestampMillis(entry.Timestamp),
 				})
 			}
 		}
@@ -1192,9 +1206,10 @@ func BuildSessionContext(entries []FileEntry, leafID *string, byID map[string]Fi
 	if compactionIndex >= 0 {
 		compaction := path[compactionIndex]
 		context.Messages = append(context.Messages, map[string]any{
-			"role":      "compactionSummary",
-			"content":   []any{map[string]any{"type": "text", "text": compaction.Summary}},
-			"timestamp": compaction.Timestamp,
+			"role":         "compactionSummary",
+			"summary":      compaction.Summary,
+			"tokensBefore": compaction.TokensBefore,
+			"timestamp":    sessionEntryTimestampMillis(compaction.Timestamp),
 		})
 		foundFirstKept := false
 		for idx := 0; idx < compactionIndex; idx++ {
@@ -1215,6 +1230,36 @@ func BuildSessionContext(entries []FileEntry, leafID *string, byID map[string]Fi
 		appendEntryMessage(entry)
 	}
 	return context
+}
+
+func customMessageIncludedInContext(entry FileEntry) bool {
+	message, ok := entry.Message.(map[string]any)
+	if !ok {
+		message = entry.raw
+	}
+	include, _ := message["includeInContext"].(bool)
+	return include
+}
+
+func customMessageText(content any) string {
+	switch typed := content.(type) {
+	case string:
+		return typed
+	case []byte:
+		return string(typed)
+	case nil:
+		return ""
+	default:
+		data, err := json.Marshal(typed)
+		if err != nil {
+			return strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(jsonStringFallback(typed), "\n", " "), "\t", " "))
+		}
+		return string(data)
+	}
+}
+
+func jsonStringFallback(value any) string {
+	return strings.TrimSpace(fmt.Sprint(value))
 }
 
 func (s *SessionManager) GetTree() []*SessionTreeNode {
@@ -1282,6 +1327,7 @@ func (s *SessionManager) BranchWithSummary(branchFromID *string, summary string)
 		"summary": summary,
 	})
 	entry.Summary = summary
+	entry.FromID = fromID
 	s.appendEntry(entry)
 	return entry.ID, nil
 }
@@ -1457,6 +1503,9 @@ func extractMessageText(message any) string {
 	if !ok {
 		return ""
 	}
+	if summary, _ := value["summary"].(string); summary != "" {
+		return summary
+	}
 	content := value["content"]
 	switch typed := content.(type) {
 	case string:
@@ -1495,9 +1544,21 @@ func messageTimestampMillis(message any) (int64, bool) {
 		return int64(timestamp), true
 	case int64:
 		return timestamp, true
+	case string:
+		if parsed, ok := parseSessionTimeOK(timestamp); ok {
+			return parsed.UnixMilli(), true
+		}
+		return 0, false
 	default:
 		return 0, false
 	}
+}
+
+func sessionEntryTimestampMillis(timestamp string) int64 {
+	if parsed, ok := parseSessionTimeOK(timestamp); ok {
+		return parsed.UnixMilli()
+	}
+	return 0
 }
 
 func getSessionModifiedDate(entries []FileEntry, header FileEntry, statsMtime time.Time) time.Time {

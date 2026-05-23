@@ -2,15 +2,14 @@ package gicodingagent
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
 type AgentSessionForkMessage struct {
-	EntryID string
-	Text    string
+	EntryID string `json:"entryId"`
+	Text    string `json:"text"`
 }
 
 type AgentSessionForkResult struct {
@@ -50,7 +49,7 @@ func (s *AgentSession) Fork(entryID string) (AgentSessionForkResult, error) {
 		}
 	}
 	if selectedText == "" {
-		return AgentSessionForkResult{}, fmt.Errorf("fork entry %s is not a user message", entryID)
+		return AgentSessionForkResult{}, errors.New("Invalid entry ID for forking")
 	}
 	forkedManager, err := s.SessionManager.ForkBeforeEntry(entryID)
 	if err != nil {
@@ -61,11 +60,33 @@ func (s *AgentSession) Fork(entryID string) (AgentSessionForkResult, error) {
 		Model:          s.Agent.State.Model,
 		SessionManager: forkedManager,
 		ResourceLoader: s.ResourceLoader,
+		ScopedModels:   s.ScopedModels,
 	})
 	if err != nil {
 		return AgentSessionForkResult{}, err
 	}
 	return AgentSessionForkResult{SelectedText: selectedText, Session: forkedSession}, nil
+}
+
+func (s *AgentSession) ForkAt(entryID string) (AgentSessionForkResult, error) {
+	if s == nil || s.SessionManager == nil {
+		return AgentSessionForkResult{}, errors.New("session manager is required")
+	}
+	forkedManager, err := s.SessionManager.ForkAtEntry(entryID)
+	if err != nil {
+		return AgentSessionForkResult{}, errors.New("Invalid entry ID for forking")
+	}
+	forkedSession, err := CreateAgentSession(AgentSessionOptions{
+		CWD:            forkedManager.GetCwd(),
+		Model:          s.Agent.State.Model,
+		SessionManager: forkedManager,
+		ResourceLoader: s.ResourceLoader,
+		ScopedModels:   s.ScopedModels,
+	})
+	if err != nil {
+		return AgentSessionForkResult{}, err
+	}
+	return AgentSessionForkResult{Session: forkedSession}, nil
 }
 
 func (s *AgentSession) Messages() []llm.Message {
@@ -83,6 +104,14 @@ func (s *AgentSession) Messages() []llm.Message {
 }
 
 func (s *SessionManager) ForkBeforeEntry(entryID string) (*SessionManager, error) {
+	return s.forkEntry(entryID, false)
+}
+
+func (s *SessionManager) ForkAtEntry(entryID string) (*SessionManager, error) {
+	return s.forkEntry(entryID, true)
+}
+
+func (s *SessionManager) forkEntry(entryID string, includeEntry bool) (*SessionManager, error) {
 	branch := s.GetBranch(entryID)
 	if len(branch) == 0 {
 		return nil, errors.New("Entry " + entryID + " not found")
@@ -102,7 +131,11 @@ func (s *SessionManager) ForkBeforeEntry(entryID string) (*SessionManager, error
 	forked.newSession(NewSessionOptions{ParentSession: parentSession})
 	header := forked.fileEntries[0]
 	entries := []FileEntry{header}
-	for _, entry := range branch[:len(branch)-1] {
+	copyBranch := branch[:len(branch)-1]
+	if includeEntry {
+		copyBranch = branch
+	}
+	for _, entry := range copyBranch {
 		if entry.Type == "label" {
 			continue
 		}
@@ -152,6 +185,28 @@ func sessionMessageToLLM(message any) (llm.Message, bool) {
 		if role == "" {
 			return llm.Message{}, false
 		}
+		details := typed["details"]
+		if role == "branchSummary" || role == "compactionSummary" {
+			detailMap := map[string]any{}
+			if existing, ok := details.(map[string]any); ok {
+				for key, value := range existing {
+					detailMap[key] = value
+				}
+			}
+			if role == "branchSummary" {
+				if fromID, ok := typed["fromId"].(string); ok && fromID != "" {
+					detailMap["fromId"] = fromID
+				}
+			}
+			if role == "compactionSummary" {
+				if tokensBefore, ok := typed["tokensBefore"]; ok {
+					detailMap["tokensBefore"] = tokensBefore
+				}
+			}
+			if len(detailMap) > 0 {
+				details = detailMap
+			}
+		}
 		message := llm.Message{
 			Role:         role,
 			Content:      sessionMessageContentToLLM(typed["content"]),
@@ -162,12 +217,26 @@ func sessionMessageToLLM(message any) (llm.Message, bool) {
 			ErrorMessage: stringFromSessionMessageValue(typed["errorMessage"]),
 			ToolCallID:   stringFromSessionMessageValue(typed["toolCallID"]),
 			ToolName:     stringFromSessionMessageValue(typed["toolName"]),
+			CustomType:   stringFromSessionMessageValue(typed["customType"]),
+			Details:      details,
+		}
+		if display, ok := typed["display"].(bool); ok {
+			message.Display = &display
+		}
+		if exclude, ok := typed["excludeFromContext"].(bool); ok && exclude && message.Details == nil {
+			message.Details = map[string]any{"excludeFromContext": true}
+		}
+		if isError, ok := typed["isError"].(bool); ok {
+			message.IsError = isError
 		}
 		if timestamp, ok := messageTimestampMillis(typed); ok {
 			message.Timestamp = timestamp
 		}
 		if usage, ok := usageFromSessionMessageValue(typed["usage"]); ok {
 			message.Usage = usage
+		}
+		if role == "custom" && len(message.Content) == 0 && typed["content"] != nil {
+			message.Content = []llm.ContentPart{llm.Text(customMessageText(typed["content"]))}
 		}
 		if len(message.Content) == 0 {
 			message.Content = []llm.ContentPart{llm.Text(extractMessageText(typed))}
@@ -194,15 +263,29 @@ func sessionMessageContentToLLM(value any) []llm.ContentPart {
 			blockType, _ := block["type"].(string)
 			switch blockType {
 			case llm.ContentText:
-				parts = append(parts, llm.Text(stringFromSessionMessageValue(block["text"])))
+				part := llm.Text(stringFromSessionMessageValue(block["text"]))
+				part.TextSignature = stringFromSessionMessageValue(block["textSignature"])
+				parts = append(parts, part)
 			case llm.ContentThinking:
-				parts = append(parts, llm.Thinking(stringFromSessionMessageValue(block["thinking"])))
+				part := llm.Thinking(stringFromSessionMessageValue(block["thinking"]))
+				part.ThinkingSignature = stringFromSessionMessageValue(block["thinkingSignature"])
+				if redacted, ok := block["redacted"].(bool); ok {
+					part.Redacted = redacted
+				}
+				parts = append(parts, part)
+			case llm.ContentImage:
+				parts = append(parts, llm.Image(
+					stringFromSessionMessageValue(block["data"]),
+					stringFromSessionMessageValue(block["mimeType"]),
+				))
 			case llm.ContentToolCall:
-				parts = append(parts, llm.ToolCall(
+				part := llm.ToolCall(
 					stringFromSessionMessageValue(block["id"]),
 					stringFromSessionMessageValue(block["name"]),
 					mapFromSessionMessageValue(block["arguments"]),
-				))
+				)
+				part.ThoughtSignature = stringFromSessionMessageValue(block["thoughtSignature"])
+				parts = append(parts, part)
 			}
 		}
 		return parts

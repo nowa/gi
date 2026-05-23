@@ -6,6 +6,7 @@
     {"name": "commands.register", "profile": "gi-extension-host@1", "description": "Register slash commands."},
     {"name": "shortcuts.register", "profile": "gi-tui-host@1", "description": "Register keyboard shortcuts."},
     {"name": "lifecycle.events", "profile": "gi-extension-host@1", "description": "Subscribe to lifecycle events and return allowed patches."},
+    {"name": "bash.intercept", "profile": "gi-extension-host@1", "description": "Receive user bash commands and optionally return a complete replacement result."},
     {"name": "providers.register", "profile": "gi-extension-host@1", "description": "Register model providers."},
     {"name": "session.read", "profile": "gi-extension-host@1", "description": "Read session entries, branch, and metadata."},
     {"name": "session.write", "profile": "gi-extension-host@1", "description": "Append custom entries or labels."},
@@ -17,8 +18,14 @@
     {"name": "system_prompt.modify", "profile": "gi-extension-host@1", "description": "Append or replace system prompt sections."},
     {"name": "compaction.custom", "profile": "gi-extension-host@1", "description": "Provide custom compaction behavior."},
     {"name": "tui.status", "profile": "gi-tui-host@1", "description": "Set status or footer text."},
+    {"name": "tui.title", "profile": "gi-tui-host@1", "description": "Set terminal or window title text."},
+    {"name": "tui.working", "profile": "gi-tui-host@1", "description": "Configure the live working loader message, visibility, and indicator."},
+    {"name": "tui.thinking_label", "profile": "gi-tui-host@1", "description": "Set the label used when thinking blocks are hidden."},
+    {"name": "tui.theme", "profile": "gi-tui-host@1", "description": "List, inspect, or switch host themes through serializable metadata."},
+    {"name": "tui.tools_expanded", "profile": "gi-tui-host@1", "description": "Read or set live TUI tool-output expansion."},
+    {"name": "tui.terminal_input", "profile": "gi-tui-host@1", "description": "Observe raw terminal input events without consuming or transforming them."},
     {"name": "tui.dialog", "profile": "gi-tui-host@1", "description": "Use select, confirm, input, editor, and notification dialogs."},
-    {"name": "tui.widget", "profile": "gi-tui-host@1", "description": "Mount above or below editor widgets."},
+    {"name": "tui.widget", "profile": "gi-tui-host@1", "description": "Mount widgets and receive focus/input events for owned ViewTree mounts."},
     {"name": "tui.header", "profile": "gi-tui-host@1", "description": "Mount header contributions."},
     {"name": "tui.footer", "profile": "gi-tui-host@1", "description": "Mount footer contributions."},
     {"name": "tui.overlay", "profile": "gi-tui-host@1", "description": "Mount focused or non-capturing overlays."},
@@ -29,6 +36,7 @@
     {"name": "fs.read:<scope>", "profile": "gi-extension-host@1", "description": "Read files in an allowed scope."},
     {"name": "fs.write:<scope>", "profile": "gi-extension-host@1", "description": "Write files in an allowed scope."},
     {"name": "process.exec:<scope>", "profile": "gi-extension-host@1", "description": "Execute commands in an allowed scope."},
+    {"name": "process.stdio:<scope>", "profile": "gi-extension-host@1", "description": "Start host-supervised bidirectional stdio processes in an allowed scope."},
     {"name": "network:<scope>", "profile": "gi-extension-host@1", "description": "Make outbound network requests in an allowed scope."}
   ]
 }

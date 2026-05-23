@@ -139,9 +139,66 @@ func TestAgentSessionDynamicToolWithoutPromptSnippetStaysHiddenFromPrompt(t *tes
 	}
 }
 
+func TestAgentSessionToolAllowlistFiltersExtensionToolsPiRegression(t *testing.T) {
+	host := createDynamicExtensionHostWithOptions(t, AgentSessionOptions{Tools: []string{"read", "dynamic_tool"}, ToolsSet: true}, registerDynamicToolOnSessionStart)
+	names := host.Session.GetActiveToolNames()
+	if !reflectStringSetEqual(names, []string{"dynamic_tool", "read"}) {
+		t.Fatalf("active tool names = %#v", names)
+	}
+	allNames := toolNames(host.Session.GetAllTools())
+	if !reflectStringSetEqual(allNames, []string{"dynamic_tool", "read"}) {
+		t.Fatalf("all tool names = %#v", allNames)
+	}
+	if !strings.Contains(host.Session.SystemPrompt, "- read: Read file contents") ||
+		!strings.Contains(host.Session.SystemPrompt, "- dynamic_tool: Run dynamic test behavior") ||
+		strings.Contains(host.Session.SystemPrompt, "- bash:") ||
+		strings.Contains(host.Session.SystemPrompt, "- edit:") {
+		t.Fatalf("system prompt = %s", host.Session.SystemPrompt)
+	}
+
+	empty := createDynamicExtensionHostWithOptions(t, AgentSessionOptions{Tools: []string{}, ToolsSet: true}, registerDynamicToolOnSessionStart)
+	if len(empty.Session.GetAllTools()) != 0 || len(empty.Session.GetActiveToolNames()) != 0 {
+		t.Fatalf("empty allowlist tools = all %#v active %#v", empty.Session.GetAllTools(), empty.Session.GetActiveToolNames())
+	}
+	if !strings.Contains(empty.Session.SystemPrompt, "Available tools:\n(none)") || strings.Contains(empty.Session.SystemPrompt, "dynamic_tool") {
+		t.Fatalf("empty allowlist system prompt = %s", empty.Session.SystemPrompt)
+	}
+}
+
+func TestAgentSessionNoBuiltinToolsKeepsExtensionToolsPiRegression(t *testing.T) {
+	host := createDynamicExtensionHostWithOptions(t, AgentSessionOptions{NoTools: "builtin"}, registerDynamicToolOnSessionStart)
+	allNames := toolNames(host.Session.GetAllTools())
+	for _, name := range []string{"bash", "dynamic_tool", "edit", "find", "grep", "ls", "read", "write"} {
+		if !containsString(allNames, name) {
+			t.Fatalf("all tool names = %#v, missing %q", allNames, name)
+		}
+	}
+	if got := host.Session.GetActiveToolNames(); !reflectStringSetEqual(got, []string{"dynamic_tool"}) {
+		t.Fatalf("active tool names = %#v", got)
+	}
+	if !strings.Contains(host.Session.SystemPrompt, "- dynamic_tool: Run dynamic test behavior") ||
+		strings.Contains(host.Session.SystemPrompt, "- read:") ||
+		strings.Contains(host.Session.SystemPrompt, "- bash:") {
+		t.Fatalf("system prompt = %s", host.Session.SystemPrompt)
+	}
+
+	allDisabled := createDynamicExtensionHostWithOptions(t, AgentSessionOptions{NoTools: "all"}, registerDynamicToolOnSessionStart)
+	if len(allDisabled.Session.GetAllTools()) != 0 || len(allDisabled.Session.GetActiveToolNames()) != 0 {
+		t.Fatalf("noTools all = all %#v active %#v", allDisabled.Session.GetAllTools(), allDisabled.Session.GetActiveToolNames())
+	}
+	if !strings.Contains(allDisabled.Session.SystemPrompt, "Available tools:\n(none)") {
+		t.Fatalf("noTools all system prompt = %s", allDisabled.Session.SystemPrompt)
+	}
+}
+
 func createDynamicExtensionHost(t *testing.T, factory func(*ProtocolExtensionContext) error) *AgentSessionRuntimeHost {
 	t.Helper()
-	session := createDynamicSessionForTest(t, nil, nil)
+	return createDynamicExtensionHostWithOptions(t, AgentSessionOptions{}, factory)
+}
+
+func createDynamicExtensionHostWithOptions(t *testing.T, options AgentSessionOptions, factory func(*ProtocolExtensionContext) error) *AgentSessionRuntimeHost {
+	t.Helper()
+	session := createDynamicSessionForTestWithOptions(t, nil, nil, options)
 	runtime := NewProtocolExtensionRuntime(
 		CapabilityCommandsRegister,
 		CapabilityLifecycleEvents,
@@ -160,6 +217,11 @@ func createDynamicExtensionHost(t *testing.T, factory func(*ProtocolExtensionCon
 
 func createDynamicSessionForTest(t *testing.T, responder AgentSessionResponder, customTools []SDKTool) *AgentSession {
 	t.Helper()
+	return createDynamicSessionForTestWithOptions(t, responder, customTools, AgentSessionOptions{})
+}
+
+func createDynamicSessionForTestWithOptions(t *testing.T, responder AgentSessionResponder, customTools []SDKTool, options AgentSessionOptions) *AgentSession {
+	t.Helper()
 	manager, err := InMemorySessionManager(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -171,11 +233,48 @@ func createDynamicSessionForTest(t *testing.T, responder AgentSessionResponder, 
 		SessionManager: manager,
 		Responder:      responder,
 		CustomTools:    customTools,
+		Tools:          options.Tools,
+		ToolsSet:       options.ToolsSet,
+		NoTools:        options.NoTools,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return session
+}
+
+func registerDynamicToolOnSessionStart(ctx *ProtocolExtensionContext) error {
+	return ctx.On(ProtocolEventSessionStart, func(event ProtocolSessionEvent) (ProtocolEventResult, error) {
+		return ProtocolEventResult{}, ctx.RegisterTool(ProtocolToolDefinition{
+			Name:          "dynamic_tool",
+			Label:         "Dynamic Tool",
+			Description:   "Tool registered from session_start",
+			PromptSnippet: "Run dynamic test behavior",
+			Execute: func(toolCallID string, input map[string]any) (SDKToolResult, error) {
+				return SDKToolResult{Content: []SDKContentPart{{Type: "text", Text: "ok"}}}, nil
+			},
+		})
+	})
+}
+
+func toolNames(tools []SDKTool) []string {
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	return names
+}
+
+func reflectStringSetEqual(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for _, item := range want {
+		if !containsString(got, item) {
+			return false
+		}
+	}
+	return true
 }
 
 func capturePromptBaseURL(t *testing.T, session *AgentSession) string {

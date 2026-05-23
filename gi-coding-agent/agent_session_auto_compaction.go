@@ -86,6 +86,9 @@ func (s *AgentSession) HasAgentQueuedMessages() bool {
 }
 
 func (s *AgentSession) shouldThresholdCompact(assistantMessage llm.Message) bool {
+	if !s.CompactionSettings.Enabled {
+		return false
+	}
 	contextWindow := s.contextWindow()
 	if contextWindow == 0 {
 		return false

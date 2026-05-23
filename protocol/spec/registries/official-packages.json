@@ -17,21 +17,21 @@
     },
     {
       "name": "gi-mcp-adapter",
-      "requiredCapabilities": ["tools.register", "process.exec:<scope>", "network:<scope>"],
-      "requiredHostActions": ["host.process.exec"],
+      "requiredCapabilities": ["tools.register", "process.stdio:<scope>", "network:<scope>", "tui.widget"],
+      "requiredHostActions": [],
       "requiredViewNodes": ["text", "toolCall", "progress"],
       "proof": "Supervises MCP servers, converts server tools to JSON Schema tools, streams progress, and reports diagnostics."
     },
     {
       "name": "gi-git-guard",
-      "requiredCapabilities": ["session.read", "session.write", "process.exec:<scope>", "tui.dialog"],
+      "requiredCapabilities": ["session.read", "session.write", "process.exec:<scope>", "tui.dialog", "tui.widget"],
       "requiredHostActions": ["host.session.action", "host.process.exec", "host.tui.dialog", "host.session.append_custom"],
       "requiredViewNodes": ["text", "diff", "button"],
       "proof": "Intercepts unsafe session actions, checks git state, asks for confirmation, and records decisions."
     },
     {
       "name": "gi-approval-gate",
-      "requiredCapabilities": ["session.write", "tui.dialog", "tui.overlay", "tui.tool_renderer"],
+      "requiredCapabilities": ["session.write", "tui.dialog", "tui.overlay", "tui.tool_renderer", "tui.widget"],
       "requiredHostActions": ["host.tui.dialog", "host.tui.mount", "host.session.append_custom"],
       "requiredViewNodes": ["box", "diff", "toolCall", "button", "keyHint"],
       "proof": "Intercepts sensitive tool calls, renders command/diff context, and returns approve, deny, or rewrite decisions."
@@ -41,18 +41,18 @@
       "requiredCapabilities": ["session.read", "tui.footer", "tui.status"],
       "requiredHostActions": ["host.tui.mount", "host.tui.status", "host.model.list", "host.thinking.get"],
       "requiredViewNodes": ["row", "text", "keyHint"],
-      "proof": "Renders model, branch, token, context, and tool-activity status through semantic theme tokens."
+      "proof": "Renders model, branch, token, context, and tool-activity status through semantic theme tokens and mounts a footer ViewTree segment from the official command path."
     },
     {
       "name": "gi-todo-widget",
       "requiredCapabilities": ["tools.register", "session.read", "session.write", "tui.widget", "tui.message_renderer", "tui.tool_renderer"],
       "requiredHostActions": ["host.session.entries", "host.session.append_custom", "host.tui.mount"],
       "requiredViewNodes": ["box", "list", "message", "toolCall", "button"],
-      "proof": "Registers todo tools and renderers, persists todo state, rehydrates on session switch, and mounts current todos."
+      "proof": "Registers todo tools and renderers, persists todo state, rehydrates on session switch, and mounts current todos as a command-scoped ViewTree widget."
     },
     {
       "name": "gi-tools-ui",
-      "requiredCapabilities": ["commands.register", "tools.set_active", "session.write", "tui.dialog", "tui.overlay"],
+      "requiredCapabilities": ["commands.register", "tools.set_active", "session.write", "tui.dialog", "tui.overlay", "tui.widget"],
       "requiredHostActions": ["host.tools.list", "host.tools.set_active", "host.tui.dialog", "host.tui.mount", "host.session.append_custom"],
       "requiredViewNodes": ["select", "list", "box", "keyHint", "button"],
       "proof": "Displays tools, toggles active state, persists scope, and updates the canonical tool set."

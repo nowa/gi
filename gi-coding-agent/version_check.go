@@ -11,12 +11,15 @@ import (
 	"time"
 )
 
-const LatestPiVersionURL = "https://pi.dev/api/latest-version"
+const LatestGiVersionURL = "https://api.github.com/repos/nowa/gi/releases/latest"
+const LatestPiVersionURL = LatestGiVersionURL
 
-type LatestPiRelease struct {
+type LatestGiRelease struct {
 	Version     string
 	PackageName string
 }
+
+type LatestPiRelease = LatestGiRelease
 
 type VersionCheckOptions struct {
 	URL        string
@@ -72,13 +75,17 @@ func IsNewerPackageVersion(candidateVersion, currentVersion string) bool {
 	return strings.TrimSpace(candidateVersion) != strings.TrimSpace(currentVersion)
 }
 
-func GetLatestPiRelease(currentVersion string, options VersionCheckOptions) (LatestPiRelease, bool) {
-	if options.Skip || options.Offline || os.Getenv("PI_SKIP_VERSION_CHECK") != "" || os.Getenv("PI_OFFLINE") != "" {
-		return LatestPiRelease{}, false
+func GetLatestGiRelease(currentVersion string, options VersionCheckOptions) (LatestGiRelease, bool) {
+	if options.Skip || options.Offline ||
+		os.Getenv("GI_SKIP_VERSION_CHECK") != "" ||
+		os.Getenv("GI_OFFLINE") != "" ||
+		os.Getenv("PI_SKIP_VERSION_CHECK") != "" ||
+		os.Getenv("PI_OFFLINE") != "" {
+		return LatestGiRelease{}, false
 	}
 	url := options.URL
 	if url == "" {
-		url = LatestPiVersionURL
+		url = LatestGiVersionURL
 	}
 	timeout := options.Timeout
 	if timeout == 0 {
@@ -93,52 +100,68 @@ func GetLatestPiRelease(currentVersion string, options VersionCheckOptions) (Lat
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return LatestPiRelease{}, false
+		return LatestGiRelease{}, false
 	}
-	request.Header.Set("User-Agent", GetPiUserAgent(currentVersion))
+	request.Header.Set("User-Agent", GetGiUserAgent(currentVersion))
 	request.Header.Set("accept", "application/json")
 
 	response, err := client.Do(request)
 	if err != nil {
-		return LatestPiRelease{}, false
+		return LatestGiRelease{}, false
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return LatestPiRelease{}, false
+		return LatestGiRelease{}, false
 	}
 	var payload struct {
 		Version     any `json:"version"`
+		TagName     any `json:"tag_name"`
 		PackageName any `json:"packageName"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		return LatestPiRelease{}, false
+		return LatestGiRelease{}, false
 	}
 	version, ok := payload.Version.(string)
+	if !ok || strings.TrimSpace(version) == "" {
+		version, ok = payload.TagName.(string)
+	}
 	version = strings.TrimSpace(version)
 	if !ok || version == "" {
-		return LatestPiRelease{}, false
+		return LatestGiRelease{}, false
 	}
-	release := LatestPiRelease{Version: version}
+	release := LatestGiRelease{Version: version}
 	if packageName, ok := payload.PackageName.(string); ok {
 		release.PackageName = strings.TrimSpace(packageName)
 	}
 	return release, true
 }
 
-func GetLatestPiVersion(currentVersion string, options VersionCheckOptions) (string, bool) {
-	release, ok := GetLatestPiRelease(currentVersion, options)
+func GetLatestPiRelease(currentVersion string, options VersionCheckOptions) (LatestPiRelease, bool) {
+	return GetLatestGiRelease(currentVersion, options)
+}
+
+func GetLatestGiVersion(currentVersion string, options VersionCheckOptions) (string, bool) {
+	release, ok := GetLatestGiRelease(currentVersion, options)
 	if !ok {
 		return "", false
 	}
 	return release.Version, true
 }
 
-func CheckForNewPiVersion(currentVersion string, options VersionCheckOptions) (string, bool) {
-	latestVersion, ok := GetLatestPiVersion(currentVersion, options)
+func GetLatestPiVersion(currentVersion string, options VersionCheckOptions) (string, bool) {
+	return GetLatestGiVersion(currentVersion, options)
+}
+
+func CheckForNewGiVersion(currentVersion string, options VersionCheckOptions) (string, bool) {
+	latestVersion, ok := GetLatestGiVersion(currentVersion, options)
 	if !ok || !IsNewerPackageVersion(latestVersion, currentVersion) {
 		return "", false
 	}
 	return latestVersion, true
+}
+
+func CheckForNewPiVersion(currentVersion string, options VersionCheckOptions) (string, bool) {
+	return CheckForNewGiVersion(currentVersion, options)
 }
 
 func parsePackageVersion(version string) (parsedPackageVersion, bool) {

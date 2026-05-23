@@ -31,17 +31,19 @@ active and scoped by the per-case parity table.
 | `@earendil-works/pi-agent-core` | `gi-agent-core` | Pi test-compatible for the agent loop, tools, stateful agent behavior, queues, and lifecycle events. |
 | `pi-agent-core` harness/session | `gi-agent-core/harness` | Pi test-compatible for sessions, prompt formatting, compaction, local env, skills, and storage helpers. |
 | `@earendil-works/pi-tui` | `gi-tui` | TUI milestone complete. Pi TUI test files and case-level behavior are mapped and covered in Go. |
-| `@earendil-works/pi-coding-agent` | `gi-coding-agent` | In progress. Case-level scope and remaining protocol-runtime work are tracked in `PI_CODING_AGENT_TEST_CASE_PARITY.md`. |
+| `@earendil-works/pi-coding-agent` | `gi-coding-agent` | Coding-agent parity complete for the current Pi checkout. Case-level parity is tracked in `PI_CODING_AGENT_TEST_CASE_PARITY.md`; source-level disposition is tracked in `PI_CODING_AGENT_SOURCE_AUDIT.md`. |
 
 Detailed coverage is tracked in [PI_COMPATIBILITY.md](PI_COMPATIBILITY.md).
 Per-case provider/agent mapping is tracked in
 [PI_AI_AGENT_TEST_CASE_PARITY.md](PI_AI_AGENT_TEST_CASE_PARITY.md), and per-case
 TUI mapping is tracked in [PI_TUI_TEST_CASE_PARITY.md](PI_TUI_TEST_CASE_PARITY.md).
-The Pi coding-agent migration scope is tracked in
-[PI_CODING_AGENT_TEST_CASE_PARITY.md](PI_CODING_AGENT_TEST_CASE_PARITY.md).
+The Pi coding-agent migration scope is documented in
+[PI_CODING_AGENT_TEST_CASE_PARITY.md](PI_CODING_AGENT_TEST_CASE_PARITY.md),
+with source-level disposition documented in
+[PI_CODING_AGENT_SOURCE_AUDIT.md](PI_CODING_AGENT_SOURCE_AUDIT.md).
 
-The proposed cross-language package, extension, and custom TUI component
-protocol for a future full coding-agent runtime is described in
+The cross-language package, extension, and custom TUI component protocol used by
+the coding-agent runtime is described in
 [protocol/README.md](protocol/README.md), with machine-readable schemas,
 registries, and replay examples under [protocol/spec/](protocol/spec/).
 Gi uses `.gi` for project-local coding-agent settings, resources, sessions, and
@@ -66,15 +68,45 @@ Gi includes a Go CLI entrypoint for the coding-agent migration surface:
 ```sh
 go run ./cmd/gi --help
 go run ./cmd/gi --list-models
+go run ./cmd/gi --model openai/gpt-4o-mini "Summarize this repository"
 go run ./cmd/gi -p --model openai/gpt-4o-mini "Summarize this repository"
-go run ./cmd/gi --offline --no-session -p --model openai/gpt-4o-mini "Smoke test"
+go run ./cmd/gi --offline --no-session --model openai/gpt-4o-mini "Smoke test"
 go run ./cmd/gi install official:gi-plan-mode -l
+go run ./cmd/gi config
 ```
 
 `-p` runs non-interactive print mode. Live model calls use provider credentials
 from `--api-key`, `~/.gi/agent/auth.json`, `~/.gi/agent/models.json`, or provider
 environment variables. `--offline --no-session` uses the local deterministic
 responder without writing session files and is intended for smoke tests.
+
+The default path is split by terminal mode. In an interactive TTY, Gi starts a
+Go-native TUI host with header/chat/editor/footer regions, initial prompts,
+editor submit handling, scoped-model startup notice, `models.json` error
+warnings, Anthropic subscription-auth warning, startup changelog,
+release-update, and package-update notices, Pi-style terminal title updates
+including protocol `host.tui.title`, resource sections for context
+files, skills, prompts, extensions, themes, quiet-startup diagnostics, and
+protocol ViewTree
+slots/overlays, editor-slot replacement, keyed status/footer text,
+`host.tui.editor` paste semantics, `host.tui.working` loader control, hidden
+thinking-label control, and built-in
+`/thinking`, `/theme`, `/model`, `/queue`,
+`/models`, `/settings`, `/resources`, `/session`, `/hotkeys`, `/changelog`, `/export`, `/share`,
+`/import`, `/resume <path>`, `/fork`, `/tree`, `/name`, `/new`, `/compact`, `/copy`,
+`/clone`, `/reload`, and `/quit` commands, `!`/`!!` bash execution, and
+notify/confirm/select/input/editor dialog overlays that can update through
+runtime mount/patch/unmount/status/dialog host actions. Overlay mounts support
+anchor, size, margin, priority, and non-capturing focus options. Package
+extensions can also read, set, insert into, and submit the active editor through
+the protocol host bridge; the default editor can toggle thinking block
+visibility with `Ctrl+T`, open `$VISUAL` / `$EDITOR` with `Ctrl+G`, and paste
+clipboard images to temp files with `Ctrl+V`. `Ctrl+Z` suspends the live TUI on
+Unix-like systems and restores it on `SIGCONT`. In tmux, startup checks warn
+when extended keyboard reporting is likely to break modified Enter keys. In
+non-TTY contexts it falls back to a basic single-turn host for
+`gi <message>` or piped stdin. The Pi-equivalent TUI workflow disposition is
+documented in `PI_CODING_AGENT_SOURCE_AUDIT.md`.
 
 ## LLM Usage
 

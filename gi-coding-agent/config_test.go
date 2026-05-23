@@ -3,29 +3,42 @@ package gicodingagent
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
 
-const testPackageName = "@earendil-works/pi-coding-agent"
+const testPackageName = "gi"
 
-func TestDetectInstallMethodAndUpdateInstructions(t *testing.T) {
-	t.Run("detects pnpm from Windows .pnpm install paths", func(t *testing.T) {
+func TestDetectInstallMethodKeepsLegacyNodeInstallSignals(t *testing.T) {
+	t.Run("detects pnpm from Windows .pnpm install paths without self-update support", func(t *testing.T) {
 		env := InstallEnvironment{
-			ExecPath: `C:\Users\Admin\Documents\pnpm-repository\global\5\.pnpm\@earendil-works+pi-coding-agent@0.67.68\node_modules\@earendil-works\pi-coding-agent\dist\cli.js`,
+			ExecPath: `C:\Users\Admin\Documents\pnpm-repository\global\5\.pnpm\gi@0.67.68\node_modules\gi\dist\cli.js`,
 		}
 
 		if got := DetectInstallMethod(env); got != InstallMethodPNPM {
 			t.Fatalf("method = %q", got)
 		}
-		if got := GetUpdateInstruction(testPackageName, env); got != "Run: pnpm install -g @earendil-works/pi-coding-agent" {
-			t.Fatalf("instruction = %q", got)
+		assertNodeSelfUpdateUnsupported(t, env)
+	})
+
+	t.Run("detects npm global paths without generating npm commands", func(t *testing.T) {
+		env, _ := createNPMInstallEnv(t, "gi-prefix-")
+		if got := DetectInstallMethod(env); got != InstallMethodNPM {
+			t.Fatalf("method = %q", got)
 		}
+		assertNodeSelfUpdateUnsupported(t, env)
+	})
+
+	t.Run("detects bun global paths without generating bun commands", func(t *testing.T) {
+		env := createBunInstallEnv(t)
+		if got := DetectInstallMethod(env); got != InstallMethodBun {
+			t.Fatalf("method = %q", got)
+		}
+		assertNodeSelfUpdateUnsupported(t, env)
 	})
 
 	t.Run("does not self-update unknown wrapper installs", func(t *testing.T) {
-		env := InstallEnvironment{ExecPath: "/usr/local/bin/node"}
+		env := InstallEnvironment{ExecPath: "/usr/local/bin/gi"}
 
 		if got := DetectInstallMethod(env); got != InstallMethodUnknown {
 			t.Fatalf("method = %q", got)
@@ -33,199 +46,69 @@ func TestDetectInstallMethodAndUpdateInstructions(t *testing.T) {
 		if command := GetSelfUpdateCommand(testPackageName, env, nil, ""); command != nil {
 			t.Fatalf("command = %#v", command)
 		}
-		want := "Update @earendil-works/pi-coding-agent using the package manager, wrapper, or source checkout that provides this installation."
+		want := "Update gi using the package manager, wrapper, or source checkout that provides this installation."
 		if got := GetUpdateInstruction(testPackageName, env); got != want {
 			t.Fatalf("instruction = %q", got)
 		}
 	})
-
-	t.Run("self-updates npm installs from custom prefixes", func(t *testing.T) {
-		env, prefix := createNPMInstallEnv(t, "pi-prefix-")
-
-		command := GetSelfUpdateCommand(testPackageName, env, nil, "")
-
-		if got := DetectInstallMethod(env); got != InstallMethodNPM {
-			t.Fatalf("method = %q", got)
-		}
-		want := &SelfUpdateCommand{
-			Command: "npm",
-			Args:    []string{"--prefix", prefix, "install", "-g", testPackageName},
-			Display: "npm --prefix " + prefix + " install -g @earendil-works/pi-coding-agent",
-		}
-		if !reflect.DeepEqual(command, want) {
-			t.Fatalf("command = %#v, want %#v", command, want)
-		}
-	})
-
-	t.Run("self-updates renamed packages from the current install prefix", func(t *testing.T) {
-		env, prefix := createNPMInstallEnv(t, "pi-prefix-")
-
-		command := GetSelfUpdateCommand("@mariozechner/pi-coding-agent", env, nil, "@new-scope/pi")
-
-		want := &SelfUpdateCommand{
-			Command: "npm",
-			Args:    []string{"--prefix", prefix, "install", "-g", "@new-scope/pi"},
-			Display: "npm --prefix " + prefix + " uninstall -g @mariozechner/pi-coding-agent && npm --prefix " + prefix + " install -g @new-scope/pi",
-			Steps: []SelfUpdateCommandStep{
-				{Command: "npm", Args: []string{"--prefix", prefix, "uninstall", "-g", "@mariozechner/pi-coding-agent"}, Display: "npm --prefix " + prefix + " uninstall -g @mariozechner/pi-coding-agent"},
-				{Command: "npm", Args: []string{"--prefix", prefix, "install", "-g", "@new-scope/pi"}, Display: "npm --prefix " + prefix + " install -g @new-scope/pi"},
-			},
-		}
-		if !reflect.DeepEqual(command, want) {
-			t.Fatalf("command = %#v, want %#v", command, want)
-		}
-	})
-
-	t.Run("self-update respects configured npmCommand", func(t *testing.T) {
-		env, prefix := createNPMInstallEnv(t, "pi-prefix-")
-		env.CommandOutput = commandOutputStub(map[string]string{
-			commandKey("npm", []string{"--prefix", prefix, "root", "-g"}): filepath.Join(prefix, "lib", "node_modules"),
-		})
-
-		command := GetSelfUpdateCommand(testPackageName, env, []string{"npm", "--prefix", prefix}, "")
-
-		want := &SelfUpdateCommand{
-			Command: "npm",
-			Args:    []string{"--prefix", prefix, "install", "-g", testPackageName},
-			Display: "npm --prefix " + prefix + " install -g @earendil-works/pi-coding-agent",
-		}
-		if !reflect.DeepEqual(command, want) {
-			t.Fatalf("command = %#v, want %#v", command, want)
-		}
-	})
-
-	t.Run("self-update treats empty npmCommand as unset", func(t *testing.T) {
-		env, prefix := createNPMInstallEnv(t, "pi-prefix-")
-
-		command := GetSelfUpdateCommand(testPackageName, env, []string{}, "")
-
-		if command == nil || !reflect.DeepEqual(command.Args, []string{"--prefix", prefix, "install", "-g", testPackageName}) {
-			t.Fatalf("command = %#v", command)
-		}
-	})
-
-	t.Run("quotes npm self-update display paths", func(t *testing.T) {
-		env, prefix := createNPMInstallEnv(t, "pi prefix ")
-
-		command := GetSelfUpdateCommand(testPackageName, env, nil, "")
-
-		want := `npm --prefix "` + prefix + `" install -g @earendil-works/pi-coding-agent`
-		if command == nil || command.Display != want {
-			t.Fatalf("display = %#v, want %q", command, want)
-		}
-	})
-
-	t.Run("does not infer Windows npm custom prefixes from package paths", func(t *testing.T) {
-		packageDir := `C:\Users\Admin\npm prefix\node_modules\@earendil-works\pi-coding-agent`
-		env := InstallEnvironment{
-			PackageDir: packageDir,
-			ExecPath:   packageDir + `\dist\cli.js`,
-		}
-
-		if got := DetectInstallMethod(env); got != InstallMethodNPM {
-			t.Fatalf("method = %q", got)
-		}
-		if got := GetUpdateInstruction(testPackageName, env); got != "Run: npm install -g @earendil-works/pi-coding-agent" {
-			t.Fatalf("instruction = %q", got)
-		}
-	})
 }
 
-func TestSelfUpdateCommandsForPackageManagers(t *testing.T) {
-	t.Run("self-updates bun global installs from bun pm bin", func(t *testing.T) {
-		env := createBunInstallEnv(t)
-
-		command := GetSelfUpdateCommand(testPackageName, env, nil, "")
-
-		if got := DetectInstallMethod(env); got != InstallMethodBun {
-			t.Fatalf("method = %q", got)
-		}
-		want := &SelfUpdateCommand{Command: "bun", Args: []string{"install", "-g", testPackageName}, Display: "bun install -g @earendil-works/pi-coding-agent"}
-		if !reflect.DeepEqual(command, want) {
-			t.Fatalf("command = %#v, want %#v", command, want)
-		}
-	})
-
-	t.Run("self-updates renamed pnpm global installs by removing the old package first", func(t *testing.T) {
-		env := createPNPMInstallEnv(t)
-
-		command := GetSelfUpdateCommand("@mariozechner/pi-coding-agent", env, nil, "@new-scope/pi")
-
-		if got := DetectInstallMethod(env); got != InstallMethodPNPM {
-			t.Fatalf("method = %q", got)
-		}
-		want := &SelfUpdateCommand{
-			Command: "pnpm",
-			Args:    []string{"install", "-g", "@new-scope/pi"},
-			Display: "pnpm remove -g @mariozechner/pi-coding-agent && pnpm install -g @new-scope/pi",
-			Steps: []SelfUpdateCommandStep{
-				{Command: "pnpm", Args: []string{"remove", "-g", "@mariozechner/pi-coding-agent"}, Display: "pnpm remove -g @mariozechner/pi-coding-agent"},
-				{Command: "pnpm", Args: []string{"install", "-g", "@new-scope/pi"}, Display: "pnpm install -g @new-scope/pi"},
-			},
-		}
-		if !reflect.DeepEqual(command, want) {
-			t.Fatalf("command = %#v, want %#v", command, want)
-		}
-	})
-
-	t.Run("self-updates renamed yarn global installs by removing the old package first", func(t *testing.T) {
-		env := createYarnInstallEnv(t)
-
-		command := GetSelfUpdateCommand("@mariozechner/pi-coding-agent", env, nil, "@new-scope/pi")
-
-		if got := DetectInstallMethod(env); got != InstallMethodYarn {
-			t.Fatalf("method = %q", got)
-		}
-		want := &SelfUpdateCommand{
-			Command: "yarn",
-			Args:    []string{"global", "add", "@new-scope/pi"},
-			Display: "yarn global remove @mariozechner/pi-coding-agent && yarn global add @new-scope/pi",
-			Steps: []SelfUpdateCommandStep{
-				{Command: "yarn", Args: []string{"global", "remove", "@mariozechner/pi-coding-agent"}, Display: "yarn global remove @mariozechner/pi-coding-agent"},
-				{Command: "yarn", Args: []string{"global", "add", "@new-scope/pi"}, Display: "yarn global add @new-scope/pi"},
-			},
-		}
-		if !reflect.DeepEqual(command, want) {
-			t.Fatalf("command = %#v, want %#v", command, want)
-		}
-	})
-
-	t.Run("self-updates renamed bun global installs by removing the old package first", func(t *testing.T) {
-		env := createBunInstallEnv(t)
-
-		command := GetSelfUpdateCommand("@mariozechner/pi-coding-agent", env, nil, "@new-scope/pi")
-
-		if got := DetectInstallMethod(env); got != InstallMethodBun {
-			t.Fatalf("method = %q", got)
-		}
-		want := &SelfUpdateCommand{
-			Command: "bun",
-			Args:    []string{"install", "-g", "@new-scope/pi"},
-			Display: "bun uninstall -g @mariozechner/pi-coding-agent && bun install -g @new-scope/pi",
-			Steps: []SelfUpdateCommandStep{
-				{Command: "bun", Args: []string{"uninstall", "-g", "@mariozechner/pi-coding-agent"}, Display: "bun uninstall -g @mariozechner/pi-coding-agent"},
-				{Command: "bun", Args: []string{"install", "-g", "@new-scope/pi"}, Display: "bun install -g @new-scope/pi"},
-			},
-		}
-		if !reflect.DeepEqual(command, want) {
-			t.Fatalf("command = %#v, want %#v", command, want)
-		}
-	})
-}
-
-func TestSelfUpdateUnavailableWhenInstallPathIsNotWritable(t *testing.T) {
-	env, _ := createNPMInstallEnv(t, "pi-prefix-")
-	if err := os.Chmod(env.PackageDir, 0o500); err != nil {
-		t.Fatal(err)
+func TestSelfUpdateCommandsDoNotUseNodePackageManagers(t *testing.T) {
+	cases := []struct {
+		name string
+		env  InstallEnvironment
+		want InstallMethod
+	}{
+		{name: "npm", env: mustNPMInstallEnv(t), want: InstallMethodNPM},
+		{name: "pnpm", env: createPNPMInstallEnv(t), want: InstallMethodPNPM},
+		{name: "yarn", env: createYarnInstallEnv(t), want: InstallMethodYarn},
+		{name: "bun", env: createBunInstallEnv(t), want: InstallMethodBun},
 	}
-	t.Cleanup(func() { _ = os.Chmod(env.PackageDir, 0o700) })
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := DetectInstallMethod(tc.env); got != tc.want {
+				t.Fatalf("method = %q, want %q", got, tc.want)
+			}
+			assertNodeSelfUpdateUnsupported(t, tc.env)
+		})
+	}
+}
 
+func TestBunBinaryUpdateInstructionUsesGiReleases(t *testing.T) {
+	env := InstallEnvironment{BunBinary: true}
 	if command := GetSelfUpdateCommand(testPackageName, env, nil, ""); command != nil {
 		t.Fatalf("command = %#v", command)
 	}
-	if got := GetSelfUpdateUnavailableInstruction(testPackageName, env, nil, ""); !strings.Contains(got, "the install path is not writable") {
+	if got := GetUpdateInstruction(testPackageName, env); got != "Download from: https://github.com/nowa/gi/releases/latest" {
 		t.Fatalf("instruction = %q", got)
 	}
+}
+
+func TestDefaultInstallEnvironmentPrefersGiPackageDir(t *testing.T) {
+	t.Setenv("GI_PACKAGE_DIR", "/gi/package")
+	t.Setenv("PI_PACKAGE_DIR", "/pi/package")
+	if got := DefaultInstallEnvironment().PackageDir; got != "/gi/package" {
+		t.Fatalf("package dir = %q", got)
+	}
+}
+
+func assertNodeSelfUpdateUnsupported(t *testing.T, env InstallEnvironment) {
+	t.Helper()
+	if command := GetSelfUpdateCommand(testPackageName, env, []string{"fake-npm"}, ""); command != nil {
+		t.Fatalf("command = %#v", command)
+	}
+	instruction := GetUpdateInstruction(testPackageName, env)
+	for _, expected := range []string{"does not support npm, pnpm, yarn, or bun self-updates", "Update gi"} {
+		if !strings.Contains(instruction, expected) {
+			t.Fatalf("instruction = %q, want %q", instruction, expected)
+		}
+	}
+}
+
+func mustNPMInstallEnv(t *testing.T) InstallEnvironment {
+	t.Helper()
+	env, _ := createNPMInstallEnv(t, "gi-prefix-")
+	return env
 }
 
 func createNPMInstallEnv(t *testing.T, pattern string) (InstallEnvironment, string) {
@@ -236,7 +119,7 @@ func createNPMInstallEnv(t *testing.T, pattern string) (InstallEnvironment, stri
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(prefix) })
 	root := filepath.Join(prefix, "lib", "node_modules")
-	packageDir := filepath.Join(root, "@earendil-works", "pi-coding-agent")
+	packageDir := filepath.Join(root, "gi")
 	if err := os.MkdirAll(packageDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -251,15 +134,14 @@ func createPNPMInstallEnv(t *testing.T) InstallEnvironment {
 	t.Helper()
 	temp := t.TempDir()
 	root := filepath.Join(temp, "pnpm", "global", "5", "node_modules")
-	packageDir := filepath.Join(root, "@mariozechner", "pi-coding-agent")
+	packageDir := filepath.Join(root, "gi")
 	if err := os.MkdirAll(packageDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return InstallEnvironment{
 		PackageDir: packageDir,
-		ExecPath: filepath.Join(root, ".pnpm", "@mariozechner+pi-coding-agent@0.0.0", "node_modules",
-			"@mariozechner", "pi-coding-agent", "dist", "cli.js"),
-		HomeDir: t.TempDir(),
+		ExecPath:   filepath.Join(root, ".pnpm", "gi@0.0.0", "node_modules", "gi", "dist", "cli.js"),
+		HomeDir:    t.TempDir(),
 		CommandOutput: commandOutputStub(map[string]string{
 			commandKey("pnpm", []string{"root", "-g"}): root,
 		}),
@@ -270,13 +152,13 @@ func createYarnInstallEnv(t *testing.T) InstallEnvironment {
 	t.Helper()
 	temp := t.TempDir()
 	globalDir := filepath.Join(temp, "yarn", "global")
-	packageDir := filepath.Join(globalDir, "node_modules", "@mariozechner", "pi-coding-agent")
+	packageDir := filepath.Join(globalDir, "node_modules", "gi")
 	if err := os.MkdirAll(packageDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return InstallEnvironment{
 		PackageDir: packageDir,
-		ExecPath:   filepath.Join(globalDir, ".yarn", "@mariozechner", "pi-coding-agent", "dist", "cli.js"),
+		ExecPath:   filepath.Join(globalDir, ".yarn", "gi", "dist", "cli.js"),
 		HomeDir:    t.TempDir(),
 		CommandOutput: commandOutputStub(map[string]string{
 			commandKey("yarn", []string{"global", "dir"}): globalDir,
@@ -290,7 +172,7 @@ func createBunInstallEnv(t *testing.T) InstallEnvironment {
 	prefix := filepath.Join(temp, ".bun")
 	bunBin := filepath.Join(prefix, "bin")
 	root := filepath.Join(prefix, "install", "global", "node_modules")
-	packageDir := filepath.Join(root, "@earendil-works", "pi-coding-agent")
+	packageDir := filepath.Join(root, "gi")
 	if err := os.MkdirAll(packageDir, 0o700); err != nil {
 		t.Fatal(err)
 	}

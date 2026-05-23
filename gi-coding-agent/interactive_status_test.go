@@ -50,6 +50,11 @@ func TestInteractiveModeSetToolsExpandedMatchesPi(t *testing.T) {
 	if !reflect.DeepEqual(ui.renderForces, []bool{false}) {
 		t.Fatalf("renders = %#v", ui.renderForces)
 	}
+
+	mode.CreateExtensionUIContext().SetToolsExpanded(false)
+	if mode.CreateExtensionUIContext().GetToolsExpanded() || !reflect.DeepEqual(header.values, []bool{true, false}) || !reflect.DeepEqual(child.values, []bool{true, false}) {
+		t.Fatalf("context expanded=%v header=%#v child=%#v", mode.ToolOutputExpanded, header.values, child.values)
+	}
 }
 
 func TestInteractiveModeExtensionUIContextThemeMatchesPi(t *testing.T) {
@@ -152,7 +157,7 @@ func TestInteractiveModeShowLoadedResourcesSkillsAndDiagnosticsMatchPi(t *testin
 			ToolOutputExpanded: true,
 			Skills:             []InteractiveSkillResource{{FilePath: "/tmp/skill/SKILL.md", Name: "commit"}},
 		}, InteractiveShowLoadedResourcesOptions{})
-		if !strings.Contains(output, "[Skills]") || !strings.Contains(output, "resource-list") || strings.Contains(output, "commit") {
+		if !strings.Contains(output, "[Skills]") || !strings.Contains(output, "/tmp/skill/SKILL.md") || strings.Contains(output, "  commit") {
 			t.Fatalf("output = %q", output)
 		}
 	})
@@ -163,7 +168,7 @@ func TestInteractiveModeShowLoadedResourcesSkillsAndDiagnosticsMatchPi(t *testin
 			Verbose:      true,
 			Skills:       []InteractiveSkillResource{{FilePath: "/tmp/skill/SKILL.md", Name: "commit"}},
 		}, InteractiveShowLoadedResourcesOptions{})
-		if !strings.Contains(output, "[Skills]") || !strings.Contains(output, "resource-list") || strings.Contains(output, "commit") {
+		if !strings.Contains(output, "[Skills]") || !strings.Contains(output, "/tmp/skill/SKILL.md") || strings.Contains(output, "  commit") {
 			t.Fatalf("output = %q", output)
 		}
 	})
@@ -192,6 +197,26 @@ func TestInteractiveModeShowLoadedResourcesSkillsAndDiagnosticsMatchPi(t *testin
 			t.Fatalf("output = %q", output)
 		}
 	})
+}
+
+func TestInteractiveModeShowLoadedResourcesPromptsAndThemesPiStyle(t *testing.T) {
+	output := renderInteractiveLoadedResources(InteractiveLoadedResources{
+		Prompts: []InteractivePromptResource{{FilePath: "/tmp/prompts/review.md", Name: "review"}},
+		Themes:  []InteractiveThemeResource{{SourcePath: "/tmp/themes/focus.json", Name: "focus"}},
+	}, InteractiveShowLoadedResourcesOptions{})
+	if !strings.Contains(output, "[Prompts]") || !strings.Contains(output, "/review") ||
+		!strings.Contains(output, "[Themes]") || !strings.Contains(output, "focus") {
+		t.Fatalf("output = %q", output)
+	}
+
+	expanded := renderInteractiveLoadedResources(InteractiveLoadedResources{
+		Verbose: true,
+		Prompts: []InteractivePromptResource{{FilePath: "/tmp/prompts/review.md", Name: "review"}},
+		Themes:  []InteractiveThemeResource{{SourcePath: "/tmp/themes/focus.json", Name: "focus"}},
+	}, InteractiveShowLoadedResourcesOptions{})
+	if !strings.Contains(expanded, "/tmp/prompts/review.md") || !strings.Contains(expanded, "/tmp/themes/focus.json") {
+		t.Fatalf("expanded = %q", expanded)
+	}
 }
 
 func TestInteractiveModeShowLoadedResourcesProtocolExtensionLabels(t *testing.T) {
@@ -300,6 +325,57 @@ func TestInteractiveModeShowLoadedResourcesProtocolExtensionLabels(t *testing.T)
 				t.Fatalf("output:\n%s\nwant:\n%s", output, tc.want)
 			}
 		})
+	}
+}
+
+func TestInteractiveBuiltinCommandConflictDiagnosticsPiStyle(t *testing.T) {
+	runtime := NewProtocolExtensionRuntime(CapabilityCommandsRegister)
+	ctx := &ProtocolExtensionContext{
+		runtime: runtime,
+		source:  ProtocolSourceInfo{Path: "settings.gi.json", Source: "local", Scope: "project", Origin: "top-level"},
+	}
+	if err := ctx.RegisterCommand("settings", ProtocolCommandDefinition{Description: "Project settings"}); err != nil {
+		t.Fatal(err)
+	}
+
+	diagnostics := interactiveBuiltinCommandConflictDiagnostics(runtime)
+	if len(diagnostics) != 1 ||
+		diagnostics[0].Type != "warning" ||
+		!strings.Contains(diagnostics[0].Message, "Extension command '/settings' conflicts with built-in interactive command") ||
+		!strings.Contains(diagnostics[0].Message, "Skipping in autocomplete") {
+		t.Fatalf("diagnostics = %#v", diagnostics)
+	}
+
+	output := renderInteractiveLoadedResources(InteractiveLoadedResources{
+		ExtensionDiagnostics: diagnostics,
+	}, InteractiveShowLoadedResourcesOptions{ShowDiagnosticsWhenQuiet: true})
+	if !strings.Contains(output, "[Extension issues]") || !strings.Contains(output, "Extension command '/settings' conflicts") {
+		t.Fatalf("output = %q", output)
+	}
+}
+
+func TestInteractiveShortcutDiagnosticsPiStyle(t *testing.T) {
+	runtime := NewProtocolExtensionRuntime(CapabilityShortcutsRegister)
+	ctx := &ProtocolExtensionContext{
+		runtime: runtime,
+		source:  ProtocolSourceInfo{Path: "shortcut.gi.json", Source: "local", Scope: "project", Origin: "top-level"},
+	}
+	if err := ctx.RegisterShortcut("ctrl+c", ProtocolShortcutDefinition{Description: "Interrupt conflict"}); err != nil {
+		t.Fatal(err)
+	}
+
+	diagnostics := interactiveShortcutDiagnostics(runtime)
+	if len(diagnostics) != 1 ||
+		diagnostics[0].Type != "warning" ||
+		!strings.Contains(diagnostics[0].Message, "conflicts with built-in") {
+		t.Fatalf("diagnostics = %#v", diagnostics)
+	}
+
+	output := renderInteractiveLoadedResources(InteractiveLoadedResources{
+		ExtensionDiagnostics: diagnostics,
+	}, InteractiveShowLoadedResourcesOptions{ShowDiagnosticsWhenQuiet: true})
+	if !strings.Contains(output, "[Extension issues]") || !strings.Contains(output, "conflicts with built-in") {
+		t.Fatalf("output = %q", output)
 	}
 }
 

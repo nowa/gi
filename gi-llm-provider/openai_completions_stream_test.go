@@ -26,6 +26,21 @@ func TestProcessOpenAICompletionsChunksIgnoresNilAndCapturesResponseID(t *testin
 	}
 }
 
+func TestProcessOpenAICompletionsChunksPreservesReasoningFieldSignature(t *testing.T) {
+	stop := "stop"
+	model := Model{ID: "oss-reasoning", Provider: "llamacpp", API: "openai-completions"}
+
+	response := ProcessOpenAICompletionsChunks(model, []*OpenAIChatCompletionChunk{
+		{ID: "chatcmpl-reasoning", Choices: []OpenAIChatCompletionChoice{{Delta: OpenAIChatDelta{Reasoning: "think "}}}},
+		{ID: "chatcmpl-reasoning", Choices: []OpenAIChatCompletionChoice{{Delta: OpenAIChatDelta{Reasoning: "again"}}}},
+		{ID: "chatcmpl-reasoning", Choices: []OpenAIChatCompletionChoice{{Delta: OpenAIChatDelta{Content: "OK"}, FinishReason: &stop}}},
+	})
+
+	if len(response.Content) != 2 || response.Content[0].Thinking != "think again" || response.Content[0].ThinkingSignature != "reasoning" {
+		t.Fatalf("content = %#v", response.Content)
+	}
+}
+
 func TestProcessOpenAICompletionsChunksMapsErrorsAndMissingFinishReason(t *testing.T) {
 	networkError := "network_error"
 	model := Model{ID: "glm-5.1", Provider: "zai", API: "openai-completions"}

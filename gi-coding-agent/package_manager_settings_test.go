@@ -102,6 +102,88 @@ func TestPackageManagerUpdatePrefixSuggestionsPiParity(t *testing.T) {
 	})
 }
 
+func TestPackageManagerListPackageResourceToggles(t *testing.T) {
+	agentDir, projectDir := createPackageManagerSettingsDirs(t)
+	pkgDir := filepath.Join(projectDir, "toggle-pkg")
+	extensionPath := filepath.Join(pkgDir, "extensions", "alpha.gi.json")
+	skillPath := filepath.Join(pkgDir, "skills", "skill-a", "SKILL.md")
+	promptPath := filepath.Join(pkgDir, "prompts", "review.md")
+	themePath := filepath.Join(pkgDir, "themes", "dark.json")
+	writeGiProtocolExtensionDescriptor(t, extensionPath)
+	writeResourceSkill(t, skillPath, "skill-a", "Skill A", "Use skill A.")
+	writeResourceFile(t, promptPath, "# Review")
+	writeResourceFile(t, themePath, "{}")
+	writeProtocolPackageManifest(t, filepath.Join(pkgDir, "gi.package.json"), map[string]any{
+		"extensions": []any{
+			"extensions/alpha.gi.json",
+			map[string]any{
+				"id": "daemon",
+				"entry": map[string]any{
+					"kind":    "process",
+					"command": []any{"gi-daemon"},
+				},
+			},
+		},
+		"skills":  []any{"skills/skill-a"},
+		"prompts": []any{"prompts/review.md"},
+		"themes":  []any{"themes/dark.json"},
+	})
+	settings := NewInMemorySettingsManager(map[string]any{"packages": []any{map[string]any{
+		"source":     "./toggle-pkg",
+		"skills":     []any{"-skills/skill-a/SKILL.md"},
+		"extensions": []any{"-daemon"},
+	}}})
+	manager := NewDefaultPackageManager(PackageManagerOptions{CWD: projectDir, AgentDir: agentDir, SettingsManager: settings})
+
+	items, err := manager.ListPackageResourceToggles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !packageResourceToggleItemState(items, "skills", "skills/skill-a/SKILL.md", false) ||
+		!packageResourceToggleItemState(items, "extensions", "extensions/alpha.gi.json", true) ||
+		!packageResourceToggleItemState(items, "extensions", "daemon", false) ||
+		!packageResourceToggleItemState(items, "prompts", "prompts/review.md", true) ||
+		!packageResourceToggleItemState(items, "themes", "themes/dark.json", true) {
+		t.Fatalf("items = %#v", items)
+	}
+}
+
+func TestPackageManagerListTopLevelResourceToggles(t *testing.T) {
+	agentDir, projectDir := createPackageManagerSettingsDirs(t)
+	userSkill := filepath.Join(agentDir, "skills", "user-skill", "SKILL.md")
+	projectPrompt := filepath.Join(projectDir, ConfigDirName, "prompts", "review.md")
+	writeResourceSkill(t, userSkill, "user-skill", "User Skill", "Use user skill.")
+	writeResourceFile(t, projectPrompt, "# Review")
+	settings := NewInMemorySettingsManager(map[string]any{
+		"skills": []any{"-skills/user-skill/SKILL.md"},
+	})
+	manager := NewDefaultPackageManager(PackageManagerOptions{CWD: projectDir, AgentDir: agentDir, SettingsManager: settings})
+
+	items, err := manager.ListResourceToggles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !packageResourceToggleItemState(items, "skills", "skills/user-skill/SKILL.md", false) ||
+		!packageResourceToggleItemState(items, "prompts", "prompts/review.md", true) {
+		t.Fatalf("items = %#v", items)
+	}
+	changed, err := manager.SetTopLevelResourceEnabled(TopLevelResourceToggle{
+		Scope:        "project",
+		ResourceType: "prompts",
+		Pattern:      "prompts/review.md",
+		Enabled:      false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("changed = false, want true")
+	}
+	if got := settingsStringSlice(settings.project, "prompts"); len(got) != 1 || got[0] != "-prompts/review.md" {
+		t.Fatalf("project prompt filters = %#v", got)
+	}
+}
+
 func createPackageManagerSettingsDirs(t *testing.T) (string, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -114,6 +196,15 @@ func createPackageManagerSettingsDirs(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	return agentDir, projectDir
+}
+
+func packageResourceToggleItemState(items []PackageResourceToggleItem, resourceType, pattern string, enabled bool) bool {
+	for _, item := range items {
+		if item.ResourceType == resourceType && item.Pattern == pattern && item.Enabled == enabled {
+			return true
+		}
+	}
+	return false
 }
 
 func createPackageManagerSettingsPackage(t *testing.T, dir string) {

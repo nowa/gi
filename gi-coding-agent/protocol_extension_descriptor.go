@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
 type protocolExtensionDescriptor struct {
@@ -15,9 +17,11 @@ type protocolExtensionDescriptorGI struct {
 	ExtensionProtocol string                              `json:"extensionProtocol"`
 	ID                string                              `json:"id"`
 	InitError         string                              `json:"initError"`
+	Capabilities      []string                            `json:"capabilities"`
 	Commands          []protocolCommandDescriptor         `json:"commands"`
 	Tools             []protocolToolDescriptor            `json:"tools"`
 	MessageRenderers  []protocolMessageRendererDescriptor `json:"messageRenderers"`
+	ViewTrees         []protocolViewTreeDescriptor        `json:"viewTrees"`
 	Events            []string                            `json:"events"`
 	Shortcuts         []protocolShortcutDescriptor        `json:"shortcuts"`
 	Flags             []protocolFlagDescriptor            `json:"flags"`
@@ -25,19 +29,28 @@ type protocolExtensionDescriptorGI struct {
 }
 
 type protocolCommandDescriptor struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	ArgumentHint string `json:"argumentHint"`
 }
 
 type protocolToolDescriptor struct {
-	Name          string `json:"name"`
-	Label         string `json:"label"`
-	Description   string `json:"description"`
-	PromptSnippet string `json:"promptSnippet"`
+	Name          string     `json:"name"`
+	Label         string     `json:"label"`
+	Description   string     `json:"description"`
+	Parameters    llm.Schema `json:"parameters"`
+	PromptSnippet string     `json:"promptSnippet"`
 }
 
 type protocolMessageRendererDescriptor struct {
 	Type string `json:"type"`
+}
+
+type protocolViewTreeDescriptor struct {
+	MountID  string       `json:"mountId"`
+	Slot     string       `json:"slot"`
+	Priority int          `json:"priority,omitempty"`
+	View     ViewTreeNode `json:"view"`
 }
 
 type protocolShortcutDescriptor struct {
@@ -55,6 +68,7 @@ type protocolFlagDescriptor struct {
 type protocolResourceDescriptor struct {
 	Skills  []string `json:"skills"`
 	Prompts []string `json:"prompts"`
+	Themes  []string `json:"themes"`
 }
 
 type protocolExtensionDescriptorLoadResult struct {
@@ -68,6 +82,7 @@ func LoadProtocolExtensionDescriptors(sources []ProtocolExtensionSource, runtime
 		runtime = NewDefaultProtocolExtensionRuntime()
 	}
 	toolSources := map[string]string{}
+	flagSources := map[string]string{}
 	for _, source := range sources {
 		descriptor, err := readProtocolExtensionDescriptor(source.Path)
 		if err != nil {
@@ -80,9 +95,10 @@ func LoadProtocolExtensionDescriptors(sources []ProtocolExtensionSource, runtime
 			continue
 		}
 		context := &ProtocolExtensionContext{runtime: runtime, source: metadata}
-		result.Errors = append(result.Errors, applyProtocolExtensionDescriptor(context, descriptor.Gi, toolSources)...)
+		result.Errors = append(result.Errors, applyProtocolExtensionDescriptor(context, descriptor.Gi, toolSources, flagSources)...)
 		result.Resources.SkillPaths = append(result.Resources.SkillPaths, protocolDescriptorResourcePaths(source, descriptor.Gi.Resources.Skills, metadata)...)
 		result.Resources.PromptPaths = append(result.Resources.PromptPaths, protocolDescriptorPromptPaths(source, descriptor.Gi.Resources.Prompts, metadata)...)
+		result.Resources.ThemePaths = append(result.Resources.ThemePaths, protocolDescriptorThemePaths(source, descriptor.Gi.Resources.Themes, metadata)...)
 	}
 	return result
 }
@@ -102,12 +118,13 @@ func readProtocolExtensionDescriptor(path string) (protocolExtensionDescriptor, 
 	return descriptor, nil
 }
 
-func applyProtocolExtensionDescriptor(ctx *ProtocolExtensionContext, descriptor *protocolExtensionDescriptorGI, toolSources map[string]string) []ProtocolExtensionDiscoveryError {
+func applyProtocolExtensionDescriptor(ctx *ProtocolExtensionContext, descriptor *protocolExtensionDescriptorGI, toolSources, flagSources map[string]string) []ProtocolExtensionDiscoveryError {
 	var errors []ProtocolExtensionDiscoveryError
 	for _, command := range descriptor.Commands {
 		if err := ctx.RegisterCommand(command.Name, ProtocolCommandDefinition{
-			Description: command.Description,
-			Handler:     officialCommandHandler(ctx, command.Name),
+			Description:  command.Description,
+			ArgumentHint: command.ArgumentHint,
+			Handler:      officialCommandHandler(ctx, command.Name),
 		}); err != nil {
 			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: err.Error()})
 		}
@@ -118,14 +135,15 @@ func applyProtocolExtensionDescriptor(ctx *ProtocolExtensionContext, descriptor 
 			continue
 		}
 		if previous := toolSources[name]; previous != "" {
-			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: "tool " + name + " conflicts with " + previous})
-			continue
+			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: `Tool "` + name + `" conflicts with ` + previous})
+		} else {
+			toolSources[name] = ctx.source.Path
 		}
-		toolSources[name] = ctx.source.Path
 		if err := ctx.RegisterTool(ProtocolToolDefinition{
 			Name:          name,
 			Label:         tool.Label,
 			Description:   tool.Description,
+			Parameters:    tool.Parameters,
 			PromptSnippet: firstNonEmptyString(tool.PromptSnippet, tool.Description),
 			Execute:       officialToolExecutor(ctx, name),
 		}); err != nil {
@@ -137,7 +155,17 @@ func applyProtocolExtensionDescriptor(ctx *ProtocolExtensionContext, descriptor 
 		if rendererType == "" {
 			continue
 		}
-		if err := ctx.RegisterMessageRenderer(rendererType, func(any, any) []string { return nil }); err != nil {
+		if err := ctx.RegisterMessageRenderer(rendererType, officialMessageRenderer(ctx, rendererType)); err != nil {
+			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: err.Error()})
+		}
+	}
+	for _, renderer := range officialPackageToolRenderers(ctx) {
+		if err := ctx.RegisterToolRenderer(renderer.Name, renderer.Definition); err != nil {
+			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: err.Error()})
+		}
+	}
+	for _, mount := range descriptor.ViewTrees {
+		if err := ctx.MountViewTree(mount.MountID, mount.Slot, mount.View, ViewTreeMountOptions{Priority: mount.Priority}); err != nil {
 			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: err.Error()})
 		}
 	}
@@ -156,7 +184,16 @@ func applyProtocolExtensionDescriptor(ctx *ProtocolExtensionContext, descriptor 
 		}
 	}
 	for _, flag := range descriptor.Flags {
-		if err := ctx.RegisterFlag(flag.Name, ProtocolFlagDefinition{Description: flag.Description, Type: flag.Type, Default: flag.Default}); err != nil {
+		name := normalizeProtocolFlagName(flag.Name)
+		if name == "" {
+			continue
+		}
+		if previous := flagSources[name]; previous != "" && previous != ctx.source.Path {
+			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: `Flag "--` + name + `" conflicts with ` + previous})
+		} else if previous == "" {
+			flagSources[name] = ctx.source.Path
+		}
+		if err := ctx.RegisterFlag(name, ProtocolFlagDefinition{Description: flag.Description, Type: flag.Type, Default: flag.Default}); err != nil {
 			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: err.Error()})
 		}
 	}
@@ -207,6 +244,17 @@ func protocolDescriptorPromptPaths(source ProtocolExtensionSource, paths []strin
 	return result
 }
 
+func protocolDescriptorThemePaths(source ProtocolExtensionSource, paths []string, metadata ProtocolSourceInfo) []ResourceThemePath {
+	result := make([]ResourceThemePath, 0, len(paths))
+	for _, rawPath := range paths {
+		path := ResolveToCwd(rawPath, source.BaseDir)
+		info := metadata
+		info.Path = path
+		result = append(result, ResourceThemePath{Path: path, Metadata: info})
+	}
+	return result
+}
+
 func NewDefaultProtocolExtensionRuntime() *ProtocolExtensionRuntime {
 	return NewProtocolExtensionRuntime(
 		CapabilityCommandsRegister,
@@ -214,7 +262,16 @@ func NewDefaultProtocolExtensionRuntime() *ProtocolExtensionRuntime {
 		CapabilityProvidersRegister,
 		CapabilityToolsRegister,
 		CapabilityInputEvents,
+		CapabilityBashIntercept,
 		CapabilityShortcutsRegister,
 		CapabilitySystemPromptModify,
+		CapabilityTUIMessageRenderer,
+		CapabilityTUIToolRenderer,
+		CapabilityTUIAutocomplete,
+		CapabilityTUIWidget,
+		CapabilityTUIHeader,
+		CapabilityTUIFooter,
+		CapabilityTUIOverlay,
+		CapabilityTUIEditor,
 	)
 }

@@ -66,6 +66,25 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("reload applies updated top-level prompt settings", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		writeResourceFile(t, filepath.Join(agentDir, "prompts", "test.md"), "Echo test prompt")
+		settingsPath := filepath.Join(agentDir, "settings.json")
+		writeSettingsJSON(t, settingsPath, map[string]any{})
+		settings := NewSettingsManager(cwd, agentDir)
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings})
+		loader.Reload()
+		if !resourceHasPrompt(loader.GetPrompts().Prompts, "test") {
+			t.Fatalf("initial prompts = %#v", loader.GetPrompts().Prompts)
+		}
+
+		writeSettingsJSON(t, settingsPath, map[string]any{"prompts": []any{"-prompts/test.md"}})
+		loader.Reload()
+		if resourceHasPrompt(loader.GetPrompts().Prompts, "test") {
+			t.Fatalf("stale prompt settings after reload: %#v", loader.GetPrompts().Prompts)
+		}
+	})
+
 	t.Run("discovers .agents skills from user dir and project dirs up to git root", func(t *testing.T) {
 		home, agentDir, repo, cwd := createResourceLoaderHomeDirs(t, true)
 		writeResourceSkill(t, filepath.Join(home, ".agents", "skills", "user-skill", "SKILL.md"), "user-skill", "User skill", "User content")
@@ -210,6 +229,33 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 		if theme := resourceFindTheme(loader.GetThemes().Themes, "collision-theme"); theme == nil || theme.SourcePath != projectTheme {
 			t.Fatalf("theme = %#v", theme)
+		}
+	})
+
+	t.Run("skill collision precedence project user package", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		pkgDir := filepath.Join(filepath.Dir(agentDir), "fake-package")
+		packageSkill := filepath.Join(pkgDir, "skills", "web-fetch", "SKILL.md")
+		writeResourceSkill(t, packageSkill, "web-fetch", "Package web fetch", "Package skill")
+		writeJSON(t, filepath.Join(pkgDir, "gi.package.json"), map[string]any{
+			"gi": map[string]any{"skills": []any{"skills/web-fetch"}},
+		})
+		writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{"packages": []any{pkgDir}})
+		userSkill := filepath.Join(agentDir, "skills", "web-fetch", "SKILL.md")
+		projectSkill := filepath.Join(cwd, ConfigDirName, "skills", "web-fetch", "SKILL.md")
+		writeResourceSkill(t, userSkill, "web-fetch", "User web fetch", "User skill")
+		writeResourceSkill(t, projectSkill, "web-fetch", "Project web fetch", "Project skill")
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+
+		skills := loader.GetSkills()
+		webFetch := resourceFindSkill(skills.Skills, "web-fetch")
+		if webFetch == nil || webFetch.FilePath != projectSkill || webFetch.Description != "Project web fetch" {
+			t.Fatalf("web-fetch = %#v", webFetch)
+		}
+		if !skillDiagnosticsMention(skills.Diagnostics, packageSkill) || !skillDiagnosticsMention(skills.Diagnostics, userSkill) {
+			t.Fatalf("skill diagnostics = %#v", skills.Diagnostics)
 		}
 	})
 
@@ -404,6 +450,50 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("applies cli extension flag values after loading descriptors", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		projectExt := filepath.Join(cwd, ConfigDirName, "extensions", "project.gi.json")
+		writeJSON(t, projectExt, map[string]any{"gi": map[string]any{
+			"extensionProtocol": "descriptor.v1",
+			"flags": []any{
+				map[string]any{"name": "review-mode", "description": "Review mode", "type": "boolean", "default": false},
+				map[string]any{"name": "profile", "description": "Profile", "type": "string", "default": "default"},
+			},
+		}})
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+		diagnostics := loader.ApplyExtensionFlagValues(map[string]any{
+			"review-mode": true,
+			"profile":     "fast",
+		}, false)
+		if len(diagnostics) != 0 {
+			t.Fatalf("diagnostics = %#v", diagnostics)
+		}
+
+		runtime := loader.GetExtensions().Runtime
+		if got := runtime.FlagValue("review-mode"); got != true {
+			t.Fatalf("review-mode = %#v", got)
+		}
+		if got := runtime.FlagValue("profile"); got != "fast" {
+			t.Fatalf("profile = %#v", got)
+		}
+	})
+
+	t.Run("reports unknown cli extension flags when deferred registration is disabled", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+
+		diagnostics := loader.ApplyExtensionFlagValues(map[string]any{"missing": true}, false)
+		if len(diagnostics) != 1 || !strings.Contains(diagnostics[0].Error, "Unknown option: --missing") {
+			t.Fatalf("diagnostics = %#v", diagnostics)
+		}
+		if !resourceExtensionErrorsContain(loader.GetExtensions().Errors, "Unknown option: --missing") {
+			t.Fatalf("extension errors = %#v", loader.GetExtensions().Errors)
+		}
+	})
+
 	t.Run("loads extended skills and prompts with extension metadata", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		skillDir := filepath.Join(t.TempDir(), "extra-skills", "extra-skill")
@@ -411,6 +501,8 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		writeResourceSkill(t, skillPath, "extra-skill", "Extra skill", "Extra content")
 		promptPath := filepath.Join(t.TempDir(), "extra-prompts", "extra.md")
 		writeResourceFile(t, promptPath, "---\ndescription: Extra prompt\n---\nExtra prompt content")
+		themePath := filepath.Join(t.TempDir(), "extra-themes", "extra.json")
+		writeJSON(t, themePath, map[string]any{"name": "extra-theme"})
 
 		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
 		loader.Reload()
@@ -421,6 +513,10 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 			}},
 			PromptPaths: []ResourcePromptPath{{
 				Path:     promptPath,
+				Metadata: ProtocolSourceInfo{Source: "extension:extra", Scope: "temporary", Origin: "top-level"},
+			}},
+			ThemePaths: []ResourceThemePath{{
+				Path:     themePath,
 				Metadata: ProtocolSourceInfo{Source: "extension:extra", Scope: "temporary", Origin: "top-level"},
 			}},
 		})
@@ -436,6 +532,79 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		prompt := resourceFindPrompt(loader.GetPrompts().Prompts, "extra")
 		if prompt == nil || prompt.SourceInfo.Source != "extension:extra" || prompt.SourceInfo.Path != promptPath {
 			t.Fatalf("prompt = %#v", prompt)
+		}
+		if theme := resourceFindTheme(loader.GetThemes().Themes, "extra-theme"); theme == nil || theme.SourcePath != themePath {
+			t.Fatalf("theme = %#v themes=%#v", theme, loader.GetThemes().Themes)
+		}
+	})
+
+	t.Run("loads dynamic resources discovered by extension event", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		skillDir := filepath.Join(t.TempDir(), "dynamic-skills", "dynamic-skill")
+		skillPath := filepath.Join(skillDir, "SKILL.md")
+		writeResourceSkill(t, skillPath, "dynamic-skill", "Dynamic skill", "Dynamic content")
+		promptPath := filepath.Join(t.TempDir(), "dynamic-prompts", "dynamic.md")
+		writeResourceFile(t, promptPath, "---\ndescription: Dynamic prompt\n---\nDynamic prompt content")
+		themePath := filepath.Join(t.TempDir(), "dynamic-themes", "dynamic.json")
+		writeJSON(t, themePath, map[string]any{"name": "dynamic-theme"})
+		var reasons []string
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+			CWD:      cwd,
+			AgentDir: agentDir,
+			ExtensionFactories: []ProtocolExtensionFactory{{
+				Path: "dynamic-resources.gi.json",
+				Factory: func(ctx *ProtocolExtensionContext) error {
+					return ctx.On(ProtocolEventResourcesDiscover, func(event ProtocolSessionEvent) (ProtocolEventResult, error) {
+						if event.CWD != cwd {
+							t.Fatalf("event cwd = %q, want %q", event.CWD, cwd)
+						}
+						reasons = append(reasons, event.Reason)
+						return ProtocolEventResult{
+							ResourcesSet: true,
+							Resources: ResourceExtension{
+								SkillPaths:  []ResourceSkillPath{{Path: skillDir}},
+								PromptPaths: []ResourcePromptPath{{Path: promptPath}},
+								ThemePaths:  []ResourceThemePath{{Path: themePath}},
+							},
+						}, nil
+					})
+				},
+			}},
+		})
+
+		loader.Reload()
+		if !reflect.DeepEqual(reasons, []string{"startup"}) {
+			t.Fatalf("reasons after first reload = %#v", reasons)
+		}
+		skill := resourceFindSkill(loader.GetSkills().Skills, "dynamic-skill")
+		if skill == nil {
+			t.Fatalf("skills = %#v", loader.GetSkills().Skills)
+		}
+		sourceInfo, _ := skill.SourceInfo.(ProtocolSourceInfo)
+		if sourceInfo.Source != "inline" || sourceInfo.Scope != "temporary" || sourceInfo.Origin != "top-level" || sourceInfo.Path != skillPath {
+			t.Fatalf("skill source = %#v", sourceInfo)
+		}
+		prompt := resourceFindPrompt(loader.GetPrompts().Prompts, "dynamic")
+		if prompt == nil || prompt.SourceInfo.Source != "inline" || prompt.SourceInfo.Path != promptPath {
+			t.Fatalf("prompt = %#v", prompt)
+		}
+		if theme := resourceFindTheme(loader.GetThemes().Themes, "dynamic-theme"); theme == nil || theme.SourcePath != themePath {
+			t.Fatalf("theme = %#v themes=%#v", theme, loader.GetThemes().Themes)
+		}
+
+		loader.Reload()
+		if !reflect.DeepEqual(reasons, []string{"startup", "reload"}) {
+			t.Fatalf("reasons after second reload = %#v", reasons)
+		}
+		if got := resourceSkillCount(loader.GetSkills().Skills, "dynamic-skill"); got != 1 {
+			t.Fatalf("dynamic skill count = %d skills=%#v", got, loader.GetSkills().Skills)
+		}
+		if got := resourcePromptCount(loader.GetPrompts().Prompts, "dynamic"); got != 1 {
+			t.Fatalf("dynamic prompt count = %d prompts=%#v", got, loader.GetPrompts().Prompts)
+		}
+		if got := resourceThemeCount(loader.GetThemes().Themes, "dynamic-theme"); got != 1 {
+			t.Fatalf("dynamic theme count = %d themes=%#v", got, loader.GetThemes().Themes)
 		}
 	})
 
@@ -520,11 +689,13 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 			"extensionProtocol": "descriptor.v1",
 			"commands":          []any{map[string]any{"name": "deploy", "description": "global deploy"}},
 			"tools":             []any{map[string]any{"name": "duplicate-tool", "description": "global tool"}},
+			"flags":             []any{map[string]any{"name": "plan-mode", "description": "global plan", "type": "boolean", "default": false}},
 		}})
 		writeJSON(t, explicitExt, map[string]any{"gi": map[string]any{
 			"extensionProtocol": "descriptor.v1",
 			"commands":          []any{map[string]any{"name": "deploy", "description": "explicit deploy"}},
 			"tools":             []any{map[string]any{"name": "duplicate-tool", "description": "explicit tool"}},
+			"flags":             []any{map[string]any{"name": "plan-mode", "description": "explicit plan", "type": "boolean", "default": true}},
 		}})
 
 		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir, AdditionalExtensionPaths: []string{explicitExt}})
@@ -534,9 +705,16 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		if !resourceExtensionErrorsContain(extensions.Errors, "duplicate-tool") || !resourceExtensionErrorsContain(extensions.Errors, "conflicts") {
 			t.Fatalf("errors = %#v", extensions.Errors)
 		}
+		if !resourceExtensionErrorsContain(extensions.Errors, `Flag "--plan-mode" conflicts`) {
+			t.Fatalf("errors = %#v", extensions.Errors)
+		}
 		tool := findDynamicSDKTool(extensions.Runtime.RegisteredTools(), "duplicate-tool")
 		if tool == nil || tool.Description != "explicit tool" {
 			t.Fatalf("tool = %#v", tool)
+		}
+		flags := extensions.Runtime.Flags()
+		if len(flags) != 1 || flags[0].Description != "explicit plan" || extensions.Runtime.FlagValue("plan-mode") != true {
+			t.Fatalf("flags = %#v value=%#v", flags, extensions.Runtime.FlagValue("plan-mode"))
 		}
 		if got := extensions.Runtime.CommandInvocationNames(); !reflect.DeepEqual(got, []string{"deploy:1", "deploy:2"}) {
 			t.Fatalf("commands = %#v", got)
@@ -566,6 +744,32 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("discovers global and ancestor context files with content", func(t *testing.T) {
+		root := t.TempDir()
+		agentDir := filepath.Join(root, "agent")
+		repo := filepath.Join(root, "repo")
+		cwd := filepath.Join(repo, "sub", "leaf")
+		if err := os.MkdirAll(cwd, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeResourceFile(t, filepath.Join(agentDir, "CLAUDE.MD"), "global instructions")
+		writeResourceFile(t, filepath.Join(repo, "AGENTS.md"), "repo instructions")
+		writeResourceFile(t, filepath.Join(cwd, "AGENTS.md"), "leaf instructions")
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+
+		files := loader.GetAgentsFiles().AgentsFiles
+		if len(files) != 3 {
+			t.Fatalf("context files = %#v", files)
+		}
+		if !strings.EqualFold(filepath.Base(files[0].Path), "CLAUDE.md") || files[0].Content != "global instructions" ||
+			!strings.EqualFold(filepath.Base(files[1].Path), "AGENTS.md") || files[1].Content != "repo instructions" ||
+			!strings.EqualFold(filepath.Base(files[2].Path), "AGENTS.md") || files[2].Content != "leaf instructions" {
+			t.Fatalf("context file order/content = %#v", files)
+		}
+	})
+
 	t.Run("respects noSkills while still loading additional skill paths", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		writeResourceSkill(t, filepath.Join(agentDir, "skills", "test-skill.md"), "test-skill", "A test skill", "Content")
@@ -578,6 +782,43 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		skills := loader.GetSkills().Skills
 		if resourceHasSkill(skills, "test-skill") || !resourceHasSkill(skills, "custom") {
 			t.Fatalf("skills = %#v", skills)
+		}
+	})
+
+	t.Run("resource disable flags still allow explicit CLI resources", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		writeGiProtocolExtensionDescriptor(t, filepath.Join(agentDir, "extensions", "default.gi.json"))
+		writeResourceFile(t, filepath.Join(agentDir, "prompts", "default.md"), "Default prompt")
+		writeJSON(t, filepath.Join(agentDir, "themes", "default.json"), map[string]any{"name": "default-theme"})
+
+		explicitExt := filepath.Join(filepath.Dir(agentDir), "explicit", "explicit.gi.json")
+		explicitPrompt := filepath.Join(filepath.Dir(agentDir), "explicit", "prompt.md")
+		explicitTheme := filepath.Join(filepath.Dir(agentDir), "explicit", "theme.json")
+		writeGiProtocolExtensionDescriptor(t, explicitExt)
+		writeResourceFile(t, explicitPrompt, "Explicit prompt")
+		writeJSON(t, explicitTheme, map[string]any{"name": "explicit-theme"})
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+			CWD:                      cwd,
+			AgentDir:                 agentDir,
+			NoExtensions:             true,
+			NoPromptTemplates:        true,
+			NoThemes:                 true,
+			AdditionalExtensionPaths: []string{explicitExt},
+			AdditionalPromptPaths:    []string{explicitPrompt},
+			AdditionalThemePaths:     []string{explicitTheme},
+		})
+		loader.Reload()
+
+		if !protocolExtensionHasSuffix(loader.GetExtensions().Extensions, "explicit.gi.json") ||
+			protocolExtensionHasSuffix(loader.GetExtensions().Extensions, "default.gi.json") {
+			t.Fatalf("extensions = %#v", loader.GetExtensions().Extensions)
+		}
+		if !resourceHasPrompt(loader.GetPrompts().Prompts, "prompt") || resourceHasPrompt(loader.GetPrompts().Prompts, "default") {
+			t.Fatalf("prompts = %#v", loader.GetPrompts().Prompts)
+		}
+		if resourceFindTheme(loader.GetThemes().Themes, "explicit-theme") == nil || resourceFindTheme(loader.GetThemes().Themes, "default-theme") != nil {
+			t.Fatalf("themes = %#v", loader.GetThemes().Themes)
 		}
 	})
 
@@ -670,6 +911,15 @@ func resourceSkillCount(skills []agentharness.Skill, name string) int {
 		}
 	}
 	return count
+}
+
+func skillDiagnosticsMention(diagnostics []agentharness.SkillDiagnostic, path string) bool {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Type == "collision" && (diagnostic.Path == path || strings.Contains(diagnostic.Message, path)) {
+			return true
+		}
+	}
+	return false
 }
 
 func resourceHasPrompt(prompts []PromptTemplate, name string) bool {

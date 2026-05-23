@@ -246,10 +246,8 @@ func (t *ProcessTerminal) Columns() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.dynamicSize {
-		if file, ok := t.out.(*os.File); ok {
-			if cols, _, ok := processTerminalSize(file); ok {
-				return cols
-			}
+		if cols, _, ok := processTerminalSizeFromIO(t.out, t.in); ok {
+			return cols
 		}
 		return envInt("COLUMNS", 80)
 	}
@@ -260,14 +258,26 @@ func (t *ProcessTerminal) Rows() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.dynamicSize {
-		if file, ok := t.out.(*os.File); ok {
-			if _, rows, ok := processTerminalSize(file); ok {
-				return rows
-			}
+		if _, rows, ok := processTerminalSizeFromIO(t.out, t.in); ok {
+			return rows
 		}
 		return envInt("LINES", 24)
 	}
 	return t.rows
+}
+
+func processTerminalSizeFromIO(out io.Writer, in io.Reader) (cols, rows int, ok bool) {
+	if file, ok := out.(*os.File); ok {
+		if cols, rows, ok := processTerminalSize(file); ok {
+			return cols, rows, true
+		}
+	}
+	if file, ok := in.(*os.File); ok {
+		if cols, rows, ok := processTerminalSize(file); ok {
+			return cols, rows, true
+		}
+	}
+	return 0, 0, false
 }
 
 func (t *ProcessTerminal) SetSize(cols, rows int) {
@@ -366,7 +376,7 @@ func (t *ProcessTerminal) HideCursor() error      { return t.Write("\x1b[?25l") 
 func (t *ProcessTerminal) ShowCursor() error      { return t.Write("\x1b[?25h") }
 func (t *ProcessTerminal) ClearLine() error       { return t.Write("\x1b[K") }
 func (t *ProcessTerminal) ClearFromCursor() error { return t.Write("\x1b[J") }
-func (t *ProcessTerminal) ClearScreen() error     { return t.Write("\x1b[2J\x1b[H") }
+func (t *ProcessTerminal) ClearScreen() error     { return t.Write("\x1b[2J\x1b[H\x1b[3J") }
 func (t *ProcessTerminal) SetTitle(title string) error {
 	return t.Write("\x1b]0;" + title + "\x07")
 }

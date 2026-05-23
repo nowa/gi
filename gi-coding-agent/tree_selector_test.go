@@ -219,6 +219,78 @@ func TestTreeSelectorSearchAndFilterResetFoldState(t *testing.T) {
 	assertTreeSelected(t, list, "asst-3a")
 }
 
+func TestTreeSelectorUsesEffectiveKeybindingsPiStyle(t *testing.T) {
+	keybindings := mergeKeybindingsConfig(DefaultProtocolKeybindings(), KeybindingsConfig{
+		"app.tree.foldOrUp":             "x",
+		"app.tree.unfoldOrDown":         "y",
+		"app.tree.filter.userOnly":      "r",
+		"app.tree.filter.default":       "e",
+		"app.tree.filter.noTools":       "n",
+		"app.tree.filter.labeledOnly":   "l",
+		"app.tree.filter.all":           "q",
+		"app.tree.filter.cycleForward":  "o",
+		"app.tree.filter.cycleBackward": "p",
+		"app.tree.toggleLabelTimestamp": "z",
+	})
+
+	selector := NewTreeSelectorComponent(buildBranchingTreeSelectorTree(), "asst-4a", TreeSelectorOptions{Keybindings: keybindings})
+	list := selector.GetTreeList()
+	selector.HandleInput("x")
+	assertTreeSelected(t, list, "user-3a")
+	selector.HandleInput("y")
+	assertTreeSelected(t, list, "asst-4a")
+	render := strings.Join(selector.Render(200), "\n")
+	for _, want := range []string{"X/Y fold", "R users", "E default", "L labels", "Z label time"} {
+		if !strings.Contains(render, want) {
+			t.Fatalf("render missing %q:\n%s", want, render)
+		}
+	}
+
+	tree := buildTreeSelectorTree([]FileEntry{
+		treeUser("user-1", nil, "hello"),
+		treeToolCallAssistant("tool-asst-1", ptrString("user-1")),
+		treeUser("user-2", ptrString("tool-asst-1"), "follow up"),
+		treeAssistant("asst-2", ptrString("user-2"), "response"),
+	})
+	tree[0].Label = "checkpoint"
+	tree[0].LabelTimestamp = time.Date(2026, 3, 28, 14, 32, 0, 0, time.Local).Format(time.RFC3339)
+	selector = NewTreeSelectorComponent(tree, "asst-2", TreeSelectorOptions{Keybindings: keybindings})
+	list = selector.GetTreeList()
+
+	selector.HandleInput("q")
+	render = strings.Join(list.Render(200), "\n")
+	if !strings.Contains(render, "tool-asst-1") {
+		t.Fatalf("all filter render = %q, want tool-only assistant", render)
+	}
+	selector.HandleInput("n")
+	render = strings.Join(list.Render(200), "\n")
+	if strings.Contains(render, "tool-asst-1") {
+		t.Fatalf("no-tools filter render = %q, want tool-only assistant hidden", render)
+	}
+	selector.HandleInput("r")
+	assertTreeSelected(t, list, "user-2")
+	selector.HandleInput("e")
+	assertTreeSelected(t, list, "user-2")
+	selector.HandleInput("l")
+	assertTreeSelected(t, list, "user-1")
+	render = strings.Join(list.Render(200), "\n")
+	if !strings.Contains(render, "[checkpoint]") || strings.Contains(render, "[+label time]") {
+		t.Fatalf("label filter render = %q", render)
+	}
+	selector.HandleInput("z")
+	render = strings.Join(list.Render(200), "\n")
+	if !strings.Contains(render, "[+label time]") {
+		t.Fatalf("label timestamp render = %q", render)
+	}
+	selector.HandleInput("o")
+	render = strings.Join(list.Render(200), "\n")
+	if !strings.Contains(render, "tool-asst-1") {
+		t.Fatalf("cycle forward render = %q, want all filter", render)
+	}
+	selector.HandleInput("p")
+	assertTreeSelected(t, list, "user-1")
+}
+
 func buildBranchingTreeSelectorTree() []*SessionTreeNode {
 	return buildTreeSelectorTree([]FileEntry{
 		treeUser("user-1", nil, "first message"),

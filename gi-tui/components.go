@@ -3883,6 +3883,7 @@ type EditorOptions struct {
 	AutocompleteMaxVisible int
 	AutocompleteDebounce   time.Duration
 	MaxVisibleLines        int
+	Borderless             bool
 }
 
 type EditorTheme struct {
@@ -4265,11 +4266,15 @@ func (e *Editor) render(width, height int) []string {
 	visibleLines := layoutLines[e.scrollOffset:min(len(layoutLines), e.scrollOffset+maxVisibleLines)]
 
 	lines := make([]string, 0, len(visibleLines)+2)
-	lines = append(lines, e.renderEditorTopBorder(width))
+	if !e.options.Borderless {
+		lines = append(lines, e.renderEditorTopBorder(width))
+	}
 	for _, layoutLine := range visibleLines {
 		lines = append(lines, e.renderEditorContentLine(layoutLine, width, contentWidth, paddingX))
 	}
-	lines = append(lines, e.renderEditorBottomBorder(width, max(0, len(layoutLines)-(e.scrollOffset+len(visibleLines)))))
+	if !e.options.Borderless {
+		lines = append(lines, e.renderEditorBottomBorder(width, max(0, len(layoutLines)-(e.scrollOffset+len(visibleLines)))))
+	}
 	if e.isShowingAutocompleteLocked() {
 		left := strings.Repeat(" ", paddingX)
 		right := left
@@ -4518,30 +4523,13 @@ func (e *Editor) handleInputLocked(data string) {
 		e.lastAction = ""
 		e.resetPreferredColumn()
 		e.breakKillAndYank()
+	case e.shouldSubmitSlashCommandInput(data, kb):
+		e.submitLocked()
 	case isEditorNewLineInput(data, kb):
 		e.insertRuneWithUndo('\n')
 		e.historyIndex = -1
 	case kb.Matches(data, "tui.input.submit"):
-		if e.DisableSubmit {
-			return
-		}
-		if e.replaceBackslashBeforeCursorWithNewline() {
-			return
-		}
-		if e.OnSubmit != nil {
-			fn := e.OnSubmit
-			text := strings.TrimSpace(e.getExpandedTextLocked())
-			e.pendingCallbacks = append(e.pendingCallbacks, func() { fn(text) })
-		}
-		e.setTextInternal("")
-		e.pastes = map[int]string{}
-		e.pasteCounter = 0
-		e.undoStack = nil
-		e.historyIndex = -1
-		e.lastAction = ""
-		e.resetPreferredColumn()
-		e.breakKillAndYank()
-		e.changed()
+		e.submitLocked()
 	case kb.Matches(data, "tui.editor.cursorUp"):
 		e.handleUp()
 	case kb.Matches(data, "tui.editor.cursorDown"):
@@ -4592,6 +4580,39 @@ func (e *Editor) handleInputLocked(data string) {
 			e.historyIndex = -1
 		}
 	}
+}
+
+func (e *Editor) shouldSubmitSlashCommandInput(data string, kb *KeybindingsManager) bool {
+	if e == nil || kb == nil {
+		return false
+	}
+	if !kb.Matches(data, "tui.input.submit") || kb.Matches(data, "tui.input.newLine") {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(e.getExpandedTextLocked()), "/")
+}
+
+func (e *Editor) submitLocked() {
+	if e.DisableSubmit {
+		return
+	}
+	if e.replaceBackslashBeforeCursorWithNewline() {
+		return
+	}
+	if e.OnSubmit != nil {
+		fn := e.OnSubmit
+		text := strings.TrimSpace(e.getExpandedTextLocked())
+		e.pendingCallbacks = append(e.pendingCallbacks, func() { fn(text) })
+	}
+	e.setTextInternal("")
+	e.pastes = map[int]string{}
+	e.pasteCounter = 0
+	e.undoStack = nil
+	e.historyIndex = -1
+	e.lastAction = ""
+	e.resetPreferredColumn()
+	e.breakKillAndYank()
+	e.changed()
 }
 
 func (e *Editor) AddToHistory(text string) {
@@ -6153,15 +6174,36 @@ func NewSelectList(items []SelectItem, maxVisible int, theme SelectListTheme, la
 
 func (s *SelectList) SetFilter(filter string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	lowerFilter := strings.ToLower(filter)
-	s.filtered = s.filtered[:0]
-	for _, item := range s.items {
-		if strings.HasPrefix(strings.ToLower(item.Value), lowerFilter) {
-			s.filtered = append(s.filtered, item)
+	var onSelectionChange func(SelectItem)
+	var selectionItem SelectItem
+	var hasSelectionItem bool
+	if strings.TrimSpace(filter) == "" {
+		s.filtered = append(s.filtered[:0], s.items...)
+		s.selectedIndex = 0
+		if len(s.filtered) > 0 {
+			onSelectionChange = s.OnSelectionChange
+			selectionItem = s.filtered[s.selectedIndex]
+			hasSelectionItem = true
 		}
+		s.mu.Unlock()
+		if hasSelectionItem && onSelectionChange != nil {
+			onSelectionChange(selectionItem)
+		}
+		return
 	}
+	s.filtered = FuzzyFilter(s.items, filter, func(item SelectItem) string {
+		return strings.Join([]string{item.Value, item.Label, item.Description}, " ")
+	})
 	s.selectedIndex = 0
+	if len(s.filtered) > 0 {
+		onSelectionChange = s.OnSelectionChange
+		selectionItem = s.filtered[s.selectedIndex]
+		hasSelectionItem = true
+	}
+	s.mu.Unlock()
+	if hasSelectionItem && onSelectionChange != nil {
+		onSelectionChange(selectionItem)
+	}
 }
 
 func (s *SelectList) SetSelectedIndex(index int) {

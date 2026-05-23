@@ -1,13 +1,17 @@
 package gicodingagent
 
 import (
+	"os"
 	"sort"
 	"strings"
 	"sync"
+
+	gitui "github.com/nowa/gi/gi-tui"
 )
 
 const (
 	sessionSelectorCtrlR         = "\x1b[114;5u"
+	sessionSelectorCtrlN         = "\x0e"
 	sessionSelectorCtrlD         = "\x04"
 	sessionSelectorCtrlBackspace = "\x1b[127;5u"
 	sessionSelectorTab           = "\t"
@@ -24,8 +28,12 @@ type SessionSelectorOptions struct {
 	ShowRenameHint             bool
 	RenameSession              func(path, name string) error
 	DeleteSession              func(path string) error
+	Keybindings                KeybindingsConfig
 	OnDeleteConfirmationChange func(path *string)
 	OnError                    func(message string)
+	OnSelect                   func(path string)
+	OnCancel                   func()
+	RequestRender              func()
 	CurrentSessionPath         string
 }
 
@@ -43,7 +51,9 @@ type SessionSelectorComponent struct {
 	scope           string
 	sortMode        SessionSelectorSortMode
 	nameFilter      SessionSelectorNameFilter
+	keybindings     KeybindingsConfig
 	searchQuery     string
+	showPath        bool
 	deleteConfirm   bool
 	deletePath      string
 	renameMode      bool
@@ -51,8 +61,19 @@ type SessionSelectorComponent struct {
 	renameCursor    int
 }
 
+type sessionSelectorRenameSubmit struct {
+	path    string
+	name    string
+	rename  func(path, name string) error
+	onError func(message string)
+}
+
 func NewSessionSelectorComponent(sessions []SessionInfo, options SessionSelectorOptions) *SessionSelectorComponent {
 	cloned := cloneSessionInfos(sessions)
+	keybindings := DefaultProtocolKeybindings()
+	if options.Keybindings != nil {
+		keybindings = cloneKeybindingsConfig(options.Keybindings)
+	}
 	return &SessionSelectorComponent{
 		sessions:        cloned,
 		currentSessions: cloneSessionInfos(cloned),
@@ -60,16 +81,22 @@ func NewSessionSelectorComponent(sessions []SessionInfo, options SessionSelector
 		scope:           sessionSelectorCurrentScope,
 		sortMode:        SessionSelectorSortThreaded,
 		nameFilter:      SessionSelectorNameAll,
+		keybindings:     keybindings,
 	}
 }
 
 func NewLoadingSessionSelectorComponent(currentLoader, allLoader SessionSelectorLoader, options SessionSelectorOptions) *SessionSelectorComponent {
+	keybindings := DefaultProtocolKeybindings()
+	if options.Keybindings != nil {
+		keybindings = cloneKeybindingsConfig(options.Keybindings)
+	}
 	selector := &SessionSelectorComponent{
-		options:    options,
-		scope:      sessionSelectorCurrentScope,
-		allLoader:  allLoader,
-		sortMode:   SessionSelectorSortThreaded,
-		nameFilter: SessionSelectorNameAll,
+		options:     options,
+		scope:       sessionSelectorCurrentScope,
+		allLoader:   allLoader,
+		sortMode:    SessionSelectorSortThreaded,
+		nameFilter:  SessionSelectorNameAll,
+		keybindings: keybindings,
 	}
 	if currentLoader == nil {
 		return selector
@@ -90,6 +117,8 @@ func (s *SessionSelectorComponent) GetSessionList() *SessionSelectorComponent {
 	return s
 }
 
+func (s *SessionSelectorComponent) Invalidate() {}
+
 func (s *SessionSelectorComponent) Render(_ int) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -108,11 +137,10 @@ func (s *SessionSelectorComponent) Render(_ int) []string {
 	if s.allLoading && s.scope == sessionSelectorAllScope {
 		lines = append(lines, "Loading sessions...")
 	}
-	if s.options.ShowRenameHint {
-		lines = append(lines, "ctrl+r rename")
-	}
+	lines = append(lines, s.statusLineLocked())
+	lines = append(lines, s.hintLinesLocked()...)
 	if s.deleteConfirm {
-		lines = append(lines, "Delete session? enter confirm · esc cancel")
+		lines = append(lines, "Delete session? "+s.tuiKeyText("tui.select.confirm", "Enter")+" confirm · "+s.tuiKeyText("tui.select.cancel", "Esc")+" cancel")
 	}
 
 	nodes := s.visibleNodesLocked()
@@ -126,9 +154,63 @@ func (s *SessionSelectorComponent) Render(_ int) []string {
 		if name == "" {
 			name = session.FirstMessage
 		}
+		if s.showPath && strings.TrimSpace(session.Path) != "" {
+			name += " [" + shortenSessionSelectorPath(session.Path) + "]"
+		}
 		lines = append(lines, prefix+node.treePrefix()+name)
 	}
 	return lines
+}
+
+func (s *SessionSelectorComponent) statusLineLocked() string {
+	scopeLabel := "Current Folder"
+	if s.scope == sessionSelectorAllScope {
+		scopeLabel = "All"
+	}
+	nameLabel := "all"
+	if s.nameFilter == SessionSelectorNameNamed {
+		nameLabel = "named"
+	}
+	return "Scope: " + scopeLabel + " · Sort: " + string(s.sortMode) + " · Name: " + nameLabel
+}
+
+func (s *SessionSelectorComponent) hintLinesLocked() []string {
+	namedAction := "show named sessions"
+	if s.nameFilter == SessionSelectorNameNamed {
+		namedAction = "show all sessions"
+	}
+	pathState := "off"
+	if s.showPath {
+		pathState = "on"
+	}
+	line1 := s.tuiKeyText("tui.input.tab", "Tab") + " scope · " +
+		s.appKeyText("app.session.toggleSort", "Ctrl+S") + " sort · " +
+		s.appKeyText("app.session.toggleNamedFilter", "Ctrl+N") + " " + namedAction
+	line2 := s.appKeyText("app.session.delete", "Ctrl+D") + " delete · " +
+		s.appKeyText("app.session.togglePath", "Ctrl+P") + " path (" + pathState + ")"
+	if s.options.ShowRenameHint {
+		line2 += " · " + s.appKeyText("app.session.rename", "Ctrl+R") + " rename"
+	}
+	return []string{line1, line2}
+}
+
+func (s *SessionSelectorComponent) tuiKeyText(action, fallback string) string {
+	keys := gitui.GetKeybindings().GetKeys(action)
+	if text := formatHotkeyKeys(keys, true); text != "" {
+		return text
+	}
+	return fallback
+}
+
+func (s *SessionSelectorComponent) appKeyText(action, fallback string) string {
+	keybindings := s.keybindings
+	if keybindings == nil {
+		keybindings = DefaultProtocolKeybindings()
+	}
+	if text := formatHotkeyKeys(keybindingValueKeys(keybindings[action]), true); text != "" {
+		return text
+	}
+	return fallback
 }
 
 func (s *SessionSelectorComponent) HandleInput(input string) {
@@ -144,19 +226,21 @@ func (s *SessionSelectorComponent) HandleInput(input string) {
 
 	s.mu.Lock()
 	if s.renameMode {
-		s.handleRenameInputLocked(input)
+		submit := s.handleRenameInputLocked(input)
 		s.mu.Unlock()
+		s.finishRenameSubmit(submit)
 		return
 	}
 
 	if s.deleteConfirm {
-		if input == sessionSelectorConfirm || input == sessionSelectorConfirmAlt {
+		kb := gitui.GetKeybindings()
+		if kb.Matches(input, "tui.select.confirm") || input == sessionSelectorConfirmAlt {
 			deletePath = s.deletePath
 			deleteSession = s.options.DeleteSession
 			s.deleteConfirm = false
 			s.deletePath = ""
 			clearConfirm = true
-		} else if input == sessionSelectorCancel {
+		} else if kb.Matches(input, "tui.select.cancel") {
 			s.deleteConfirm = false
 			s.deletePath = ""
 			clearConfirm = true
@@ -171,21 +255,59 @@ func (s *SessionSelectorComponent) HandleInput(input string) {
 		return
 	}
 
-	switch input {
-	case sessionSelectorTab:
+	kb := gitui.GetKeybindings()
+	switch {
+	case kb.Matches(input, "tui.select.up") || input == "k":
+		s.moveSelectedLocked(-1)
+	case kb.Matches(input, "tui.select.down") || input == "j":
+		s.moveSelectedLocked(1)
+	case kb.Matches(input, "tui.select.pageUp") || input == "\x1b[5~":
+		s.moveSelectedLocked(-8)
+	case kb.Matches(input, "tui.select.pageDown") || input == "\x1b[6~":
+		s.moveSelectedLocked(8)
+	case kb.Matches(input, "tui.select.confirm") || input == sessionSelectorConfirmAlt:
+		path := s.selectedSessionPathLocked()
+		s.mu.Unlock()
+		if path != "" && s.options.OnSelect != nil {
+			s.options.OnSelect(path)
+		}
+		return
+	case kb.Matches(input, "tui.select.cancel"):
+		onCancel := s.options.OnCancel
+		s.mu.Unlock()
+		if onCancel != nil {
+			onCancel()
+		}
+		return
+	case kb.Matches(input, "tui.input.tab") || input == sessionSelectorTab:
 		s.mu.Unlock()
 		s.toggleScope()
 		return
-	case sessionSelectorCtrlR:
+	case matchesKeybindingAction(input, s.keybindings, "app.session.toggleSort"):
+		s.toggleSortModeLocked()
+		s.clampSelectedLocked()
+	case matchesKeybindingAction(input, s.keybindings, "app.session.togglePath"):
+		s.showPath = !s.showPath
+	case matchesKeybindingAction(input, s.keybindings, "app.session.rename") || input == sessionSelectorCtrlR:
 		if s.options.ShowRenameHint && len(s.sessions) > 0 {
-			s.renameMode = true
-			s.renameText = s.sessions[s.selected].Name
-			s.renameCursor = 0
+			nodes := s.visibleNodesLocked()
+			if s.selected >= 0 && s.selected < len(nodes) {
+				s.renameMode = true
+				s.renameText = nodes[s.selected].session.Name
+				s.renameCursor = 0
+			}
 		}
-	case sessionSelectorCtrlD:
+	case matchesKeybindingAction(input, s.keybindings, "app.session.toggleNamedFilter") || input == sessionSelectorCtrlN:
+		if s.nameFilter == SessionSelectorNameNamed {
+			s.nameFilter = SessionSelectorNameAll
+		} else {
+			s.nameFilter = SessionSelectorNameNamed
+		}
+		s.selected = 0
+	case matchesKeybindingAction(input, s.keybindings, "app.session.delete") || input == sessionSelectorCtrlD:
 		confirmPath, errorMessage, onError = s.startDeleteConfirmationLocked()
 		shouldEmitConfirm = confirmPath != nil
-	case sessionSelectorCtrlBackspace:
+	case matchesKeybindingAction(input, s.keybindings, "app.session.deleteNoninvasive") || input == sessionSelectorCtrlBackspace:
 		if s.searchQuery == "" {
 			confirmPath, errorMessage, onError = s.startDeleteConfirmationLocked()
 			shouldEmitConfirm = confirmPath != nil
@@ -206,6 +328,17 @@ func (s *SessionSelectorComponent) HandleInput(input string) {
 	}
 	if shouldEmitConfirm {
 		s.emitDeleteConfirmation(confirmPath)
+	}
+}
+
+func (s *SessionSelectorComponent) toggleSortModeLocked() {
+	switch s.sortMode {
+	case SessionSelectorSortThreaded:
+		s.sortMode = SessionSelectorSortRecent
+	case SessionSelectorSortRecent:
+		s.sortMode = SessionSelectorSortRelevance
+	default:
+		s.sortMode = SessionSelectorSortThreaded
 	}
 }
 
@@ -303,29 +436,104 @@ func (s *SessionSelectorComponent) loadAllSessions(seq int, loader SessionSelect
 		s.sessions = cloneSessionInfos(sessions)
 		s.clampSelectedLocked()
 	}
+	requestRender := s.options.RequestRender
 	s.mu.Unlock()
+	if requestRender != nil {
+		requestRender()
+	}
 }
 
-func (s *SessionSelectorComponent) handleRenameInputLocked(input string) {
-	if input == sessionSelectorConfirm || input == sessionSelectorConfirmAlt {
-		if s.options.RenameSession != nil && len(s.sessions) > 0 {
-			_ = s.options.RenameSession(s.sessions[s.selected].Path, s.renameText)
+func (s *SessionSelectorComponent) selectedSessionPathLocked() string {
+	nodes := s.visibleNodesLocked()
+	if s.selected < 0 || s.selected >= len(nodes) {
+		return ""
+	}
+	return nodes[s.selected].session.Path
+}
+
+func (s *SessionSelectorComponent) moveSelectedLocked(delta int) {
+	nodes := s.visibleNodesLocked()
+	if len(nodes) == 0 {
+		s.selected = 0
+		return
+	}
+	s.selected = max(0, min(s.selected+delta, len(nodes)-1))
+}
+
+func (s *SessionSelectorComponent) handleRenameInputLocked(input string) *sessionSelectorRenameSubmit {
+	kb := gitui.GetKeybindings()
+	if kb.Matches(input, "tui.select.cancel") {
+		s.renameMode = false
+		return nil
+	}
+	if kb.Matches(input, "tui.select.confirm") || input == sessionSelectorConfirmAlt {
+		submit := &sessionSelectorRenameSubmit{
+			path:    s.selectedSessionPathLocked(),
+			name:    strings.TrimSpace(s.renameText),
+			rename:  s.options.RenameSession,
+			onError: s.options.OnError,
 		}
 		s.renameMode = false
-		return
+		return submit
 	}
 	if input == "\x7f" {
 		if s.renameCursor > 0 {
 			s.renameText = s.renameText[:s.renameCursor-1] + s.renameText[s.renameCursor:]
 			s.renameCursor--
 		}
-		return
+		return nil
 	}
 	if strings.Trim(input, "\r\n") == "" {
-		return
+		return nil
 	}
 	s.renameText = s.renameText[:s.renameCursor] + input + s.renameText[s.renameCursor:]
 	s.renameCursor += len(input)
+	return nil
+}
+
+func (s *SessionSelectorComponent) finishRenameSubmit(submit *sessionSelectorRenameSubmit) {
+	if submit == nil || submit.rename == nil || submit.path == "" {
+		return
+	}
+	if err := submit.rename(submit.path, submit.name); err != nil {
+		if submit.onError != nil {
+			submit.onError(err.Error())
+		}
+		return
+	}
+	s.mu.Lock()
+	s.updateSessionNameLocked(submit.path, submit.name)
+	s.mu.Unlock()
+}
+
+func (s *SessionSelectorComponent) updateSessionNameLocked(path, name string) {
+	update := func(sessions []SessionInfo) {
+		for index := range sessions {
+			if sameSessionSelectorPath(sessions[index].Path, path) {
+				sessions[index].Name = name
+			}
+		}
+	}
+	update(s.sessions)
+	update(s.currentSessions)
+	update(s.allSessions)
+}
+
+func sameSessionSelectorPath(a, b string) bool {
+	return CanonicalizePath(a) == CanonicalizePath(b)
+}
+
+func shortenSessionSelectorPath(path string) string {
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		if path == home {
+			return "~"
+		}
+		if strings.HasPrefix(path, home+string(os.PathSeparator)) {
+			return "~" + strings.TrimPrefix(path, home)
+		}
+	}
+	return path
 }
 
 func (s *SessionSelectorComponent) startDeleteConfirmationLocked() (*string, string, func(string)) {

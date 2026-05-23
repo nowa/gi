@@ -1,6 +1,10 @@
 package gillmprovider
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestConvertOpenAICompletionsMessagesBatchesToolResultImages(t *testing.T) {
 	model := Model{ID: "gpt-4o-mini", Provider: "openai", API: "openai-completions", Input: []string{"text", "image"}}
@@ -76,5 +80,66 @@ func TestConvertOpenAICompletionsMessagesOmitsEmptyAssistantMessages(t *testing.
 
 	if len(messages) != 1 || messages[0].Role != "user" {
 		t.Fatalf("messages = %#v", messages)
+	}
+}
+
+func TestConvertOpenAICompletionsMessagesReplaysDeepSeekReasoningContent(t *testing.T) {
+	model := Model{ID: "deepseek-v4-pro", Provider: "deepseek", API: "openai-completions", Reasoning: true, Input: []string{"text"}}
+	thinking := Thinking("hidden chain")
+	thinking.ThinkingSignature = "reasoning_content"
+	assistant := AssistantMessage([]ContentPart{thinking, Text("visible answer")}, StopReasonStop, model)
+
+	messages := ConvertOpenAICompletionsMessages(model, Context{Messages: []Message{assistant}}, OpenAICompletionsCompat{RequiresReasoningContentOnAssistant: true})
+
+	if len(messages) != 1 {
+		t.Fatalf("messages = %#v", messages)
+	}
+	if messages[0].Content != "visible answer" || messages[0].ReasoningContent != "hidden chain" {
+		t.Fatalf("assistant = %#v", messages[0])
+	}
+	raw, err := json.Marshal(messages[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"reasoning_content":"hidden chain"`) {
+		t.Fatalf("json = %s", raw)
+	}
+}
+
+func TestConvertOpenAICompletionsMessagesIncludesEmptyDeepSeekReasoningContent(t *testing.T) {
+	model := Model{ID: "deepseek-v4-pro", Provider: "deepseek", API: "openai-completions", Reasoning: true, Input: []string{"text"}}
+	assistant := AssistantMessage([]ContentPart{Text("visible answer")}, StopReasonStop, model)
+
+	messages := ConvertOpenAICompletionsMessages(model, Context{Messages: []Message{assistant}}, OpenAICompletionsCompat{RequiresReasoningContentOnAssistant: true})
+
+	if len(messages) != 1 {
+		t.Fatalf("messages = %#v", messages)
+	}
+	raw, err := json.Marshal(messages[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"reasoning_content":""`) {
+		t.Fatalf("json = %s", raw)
+	}
+}
+
+func TestConvertOpenAICompletionsMessagesReplaysReasoningSignatureField(t *testing.T) {
+	model := Model{ID: "oss-reasoning", Provider: "llamacpp", API: "openai-completions", Reasoning: true, Input: []string{"text"}}
+	thinking := Thinking("hidden chain")
+	thinking.ThinkingSignature = "reasoning"
+	assistant := AssistantMessage([]ContentPart{thinking, Text("visible answer")}, StopReasonStop, model)
+
+	messages := ConvertOpenAICompletionsMessages(model, Context{Messages: []Message{assistant}}, OpenAICompletionsCompat{})
+
+	if len(messages) != 1 || messages[0].Reasoning != "hidden chain" {
+		t.Fatalf("messages = %#v", messages)
+	}
+	raw, err := json.Marshal(messages[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"reasoning":"hidden chain"`) {
+		t.Fatalf("json = %s", raw)
 	}
 }

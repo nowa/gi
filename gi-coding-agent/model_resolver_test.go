@@ -90,7 +90,7 @@ func (r resolverTestRegistry) Find(provider, modelID string) (llm.Model, bool) {
 	return llm.Model{}, false
 }
 
-func TestParseModelPatternPiCases(t *testing.T) {
+func TestParseModelPatternCompatibilityCases(t *testing.T) {
 	t.Run("simple patterns without colons", func(t *testing.T) {
 		result := ParseModelPattern("claude-sonnet-4-5", resolverAllModels)
 		assertResolvedModel(t, result.Model, "anthropic", "claude-sonnet-4-5")
@@ -206,7 +206,34 @@ func TestParseModelPatternPiCases(t *testing.T) {
 	})
 }
 
-func TestResolveCLIModelPiCases(t *testing.T) {
+func TestResolveModelScopePatterns(t *testing.T) {
+	registry := resolverTestRegistry{
+		all:       resolverAllModels,
+		available: resolverAllModels,
+	}
+
+	scoped := ResolveModelScope([]string{
+		"openai/*",
+		"sonnet:high",
+		"openrouter/*coder*:low",
+		"missing-*",
+	}, registry)
+	if len(scoped) != 4 {
+		t.Fatalf("scoped models = %#v, want 4 matches", scoped)
+	}
+	assertScopedModel(t, scoped[0], "openai", "gpt-4o", "")
+	assertScopedModel(t, scoped[1], "openrouter", "openai/gpt-4o:extended", "")
+	assertScopedModel(t, scoped[2], "anthropic", "claude-sonnet-4-5", ThinkingHigh)
+	assertScopedModel(t, scoped[3], "openrouter", "qwen/qwen3-coder:exacto", ThinkingLow)
+
+	scoped = ResolveModelScope([]string{"sonnet", "anthropic/claude-sonnet-4-5"}, registry)
+	if len(scoped) != 1 {
+		t.Fatalf("duplicate scoped models = %#v, want 1", scoped)
+	}
+	assertScopedModel(t, scoped[0], "anthropic", "claude-sonnet-4-5", "")
+}
+
+func TestResolveCLIModelCompatibilityCases(t *testing.T) {
 	registry := resolverTestRegistry{all: resolverAllModels}
 
 	result := ResolveCLIModel(ResolveCLIModelOptions{CLIModel: "openai/gpt-4o", ModelRegistry: registry})
@@ -271,7 +298,7 @@ func TestResolveCLIModelPiCases(t *testing.T) {
 	assertResolvedModel(t, result.Model, "openrouter", "qwen/qwen3-coder:exacto")
 }
 
-func TestDefaultModelSelectionPiCases(t *testing.T) {
+func TestDefaultModelSelectionCompatibilityCases(t *testing.T) {
 	if DefaultModelPerProvider["openai"] != "gpt-5.4" || DefaultModelPerProvider["openai-codex"] != "gpt-5.5" {
 		t.Fatalf("openai defaults = %#v", DefaultModelPerProvider)
 	}
@@ -321,5 +348,12 @@ func assertResolvedModel(t *testing.T, model *llm.Model, provider, id string) {
 	}
 	if model.Provider != provider || model.ID != id {
 		t.Fatalf("model = %s/%s, want %s/%s", model.Provider, model.ID, provider, id)
+	}
+}
+
+func assertScopedModel(t *testing.T, scoped ScopedModel, provider, id string, thinking ThinkingLevel) {
+	t.Helper()
+	if scoped.Model.Provider != provider || scoped.Model.ID != id || scoped.ThinkingLevel != thinking {
+		t.Fatalf("scoped model = %s/%s:%s, want %s/%s:%s", scoped.Model.Provider, scoped.Model.ID, scoped.ThinkingLevel, provider, id, thinking)
 	}
 }

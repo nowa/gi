@@ -22,20 +22,20 @@ const (
 )
 
 type UsageCost struct {
-	Input      float64
-	Output     float64
-	CacheRead  float64
-	CacheWrite float64
-	Total      float64
+	Input      float64 `json:"input"`
+	Output     float64 `json:"output"`
+	CacheRead  float64 `json:"cacheRead"`
+	CacheWrite float64 `json:"cacheWrite"`
+	Total      float64 `json:"total"`
 }
 
 type Usage struct {
-	Input       int
-	Output      int
-	CacheRead   int
-	CacheWrite  int
-	TotalTokens int
-	Cost        UsageCost
+	Input       int       `json:"input"`
+	Output      int       `json:"output"`
+	CacheRead   int       `json:"cacheRead"`
+	CacheWrite  int       `json:"cacheWrite"`
+	TotalTokens int       `json:"totalTokens"`
+	Cost        UsageCost `json:"cost"`
 }
 
 func EmptyUsage() Usage {
@@ -43,18 +43,18 @@ func EmptyUsage() Usage {
 }
 
 type ContentPart struct {
-	Type              string
-	Text              string
-	TextSignature     string
-	Thinking          string
-	ThinkingSignature string
-	Redacted          bool
-	Data              string
-	MIMEType          string
-	ID                string
-	Name              string
-	Arguments         map[string]any
-	ThoughtSignature  string
+	Type              string         `json:"type"`
+	Text              string         `json:"text,omitempty"`
+	TextSignature     string         `json:"textSignature,omitempty"`
+	Thinking          string         `json:"thinking,omitempty"`
+	ThinkingSignature string         `json:"thinkingSignature,omitempty"`
+	Redacted          bool           `json:"redacted,omitempty"`
+	Data              string         `json:"data,omitempty"`
+	MIMEType          string         `json:"mimeType,omitempty"`
+	ID                string         `json:"id,omitempty"`
+	Name              string         `json:"name,omitempty"`
+	Arguments         map[string]any `json:"arguments,omitempty"`
+	ThoughtSignature  string         `json:"thoughtSignature,omitempty"`
 }
 
 func Text(text string) ContentPart {
@@ -77,20 +77,22 @@ func ToolCall(id, name string, args map[string]any) ContentPart {
 }
 
 type Message struct {
-	Role         string
-	Content      []ContentPart
-	Timestamp    int64
-	API          string
-	Provider     string
-	Model        string
-	Usage        Usage
-	StopReason   string
-	ErrorMessage string
-	ResponseID   string
-	ToolCallID   string
-	ToolName     string
-	Details      any
-	IsError      bool
+	Role         string        `json:"role"`
+	Content      []ContentPart `json:"content,omitempty"`
+	Timestamp    int64         `json:"timestamp,omitempty"`
+	API          string        `json:"api,omitempty"`
+	Provider     string        `json:"provider,omitempty"`
+	Model        string        `json:"model,omitempty"`
+	Usage        Usage         `json:"usage,omitempty"`
+	StopReason   string        `json:"stopReason,omitempty"`
+	ErrorMessage string        `json:"errorMessage,omitempty"`
+	ResponseID   string        `json:"responseId,omitempty"`
+	ToolCallID   string        `json:"toolCallID,omitempty"`
+	ToolName     string        `json:"toolName,omitempty"`
+	CustomType   string        `json:"customType,omitempty"`
+	Display      *bool         `json:"display,omitempty"`
+	Details      any           `json:"details,omitempty"`
+	IsError      bool          `json:"isError,omitempty"`
 }
 
 func NowMillis() int64 {
@@ -140,56 +142,56 @@ func AssistantErrorMessage(message string, model Model, aborted bool) Message {
 }
 
 type ModelCost struct {
-	Input      float64
-	Output     float64
-	CacheRead  float64
-	CacheWrite float64
+	Input      float64 `json:"input"`
+	Output     float64 `json:"output"`
+	CacheRead  float64 `json:"cacheRead"`
+	CacheWrite float64 `json:"cacheWrite"`
 }
 
 type Model struct {
-	ID               string
-	Name             string
-	API              string
-	Provider         string
-	BaseURL          string
-	Headers          map[string]string
-	Compat           ModelCompat
-	Reasoning        bool
-	Input            []string
-	Cost             ModelCost
-	ContextWindow    int
-	MaxTokens        int
-	ThinkingLevelMap map[string]*string
+	ID               string             `json:"id"`
+	Name             string             `json:"name"`
+	API              string             `json:"api"`
+	Provider         string             `json:"provider"`
+	BaseURL          string             `json:"baseUrl,omitempty"`
+	Headers          map[string]string  `json:"headers,omitempty"`
+	Compat           ModelCompat        `json:"compat,omitempty"`
+	Reasoning        bool               `json:"reasoning"`
+	Input            []string           `json:"input,omitempty"`
+	Cost             ModelCost          `json:"cost"`
+	ContextWindow    int                `json:"contextWindow"`
+	MaxTokens        int                `json:"maxTokens"`
+	ThinkingLevelMap map[string]*string `json:"thinkingLevelMap,omitempty"`
 }
 
 type ModelCompat struct {
-	SupportsStore                             *bool
-	SupportsDeveloperRole                     *bool
-	SupportsReasoningEffort                   *bool
-	SupportsUsageInStreaming                  *bool
-	SupportsStrictMode                        *bool
-	SupportsLongCacheRetention                *bool
-	SupportsEagerToolInputStreaming           *bool
-	SupportsCacheControlOnTools               *bool
-	SendSessionAffinityHeaders                *bool
-	SendSessionIDHeader                       *bool
-	RequiresToolResultName                    *bool
-	RequiresAssistantAfterToolResult          *bool
-	RequiresThinkingAsText                    *bool
-	RequiresReasoningContentOnAssistantTurns  *bool
-	RequiresReasoningContentOnAssistantEvents *bool
-	ZAIToolStream                             *bool
-	OpenRouterRouting                         map[string]any
-	VercelGatewayRouting                      map[string]any
-	MaxTokensField                            string
-	ThinkingFormat                            string
-	CacheControlFormat                        string
+	SupportsStore                             *bool          `json:"supportsStore,omitempty"`
+	SupportsDeveloperRole                     *bool          `json:"supportsDeveloperRole,omitempty"`
+	SupportsReasoningEffort                   *bool          `json:"supportsReasoningEffort,omitempty"`
+	SupportsUsageInStreaming                  *bool          `json:"supportsUsageInStreaming,omitempty"`
+	SupportsStrictMode                        *bool          `json:"supportsStrictMode,omitempty"`
+	SupportsLongCacheRetention                *bool          `json:"supportsLongCacheRetention,omitempty"`
+	SupportsEagerToolInputStreaming           *bool          `json:"supportsEagerToolInputStreaming,omitempty"`
+	SupportsCacheControlOnTools               *bool          `json:"supportsCacheControlOnTools,omitempty"`
+	SendSessionAffinityHeaders                *bool          `json:"sendSessionAffinityHeaders,omitempty"`
+	SendSessionIDHeader                       *bool          `json:"sendSessionIdHeader,omitempty"`
+	RequiresToolResultName                    *bool          `json:"requiresToolResultName,omitempty"`
+	RequiresAssistantAfterToolResult          *bool          `json:"requiresAssistantAfterToolResult,omitempty"`
+	RequiresThinkingAsText                    *bool          `json:"requiresThinkingAsText,omitempty"`
+	RequiresReasoningContentOnAssistantTurns  *bool          `json:"requiresReasoningContentOnAssistantTurns,omitempty"`
+	RequiresReasoningContentOnAssistantEvents *bool          `json:"requiresReasoningContentOnAssistantEvents,omitempty"`
+	ZAIToolStream                             *bool          `json:"zaiToolStream,omitempty"`
+	OpenRouterRouting                         map[string]any `json:"openRouterRouting,omitempty"`
+	VercelGatewayRouting                      map[string]any `json:"vercelGatewayRouting,omitempty"`
+	MaxTokensField                            string         `json:"maxTokensField,omitempty"`
+	ThinkingFormat                            string         `json:"thinkingFormat,omitempty"`
+	CacheControlFormat                        string         `json:"cacheControlFormat,omitempty"`
 }
 
 type Context struct {
-	SystemPrompt string
-	Messages     []Message
-	Tools        []Tool
+	SystemPrompt string    `json:"systemPrompt,omitempty"`
+	Messages     []Message `json:"messages,omitempty"`
+	Tools        []Tool    `json:"tools,omitempty"`
 }
 
 type StreamOptions struct {
@@ -214,29 +216,29 @@ type StreamOptions struct {
 type SimpleStreamOptions = StreamOptions
 
 type AssistantMessageEvent struct {
-	Type         string
-	Partial      Message
-	Message      Message
-	Error        Message
-	Reason       string
-	ContentIndex int
-	Delta        string
-	Content      string
-	ToolCall     ContentPart
+	Type         string      `json:"type"`
+	Partial      Message     `json:"partial,omitempty"`
+	Message      Message     `json:"message,omitempty"`
+	Error        Message     `json:"error,omitempty"`
+	Reason       string      `json:"reason,omitempty"`
+	ContentIndex int         `json:"contentIndex,omitempty"`
+	Delta        string      `json:"delta,omitempty"`
+	Content      string      `json:"content,omitempty"`
+	ToolCall     ContentPart `json:"toolCall,omitempty"`
 }
 
 type Tool struct {
-	Name        string
-	Description string
-	Parameters  Schema
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Parameters  Schema `json:"parameters,omitempty"`
 }
 
 type Schema struct {
-	Type       any
-	Properties map[string]Schema
-	Required   []string
-	Items      *Schema
-	Enum       []any
+	Type       any               `json:"type,omitempty"`
+	Properties map[string]Schema `json:"properties,omitempty"`
+	Required   []string          `json:"required,omitempty"`
+	Items      *Schema           `json:"items,omitempty"`
+	Enum       []any             `json:"enum,omitempty"`
 }
 
 func Object(properties map[string]Schema, required ...string) Schema {

@@ -40,6 +40,14 @@ func TestFrontmatterParsingMatchesPiUtilities(t *testing.T) {
 		t.Fatalf("multiline body = %q", parsed.Body)
 	}
 
+	parsed, err = ParseFrontmatter("---\ndescription: >\n  Folded one\n  folded two\nmetadata:\n  owner: test\n---\nBody")
+	if err != nil {
+		t.Fatalf("folded ParseFrontmatter returned error: %v", err)
+	}
+	if got := parsed.Frontmatter["description"]; got != "Folded one folded two" {
+		t.Fatalf("folded description = %q", got)
+	}
+
 	if _, err := ParseFrontmatter("---\nfoo: [bar\n---\nBody"); err == nil || !strings.Contains(err.Error(), "line 1, column 10") {
 		t.Fatalf("invalid YAML error = %v, want line/column", err)
 	}
@@ -197,14 +205,17 @@ func TestPathsUtilitiesMatchPiPackagePathBehavior(t *testing.T) {
 	}
 }
 
-func TestGetPiUserAgentFormatsPiDevUserAgent(t *testing.T) {
-	userAgent := GetPiUserAgent("1.2.3")
-	want := "pi/1.2.3 (" + runtime.GOOS + "; go/" + runtime.Version() + "; " + runtime.GOARCH + ")"
+func TestGetGiUserAgentFormatsGiUserAgent(t *testing.T) {
+	userAgent := GetGiUserAgent("1.2.3")
+	want := "gi/1.2.3 (" + runtime.GOOS + "; go/" + runtime.Version() + "; " + runtime.GOARCH + ")"
 	if userAgent != want {
 		t.Fatalf("user agent = %q, want %q", userAgent, want)
 	}
-	if !regexp.MustCompile(`^pi/[^\s()]+ \([^;()]+;\s*[^;()]+;\s*[^()]+\)$`).MatchString(userAgent) {
-		t.Fatalf("user agent does not match pi.dev format: %q", userAgent)
+	if !regexp.MustCompile(`^gi/[^\s()]+ \([^;()]+;\s*[^;()]+;\s*[^()]+\)$`).MatchString(userAgent) {
+		t.Fatalf("user agent does not match gi format: %q", userAgent)
+	}
+	if GetPiUserAgent("1.2.3") != userAgent {
+		t.Fatalf("legacy Pi user-agent alias changed")
 	}
 }
 

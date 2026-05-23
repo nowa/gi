@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 )
 
 func TestBashToolPiFullOutputForTruncatedErrors(t *testing.T) {
@@ -120,6 +122,61 @@ func TestBashToolPiStreamingAndUTF8(t *testing.T) {
 	}
 }
 
+func TestBashOutputAccumulatorPiBoundedTempFileAndUTF8Tail(t *testing.T) {
+	accumulator := newBashOutputAccumulator(bashOutputAccumulatorOptions{
+		MaxLines:       5,
+		MaxBytes:       32,
+		TempFilePrefix: "gi-bash-accumulator-test",
+	})
+	euro := []byte("€\n")
+	accumulator.Append(euro[:1])
+	accumulator.Append(euro[1:])
+	for i := 0; i < 20; i++ {
+		accumulator.Append([]byte(fmt.Sprintf("line-%02d\n", i)))
+	}
+	snapshot := accumulator.Snapshot(true)
+	accumulator.Close()
+
+	if len(accumulator.rawChunks) != 0 {
+		t.Fatalf("raw chunks retained after temp file switch: %d bytes", len(accumulator.rawChunks))
+	}
+	if snapshot.FullOutputPath == "" {
+		t.Fatalf("missing full output path: %#v", snapshot)
+	}
+	if !snapshot.Truncation.Truncated || snapshot.Truncation.TruncatedBy == "" {
+		t.Fatalf("truncation = %#v", snapshot.Truncation)
+	}
+	if !strings.Contains(snapshot.Content, "line-19") || strings.Contains(snapshot.Content, "line-00") {
+		t.Fatalf("snapshot content = %q", snapshot.Content)
+	}
+	fullOutput := readBashFullOutput(t, snapshot.FullOutputPath)
+	if !strings.HasPrefix(fullOutput, "€\nline-00\n") || !strings.Contains(fullOutput, "line-19\n") {
+		t.Fatalf("full output = %q", fullOutput)
+	}
+}
+
+func TestBashOutputAccumulatorPiByteTruncatesLongSingleLine(t *testing.T) {
+	accumulator := newBashOutputAccumulator(bashOutputAccumulatorOptions{
+		MaxLines:       2000,
+		MaxBytes:       agentharness.DefaultMaxBytes,
+		TempFilePrefix: "gi-bash-accumulator-line-test",
+	})
+	longLine := strings.Repeat("x", 60*1024)
+	accumulator.Append([]byte(longLine))
+	snapshot := accumulator.Snapshot(true)
+	accumulator.Close()
+
+	if !snapshot.Truncation.Truncated || snapshot.Truncation.TruncatedBy != agentharness.TruncatedByBytes || !snapshot.Truncation.LastLinePartial {
+		t.Fatalf("truncation = %#v", snapshot.Truncation)
+	}
+	if snapshot.LastLineBytes != len(longLine) {
+		t.Fatalf("last line bytes = %d, want %d", snapshot.LastLineBytes, len(longLine))
+	}
+	if len(snapshot.Content) != agentharness.DefaultMaxBytes {
+		t.Fatalf("snapshot content bytes = %d", len([]byte(snapshot.Content)))
+	}
+}
+
 func TestLocalBashOperationsPiReuseAndSanitization(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test commands use POSIX shell syntax")
@@ -185,6 +242,78 @@ func TestBashToolPiLineTruncationPersistsFullOutput(t *testing.T) {
 	fullOutput = readBashFullOutput(t, bashResult.FullOutputPath)
 	if !strings.Contains(fullOutput, "1\n2\n3") || !strings.Contains(fullOutput, "2998\n2999\n3000") {
 		t.Fatalf("execute full output = %q", fullOutput)
+	}
+}
+
+func TestBashToolPiByteTruncationPersistsFullOutput(t *testing.T) {
+	dir := t.TempDir()
+	longLine := strings.Repeat("x", 60*1024)
+	bash := NewBashTool(dir, BashToolOptions{Operations: BashOperations{
+		Exec: func(_ string, _ string, options BashExecOptions) (BashOperationResult, error) {
+			options.OnData([]byte(longLine))
+			return BashOperationResult{ExitCode: 0}, nil
+		},
+	}})
+	result, err := bash.Execute("test-call-byte-truncation", BashToolInput{Command: "long-line"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Details == nil || result.Details.Truncation == nil || !result.Details.Truncation.Truncated || result.Details.Truncation.TruncatedBy != "bytes" {
+		t.Fatalf("truncation details = %#v", result.Details)
+	}
+	fullOutputPath := result.Details.FullOutputPath
+	if fullOutputPath == "" {
+		t.Fatalf("missing full output path in %#v", result.Details)
+	}
+	output := readToolText(result)
+	if !strings.Contains(output, "[Showing last 50.0KB of line 1") || !strings.Contains(output, ". Full output: "+fullOutputPath+"]") {
+		t.Fatalf("byte-truncated output = %q", output)
+	}
+	if fullOutput := readBashFullOutput(t, fullOutputPath); fullOutput != longLine {
+		t.Fatalf("full output length = %d, want %d", len(fullOutput), len(longLine))
+	}
+
+	bashResult, err := ExecuteBashWithOperations("long-line", dir, BashOperations{
+		Exec: func(_ string, _ string, options BashExecOptions) (BashOperationResult, error) {
+			options.OnData([]byte(longLine))
+			return BashOperationResult{ExitCode: 0}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bashResult.Truncated || bashResult.TruncatedBy != "bytes" || !bashResult.LastLinePartial || bashResult.FullOutputPath == "" {
+		t.Fatalf("bash result = %#v", bashResult)
+	}
+}
+
+func TestBashToolPiStreamingUpdatesUseBoundedSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	longLine := strings.Repeat("x", 60*1024)
+	bash := NewBashTool(dir, BashToolOptions{Operations: BashOperations{
+		Exec: func(_ string, _ string, options BashExecOptions) (BashOperationResult, error) {
+			options.OnData([]byte(longLine))
+			return BashOperationResult{ExitCode: 0}, nil
+		},
+	}})
+
+	var lastUpdate FileToolResult
+	result, err := bash.ExecuteWithUpdates("test-call-bounded-update", BashToolInput{Command: "long-line"}, func(update FileToolResult) {
+		if update.Text != "" {
+			lastUpdate = update
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lastUpdate.Text == "" || len([]byte(lastUpdate.Text)) > agentharness.DefaultMaxBytes {
+		t.Fatalf("last update length = %d", len([]byte(lastUpdate.Text)))
+	}
+	if lastUpdate.Details == nil || lastUpdate.Details.Truncation == nil || lastUpdate.Details.Truncation.TruncatedBy != agentharness.TruncatedByBytes {
+		t.Fatalf("last update details = %#v", lastUpdate.Details)
+	}
+	if result.Details == nil || result.Details.FullOutputPath == "" {
+		t.Fatalf("final result details = %#v", result.Details)
 	}
 }
 

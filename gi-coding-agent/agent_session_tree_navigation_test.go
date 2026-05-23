@@ -152,6 +152,36 @@ func TestAgentSessionNavigateTreeAbortDuringSummarization(t *testing.T) {
 	}
 }
 
+func TestAgentSessionNavigateTreeCancelClearsCompactingPiRegression(t *testing.T) {
+	session, manager := createTreeNavigationTestSession(t, nil)
+	defer session.Dispose()
+	runtime := NewProtocolExtensionRuntime(CapabilityLifecycleEvents)
+	if err := runtime.LoadFactories([]ProtocolExtensionFactory{{Path: "tree-cancel", Factory: func(ctx *ProtocolExtensionContext) error {
+		return ctx.On(ProtocolEventSessionBeforeTree, func(event ProtocolSessionEvent) (ProtocolEventResult, error) {
+			return ProtocolEventResult{Cancel: true}, nil
+		})
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewAgentSessionRuntimeHost(session, runtime); err != nil {
+		t.Fatal(err)
+	}
+	targetID := manager.AppendMessage(map[string]any{"role": "user", "content": "first"})
+	manager.AppendMessage(map[string]any{"role": "assistant", "content": "reply"})
+	currentLeafID := manager.AppendMessage(map[string]any{"role": "user", "content": "second"})
+
+	result, err := session.NavigateTree(targetID, AgentSessionNavigateTreeOptions{Summarize: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Cancelled || session.IsCompacting() {
+		t.Fatalf("result = %#v compacting=%v", result, session.IsCompacting())
+	}
+	if leaf := manager.GetLeafID(); leaf == nil || *leaf != currentLeafID {
+		t.Fatalf("leaf = %v, want %s", leaf, currentLeafID)
+	}
+}
+
 func TestAgentSessionNavigateTreeWithoutSummarizeCreatesNoSummary(t *testing.T) {
 	session, manager := createTreeNavigationTestSession(t, nil)
 	defer session.Dispose()

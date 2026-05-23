@@ -18,7 +18,7 @@ func TestProtocolPackageResolverLocalResources(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(result.Extensions) != 0 || len(result.Skills) != 0 || len(result.Prompts) != 0 || len(result.Themes) != 0 {
+		if len(result.Extensions) != 0 || len(result.ProcessExtensions) != 0 || len(result.Skills) != 0 || len(result.Prompts) != 0 || len(result.Themes) != 0 {
 			t.Fatalf("resources = %#v", result)
 		}
 	})
@@ -55,6 +55,50 @@ func TestProtocolPackageResolverLocalResources(t *testing.T) {
 		}
 		if !protocolPackageHasPath(result.Extensions, extensionPath) || !protocolPackageHasPath(result.Skills, skillPath) {
 			t.Fatalf("resources = %#v", result)
+		}
+	})
+
+	t.Run("resolves process extension entries from Gi manifest", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+		pkgDir := filepath.Join(manager.cwd, "process-package")
+		extensionPath := filepath.Join(pkgDir, "extensions", "static.gi.json")
+		writeGiProtocolExtensionDescriptor(t, extensionPath)
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "gi.package.json"), map[string]any{
+			"extensions": []any{
+				"./extensions/static.gi.json",
+				map[string]any{
+					"id": "todo-widget",
+					"entry": map[string]any{
+						"kind":      "process",
+						"command":   []any{"./bin/todo-widget"},
+						"transport": "stdio-ndjson",
+						"protocol":  "gi-ext-rpc@1",
+					},
+					"capabilities": []any{"tui.widget", "session.read"},
+					"env":          map[string]any{"GI_WIDGET_MODE": "test"},
+				},
+			},
+		})
+
+		result, err := manager.ResolveProtocolPackageResources([]string{pkgDir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackageHasPath(result.Extensions, extensionPath) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+		if len(result.ProcessExtensions) != 1 {
+			t.Fatalf("process extensions = %#v", result.ProcessExtensions)
+		}
+		process := result.ProcessExtensions[0]
+		if process.ID != "todo-widget" ||
+			process.PackageDir != filepath.Clean(pkgDir) ||
+			!reflect.DeepEqual(process.Command, []string{"./bin/todo-widget"}) ||
+			!reflect.DeepEqual(process.Capabilities, []string{"tui.widget", "session.read"}) ||
+			process.Env["GI_WIDGET_MODE"] != "test" ||
+			process.Metadata.Source != "local:"+filepath.Clean(pkgDir) ||
+			process.Metadata.Origin != "package" {
+			t.Fatalf("process extension = %#v", process)
 		}
 	})
 
@@ -165,6 +209,267 @@ func TestOfficialPackageCatalogMatchesProtocolRegistry(t *testing.T) {
 			t.Fatalf("%s resources = %#v", name, result)
 		}
 	}
+}
+
+func TestOfficialPackageDescriptorsDeclareRegistryCapabilities(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "protocol", "spec", "registries", "official-packages.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var registry struct {
+		Packages []struct {
+			Name                 string   `json:"name"`
+			RequiredCapabilities []string `json:"requiredCapabilities"`
+		} `json:"packages"`
+	}
+	if err := json.Unmarshal(content, &registry); err != nil {
+		t.Fatal(err)
+	}
+	requiredByPackage := map[string][]string{}
+	for _, pkg := range registry.Packages {
+		required := append([]string(nil), pkg.RequiredCapabilities...)
+		sort.Strings(required)
+		requiredByPackage[pkg.Name] = required
+	}
+
+	for _, name := range OfficialPackageNames() {
+		definition := officialPackages[name]
+		files, err := definition.files()
+		if err != nil {
+			t.Fatalf("%s files: %v", name, err)
+		}
+		raw := files[filepath.ToSlash(filepath.Join("extensions", "main.gi.json"))]
+		if raw == "" {
+			t.Fatalf("%s missing extension descriptor", name)
+		}
+		var descriptor protocolExtensionDescriptor
+		if err := json.Unmarshal([]byte(raw), &descriptor); err != nil {
+			t.Fatalf("%s descriptor: %v", name, err)
+		}
+		if descriptor.Gi == nil {
+			t.Fatalf("%s descriptor missing gi section", name)
+		}
+		got := append([]string(nil), descriptor.Gi.Capabilities...)
+		sort.Strings(got)
+		want := requiredByPackage[name]
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s descriptor capabilities = %#v, registry = %#v", name, got, want)
+		}
+		for _, capability := range got {
+			if !isSupportedExtensionCapability(capability) {
+				t.Fatalf("%s descriptor declares runtime-unsupported capability %q", name, capability)
+			}
+		}
+	}
+}
+
+func TestProtocolRegistryMCPAdapterUsesStdioProcessCapability(t *testing.T) {
+	capabilityContent, err := os.ReadFile(filepath.Join("..", "protocol", "spec", "registries", "capabilities.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var capabilities struct {
+		Capabilities []struct {
+			Name string `json:"name"`
+		} `json:"capabilities"`
+	}
+	if err := json.Unmarshal(capabilityContent, &capabilities); err != nil {
+		t.Fatal(err)
+	}
+	var capabilityNames []string
+	for _, capability := range capabilities.Capabilities {
+		capabilityNames = append(capabilityNames, capability.Name)
+	}
+	if !containsString(capabilityNames, "process.stdio:<scope>") {
+		t.Fatalf("process.stdio capability missing from registry: %#v", capabilityNames)
+	}
+
+	packageContent, err := os.ReadFile(filepath.Join("..", "protocol", "spec", "registries", "official-packages.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var registry struct {
+		Packages []struct {
+			Name                 string   `json:"name"`
+			RequiredCapabilities []string `json:"requiredCapabilities"`
+			RequiredHostActions  []string `json:"requiredHostActions"`
+		} `json:"packages"`
+	}
+	if err := json.Unmarshal(packageContent, &registry); err != nil {
+		t.Fatal(err)
+	}
+	for _, pkg := range registry.Packages {
+		if pkg.Name != "gi-mcp-adapter" {
+			continue
+		}
+		if !containsString(pkg.RequiredCapabilities, "process.stdio:<scope>") {
+			t.Fatalf("gi-mcp-adapter capabilities = %#v", pkg.RequiredCapabilities)
+		}
+		if containsString(pkg.RequiredHostActions, "host.process.exec") {
+			t.Fatalf("gi-mcp-adapter should not model interactive stdio as host.process.exec: %#v", pkg.RequiredHostActions)
+		}
+		return
+	}
+	t.Fatal("gi-mcp-adapter missing from official package registry")
+}
+
+func TestProtocolRegistriesReferenceKnownCapabilitiesAndHostActions(t *testing.T) {
+	capabilityContent, err := os.ReadFile(filepath.Join("..", "protocol", "spec", "registries", "capabilities.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var capabilities struct {
+		Capabilities []struct {
+			Name string `json:"name"`
+		} `json:"capabilities"`
+	}
+	if err := json.Unmarshal(capabilityContent, &capabilities); err != nil {
+		t.Fatal(err)
+	}
+	capabilityNames := map[string]bool{}
+	for _, capability := range capabilities.Capabilities {
+		capabilityNames[capability.Name] = true
+	}
+
+	hostActionContent, err := os.ReadFile(filepath.Join("..", "protocol", "spec", "registries", "host-actions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hostActions struct {
+		Actions []struct {
+			Name       string `json:"name"`
+			Capability string `json:"capability"`
+		} `json:"actions"`
+	}
+	if err := json.Unmarshal(hostActionContent, &hostActions); err != nil {
+		t.Fatal(err)
+	}
+	hostActionNames := map[string]bool{}
+	for _, action := range hostActions.Actions {
+		hostActionNames[action.Name] = true
+		switch {
+		case action.Capability == "none",
+			strings.HasPrefix(action.Capability, "slot-specific "),
+			strings.HasPrefix(action.Capability, "owned "):
+		case capabilityNames[action.Capability]:
+		default:
+			t.Fatalf("host action %s references unknown capability %q", action.Name, action.Capability)
+		}
+	}
+
+	packageContent, err := os.ReadFile(filepath.Join("..", "protocol", "spec", "registries", "official-packages.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var official struct {
+		Packages []struct {
+			Name                 string   `json:"name"`
+			RequiredCapabilities []string `json:"requiredCapabilities"`
+			RequiredHostActions  []string `json:"requiredHostActions"`
+		} `json:"packages"`
+	}
+	if err := json.Unmarshal(packageContent, &official); err != nil {
+		t.Fatal(err)
+	}
+	for _, pkg := range official.Packages {
+		for _, capability := range pkg.RequiredCapabilities {
+			if !capabilityNames[capability] {
+				t.Fatalf("%s references unknown capability %q", pkg.Name, capability)
+			}
+		}
+		for _, action := range pkg.RequiredHostActions {
+			if !hostActionNames[action] {
+				t.Fatalf("%s references unknown host action %q", pkg.Name, action)
+			}
+		}
+	}
+}
+
+func TestProtocolCapabilityRegistryIsSupportedByRuntime(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "protocol", "spec", "registries", "capabilities.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var registry struct {
+		Capabilities []struct {
+			Name string `json:"name"`
+		} `json:"capabilities"`
+	}
+	if err := json.Unmarshal(content, &registry); err != nil {
+		t.Fatal(err)
+	}
+	for _, capability := range registry.Capabilities {
+		if !isSupportedExtensionCapability(capability.Name) {
+			t.Fatalf("capability registry entry is not supported by runtime: %q", capability.Name)
+		}
+	}
+}
+
+func TestProtocolHostActionSchemaMatchesRegistry(t *testing.T) {
+	registryContent, err := os.ReadFile(filepath.Join("..", "protocol", "spec", "registries", "host-actions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var registry struct {
+		Actions []struct {
+			Name string `json:"name"`
+		} `json:"actions"`
+	}
+	if err := json.Unmarshal(registryContent, &registry); err != nil {
+		t.Fatal(err)
+	}
+	var registryNames []string
+	for _, action := range registry.Actions {
+		registryNames = append(registryNames, action.Name)
+	}
+	sort.Strings(registryNames)
+
+	schemaContent, err := os.ReadFile(filepath.Join("..", "protocol", "spec", "schemas", "host-action.schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(schemaContent, &schema); err != nil {
+		t.Fatal(err)
+	}
+	methods := hostActionSchemaMethodEnum(t, schema)
+	sort.Strings(methods)
+	if !reflect.DeepEqual(methods, registryNames) {
+		t.Fatalf("host-action schema methods = %#v, registry = %#v", methods, registryNames)
+	}
+}
+
+func hostActionSchemaMethodEnum(t *testing.T, schema map[string]any) []string {
+	t.Helper()
+	defs, ok := schema["$defs"].(map[string]any)
+	if !ok {
+		t.Fatal("schema missing $defs")
+	}
+	request, ok := defs["request"].(map[string]any)
+	if !ok {
+		t.Fatal("schema missing request definition")
+	}
+	properties, ok := request["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("schema request missing properties")
+	}
+	method, ok := properties["method"].(map[string]any)
+	if !ok {
+		t.Fatal("schema request missing method")
+	}
+	values, ok := method["enum"].([]any)
+	if !ok {
+		t.Fatal("schema method missing enum")
+	}
+	methods := make([]string, 0, len(values))
+	for _, value := range values {
+		method, ok := value.(string)
+		if !ok || method == "" {
+			t.Fatalf("invalid method enum value: %#v", value)
+		}
+		methods = append(methods, method)
+	}
+	return methods
 }
 
 func TestProtocolPackageManifestPatternRules(t *testing.T) {
@@ -512,6 +817,68 @@ func TestProtocolPackageResourceFilterRules(t *testing.T) {
 			t.Fatalf("extensions = %#v", result.Extensions)
 		}
 	})
+}
+
+func TestProtocolPackageResourceToggleSettings(t *testing.T) {
+	manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
+	pkgDir := filepath.Join(manager.cwd, "toggle-pkg")
+	alpha := filepath.Join(pkgDir, "extensions", "alpha.gi.json")
+	beta := filepath.Join(pkgDir, "extensions", "beta.gi.json")
+	writeGiProtocolExtensionDescriptor(t, alpha)
+	writeGiProtocolExtensionDescriptor(t, beta)
+	manager.settingsManager.SetPackages([]any{pkgDir})
+
+	changed, err := manager.SetPackageResourceEnabled(PackageResourceToggle{
+		Source:       pkgDir,
+		Scope:        "user",
+		ResourceType: "extensions",
+		Pattern:      "extensions/beta.gi.json",
+		Enabled:      false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("changed = false, want true")
+	}
+
+	result, err := manager.ResolveConfiguredProtocolPackageResources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !protocolPackagePathEnabled(result.Extensions, alpha) || !protocolPackagePathDisabled(result.Extensions, beta) {
+		t.Fatalf("extensions = %#v", result.Extensions)
+	}
+	packages := manager.settingsManager.GetPackages()
+	object, ok := packages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("package setting = %#v, want object", packages[0])
+	}
+	if filters := settingsStringSlice(object, "extensions"); len(filters) != 1 || filters[0] != "-extensions/beta.gi.json" {
+		t.Fatalf("filters = %#v", object["extensions"])
+	}
+
+	changed, err = manager.SetPackageResourceEnabled(PackageResourceToggle{
+		Source:       protocolPackageSettingsIdentity(pkgDir, manager.agentDir),
+		Scope:        "user",
+		ResourceType: "extensions",
+		Pattern:      "extensions/beta.gi.json",
+		Enabled:      true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("changed = false, want true for identity source")
+	}
+	packages = manager.settingsManager.GetPackages()
+	object, ok = packages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("package setting = %#v, want object", packages[0])
+	}
+	if filters := settingsStringSlice(object, "extensions"); len(filters) != 1 || filters[0] != "+extensions/beta.gi.json" {
+		t.Fatalf("filters = %#v", object["extensions"])
+	}
 }
 
 func TestProtocolPackageConfiguredSourceDedupe(t *testing.T) {

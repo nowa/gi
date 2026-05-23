@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"strings"
 
+	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 	gitui "github.com/nowa/gi/gi-tui"
 )
 
@@ -14,6 +15,13 @@ type BashExecutionComponent struct {
 	status      string
 	exitCode    int
 	expanded    bool
+	truncated   bool
+	fullOutput  string
+}
+
+type BashExecutionCompleteOptions struct {
+	Truncated      bool
+	FullOutputPath string
 }
 
 func NewBashExecutionComponent(command string) *BashExecutionComponent {
@@ -23,6 +31,8 @@ func NewBashExecutionComponent(command string) *BashExecutionComponent {
 func (b *BashExecutionComponent) SetExpanded(expanded bool) {
 	b.expanded = expanded
 }
+
+func (b *BashExecutionComponent) Invalidate() {}
 
 func (b *BashExecutionComponent) AppendOutput(chunk string) {
 	clean := strings.ReplaceAll(strings.ReplaceAll(StripAnsi(chunk), "\r\n", "\n"), "\r", "\n")
@@ -35,8 +45,12 @@ func (b *BashExecutionComponent) AppendOutput(chunk string) {
 	b.outputLines = append(b.outputLines, newLines...)
 }
 
-func (b *BashExecutionComponent) SetComplete(exitCode int, cancelled bool) {
+func (b *BashExecutionComponent) SetComplete(exitCode int, cancelled bool, options ...BashExecutionCompleteOptions) {
 	b.exitCode = exitCode
+	if len(options) > 0 {
+		b.truncated = options[0].Truncated
+		b.fullOutput = options[0].FullOutputPath
+	}
 	switch {
 	case cancelled:
 		b.status = "cancelled"
@@ -56,7 +70,7 @@ func (b *BashExecutionComponent) Render(width int) []string {
 	}
 	lines = append(lines, gitui.NewText("$ "+b.command, 1, 0).Render(width)...)
 
-	availableLines := b.availableOutputLines()
+	availableLines, contextTruncated := b.availableOutputLines()
 	if len(availableLines) > 0 {
 		if b.expanded {
 			displayText := "\n" + strings.Join(availableLines, "\n")
@@ -70,9 +84,9 @@ func (b *BashExecutionComponent) Render(width int) []string {
 	}
 
 	if b.status == "running" {
-		lines = append(lines, gitui.NewText("Running...", 1, 0).Render(width)...)
+		lines = append(lines, gitui.NewText("Running... (Esc to cancel)", 1, 0).Render(width)...)
 	} else {
-		statusLines := b.statusLines(availableLines)
+		statusLines := b.statusLines(availableLines, contextTruncated)
 		if len(statusLines) > 0 {
 			lines = append(lines, gitui.NewText("\n"+strings.Join(statusLines, "\n"), 1, 0).Render(width)...)
 		}
@@ -93,14 +107,19 @@ func (b *BashExecutionComponent) GetCommand() string {
 	return b.command
 }
 
-func (b *BashExecutionComponent) availableOutputLines() []string {
+func (b *BashExecutionComponent) availableOutputLines() ([]string, bool) {
 	if len(b.outputLines) == 0 {
-		return nil
+		return nil, false
 	}
-	return append([]string(nil), b.outputLines...)
+	output := strings.Join(b.outputLines, "\n")
+	truncated := agentharness.TruncateTail(output, agentharness.TruncationOptions{})
+	if truncated.Content == "" {
+		return nil, truncated.Truncated
+	}
+	return strings.Split(truncated.Content, "\n"), truncated.Truncated
 }
 
-func (b *BashExecutionComponent) statusLines(availableLines []string) []string {
+func (b *BashExecutionComponent) statusLines(availableLines []string, contextTruncated bool) []string {
 	hiddenLineCount := len(availableLines) - len(tailStrings(availableLines, bashExecutionPreviewLines))
 	var lines []string
 	if hiddenLineCount > 0 {
@@ -115,6 +134,9 @@ func (b *BashExecutionComponent) statusLines(availableLines []string) []string {
 		lines = append(lines, "(cancelled)")
 	case "error":
 		lines = append(lines, "(exit "+formatFooterTokens(b.exitCode)+")")
+	}
+	if (b.truncated || contextTruncated) && strings.TrimSpace(b.fullOutput) != "" {
+		lines = append(lines, "Output truncated. Full output: "+b.fullOutput)
 	}
 	return lines
 }

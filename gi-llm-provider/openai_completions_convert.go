@@ -80,8 +80,34 @@ type OpenAIChatMessage struct {
 	ToolCallID       string               `json:"tool_call_id,omitempty"`
 	Name             string               `json:"name,omitempty"`
 	ReasoningContent string               `json:"reasoning_content,omitempty"`
+	Reasoning        string               `json:"reasoning,omitempty"`
+	ReasoningText    string               `json:"reasoning_text,omitempty"`
 	ReasoningDetails []map[string]any     `json:"reasoning_details,omitempty"`
 	Extra            map[string]any       `json:"-"`
+
+	includeReasoningContent bool
+}
+
+func (m OpenAIChatMessage) MarshalJSON() ([]byte, error) {
+	type alias OpenAIChatMessage
+	raw, err := json.Marshal(alias(m))
+	if err != nil {
+		return nil, err
+	}
+	if !m.includeReasoningContent && len(m.Extra) == 0 {
+		return raw, nil
+	}
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, err
+	}
+	if m.includeReasoningContent {
+		object["reasoning_content"] = m.ReasoningContent
+	}
+	for key, value := range m.Extra {
+		object[key] = value
+	}
+	return json.Marshal(object)
 }
 
 type OpenAIChatToolCall struct {
@@ -598,11 +624,15 @@ func convertOpenAIChatAssistantMessage(message Message, model Model, compat Open
 		} else if len(textParts) > 0 {
 			assistant.Content = strings.Join(textParts, "")
 		}
+		if !compat.RequiresThinkingAsText {
+			setOpenAIChatAssistantThinkingReplayField(&assistant, thinkingParts)
+		}
 	} else if len(textParts) > 0 {
 		assistant.Content = strings.Join(textParts, "")
 	}
-	if (compat.RequiresReasoningContentOnAssistant || compat.RequiresReasoningContentOnAssistantTurns) && model.Reasoning {
+	if (compat.RequiresReasoningContentOnAssistant || compat.RequiresReasoningContentOnAssistantTurns) && model.Reasoning && !assistant.includeReasoningContent {
 		assistant.ReasoningContent = ""
+		assistant.includeReasoningContent = true
 	}
 	hasStringContent := false
 	switch content := assistant.Content.(type) {
@@ -617,6 +647,35 @@ func convertOpenAIChatAssistantMessage(message Message, model Model, compat Open
 		return nil
 	}
 	return &assistant
+}
+
+func setOpenAIChatAssistantThinkingReplayField(assistant *OpenAIChatMessage, parts []ContentPart) {
+	if assistant == nil || len(parts) == 0 {
+		return
+	}
+	signature := parts[0].ThinkingSignature
+	if strings.TrimSpace(signature) == "" {
+		return
+	}
+	thinking := make([]string, 0, len(parts))
+	for _, part := range parts {
+		thinking = append(thinking, SanitizeSurrogates(part.Thinking))
+	}
+	value := strings.Join(thinking, "\n")
+	switch signature {
+	case "reasoning_content":
+		assistant.ReasoningContent = value
+		assistant.includeReasoningContent = true
+	case "reasoning":
+		assistant.Reasoning = value
+	case "reasoning_text":
+		assistant.ReasoningText = value
+	default:
+		if assistant.Extra == nil {
+			assistant.Extra = map[string]any{}
+		}
+		assistant.Extra[signature] = value
+	}
 }
 
 func joinTextContent(content []ContentPart) string {

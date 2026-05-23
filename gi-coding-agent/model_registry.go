@@ -250,7 +250,7 @@ func (r *ModelRegistry) GetAPIKeyAndHeaders(model llm.Model) ResolvedRequestAuth
 	mergedHeaders := mergeStringMaps(model.Headers, headers, modelHeaders)
 	if config.AuthHeader {
 		if apiKey == "" {
-			return ResolvedRequestAuth{OK: false, Error: fmt.Sprintf(`No API key found for "%s"`, model.Provider)}
+			return ResolvedRequestAuth{OK: false, Error: formatNoAPIKeyFoundMessage(model.Provider)}
 		}
 		if mergedHeaders == nil {
 			mergedHeaders = map[string]string{}
@@ -258,6 +258,10 @@ func (r *ModelRegistry) GetAPIKeyAndHeaders(model llm.Model) ResolvedRequestAuth
 		mergedHeaders["Authorization"] = "Bearer " + apiKey
 	}
 	return ResolvedRequestAuth{OK: true, APIKey: apiKey, Headers: emptyMapAsNil(mergedHeaders)}
+}
+
+func providerNeedsExplicitAPIKey(provider string) bool {
+	return len(providerEnvKeys(provider)) > 0
 }
 
 func (r *ModelRegistry) GetProviderAuthStatus(provider string) AuthStatus {

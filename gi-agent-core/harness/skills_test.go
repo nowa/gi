@@ -34,6 +34,39 @@ Use this skill.
 	}
 }
 
+func TestLoadSkillsAcceptsYAMLBlockScalarsAndNestedMetadata(t *testing.T) {
+	root := t.TempDir()
+	skillPath := filepath.Join(root, ".agents", "skills", "folded", "SKILL.md")
+	mustWrite(t, skillPath, `---
+name: folded
+description: >
+  First sentence.
+  Second sentence.
+metadata:
+  requires:
+    bins: ["example"]
+  cliHelp: "example --help"
+disable-model-invocation: true
+---
+Use this skill.
+`)
+
+	result := LoadSkills(filepath.Join(root, ".agents", "skills"))
+	if len(result.Diagnostics) != 0 {
+		t.Fatalf("diagnostics = %#v", result.Diagnostics)
+	}
+	if len(result.Skills) != 1 {
+		t.Fatalf("skills = %#v", result.Skills)
+	}
+	skill := result.Skills[0]
+	if skill.Description != "First sentence. Second sentence." {
+		t.Fatalf("description = %q", skill.Description)
+	}
+	if !skill.DisableModelInvocation {
+		t.Fatalf("DisableModelInvocation = false, want true")
+	}
+}
+
 func TestLoadSkillsThroughSymlinkedDirectories(t *testing.T) {
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "actual", "example", "SKILL.md"), "---\nname: example\ndescription: Example skill\n---\nUse this skill.")

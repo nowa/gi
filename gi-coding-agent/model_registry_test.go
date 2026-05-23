@@ -401,8 +401,12 @@ func TestModelRegistryDynamicProviderLifecycle(t *testing.T) {
 	}
 	UnregisterOAuthProvider("anthropic")
 
+	const streamOverrideAPI = "gi-test-stream-override"
+	if provider := llm.GetAPIProvider(streamOverrideAPI); provider != nil {
+		t.Fatalf("test api provider already registered: %s", streamOverrideAPI)
+	}
 	err = registry.RegisterProvider("stream-override-provider", ProviderConfigInput{
-		API: "openai-completions",
+		API: streamOverrideAPI,
 		StreamSimple: func(llm.Model, llm.Context, llm.SimpleStreamOptions) (*llm.AssistantMessageEventStream, error) {
 			return nil, errors.New("custom streamSimple override")
 		},
@@ -410,14 +414,13 @@ func TestModelRegistryDynamicProviderLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stream override register: %v", err)
 	}
-	_, streamErr := llm.GetAPIProvider("openai-completions").StreamSimple(llm.Model{ID: "test-openai-model", Provider: "openai", API: "openai-completions"}, llm.Context{}, llm.SimpleStreamOptions{})
+	_, streamErr := llm.GetAPIProvider(streamOverrideAPI).StreamSimple(llm.Model{ID: "test-openai-model", Provider: "openai", API: streamOverrideAPI}, llm.Context{}, llm.SimpleStreamOptions{})
 	if streamErr == nil || streamErr.Error() != "custom streamSimple override" {
 		t.Fatalf("stream override err = %v", streamErr)
 	}
 	registry.UnregisterProvider("stream-override-provider")
-	_, streamErr = llm.GetAPIProvider("openai-completions").StreamSimple(llm.Model{ID: "test-openai-model", Provider: "openai", API: "openai-completions"}, llm.Context{}, llm.SimpleStreamOptions{})
-	if streamErr != nil && streamErr.Error() == "custom streamSimple override" {
-		t.Fatalf("stream override was not restored")
+	if provider := llm.GetAPIProvider(streamOverrideAPI); provider != nil {
+		t.Fatalf("stream override api provider was not removed: %#v", provider)
 	}
 
 	registry = NewModelRegistry(auth, modelsPath)

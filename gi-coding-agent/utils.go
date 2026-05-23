@@ -62,6 +62,9 @@ func parseSimpleYAMLFrontmatter(lines []string) (map[string]string, error) {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
+		if isIndentedYAMLFrontmatterLine(line) {
+			return nil, fmt.Errorf("invalid YAML frontmatter at line %d, column 1", i+1)
+		}
 		parts := strings.SplitN(trimmed, ":", 2)
 		if len(parts) != 2 {
 			return nil, fmt.Errorf("invalid YAML frontmatter at line %d, column 1", i+1)
@@ -74,27 +77,83 @@ func parseSimpleYAMLFrontmatter(lines []string) (map[string]string, error) {
 		if strings.HasPrefix(value, "[") && !strings.Contains(value, "]") {
 			return nil, fmt.Errorf("invalid YAML frontmatter at line %d, column %d", i+1, len(trimmed)+1)
 		}
-		if value == "|" {
-			var block []string
-			for i+1 < len(lines) {
-				next := lines[i+1]
-				if strings.TrimSpace(next) == "" {
-					block = append(block, "")
-					i++
-					continue
-				}
-				if !strings.HasPrefix(next, " ") && !strings.HasPrefix(next, "\t") {
-					break
-				}
-				block = append(block, strings.TrimPrefix(strings.TrimPrefix(next, "  "), "\t"))
-				i++
+		if isBlockYAMLFrontmatterValue(value) {
+			block, next := collectIndentedYAMLFrontmatterBlock(lines, i+1)
+			if strings.HasPrefix(value, "|") {
+				values[key] = strings.Join(block, "\n") + "\n"
+			} else {
+				values[key] = foldYAMLFrontmatterBlock(block)
 			}
-			values[key] = strings.Join(block, "\n") + "\n"
+			i = next - 1
+			continue
+		}
+		if value == "" {
+			_, next := collectIndentedYAMLFrontmatterBlock(lines, i+1)
+			i = next - 1
+			values[key] = ""
 			continue
 		}
 		values[key] = trimYAMLScalarQuotes(value)
 	}
 	return values, nil
+}
+
+func isIndentedYAMLFrontmatterLine(line string) bool {
+	return strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
+}
+
+func isBlockYAMLFrontmatterValue(value string) bool {
+	return strings.HasPrefix(value, "|") || strings.HasPrefix(value, ">")
+}
+
+func collectIndentedYAMLFrontmatterBlock(lines []string, start int) ([]string, int) {
+	var block []string
+	i := start
+	for i < len(lines) {
+		line := lines[i]
+		if strings.TrimSpace(line) == "" {
+			block = append(block, "")
+			i++
+			continue
+		}
+		if !isIndentedYAMLFrontmatterLine(line) {
+			break
+		}
+		block = append(block, strings.TrimPrefix(strings.TrimPrefix(line, "  "), "\t"))
+		i++
+	}
+	return trimTrailingEmptyYAMLFrontmatterLines(block), i
+}
+
+func foldYAMLFrontmatterBlock(lines []string) string {
+	lines = trimTrailingEmptyYAMLFrontmatterLines(lines)
+	if len(lines) == 0 {
+		return ""
+	}
+	var paragraphs []string
+	var current []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			if len(current) > 0 {
+				paragraphs = append(paragraphs, strings.Join(current, " "))
+				current = nil
+			}
+			continue
+		}
+		current = append(current, trimmed)
+	}
+	if len(current) > 0 {
+		paragraphs = append(paragraphs, strings.Join(current, " "))
+	}
+	return strings.Join(paragraphs, "\n")
+}
+
+func trimTrailingEmptyYAMLFrontmatterLines(lines []string) []string {
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }
 
 func trimYAMLScalarQuotes(value string) string {
@@ -203,8 +262,12 @@ func IsLocalPath(value string) bool {
 	return true
 }
 
+func GetGiUserAgent(version string) string {
+	return fmt.Sprintf("gi/%s (%s; go/%s; %s)", version, runtime.GOOS, runtime.Version(), runtime.GOARCH)
+}
+
 func GetPiUserAgent(version string) string {
-	return fmt.Sprintf("pi/%s (%s; go/%s; %s)", version, runtime.GOOS, runtime.Version(), runtime.GOARCH)
+	return GetGiUserAgent(version)
 }
 
 func normalizeUserPathText(value string) string {

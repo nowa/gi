@@ -257,6 +257,9 @@
         "message": {
           "type": "string"
         },
+        "stack": {
+          "type": "string"
+        },
         "source": {
           "type": "object"
         }

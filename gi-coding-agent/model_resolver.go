@@ -184,6 +184,102 @@ func ParseModelPattern(pattern string, availableModels []llm.Model, options ...M
 	return parseModelPattern(pattern, availableModels, opts)
 }
 
+func ResolveModelScope(patterns []string, registry CodingModelRegistry) []ScopedModel {
+	if registry == nil || len(patterns) == 0 {
+		return nil
+	}
+	availableModels := registry.GetAvailable()
+	scopedModels := make([]ScopedModel, 0, len(patterns))
+	for _, rawPattern := range patterns {
+		pattern := strings.TrimSpace(rawPattern)
+		if pattern == "" {
+			continue
+		}
+		if containsModelGlob(pattern) {
+			globPattern, thinkingLevel := splitModelScopePattern(pattern)
+			for _, model := range availableModels {
+				if !modelScopeGlobMatches(globPattern, model) || scopedModelExists(scopedModels, model) {
+					continue
+				}
+				scopedModels = append(scopedModels, ScopedModel{Model: model, ThinkingLevel: thinkingLevel})
+			}
+			continue
+		}
+		parsed := ParseModelPattern(pattern, availableModels)
+		if parsed.Model == nil || scopedModelExists(scopedModels, *parsed.Model) {
+			continue
+		}
+		scopedModels = append(scopedModels, ScopedModel{Model: *parsed.Model, ThinkingLevel: parsed.ThinkingLevel})
+	}
+	return scopedModels
+}
+
+func containsModelGlob(pattern string) bool {
+	return strings.ContainsAny(pattern, "*?[")
+}
+
+func splitModelScopePattern(pattern string) (string, ThinkingLevel) {
+	colon := strings.LastIndex(pattern, ":")
+	if colon == -1 {
+		return pattern, ""
+	}
+	suffix := strings.TrimSpace(pattern[colon+1:])
+	if !IsValidThinkingLevel(suffix) {
+		return pattern, ""
+	}
+	return strings.TrimSpace(pattern[:colon]), ThinkingLevel(suffix)
+}
+
+func modelScopeGlobMatches(pattern string, model llm.Model) bool {
+	return modelScopeWildcardMatch(pattern, scopedModelFullID(model)) ||
+		modelScopeWildcardMatch(pattern, model.ID)
+}
+
+func modelScopeWildcardMatch(pattern, value string) bool {
+	pattern = strings.ToLower(strings.TrimSpace(pattern))
+	value = strings.ToLower(strings.TrimSpace(value))
+	if pattern == "" {
+		return false
+	}
+	matched, err := regexp.MatchString(modelScopeGlobRegexp(pattern), value)
+	return err == nil && matched
+}
+
+func modelScopeGlobRegexp(pattern string) string {
+	var builder strings.Builder
+	builder.WriteString("^")
+	for index := 0; index < len(pattern); index++ {
+		switch pattern[index] {
+		case '*':
+			builder.WriteString(".*")
+		case '?':
+			builder.WriteByte('.')
+		case '[':
+			closing := strings.IndexByte(pattern[index+1:], ']')
+			if closing >= 0 {
+				end := index + 1 + closing
+				builder.WriteString(pattern[index : end+1])
+				index = end
+			} else {
+				builder.WriteString(regexp.QuoteMeta(pattern[index : index+1]))
+			}
+		default:
+			builder.WriteString(regexp.QuoteMeta(pattern[index : index+1]))
+		}
+	}
+	builder.WriteString("$")
+	return builder.String()
+}
+
+func scopedModelExists(scopedModels []ScopedModel, model llm.Model) bool {
+	for _, scoped := range scopedModels {
+		if sameModel(scoped.Model, model) {
+			return true
+		}
+	}
+	return false
+}
+
 func ResolveCLIModel(options ResolveCLIModelOptions) ResolveCLIModelResult {
 	if options.CLIModel == "" {
 		return ResolveCLIModelResult{}
@@ -192,7 +288,7 @@ func ResolveCLIModel(options ResolveCLIModelOptions) ResolveCLIModelResult {
 	availableModels := options.ModelRegistry.GetAll()
 	if len(availableModels) == 0 {
 		return ResolveCLIModelResult{
-			Error: "No models available. Check your installation or add models to models.json.",
+			Error: formatNoModelsAvailableMessage(),
 		}
 	}
 
@@ -304,6 +400,21 @@ func FindInitialModel(options FindInitialModelOptions) InitialModelResult {
 	}
 
 	if len(options.ScopedModels) > 0 && !options.IsContinuing {
+		if options.DefaultProvider != "" && options.DefaultModelID != "" {
+			for _, scoped := range options.ScopedModels {
+				if scoped.Model.Provider != options.DefaultProvider || scoped.Model.ID != options.DefaultModelID {
+					continue
+				}
+				level := scoped.ThinkingLevel
+				if level == "" {
+					level = options.DefaultThinkingLevel
+				}
+				if level == "" {
+					level = DefaultThinkingLevel
+				}
+				return InitialModelResult{Model: modelPtr(scoped.Model), ThinkingLevel: level}
+			}
+		}
 		scoped := options.ScopedModels[0]
 		level := scoped.ThinkingLevel
 		if level == "" {

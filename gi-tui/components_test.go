@@ -570,23 +570,30 @@ func TestSelectListTruncatePrimaryOverridePreservesDescriptionAlignment(t *testi
 	}
 }
 
-func TestSelectListFilterMatchesValueOnly(t *testing.T) {
+func TestSelectListFilterMatchesValueLabelAndDescription(t *testing.T) {
 	list := NewSelectList(
 		[]SelectItem{
 			{Value: "run", Label: "Build command"},
 			{Value: "fmt", Label: "Run formatter"},
+			{Value: "test", Label: "Unit tests", Description: "Go test runner"},
 		},
 		5,
 		selectListIdentityTheme(),
 	)
 
-	list.SetFilter("run")
+	list.SetFilter("formatter")
 	rendered := strings.Join(list.Render(80), "\n")
-	if !strings.Contains(rendered, "Build command") {
-		t.Fatalf("value prefix match should remain visible: %q", rendered)
+	if !strings.Contains(rendered, "Run formatter") {
+		t.Fatalf("label match should remain visible: %q", rendered)
 	}
-	if strings.Contains(rendered, "Run formatter") {
-		t.Fatalf("label-only prefix match should not be visible: %q", rendered)
+	if strings.Contains(rendered, "Build command") {
+		t.Fatalf("unmatched item should not be visible: %q", rendered)
+	}
+
+	list.SetFilter("runner")
+	rendered = strings.Join(list.Render(80), "\n")
+	if !strings.Contains(rendered, "Unit tests") {
+		t.Fatalf("description match should remain visible: %q", rendered)
 	}
 }
 
@@ -4035,6 +4042,29 @@ func TestEditorSlashCommandAutocompleteEnterSubmits(t *testing.T) {
 	editor.HandleInput("\x1b[45;5u")
 	if editor.GetText() != "" {
 		t.Fatalf("undo after slash submit should be no-op, got %q", editor.GetText())
+	}
+}
+
+func TestEditorSlashCommandLinefeedSubmits(t *testing.T) {
+	editor := NewEditor(EditorTheme{})
+	changed := make(chan struct{}, 1)
+	editor.OnAutocompleteChange = func() { changed <- struct{}{} }
+	editor.SetAutocompleteProvider(NewCombinedAutocompleteProviderWithCommands(t.TempDir(), []SlashCommand{
+		{Name: "model", Description: "Change model"},
+		{Name: "session", Description: "Show session"},
+	}))
+	submitted := ""
+	editor.OnSubmit = func(text string) { submitted = text }
+
+	editor.HandleInput("/session")
+	waitForAutocompleteChange(t, changed)
+	editor.HandleInput("\n")
+
+	if submitted != "/session" {
+		t.Fatalf("linefeed slash submit = %q, want /session", submitted)
+	}
+	if editor.GetText() != "" || editor.IsShowingAutocomplete() {
+		t.Fatalf("linefeed submit should clear editor and autocomplete, text=%q showing=%v", editor.GetText(), editor.IsShowingAutocomplete())
 	}
 }
 

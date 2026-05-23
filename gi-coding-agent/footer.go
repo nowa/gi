@@ -5,6 +5,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	gitui "github.com/nowa/gi/gi-tui"
 )
@@ -34,27 +35,37 @@ type FooterState struct {
 }
 
 type FooterComponent struct {
+	mu                 sync.RWMutex
 	state              FooterState
 	autoCompactEnabled bool
 }
 
 func NewFooterComponent(state FooterState) *FooterComponent {
-	return &FooterComponent{state: state, autoCompactEnabled: true}
+	return &FooterComponent{state: cloneFooterState(state), autoCompactEnabled: true}
 }
 
 func (f *FooterComponent) SetState(state FooterState) {
-	f.state = state
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.state = cloneFooterState(state)
 }
 
 func (f *FooterComponent) SetAutoCompactEnabled(enabled bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.autoCompactEnabled = enabled
 }
 
+func (f *FooterComponent) Invalidate() {}
+
 func (f *FooterComponent) Render(width int) []string {
-	if width <= 0 {
+	if f == nil || width <= 0 {
 		return nil
 	}
-	state := f.state
+	f.mu.RLock()
+	state := cloneFooterState(f.state)
+	autoCompactEnabled := f.autoCompactEnabled
+	f.mu.RUnlock()
 	contextWindow := state.ContextWindow
 	if contextWindow <= 0 {
 		contextWindow = 0
@@ -106,7 +117,7 @@ func (f *FooterComponent) Render(width int) []string {
 	}
 
 	autoIndicator := ""
-	if f.autoCompactEnabled {
+	if autoCompactEnabled {
 		autoIndicator = " (auto)"
 	}
 	contextPercentValue := 0.0
@@ -167,6 +178,18 @@ func (f *FooterComponent) Render(width int) []string {
 		lines = append(lines, gitui.TruncateToWidth(sanitizeStatusText(status), width, "..."))
 	}
 	return lines
+}
+
+func cloneFooterState(state FooterState) FooterState {
+	state.Usage = append([]FooterUsage(nil), state.Usage...)
+	if state.ExtensionStatuses != nil {
+		statuses := make(map[string]string, len(state.ExtensionStatuses))
+		for key, value := range state.ExtensionStatuses {
+			statuses[key] = value
+		}
+		state.ExtensionStatuses = statuses
+	}
+	return state
 }
 
 func sortedFooterStatuses(statuses map[string]string) []string {

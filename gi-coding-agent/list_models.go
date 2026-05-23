@@ -53,7 +53,7 @@ func WriteListModels(stdout, stderr io.Writer, registry *ModelRegistry, searchPa
 
 	models := registry.GetAvailable()
 	if len(models) == 0 {
-		_, _ = fmt.Fprintln(stdout, "No models available. Configure provider auth or provider API keys.")
+		_, _ = fmt.Fprintln(stdout, formatNoModelsAvailableMessage())
 		return nil
 	}
 	if searchPattern != "" {

@@ -284,19 +284,25 @@ host-controlled; packages do not import themselves into core.
 For `entry.kind = "process"`, the host spawns the declared command with the
 package root as `cwd`, connects stdio NDJSON, and requires a `hello` handshake
 before accepting registrations. The process receives only granted capabilities
-and can mutate host state only through RPC methods and `host.*` actions.
+and can mutate host state only through RPC methods and `host.*` actions. The
+host provides stable `GI_EXTENSION_*` metadata environment variables for the
+extension id, source path, source, scope, origin, and package directory; package
+declared environment variables cannot override those host-owned keys.
 
 For `extensionProtocol: "descriptor.v1"`, the host reads a `.gi.json`
 descriptor and applies static contributions through the same registries used by
-process extensions. Descriptor resources carry extension metadata; duplicate
-tools are diagnosed and the first registration wins.
+process extensions. Descriptor resources can declare skills, prompts, and
+themes; they carry extension metadata, and duplicate tools are diagnosed with
+the first registration winning.
 
 ### Shutdown
 
 When a package is disabled, a session ends, or the host exits, the host sends a
 shutdown event, waits for a bounded grace period, kills the process on timeout,
 and records diagnostics. Extensions MUST tolerate duplicate shutdown and stale
-cancellation messages.
+cancellation messages. POSIX hosts SHOULD start package processes in their own
+process group and kill that group when shutdown timeout or host cancellation
+requires force termination.
 
 ## Capability Model
 
@@ -320,6 +326,12 @@ optional scoped arguments:
 | `system_prompt.modify` | Append or replace system prompt sections |
 | `compaction.custom` | Provide custom compaction behavior |
 | `tui.status` | Set status/footer text |
+| `tui.title` | Set terminal/window title text |
+| `tui.working` | Configure the live working loader |
+| `tui.thinking_label` | Set hidden thinking block label |
+| `tui.theme` | List or switch host themes |
+| `tui.tools_expanded` | Read or set TUI tool-output expansion |
+| `tui.terminal_input` | Observe raw terminal input events |
 | `tui.dialog` | Use select, confirm, input, notify dialogs |
 | `tui.widget` | Mount above/below editor widgets |
 | `tui.header` | Replace or augment header |
@@ -332,6 +344,7 @@ optional scoped arguments:
 | `fs.read:<scope>` | Read files in allowed scope |
 | `fs.write:<scope>` | Write files in allowed scope |
 | `process.exec:<scope>` | Execute commands in allowed scope |
+| `process.stdio:<scope>` | Start host-supervised stdio processes |
 | `network:<scope>` | Make outbound network requests |
 
 The host MUST expose granted capabilities to the extension during handshake and
@@ -402,6 +415,8 @@ The host sends these events when relevant:
 - `agent_end`
 - `turn_start`
 - `turn_end`
+- `before_provider_request`
+- `after_provider_response`
 - `tool_call`
 - `tool_result`
 - `tool_execution_start`
@@ -412,6 +427,17 @@ The host sends these events when relevant:
 - `resources_discover`
 - `shutdown`
 
+`session_switch` is emitted after the host binds the replacement session and
+before the replacement `session_start`; it includes `reason`,
+`targetSessionFile`, and `previousSessionFile` when available. Long-lived
+package processes receive the same `session_switch` and replacement
+`session_start` events without being restarted, and subsequent `host.session.*`
+actions MUST resolve against the replacement session. `session_shutdown` is
+reserved for reload, disable, session end, process stop, or host exit rather
+than normal `/new`, `/resume`, or `/fork` switching. Lifecycle fanout failures
+from an already-exited process SHOULD be surfaced as diagnostics and MUST NOT
+block the host from completing the session switch for the user.
+
 Handlers MAY return mutations when the event contract allows it:
 
 - block, rewrite, or annotate tool calls/results
@@ -419,6 +445,23 @@ Handlers MAY return mutations when the event contract allows it:
 - append resources
 - replace message display metadata
 - request compaction
+
+`resources_discover` handlers MAY return `skillPaths`, `promptPaths`, and
+`themePaths` as `ResourceExtension` entries. Hosts MUST resolve relative paths
+against the declaring extension/package base, attach deterministic source
+metadata, and merge the resulting resources into the same precedence and filter
+pipeline used for manifest resources. In-process handlers are applied during
+startup and reload before skills, prompts, themes, and the system prompt are
+rebuilt; out-of-process packages MUST expose the same result shape through the
+standard RPC event contract when the host activates them for resource discovery.
+Hosts that activate a process for this event SHOULD request it after handshake
+and session binding, then refresh prompt/resource-derived UI state before the
+first user turn. Hosts MUST forward the active lifecycle reason, such as
+`startup`, `reload`, or a session-switch reason like `new`, consistently to
+both `session_start` and `resources_discover` so packages can refresh only the
+resources affected by that phase. A handler failure or invalid result from one
+process MUST be surfaced as a diagnostic without discarding valid resources
+returned by other handlers in the same discovery pass.
 
 Events carry a monotonically increasing `eventSeq`. Events that allow patches
 SHOULD include an `id`; the extension returns a normal response with the same
@@ -429,6 +472,10 @@ Patch contracts are intentionally narrow:
 
 - `before_agent_start` MAY return `message[]` and, with
   `system_prompt.modify`, `systemPrompt`.
+- `before_provider_request` MAY return `payload` with `payloadSet: true` to
+  replace the serializable provider request payload before transport.
+- `after_provider_response` receives provider `status` and `headers` for
+  auditing, telemetry, or policy checks; it does not patch the response body.
 - `tool_result` MAY return `content`, `details`, or `isError`; omitted fields
   preserve earlier handler changes.
 - cancellation is exposed as a host-owned signal reference in event params, and
@@ -445,26 +492,53 @@ An extension registers contributions through host requests:
 - `register_command`
 - `register_shortcut`
 - `register_flag`
+- `get_flag`
 - `register_provider`
 - `register_message_renderer`
 - `register_tool_renderer`
 - `register_autocomplete_provider`
 
 Tool parameters use JSON Schema 2020-12. Hosts MAY expose convenience SDK APIs,
-but the wire format is JSON Schema.
+but the wire format is JSON Schema. `register_tool` accepts `name`, optional
+`label`, `description`, `parameters`, `promptSnippet`, `promptGuidelines`, and
+`executionMode`; hosts preserve those fields when exposing the tool to the model
+provider and through `host.tools.list`.
 
-Tool execution request:
+Command registration accepts `name`, `description`, and optional
+`argumentHint`. Hosts surface `argumentHint` in slash-command autocomplete
+without giving packages direct access to the native editor implementation.
+
+Message renderer callbacks receive the custom message plus options including
+`expanded`, the same live expansion state exposed through
+`host.tui.tools_expanded`.
+
+Shortcut registration uses `register_shortcut` with `key` and `description`.
+Hosts resolve conflicts against reserved app shortcuts before activating a
+shortcut. When a registered shortcut fires, the host emits `shortcut.invoke` to
+the owning extension process with the registered `key`.
+
+Flag registration uses `register_flag` with `name`, `description`, `type`, and
+optional `default`. Hosts normalize leading `--` and expose values through the
+same flag-value API used for descriptor extensions. CLI-provided extension flag
+values are applied to descriptor flags immediately and remain pending for
+out-of-process packages that register matching flags after startup.
+Out-of-process packages read their own registered flag values with `get_flag`.
+Hosts MUST only return a value when the requesting source registered that flag;
+otherwise the result is unset.
+
+Tool invocation event sent by the host to the owning extension process:
 
 ```json
 {
-  "type": "request",
+  "type": "event",
   "id": "tool_42",
-  "method": "tool.execute",
+  "method": "tool.invoke",
   "params": {
-    "toolName": "todo_update",
     "toolCallId": "call_abc",
+    "name": "todo_update",
+    "toolName": "todo_update",
     "input": {"action": "add", "text": "Write tests"},
-    "context": {"cwd": "/repo", "turnId": "turn_7"}
+    "context": {"cwd": "/repo", "sessionId": "session_7"}
   }
 }
 ```
@@ -533,12 +607,48 @@ Required action groups for `gi-coding-agent-compatible@1`:
 - `host.model.select`: selects a model after auth and policy checks.
 - `host.thinking.get` and `host.thinking.set`: reads or changes thinking level.
 - `host.tui.mount`, `host.tui.patch`, `host.tui.unmount`: manages ViewTree
-  slots.
-- `host.tui.dialog`: runs select, confirm, input, editor, and notification UI.
-- `host.tui.editor`: reads, writes, inserts text, and submits the editor.
-- `host.tui.status`: updates status text by key.
-- `host.policy.request`: requests an additional capability grant.
-- `host.process.exec`: runs a command under host policy and streams output.
+  slots. Mount uses the capability for the target slot: `tui.widget` for
+  above/below editor widgets, `tui.header`, `tui.footer`, `tui.overlay`, or
+  `tui.editor`. Overlay mounts MAY include `overlayOptions` with `width`,
+  `minWidth`, `maxHeight`, `anchor`, `offsetX`, `offsetY`, `row`, `col`,
+  `margin`, and `nonCapturing`.
+- `host.tui.dialog`: runs select, confirm, input, editor, and notification UI;
+  dialog requests MAY include `timeout` in milliseconds to auto-cancel with a
+  countdown title. Notification requests MAY include `type` as `info`,
+  `warning`, or `error`.
+- `host.tui.editor`: reads, writes, inserts or pastes text, submits the editor,
+  reports cursor/focus/custom-editor state, focuses the active editor surface,
+  and returns autocomplete context.
+- `host.tui.status`: updates status text by key. Process-owned status keys are
+  removed from both ViewTree and live footer status when the process exits or is
+  stopped.
+- `host.tui.title`: sets terminal or window title text. Process-owned titles are
+  restored to the host default when the process exits or is stopped.
+- `host.tui.working`: configures the live working loader message, visibility,
+  and indicator frames. Process-owned working loader state is reset to the host
+  default when the process exits or is stopped.
+- `host.tui.thinking_label`: sets the label shown when thinking blocks are
+  hidden. Process-owned labels are reset when the process exits or is stopped.
+- `host.tui.theme`: lists available themes, returns serializable theme metadata,
+  and switches the current host theme.
+- `host.tui.tools_expanded`: reads or changes the live TUI tool-output
+  expansion state.
+- `host.policy.request`: requests an additional capability grant. Hosts return
+  `granted`, `grantedCapabilities`, `deniedCapabilities`, and `reason`; hosts
+  without an approval policy deny by default, and approved grants are scoped to
+  the requesting extension context. The request action itself does not require
+  `session.read`; the host policy decision is the authorization boundary.
+- `host.process.exec`: runs a command under host policy in the session cwd or
+  a scoped child `cwd`, accepts optional `timeoutMillis`, and preserves partial
+  output in the result; over-time or host-cancelled commands return
+  `exitCode: -1` and `killed: true`. On hosts with POSIX signals, timeout or
+  RPC cancellation SHOULD send a graceful termination signal before
+  force-killing the process group. Hosts SHOULD avoid waiting forever on
+  inherited stdio handles after the direct child process exits.
+- `process.stdio:<scope>` is a capability, not a request/response host action.
+  It is for host-supervised bidirectional protocols such as MCP stdio where the
+  host must own lifecycle, cancellation, stderr capture, and process cleanup
+  across multiple protocol messages.
 - `host.fs.read` and `host.fs.write`: scoped filesystem access for extensions
   that do not want to execute arbitrary processes.
 
@@ -712,6 +822,19 @@ The host sends component events:
 - `visibility_change`
 - `tick`
 
+`theme_change` data uses `{"name": "<theme-name>", "preview": false}` for a
+committed host theme switch. Hosts may use `preview: true` for transient theme
+previews, but persisted settings must only change on committed events.
+`visibility_change` data uses `{"visible": true, "reason": "mount"}` when a
+mounted ViewTree becomes visible and `{"visible": false, "reason": "unmount"}`
+before it is removed.
+Focused components receive a raw `key` event for every input. Hosts SHOULD also
+emit semantic input events when possible: printable text as `textInput` with
+`text` and `raw`, Enter as `submit` with `key: "enter"`, and Escape as
+`cancel` with `key: "escape"`. Text controls SHOULD emit `change` with
+`text`, `value`, and `raw`; selectable controls SHOULD emit `select` with
+`id` and `value` when Enter activates them.
+
 Example:
 
 ```json
@@ -726,6 +849,12 @@ Example:
   }
 }
 ```
+
+With `tui.terminal_input`, process extensions MAY receive `tui.terminal_input`
+events containing raw `data` for observation or telemetry-like UI state. This
+event is intentionally asynchronous: process extensions cannot consume or
+transform the core editor's input stream. Use focused ViewTree `key` and
+`textInput` events for interactive components that own focus.
 
 Extensions respond with patches, host actions, or no-op. High-frequency
 components SHOULD subscribe to `tick` with a maximum frame rate. Hosts SHOULD
@@ -757,7 +886,12 @@ Autocomplete providers receive:
 - current slash command and argument position when available
 
 They return ranked suggestions with stable IDs, display text, replacement range,
-kind, description, and optional detail ViewTree.
+kind, description, and optional detail ViewTree. Providers are registered with
+`register_autocomplete_provider`; hosts order them by priority and use the first
+non-empty suggestion result before falling back to built-in completion. Gi's
+native TUI host adapts registered providers into the default `gi-tui` editor;
+provider registrations made after TUI startup refresh the editor provider.
+Third-party providers still interact only through this protocol boundary.
 
 ### Message and Tool Renderers
 
@@ -813,35 +947,52 @@ type Focusable interface {
 }
 ```
 
-The in-process extension contract SHOULD look like:
+The current Gi Go host exposes the trusted slot-component subset as
+`InProcessUIRegistry`:
 
 ```go
-type Extension interface {
-    ID() string
-    Register(ctx *ExtensionContext) error
-}
-
-type ComponentFactory func(ctx ComponentContext) (
+type InProcessComponentFactory func(ctx InProcessComponentContext) (
     component gitui.Component,
     dispose func(),
     err error,
 )
 
-type UIRegistry interface {
-    SetWidget(key string, factory ComponentFactory, options WidgetOptions)
-    SetHeader(factory ComponentFactory)
-    SetFooter(factory ComponentFactory)
-    ShowOverlay(factory ComponentFactory, options OverlayOptions) OverlayHandle
-    SetEditor(factory EditorFactory)
-    RegisterMessageRenderer(customType string, renderer MessageRenderer)
-    RegisterToolRenderer(toolName string, renderer ToolRenderer)
+type InProcessCustomComponentFactory func(
+    ctx InProcessComponentContext,
+    done InProcessCustomDone,
+) (component gitui.Component, dispose func(), err error)
+
+type InProcessUIRegistry interface {
+    SetWidget(key, slot string, factory InProcessComponentFactory)
+    SetHeader(key string, factory InProcessComponentFactory)
+    SetFooter(key string, factory InProcessComponentFactory)
+    SetEditor(key string, factory InProcessComponentFactory)
+    SetOverlay(key string, factory InProcessComponentFactory, options ...gitui.OverlayOptions)
+    ShowCustom(key string, factory InProcessCustomComponentFactory, options ...InProcessCustomOptions) (*InProcessCustomHandle, error)
+    Remove(key string) bool
+    OnChange(listener func()) func()
 }
 ```
 
+Factories receive the active `AgentSession`, `PrintModeRuntimeHost`, and
+`ViewTreeHost`. Registered components are merged into the live TTY
+`header`/`aboveEditor`/`belowEditor`/`footer` slots, the focused `editor`
+region, or focused/non-capturing overlays, render panics are recovered as
+visible diagnostic lines, keyed replacement/removal refreshes the live slot
+after startup, and `dispose` callbacks run on replacement, removal, and host
+shutdown. Trusted code can also use `ShowCustom` for Pi-style one-shot
+editor-region or overlay workflows: the component receives a `done` callback,
+the registry returns a result handle, and completion automatically removes the
+component while restoring the default editor focus and draft. Components that
+implement `SetExpanded(bool)` receive the current tool-output expansion state on
+mount and when the host toggles tool-output expansion. Package-provided
+third-party UI should still use ViewTree/RPC.
+
 Host requirements:
 
-- recover panics from render, input, event, tool, and command handlers
-- call `dispose` on reload, session replacement, and shutdown
+- recover panics from render and invalidate handlers
+- recover panics from input, focus, key-release, and expansion handlers
+- call `dispose` on keyed replacement, removal, and shutdown
 - route all terminal writes through Gi
 - require explicit registration rather than import side effects
 - surface diagnostics in the same format as RPC extensions
@@ -929,30 +1080,50 @@ where practical:
 This section is the implementation proof. If any package below requires private
 host APIs, the protocol is incomplete.
 
+The current Go host materializes the first official package set as protocol
+packages. It already proves stateful command rendering for `gi-plan-mode`,
+`gi-approval-gate`, `gi-todo-widget`, `gi-tools-ui`, `gi-git-guard`, and
+`gi-subagents`: tools write session state or route through host actions, slash
+commands emit display-aware custom messages, and the live TTY renders those
+messages without a package calling private core APIs.
+`gi-mcp-adapter` additionally proves a stdio MCP bridge: when a tool call
+provides a server command, the official package performs MCP `initialize`,
+`tools/list`, and `tools/call`, records the result as protocol custom state,
+and renders the latest adapter status through `/mcp`.
+
 `gi-plan-mode`:
 
 - Registers `/plan` and `/todos` commands.
+- Registers `plan_update` and `plan_read` tools backed by Gi's Go plan parser.
 - Uses `host.tools.set_active` to enter read-only mode.
 - Uses `host.tui.status` and `host.tui.mount` for progress.
-- Uses `host.tui.dialog` and `host.tui.editor` for refinement.
+- Uses `host.tui.dialog` and `host.tui.editor` for refinement, focus, and
+  cursor-aware editing.
 - Persists plan state with `host.session.append_custom`.
 
 `gi-subagents`:
 
 - Registers a `subagent_run` tool and commands for configured agents.
-- Uses `host.agent.spawn` for isolated child sessions.
+- Uses the same host child-session path as `host.agent.spawn` for isolated
+  child sessions.
 - Streams child progress through tool updates and ViewTree status.
 - Reads parent context through `host.session.entries`.
 - Cancels children through `host.agent.abort`.
 
 `gi-mcp-adapter`:
 
-- Starts MCP server processes through `host.process.exec` or a supervised
-  process capability.
+- Starts MCP server processes through a host-supervised stdio process capability
+  with the same timeout, cancellation, and process-group cleanup guarantees as
+  scoped host process execution.
 - Converts MCP tools to `register_tool` calls with JSON Schema.
 - Streams MCP progress through `tool.update`.
 - Surfaces server diagnostics through standard extension diagnostics.
 - Enforces process and network capabilities per configured server.
+- Current Go proof covers stdio `initialize`, `tools/list`, `tools/call`,
+  `notifications/progress`, and `notifications/tools/list_changed` for a
+  configured server command, and projects discovered MCP tools into Gi
+  `register_tool` entries that call back through the same approved server
+  command.
 
 `gi-git-guard`:
 
@@ -965,6 +1136,7 @@ host APIs, the protocol is incomplete.
 `gi-approval-gate`:
 
 - Subscribes to `tool_call` and `host.session.action` interception points.
+- Records structured pending approval requests through `approval_gate_request`.
 - Renders file diffs or command details through `diff` and `toolCall` nodes.
 - Uses `host.tui.dialog` or `overlay` for approve/deny.
 - Caches decisions through `host.session.append_custom` with explicit scope.
@@ -1107,7 +1279,18 @@ used for package processes when available.
 - Extension updates can request `priority: "interactive"` for input latency.
 - Host applies backpressure when patch queues grow.
 - Host may drop stale animation frames.
-- Host should cap untrusted `tick` subscriptions.
+- Host should cap untrusted `tick` subscriptions. Gi's Go TTY host emits
+  ViewTree `tick` events at 10 fps, routes them through the same owned-mount
+  `tui.event` channel as key/focus events, and does not retain ticks in the
+  long-lived event history.
+- Hosts should emit `theme_change` only to subscribed component nodes. Gi's Go
+  TTY host emits committed theme switches through the owned-mount `tui.event`
+  channel with `name` and `preview` data and does not retain them in the
+  long-lived event history.
+- Hosts should emit `visibility_change` to subscribed nodes when component
+  visibility changes. Gi's Go host emits mount/unmount visibility transitions
+  through the owned-mount `tui.event` channel and does not retain them in the
+  long-lived event history.
 - Large binary payloads use temp files or content handles, not inline JSON.
 - Component render snapshots are host-owned and testable.
 

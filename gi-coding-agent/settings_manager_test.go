@@ -159,6 +159,50 @@ func TestSettingsManagerReloadAndErrors(t *testing.T) {
 	}
 }
 
+func TestSettingsManagerInMemoryReloadPiRegression(t *testing.T) {
+	manager := NewInMemorySettingsManager(map[string]any{
+		"defaultThinkingLevel": "high",
+		"images":               map[string]any{"autoResize": false},
+		"packages":             []any{"git:github.com/gi-packages/test"},
+	})
+
+	manager.Reload()
+	if manager.GetDefaultThinkingLevel() != "high" || manager.GetImageAutoResize() {
+		t.Fatalf("in-memory settings after reload: thinking=%q autoResize=%v", manager.GetDefaultThinkingLevel(), manager.GetImageAutoResize())
+	}
+	if packages := manager.GetPackages(); !reflect.DeepEqual(packages, []any{"git:github.com/gi-packages/test"}) {
+		t.Fatalf("packages after reload = %#v", packages)
+	}
+
+	manager.SetTheme("dark")
+	if err := manager.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	manager.Reload()
+	if manager.GetTheme() != "dark" || manager.GetImageAutoResize() {
+		t.Fatalf("in-memory settings after setter+reload: theme=%q autoResize=%v", manager.GetTheme(), manager.GetImageAutoResize())
+	}
+}
+
+func TestSettingsManagerBranchSummarySkipPromptPiStyle(t *testing.T) {
+	manager := NewInMemorySettingsManager(nil)
+	if manager.GetBranchSummarySkipPrompt() {
+		t.Fatal("branch summary prompt should be enabled by default")
+	}
+
+	manager = NewInMemorySettingsManager(map[string]any{
+		"branchSummary": map[string]any{"skipPrompt": true},
+	})
+	if !manager.GetBranchSummarySkipPrompt() {
+		t.Fatal("branch summary skipPrompt should be read from nested settings")
+	}
+
+	manager.SetBranchSummarySkipPrompt(false)
+	if manager.GetBranchSummarySkipPrompt() {
+		t.Fatal("branch summary skipPrompt should update through setter")
+	}
+}
+
 func TestSettingsManagerProjectDirectoryCreation(t *testing.T) {
 	agentDir, projectDir := createSettingsTestDirs(t)
 	writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{"theme": "dark"})
@@ -228,6 +272,142 @@ func TestSettingsManagerShellCommandPrefixAndSessionDir(t *testing.T) {
 	want := filepath.Join(home, "sessions")
 	if manager.GetSessionDir() != want {
 		t.Fatalf("expanded sessionDir = %q, want %q", manager.GetSessionDir(), want)
+	}
+}
+
+func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
+	agentDir, projectDir := createSettingsTestDirs(t)
+	settingsPath := filepath.Join(agentDir, "settings.json")
+	writeSettingsJSON(t, settingsPath, map[string]any{
+		"transport":                 "websocket",
+		"enableSkillCommands":       false,
+		"hideThinkingBlock":         true,
+		"collapseChangelog":         true,
+		"lastChangelogVersion":      "0.1.0",
+		"quietStartup":              true,
+		"doubleEscapeAction":        "fork",
+		"treeFilterMode":            "user-only",
+		"editorPaddingX":            2,
+		"autocompleteMaxVisible":    10,
+		"showHardwareCursor":        true,
+		"enabledModels":             []any{"openai/gpt-4o-mini", "anthropic/claude-sonnet-4-5:high"},
+		"terminal":                  map[string]any{"showImages": false, "imageWidthCells": 80, "clearOnShrink": true, "showTerminalProgress": true},
+		"warnings":                  map[string]any{"anthropicExtraUsage": false},
+		"unknownFutureSetting":      "preserved",
+		"unknownFutureNestedObject": map[string]any{"preserved": true},
+	})
+
+	manager := NewSettingsManager(projectDir, agentDir)
+	if manager.GetTransport() != "websocket" ||
+		manager.GetEnableSkillCommands() ||
+		!manager.GetHideThinkingBlock() ||
+		!manager.GetCollapseChangelog() ||
+		manager.GetLastChangelogVersion() != "0.1.0" ||
+		!manager.GetQuietStartup() ||
+		manager.GetDoubleEscapeAction() != "fork" ||
+		manager.GetTreeFilterMode() != "user-only" ||
+		manager.GetEditorPaddingX() != 2 ||
+		manager.GetAutocompleteMaxVisible() != 10 ||
+		!manager.GetShowHardwareCursor() ||
+		manager.GetShowImages() ||
+		manager.GetImageWidthCells() != 80 ||
+		!manager.GetClearOnShrink() ||
+		!manager.GetShowTerminalProgress() ||
+		manager.GetWarnings().AnthropicExtraUsage {
+		t.Fatalf("loaded settings not reflected")
+	}
+	if got := manager.GetEnabledModels(); !reflect.DeepEqual(got, []string{"openai/gpt-4o-mini", "anthropic/claude-sonnet-4-5:high"}) {
+		t.Fatalf("enabledModels = %#v", got)
+	}
+
+	manager.SetTransport("websocket-cached")
+	manager.SetShowImages(true)
+	manager.SetImageWidthCells(120)
+	manager.SetClearOnShrink(false)
+	manager.SetShowTerminalProgress(false)
+	manager.SetEnableSkillCommands(true)
+	manager.SetHideThinkingBlock(false)
+	manager.SetCollapseChangelog(false)
+	manager.SetLastChangelogVersion("0.2.0")
+	manager.SetQuietStartup(false)
+	manager.SetDoubleEscapeAction("none")
+	manager.SetTreeFilterMode("all")
+	manager.SetEditorPaddingX(3)
+	manager.SetAutocompleteMaxVisible(20)
+	manager.SetShowHardwareCursor(false)
+	manager.SetWarnings(WarningSettings{AnthropicExtraUsage: true})
+	manager.SetEnabledModels([]string{"zai/glm-5.1"})
+
+	saved := readSettingsJSON(t, settingsPath)
+	terminal, _ := saved["terminal"].(map[string]any)
+	warnings, _ := saved["warnings"].(map[string]any)
+	if saved["transport"] != "websocket-cached" ||
+		saved["enableSkillCommands"] != true ||
+		saved["hideThinkingBlock"] != false ||
+		saved["collapseChangelog"] != false ||
+		saved["lastChangelogVersion"] != "0.2.0" ||
+		saved["quietStartup"] != false ||
+		saved["doubleEscapeAction"] != "none" ||
+		saved["treeFilterMode"] != "all" ||
+		saved["editorPaddingX"] != float64(3) ||
+		saved["autocompleteMaxVisible"] != float64(20) ||
+		saved["showHardwareCursor"] != false ||
+		terminal["showImages"] != true ||
+		terminal["imageWidthCells"] != float64(120) ||
+		terminal["clearOnShrink"] != false ||
+		terminal["showTerminalProgress"] != false ||
+		warnings["anthropicExtraUsage"] != true {
+		t.Fatalf("saved settings = %#v", saved)
+	}
+	if !reflect.DeepEqual(saved["enabledModels"], []any{"zai/glm-5.1"}) {
+		t.Fatalf("saved enabledModels = %#v", saved["enabledModels"])
+	}
+	if saved["unknownFutureSetting"] != "preserved" {
+		t.Fatalf("unknown setting was not preserved: %#v", saved)
+	}
+}
+
+func TestSettingsManagerPiInteractiveSettingsDefaultsAndValidation(t *testing.T) {
+	manager := NewInMemorySettingsManager(map[string]any{
+		"transport":              "invalid",
+		"doubleEscapeAction":     "invalid",
+		"treeFilterMode":         "invalid",
+		"editorPaddingX":         -2,
+		"autocompleteMaxVisible": 0,
+		"terminal":               map[string]any{"imageWidthCells": -1},
+	})
+
+	if manager.GetTransport() != "auto" ||
+		!manager.GetShowImages() ||
+		manager.GetImageWidthCells() != 60 ||
+		manager.GetClearOnShrink() ||
+		manager.GetShowTerminalProgress() ||
+		!manager.GetEnableSkillCommands() ||
+		manager.GetHideThinkingBlock() ||
+		manager.GetCollapseChangelog() ||
+		manager.GetQuietStartup() ||
+		manager.GetDoubleEscapeAction() != "tree" ||
+		manager.GetTreeFilterMode() != "default" ||
+		manager.GetEditorPaddingX() != 0 ||
+		manager.GetAutocompleteMaxVisible() != 5 ||
+		manager.GetShowHardwareCursor() ||
+		!manager.GetWarnings().AnthropicExtraUsage {
+		t.Fatalf("defaults validation failed")
+	}
+
+	manager.SetTransport("invalid")
+	manager.SetDoubleEscapeAction("invalid")
+	manager.SetTreeFilterMode("invalid")
+	manager.SetEditorPaddingX(-1)
+	manager.SetAutocompleteMaxVisible(0)
+	manager.SetImageWidthCells(0)
+	if manager.GetTransport() != "auto" ||
+		manager.GetDoubleEscapeAction() != "tree" ||
+		manager.GetTreeFilterMode() != "default" ||
+		manager.GetEditorPaddingX() != 0 ||
+		manager.GetAutocompleteMaxVisible() != 5 ||
+		manager.GetImageWidthCells() != 60 {
+		t.Fatalf("setter validation failed")
 	}
 }
 

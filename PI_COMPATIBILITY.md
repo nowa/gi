@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD013 -->
+
 # Pi Compatibility Matrix
 
 This repository is a Go rebuild of the Pi `pi-ai`, `pi-agent-core`, and `pi-tui` packages.
@@ -7,6 +9,9 @@ Case-level provider/agent parity is tracked in
 TUI parity is tracked in [`PI_TUI_TEST_CASE_PARITY.md`](PI_TUI_TEST_CASE_PARITY.md).
 Pi coding-agent migration scope is tracked in
 [`PI_CODING_AGENT_TEST_CASE_PARITY.md`](PI_CODING_AGENT_TEST_CASE_PARITY.md).
+Coding-agent source-level disposition for behavior outside explicit Pi tests is
+tracked in
+[`PI_CODING_AGENT_SOURCE_AUDIT.md`](PI_CODING_AGENT_SOURCE_AUDIT.md).
 The forward design for Pi-style extensions, packages, trusted in-process
 components, and package-provided out-of-process TUI components is tracked in
 [`protocol/README.md`](protocol/README.md). Machine-readable schema, registry,
@@ -20,7 +25,81 @@ transcript, and conformance artifacts live under [`protocol/spec/`](protocol/spe
 | `@earendil-works/pi-agent-core` | `github.com/nowa/gi/gi-agent-core` | Pi test-compatible: agent loop, stateful agent, tools, queues, lifecycle events |
 | `pi-agent-core` harness/session | `github.com/nowa/gi/gi-agent-core/harness` | Pi test-compatible: AgentHarness turn orchestration, stream hooks, local execution env, queue lifecycle, skills, prompt templates, system prompt formatting, truncate, uuidv7, storage/session/repo, session compaction, branch tree navigation and branch-summary hook customization |
 | `@earendil-works/pi-tui` | `github.com/nowa/gi/gi-tui` | Compatibility layer: Component/Container/TUI/Terminal abstractions including safe ordered child mutation and thread-safe snapshot rendering for chat-style layouts, race-safe mutable render components, overlays including Pi-style integer and decimal percentage `SizeValue` layout, key parsing/keybindings, autocomplete/fuzzy matching, text measurement/wrapping/truncation, reusable KillRing/UndoStack helpers, stdin escape/paste splitting, common components including SettingsList empty-current-value handling and CancellableLoader with Go context plus Pi-style signal/abort compatibility, editor input/undo/paste/autocomplete/rendering, ProcessTerminal raw mode/window sizing through Go's `golang.org/x/term`, keyboard negotiation, and terminal image fallbacks |
-| `@earendil-works/pi-coding-agent` | `github.com/nowa/gi/gi-coding-agent` | Initial foundation: standalone coding-agent utility compatibility for CLI arg parsing, prompt-template argument parsing/substitution/loading/expansion, frontmatter parsing/stripping, user path expansion/read-path resolution with macOS filename normalization fallbacks, Pi/chalk-style ANSI stripping, session JSONL file-manager operations including corrupted-file recovery, legacy session migration, custom session IDs, append-only session tree operations for messages, model/thinking changes, custom entries, labels, branch summaries, current-branch context building, session listing, fork-from-session, and branched-session persistence; full agent session runtime, tools, settings, extensions, package manager, CLI command execution, RPC, export, and interactive-mode parity are not ported yet |
+| `@earendil-works/pi-coding-agent` | `github.com/nowa/gi/gi-coding-agent` | Case-level Pi test parity and source-level disposition are complete for the current Pi checkout. The migrated coding-agent surface covers CLI/config/settings, auth/model registry, print mode, session runtime, session manager, tools, package/resource loading, protocol-backed extensions, RPC, export helpers, and interactive runtime utilities. Recent passes cover model reasoning clamping, scoped `--models` / settings `enabledModels` resolution for initial model selection and scoped model cycling, Gi auth guidance, Gi release/version metadata, install telemetry attribution, package CLI target parsing, print/RPC session flag wiring, injectable/default interactive dispatch with a TTY TUI host, startup clear, Pi-style terminal title updates, Pi-style model-scope startup notice, `models.json` error warning, Pi-style Anthropic subscription-auth warning, Pi-style startup changelog notices with collapsed/full display, Pi-style new-version notification, Gi git package-update notification, Pi-style startup/reload loaded-resource sections with quiet-startup diagnostics, dynamic cwd/model/context footer, Pi-style flow layout for editor/footer input, Pi-style streaming Enter steering queue, Alt+Enter follow-up queue, pending queue display, Alt+Up restore-to-editor, Ctrl+C clear/double-exit, Ctrl+D empty-editor exit, Escape streaming abort/queue restore and retry cancellation, double-Escape tree/fork routing, Shift+Tab/Ctrl+P/Ctrl+Shift+P/Ctrl+L model-thinking hotkeys, Ctrl+O tool-output expansion, Ctrl+T thinking-block visibility toggle, Ctrl+G external editor handoff, Ctrl+Z Unix suspend/restore, Ctrl+V clipboard-image paste-to-temp-file, Shift+Ctrl+D / hidden `/debug` debug snapshots, SIGTERM graceful terminal restoration plus SIGHUP/dead-terminal no-render shutdown, auto-retry status/error messages, tmux extended-key startup warnings, built-in `/settings`/`/thinking`/`/model`/`/models`/`/scoped-models`/`/queue`/`/session`/`/hotkeys`/`/changelog`/`/export`/`/share`/`/import`/`/resume` picker plus `/resume <path>`/`/fork`/`/tree`/`/name`/`/new`/`/compact`/`/copy`/`/clone`/`/login`/`/logout`/`/reload`/`/quit` command paths, cancellable `/share` gist creation, interactive `/model`, `/models`, `/scoped-models`, and `/thinking` searchable select-dialog routing, searchable `/settings` SettingsList routing with Pi-style terminal/image/transport/editor/warnings controls plus warnings/theme/thinking submenus, `!`/`!!` bash execution, non-TTY single-turn fallback, standalone `--export`, piped stdin, broader RPC command/client coverage, RPC session event rebind after fork/switch, Pi-style lowerCamelCase RPC result payloads for compaction, bash, context usage, and session stats, `get_commands` discovery for built-ins, prompt templates, extension commands, and skills plus live autocomplete refresh for process-registered commands and autocomplete providers, Pi-style RPC `clone` forking at the current leaf, image content preservation for RPC prompt user messages, AgentSession prompt/queue expansion, full Pi session-manager nested-suite coverage, Pi-shaped compaction/branch/custom context messages, provider-context conversion of coding-agent-only messages, session-level bash record/execute/abort/pending behavior, Pi-style retry and turn/message/tool event ordering with extension lifecycle handlers ahead of public subscribers, cancellable retry sleeps, manual compaction model/auth preflight, context-cancellable compaction hooks, disabled-threshold auto-compaction handling, host-action support for tools list/set-active, commands list, session entries/labels/name/action/custom append, agent send-user-message/run/spawn/abort, model list/select, thinking get/set, cwd-scoped fs read/write, policy-gated process exec, process-driven editor/dialog host actions exercised against the live TTY host, process-registered message renderers consumed by live TTY session message replay, process-registered tools and tool renderers consumed by live TTY tool-call/result components, trusted in-process `gi-tui` slot components with panic recovery, disposer lifecycle, and dynamic keyed refresh/removal, ViewTree mount/patch/render/slot/focus/event/status/dialog/editor with `host.tui.mount`/`patch`/`unmount`/`status`/notify-confirm-select-input `dialog`/`editor` plus live TTY runtime slot refresh, official package slash-command UI feedback through stateful protocol custom-message renderers for plan/approval/todo/tools/git-guard/subagent/powerline/MCP state, official `gi-subagents` child-session execution through the host agent spawn path, and queued-message delivery for extension slash commands, protocol input transforms, `/skill:name`, prompt templates, queued RPC images, queued custom messages, next-turn custom messages, and `one-at-a-time`/`all` queue modes. Gi-specific protocol, `.gi` paths, and Go-native runtime choices take precedence over copying Pi's Node/npm internals. |
+
+The current official-package proof also covers `gi-mcp-adapter` stdio MCP
+`initialize`, `tools/list`, and `tools/call` execution for configured server
+commands, with discovered tools and call results rendered through `/mcp`.
+`gi-subagents` child sessions persist only when the parent session has a real
+session directory; `--no-session`/in-memory parents keep child sessions
+in-memory and do not write orphan `.jsonl` files into the project directory.
+
+Interactive `/tree` navigation now also mirrors Pi's branch-summary choice
+flow: current-leaf selection is a no-op, users can pick no summary, default
+summary, or custom summary instructions, `branchSummary.skipPrompt` defaults to
+no summary, and Escape aborts in-flight branch summarization.
+
+Live TTY replay now renders branch summaries, compaction summaries, and skill
+invocation wrappers as collapsible Pi-style message components tied to Ctrl+O
+tool-output expansion, instead of exposing raw internal message roles.
+
+The default live TTY host also consumes session `message_*` and
+`tool_execution_*` events directly. Assistant text and tool call/result
+components stream into the chat as the agent turn runs, while final replay is
+deduplicated after the prompt settles.
+
+Out-of-process packages can also register shortcuts through
+`shortcuts.register`; the live TTY host consumes matching keys and emits
+`shortcut.invoke` back to the package process.
+
+Out-of-process package ViewTree mounts are now owned by the supervising package
+process. When the process stops, is killed, or exits, Gi unmounts those widgets,
+overlays, headers, footers, and custom editors to match Pi's component
+dispose/restore lifecycle. Cross-process `host.tui.patch` and
+`host.tui.unmount` calls are denied unless the caller owns the target mount;
+process packages also cannot replace another owner by reusing its `mountId`.
+Process-owned slash commands, tools, shortcuts, autocomplete providers, flags,
+and renderers are removed from the extension runtime on process shutdown so
+dead handlers do not stay visible after a package process exits. If a package
+process exits before the `hello` handshake or hangs until the handshake
+timeout, Gi now includes a bounded stderr tail in the startup error for
+actionable diagnostics. Shutdown timeouts also return an explicit diagnostic
+after killing the process instead of reporting a clean stop.
+
+Trusted in-process Go UI components can also be mounted dynamically into live
+TTY slots, the editor region, and overlays through `InProcessUIRegistry`; keyed
+replacement/removal refreshes the UI and runs disposers without exposing Pi's
+private TypeScript component API to packages.
+
+The live coding-agent TTY also supports Pi-style debug snapshots through
+Shift+Ctrl+D and hidden `/debug`, writing terminal dimensions, visible rendered
+line widths, and session messages JSONL to `<agentDir>/gi-debug.log`.
+
+On Unix-like platforms, the live TTY host also handles SIGTERM/SIGHUP through
+the same graceful stop/dispose path so raw mode and hidden cursor state are
+restored before exit.
+
+The default live TTY host also exposes `/theme`: `/theme <name>` applies a
+theme directly, and `/theme` opens a searchable selector over built-in and
+loaded custom themes.
+
+The live `/settings` selector follows Pi's image-capability behavior: inline
+terminal image toggles are hidden when the active terminal cannot render images,
+while model-input image settings remain configurable.
+
+Official package UI is exercised in the production live TTY path for `/plan`,
+`/subagents`, `/mcp`, `/tools`, mounted todo/footer components, approval-gate
+command rendering, and git-guard live confirmation. Approval request/decision
+state is replayed through `/approvals`; git guard executes a package tool,
+opens the live TUI confirm dialog through the protocol host, stores session
+state, then renders it through `/git-guard` without using private in-process
+package APIs.
+
+Out-of-process package components also have an integrated live TTY regression
+test: one supervised stdio process registers command, shortcut, autocomplete,
+message-renderer, tool, and tool-renderer surfaces, then drives lifecycle
+ViewTree UI, a select dialog, editor mutation, message replay rendering,
+autocomplete insertion, and tool renderer callbacks through the protocol host.
 
 ## Currently Ported Test Areas
 
@@ -97,11 +176,12 @@ transcript, and conformance artifacts live under [`protocol/spec/`](protocol/spe
 | `packages/tui/test/test-themes.ts` | Shared Pi fixture themes are inlined across `gi-tui/components_test.go`, `gi-tui/tui_test.go`, and `gi-tui/terminal_image_test.go`; there is no standalone runtime behavior in this helper file |
 | `packages/coding-agent/test/args.test.ts` | `gi-coding-agent/args_test.go` for Pi-compatible `ParseArgs` flag parsing across help/version/print/continue/resume, scalar flags, mode, sessions, models, thinking levels and diagnostics, resource/theme/skill/prompt-template toggles, tools allowlists, list-models, messages, `@file` arguments, unknown extension flags, and complex CLI combinations |
 | `packages/coding-agent/test/prompt-templates.test.ts` | `gi-coding-agent/prompt_templates_test.go` for Pi-compatible command argument parsing, `$1`/`$@`/`$ARGUMENTS`/`${@:N}`/`${@:N:L}` substitution without recursive argument expansion, newline-separated template arguments, non-template fallback, prompt directory/file loading, frontmatter descriptions, `argument-hint`, default user/project prompt directories, ignored missing paths, and non-Markdown filtering |
-| `packages/coding-agent/test/frontmatter.test.ts` | `gi-coding-agent/utils_test.go` for quoted scalar parsing, CRLF normalization, pipe-style multiline values, invalid YAML diagnostics, missing/unterminated frontmatter fallback, comment-only metadata, and `StripFrontmatter` body trimming |
+| `packages/coding-agent/test/frontmatter.test.ts` | `gi-coding-agent/utils_test.go` for quoted scalar parsing, CRLF normalization, pipe-style multiline values, folded block values, nested metadata skipping, invalid YAML diagnostics, missing/unterminated frontmatter fallback, comment-only metadata, and `StripFrontmatter` body trimming |
 | `packages/coding-agent/test/path-utils.test.ts` | `gi-coding-agent/utils_test.go` for `~` expansion, Unicode no-break-space normalization, cwd-relative resolution, existing-file resolution, NFC/NFD accent fallback, straight/curly quote fallback, and macOS screenshot AM/PM narrow no-break-space variants |
 | `packages/coding-agent/test/ansi-utils.test.ts` | `gi-coding-agent/utils_test.go` for Pi/chalk-compatible stripping of SGR, OSC 8 hyperlinks, unterminated OSC fallback behavior, C1 CSI, RIS, selected single-byte ESC sequences, and common tool-output ANSI sequences |
+| `packages/coding-agent/test/session-manager/build-context.test.ts` | `gi-coding-agent/session_manager_context_suite_test.go` for standalone context building with omitted/invalid/specified leaf handling, orphaned parent chains, latest compaction selection, kept-message restoration, branch summaries, thinking/model tracking, and Pi-shaped compaction/branch/custom context messages |
 | `packages/coding-agent/test/session-manager/file-operations.test.ts` | `gi-coding-agent/session_manager_test.go` for Pi-compatible JSONL entry loading with malformed-line skipping and session-header validation, most-recent valid `.jsonl` session selection by mtime, `SessionManager` open/create/continue entry points, default encoded session-directory creation, explicit-path preservation, and corrupted empty/no-header/garbage session-file recovery |
-| `packages/coding-agent/test/session-manager/tree-traversal.test.ts` and `packages/coding-agent/test/session-manager/save-entry.test.ts` | `gi-coding-agent/session_manager_tree_test.go` for append-only parentId chains, leaf tracking, branch navigation, tree construction, custom-entry persistence in the tree, current-branch session context filtering, branch summaries as context messages, missing-entry errors, and branched-session persistence with deferred writes before the first assistant response |
+| `packages/coding-agent/test/session-manager/tree-traversal.test.ts` and `packages/coding-agent/test/session-manager/save-entry.test.ts` | `gi-coding-agent/session_manager_tree_test.go` for append-only parentId chains, leaf tracking, branch navigation, tree construction, compaction and custom-entry persistence in the tree, current-branch session context filtering, branch summaries as context messages, missing-entry errors, and branched-session persistence with deferred writes before the first assistant response |
 | `packages/coding-agent/test/session-manager/migration.test.ts`, `labels.test.ts`, `custom-session-id.test.ts`, and session listing/fork coverage in `core/session-manager.ts` | `gi-coding-agent/session_manager_migration_list_test.go` for v1/v2 migration to current session format, hook-message role migration, open-time rewrite of legacy files, custom and generated UUIDv7 session IDs, label set/clear/last-wins behavior, label timestamps in trees, reset-leaf empty context, branch label preservation and off-path label pruning, session list metadata/progress/sort behavior, and fork-from-session headers/history |
 | `packages/ai/test/env-api-keys.test.ts` | `gi-llm-provider/env_test.go` |
 | `packages/ai/test/faux-provider.test.ts` | `gi-llm-provider/faux_test.go` |
@@ -173,6 +253,11 @@ transcript, and conformance artifacts live under [`protocol/spec/`](protocol/spe
 
 ## Additional TUI Coverage Notes
 
+- Coding-agent extension flags now follow the Pi CLI flow at the Go protocol
+  boundary: parsed unknown long flags are applied to descriptor-registered
+  flags, missing string values surface as extension diagnostics, and values stay
+  pending for out-of-process packages that register matching flags after TUI
+  startup.
 - Combined autocomplete applies slash-command argument completions against the current full argument, so stale async menus cannot overwrite an exact typed argument with a shorter prefix match.
 - ProcessTerminal now matches Pi's Kitty keyboard negotiation boundary: the first `CSI ? ... u` response is consumed to enable protocol flags, while later responses are forwarded as normal input instead of being repeatedly swallowed.
 - ProcessTerminal Stop now follows Pi cleanup ownership: bracketed paste is disabled before keyboard protocols, and cursor restoration remains owned by `TUI.Stop`.
@@ -250,7 +335,7 @@ transcript, and conformance artifacts live under [`protocol/spec/`](protocol/spe
 - Future `gi-tui` hardening beyond the current Pi TUI use-case gate should continue by larger surface rather than edge-case trickle: broader Markdown token/style fuzzing, xterm-level virtual-terminal gaps beyond the current audit matrix, and raw terminal fallbacks for platforms outside `golang.org/x/term`.
 - Markdown parser parity has started moving toward a `goldmark` AST plus custom Pi terminal renderer rather than indefinitely expanding the hand-written Markdown lexer; keep Pi visible-output fixtures as the acceptance gate because Pi uses `marked`, not `goldmark`.
 - VirtualTerminal remains scoped to Pi TUI behavior. The `xterm-go` adapter spike has been evaluated against the existing Pi-derived harness tests and can be revisited once the dependency has stable tags or when a larger xterm behavior gap appears.
-- `gi-coding-agent` parity remains tracked separately and is not part of the current TUI completion scope.
+- `gi-coding-agent` parity remains tracked separately in `PI_CODING_AGENT_TEST_CASE_PARITY.md` and `PI_CODING_AGENT_SOURCE_AUDIT.md`; the current Pi checkout's coding-agent cases now have case-level rows with no remaining `待审计`, `待实现`, or `需要协议 runtime` items, and source-level dispositions are complete for the audited checkout.
 
 ## Local Verification
 
@@ -270,4 +355,4 @@ GOOS=linux GOARCH=amd64 GOCACHE=/private/tmp/gi-gocache go test -c ./gi-coding-a
 GOOS=windows GOARCH=amd64 GOCACHE=/private/tmp/gi-gocache go test -c ./gi-coding-agent -o /private/tmp/gi-coding-agent-windows.test.exe
 ```
 
-Current local top-level Go test list count: 672.
+Current local top-level Go test list count: 1139.

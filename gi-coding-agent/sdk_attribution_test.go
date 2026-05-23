@@ -64,10 +64,10 @@ func testAttributionModel(provider, baseURL string) llm.Model {
 
 func assertOpenRouterAttributionHeaders(t *testing.T, headers map[string]string) {
 	t.Helper()
-	if headers["HTTP-Referer"] != "https://pi.dev" {
+	if headers["HTTP-Referer"] != "https://github.com/nowa/gi" {
 		t.Fatalf("HTTP-Referer = %q", headers["HTTP-Referer"])
 	}
-	if headers["X-OpenRouter-Title"] != "pi" {
+	if headers["X-OpenRouter-Title"] != "gi" {
 		t.Fatalf("X-OpenRouter-Title = %q", headers["X-OpenRouter-Title"])
 	}
 	if headers["X-OpenRouter-Categories"] != "cli-agent" {

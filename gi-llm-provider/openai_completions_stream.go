@@ -22,6 +22,8 @@ type OpenAIChatCompletionChoice struct {
 type OpenAIChatDelta struct {
 	Content          string                    `json:"content,omitempty"`
 	ReasoningContent string                    `json:"reasoning_content,omitempty"`
+	Reasoning        string                    `json:"reasoning,omitempty"`
+	ReasoningText    string                    `json:"reasoning_text,omitempty"`
 	ToolCalls        []OpenAIChatToolCallDelta `json:"tool_calls,omitempty"`
 }
 
@@ -109,8 +111,8 @@ func (p *OpenAICompletionsStreamProcessor) Process(chunk *OpenAIChatCompletionCh
 		if choice.Delta.Content != "" {
 			events = append(events, p.appendText(choice.Delta.Content)...)
 		}
-		if choice.Delta.ReasoningContent != "" {
-			events = append(events, p.appendThinking(choice.Delta.ReasoningContent)...)
+		if field, delta := openAIChatReasoningDelta(choice.Delta); delta != "" {
+			events = append(events, p.appendThinking(field, delta)...)
 		}
 		for _, delta := range choice.Delta.ToolCalls {
 			events = append(events, p.appendToolCall(delta)...)
@@ -205,10 +207,23 @@ func (p *OpenAICompletionsStreamProcessor) appendText(delta string) []AssistantM
 	return []AssistantMessageEvent{{Type: "text_delta", Partial: *p.output}}
 }
 
-func (p *OpenAICompletionsStreamProcessor) appendThinking(delta string) []AssistantMessageEvent {
+func openAIChatReasoningDelta(delta OpenAIChatDelta) (string, string) {
+	switch {
+	case delta.ReasoningContent != "":
+		return "reasoning_content", delta.ReasoningContent
+	case delta.Reasoning != "":
+		return "reasoning", delta.Reasoning
+	case delta.ReasoningText != "":
+		return "reasoning_text", delta.ReasoningText
+	default:
+		return "", ""
+	}
+}
+
+func (p *OpenAICompletionsStreamProcessor) appendThinking(signature, delta string) []AssistantMessageEvent {
 	if p.thinkIndex < 0 {
 		part := Thinking("")
-		part.ThinkingSignature = "reasoning_content"
+		part.ThinkingSignature = signature
 		p.output.Content = append(p.output.Content, part)
 		p.thinkIndex = len(p.output.Content) - 1
 	}

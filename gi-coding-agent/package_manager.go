@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -38,7 +39,7 @@ type ResolveExtensionSourcesOptions struct {
 	Temporary bool
 }
 
-type VersionReleaseChecker func(currentVersion string, options VersionCheckOptions) (LatestPiRelease, bool)
+type VersionReleaseChecker func(currentVersion string, options VersionCheckOptions) (LatestGiRelease, bool)
 
 type SelfUpdateOptions struct {
 	PackageName         string
@@ -52,6 +53,46 @@ type SelfUpdateOptions struct {
 type SelfUpdateResult struct {
 	Updated     bool
 	PackageName string
+}
+
+type ConfiguredPackage struct {
+	Source        string
+	Scope         string
+	Filtered      bool
+	InstalledPath string
+}
+
+type PackageUpdate struct {
+	Source      string
+	DisplayName string
+	Type        string
+	Scope       string
+}
+
+type PackageResourceToggle struct {
+	Source       string
+	Scope        string
+	ResourceType string
+	Pattern      string
+	Enabled      bool
+}
+
+type TopLevelResourceToggle struct {
+	Scope        string
+	ResourceType string
+	Pattern      string
+	Enabled      bool
+}
+
+type PackageResourceToggleItem struct {
+	Source       string
+	Scope        string
+	ResourceType string
+	Pattern      string
+	Path         string
+	DisplayName  string
+	Enabled      bool
+	Metadata     ProtocolSourceInfo
 }
 
 type PackageUpdateSuggestionError struct {
@@ -148,8 +189,12 @@ func (m *DefaultPackageManager) addSourceToSettings(source string, project bool)
 }
 
 func (m *DefaultPackageManager) Remove(source string, project bool) error {
-	_, err := m.removeSourceFromSettings(source, project)
+	_, err := m.RemoveAndPersist(source, project)
 	return err
+}
+
+func (m *DefaultPackageManager) RemoveAndPersist(source string, project bool) (bool, error) {
+	return m.removeSourceFromSettings(source, project)
 }
 
 func (m *DefaultPackageManager) removeSourceFromSettings(source string, project bool) (bool, error) {
@@ -191,10 +236,6 @@ func (m *DefaultPackageManager) settingsPackages(project bool) []string {
 	return settingsPackagesToStrings(settingsSlice(settings, "packages"))
 }
 
-func (m *DefaultPackageManager) globalNPMCommand() []string {
-	return settingsStringSlice(m.settingsManager.global, "npmCommand")
-}
-
 func (m *DefaultPackageManager) packageUpdateSuggestion(source string) string {
 	source = strings.TrimSpace(source)
 	if source == "" || strings.Contains(source, ":") {
@@ -207,6 +248,392 @@ func (m *DefaultPackageManager) packageUpdateSuggestion(source string) string {
 		}
 	}
 	return ""
+}
+
+func (m *DefaultPackageManager) ListConfiguredPackages() []ConfiguredPackage {
+	if m == nil || m.settingsManager == nil {
+		return nil
+	}
+	var result []ConfiguredPackage
+	add := func(values []any, scope string) {
+		for _, value := range values {
+			spec, ok := protocolPackageSourceSpecFromSettings(value, scope)
+			if !ok {
+				continue
+			}
+			result = append(result, ConfiguredPackage{
+				Source:        spec.Source,
+				Scope:         scope,
+				Filtered:      packageSettingHasFilters(value),
+				InstalledPath: m.GetInstalledPath(spec.Source, scope),
+			})
+		}
+	}
+	add(settingsSlice(m.settingsManager.global, "packages"), "user")
+	add(settingsSlice(m.settingsManager.project, "packages"), "project")
+	return result
+}
+
+func (m *DefaultPackageManager) ListPackageResourceToggles() ([]PackageResourceToggleItem, error) {
+	if m == nil || m.settingsManager == nil {
+		return nil, nil
+	}
+	var result []PackageResourceToggleItem
+	for _, spec := range m.configuredProtocolPackageSourceSpecs() {
+		resolved, packageDir, err := m.resolveProtocolPackageSource(spec.Source, spec.Scope)
+		if err != nil {
+			return nil, err
+		}
+		if packageDir == "" {
+			continue
+		}
+		addResources := func(resourceType string, resources []ProtocolPackageResource, filters []string) {
+			for _, resource := range applyProtocolPackageFilters(packageDir, resources, filters) {
+				pattern := packageResourceTogglePattern(packageDir, resource.Path)
+				if pattern == "" {
+					continue
+				}
+				result = append(result, PackageResourceToggleItem{
+					Source:       spec.Source,
+					Scope:        firstNonEmptyString(spec.Scope, "user"),
+					ResourceType: resourceType,
+					Pattern:      pattern,
+					Path:         resource.Path,
+					DisplayName:  packageResourceDisplayName(resourceType, resource.Path),
+					Enabled:      resource.Enabled,
+					Metadata:     resource.Metadata,
+				})
+			}
+		}
+		addResources("extensions", resolved.Extensions, spec.Filters.Extensions)
+		addResources("skills", resolved.Skills, spec.Filters.Skills)
+		addResources("prompts", resolved.Prompts, spec.Filters.Prompts)
+		addResources("themes", resolved.Themes, spec.Filters.Themes)
+		for _, process := range resolved.ProcessExtensions {
+			pattern := strings.TrimSpace(process.ID)
+			if pattern == "" {
+				pattern = packageResourceTogglePattern(packageDir, process.Path)
+			}
+			if pattern == "" {
+				continue
+			}
+			displayName := strings.TrimSpace(process.ID)
+			if displayName == "" {
+				displayName = packageResourceDisplayName("extensions", process.Path)
+			}
+			result = append(result, PackageResourceToggleItem{
+				Source:       spec.Source,
+				Scope:        firstNonEmptyString(spec.Scope, "user"),
+				ResourceType: "extensions",
+				Pattern:      pattern,
+				Path:         process.Path,
+				DisplayName:  displayName,
+				Enabled:      protocolPackageProcessEnabled(packageDir, process, spec.Filters.Extensions),
+				Metadata:     process.Metadata,
+			})
+		}
+	}
+	sortPackageResourceToggleItems(result)
+	return result, nil
+}
+
+func (m *DefaultPackageManager) ListResourceToggles() ([]PackageResourceToggleItem, error) {
+	packageItems, err := m.ListPackageResourceToggles()
+	if err != nil {
+		return nil, err
+	}
+	topLevelItems := m.ListTopLevelResourceToggles()
+	result := append([]PackageResourceToggleItem(nil), packageItems...)
+	result = append(result, topLevelItems...)
+	sortPackageResourceToggleItems(result)
+	return result, nil
+}
+
+func (m *DefaultPackageManager) ListTopLevelResourceToggles() []PackageResourceToggleItem {
+	if m == nil || m.settingsManager == nil {
+		return nil
+	}
+	type scopeConfig struct {
+		scope    string
+		baseDir  string
+		settings map[string]any
+	}
+	scopes := []scopeConfig{
+		{scope: "user", baseDir: m.agentDir, settings: m.settingsManager.global},
+		{scope: "project", baseDir: filepath.Join(m.cwd, ConfigDirName), settings: m.settingsManager.project},
+	}
+	var result []PackageResourceToggleItem
+	for _, scope := range scopes {
+		if scope.baseDir == "" {
+			continue
+		}
+		for _, resourceType := range []string{"extensions", "skills", "prompts", "themes"} {
+			for _, resourcePath := range topLevelResourcePaths(scope.baseDir, resourceType, scope.settings) {
+				pattern := packageResourceTogglePattern(scope.baseDir, resourcePath)
+				if pattern == "" {
+					continue
+				}
+				enabled := resourceEnabled(resourcePath, settingsStringSlice(m.settingsManager.merged, resourceType), m.cwd, m.agentDir)
+				result = append(result, PackageResourceToggleItem{
+					Source:       "auto",
+					Scope:        scope.scope,
+					ResourceType: resourceType,
+					Pattern:      pattern,
+					Path:         resourcePath,
+					DisplayName:  packageResourceDisplayName(resourceType, resourcePath),
+					Enabled:      enabled,
+					Metadata: ProtocolSourceInfo{
+						Source: "auto",
+						Scope:  scope.scope,
+						Origin: "top-level",
+					},
+				})
+			}
+		}
+	}
+	sortPackageResourceToggleItems(result)
+	return result
+}
+
+func topLevelResourcePaths(baseDir, resourceType string, settings map[string]any) []string {
+	var paths []string
+	paths = append(paths, collectProtocolPackageDir(filepath.Join(baseDir, resourceType), resourceType)...)
+	for _, entry := range settingsStringSlice(settings, resourceType) {
+		entry = strings.TrimSpace(entry)
+		if entry == "" || strings.HasPrefix(entry, "!") || strings.HasPrefix(entry, "-") || strings.HasPrefix(entry, "+") {
+			continue
+		}
+		resolved := ResolveToCwd(entry, baseDir)
+		paths = append(paths, collectProtocolPackageEntries(baseDir, []string{resolved}, resourceType)...)
+	}
+	return dedupeProtocolPackagePaths(paths)
+}
+
+func packageResourceTogglePattern(packageDir, resourcePath string) string {
+	if packageDir == "" || resourcePath == "" {
+		return ""
+	}
+	rel, err := filepath.Rel(filepath.Clean(packageDir), filepath.Clean(resourcePath))
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
+		return filepath.ToSlash(filepath.Clean(resourcePath))
+	}
+	return filepath.ToSlash(rel)
+}
+
+func packageResourceDisplayName(resourceType, resourcePath string) string {
+	fileName := filepath.Base(resourcePath)
+	parent := filepath.Base(filepath.Dir(resourcePath))
+	switch resourceType {
+	case "skills":
+		if fileName == "SKILL.md" && parent != "." {
+			return parent
+		}
+	case "extensions":
+		if parent != "" && parent != "." && parent != "extensions" {
+			return filepath.ToSlash(filepath.Join(parent, fileName))
+		}
+	}
+	return fileName
+}
+
+func sortPackageResourceToggleItems(items []PackageResourceToggleItem) {
+	typeOrder := map[string]int{"extensions": 0, "skills": 1, "prompts": 2, "themes": 3}
+	originOrder := map[string]int{"package": 0, "top-level": 1}
+	sort.SliceStable(items, func(i, j int) bool {
+		left, right := items[i], items[j]
+		if originOrder[left.Metadata.Origin] != originOrder[right.Metadata.Origin] {
+			return originOrder[left.Metadata.Origin] < originOrder[right.Metadata.Origin]
+		}
+		if left.Scope != right.Scope {
+			return left.Scope < right.Scope
+		}
+		if left.Source != right.Source {
+			return left.Source < right.Source
+		}
+		if typeOrder[left.ResourceType] != typeOrder[right.ResourceType] {
+			return typeOrder[left.ResourceType] < typeOrder[right.ResourceType]
+		}
+		if left.DisplayName != right.DisplayName {
+			return left.DisplayName < right.DisplayName
+		}
+		return left.Pattern < right.Pattern
+	})
+}
+
+func packageSettingHasFilters(value any) bool {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, key := range []string{"extensions", "skills", "prompts", "themes"} {
+		if len(settingsStringSlice(object, key)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *DefaultPackageManager) GetInstalledPath(source, scope string) string {
+	parsed := ParsePackageSource(source)
+	switch parsed.Type {
+	case "git":
+		return gitPackageInstallPath(m.agentDir, GitSource{Host: parsed.Host, Path: parsed.Path})
+	case "official":
+		return filepath.Join(officialPackageStoreDir(m.agentDir, m.cwd), parsed.Path)
+	case "local":
+		baseDir := m.agentDir
+		if scope == "project" {
+			baseDir = filepath.Join(m.cwd, ConfigDirName)
+		}
+		return ResolveToCwd(parsed.Path, baseDir)
+	default:
+		return ""
+	}
+}
+
+func (m *DefaultPackageManager) SetPackageResourceEnabled(toggle PackageResourceToggle) (bool, error) {
+	if m == nil || m.settingsManager == nil {
+		return false, nil
+	}
+	resourceType := strings.TrimSpace(toggle.ResourceType)
+	if !validPackageResourceType(resourceType) {
+		return false, fmt.Errorf("unsupported package resource type %q", toggle.ResourceType)
+	}
+	pattern := strings.TrimSpace(toggle.Pattern)
+	if pattern == "" {
+		return false, fmt.Errorf("missing package resource pattern")
+	}
+	project := toggle.Scope == "project"
+	scope := "user"
+	baseDir := m.agentDir
+	if project {
+		scope = "project"
+		baseDir = filepath.Join(m.cwd, ConfigDirName)
+	}
+	values := settingsSlice(m.settingsManager.global, "packages")
+	if project {
+		values = settingsSlice(m.settingsManager.project, "packages")
+	}
+	for index, value := range values {
+		spec, ok := protocolPackageSourceSpecFromSettings(value, scope)
+		if !ok || !packageConfigSourceMatches(spec.Source, toggle.Source, baseDir) {
+			continue
+		}
+		object, originalSource := packageSettingObject(value, spec.Source)
+		filters := settingsStringSlice(object, resourceType)
+		object[resourceType] = stringSliceToAny(updatePackageResourceFilters(filters, pattern, toggle.Enabled))
+		if len(settingsStringSlice(object, resourceType)) == 0 {
+			delete(object, resourceType)
+		}
+		if !packageSettingObjectHasFilters(object) {
+			values[index] = originalSource
+		} else {
+			values[index] = object
+		}
+		if project {
+			m.settingsManager.SetProjectPackages(values)
+		} else {
+			m.settingsManager.SetPackages(values)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func (m *DefaultPackageManager) SetTopLevelResourceEnabled(toggle TopLevelResourceToggle) (bool, error) {
+	if m == nil || m.settingsManager == nil {
+		return false, nil
+	}
+	resourceType := strings.TrimSpace(toggle.ResourceType)
+	if !validPackageResourceType(resourceType) {
+		return false, fmt.Errorf("unsupported resource type %q", toggle.ResourceType)
+	}
+	pattern := strings.TrimSpace(toggle.Pattern)
+	if pattern == "" {
+		return false, fmt.Errorf("missing resource pattern")
+	}
+	project := toggle.Scope == "project"
+	values := settingsStringSlice(m.settingsManager.global, resourceType)
+	if project {
+		values = settingsStringSlice(m.settingsManager.project, resourceType)
+	}
+	values = updatePackageResourceFilters(values, pattern, toggle.Enabled)
+	if project {
+		m.settingsManager.setProject(resourceType, stringSliceToAny(values))
+	} else {
+		m.settingsManager.setGlobal(resourceType, stringSliceToAny(values))
+	}
+	return true, nil
+}
+
+func validPackageResourceType(resourceType string) bool {
+	switch resourceType {
+	case "extensions", "skills", "prompts", "themes":
+		return true
+	default:
+		return false
+	}
+}
+
+func packageConfigSourceMatches(configuredSource, targetSource, baseDir string) bool {
+	configuredSource = strings.TrimSpace(configuredSource)
+	targetSource = strings.TrimSpace(targetSource)
+	return configuredSource == targetSource || protocolPackageSettingsIdentity(configuredSource, baseDir) == targetSource
+}
+
+func packageSettingObject(value any, source string) (map[string]any, string) {
+	if object, ok := value.(map[string]any); ok {
+		cloned := cloneSettingsMap(object)
+		if objectSource, ok := cloned["source"].(string); ok && strings.TrimSpace(objectSource) != "" {
+			return cloned, strings.TrimSpace(objectSource)
+		}
+		cloned["source"] = source
+		return cloned, source
+	}
+	return map[string]any{"source": source}, source
+}
+
+func updatePackageResourceFilters(filters []string, pattern string, enabled bool) []string {
+	updated := make([]string, 0, len(filters)+1)
+	for _, filter := range filters {
+		if packageResourceFilterPattern(filter) == pattern {
+			continue
+		}
+		updated = append(updated, filter)
+	}
+	prefix := "-"
+	if enabled {
+		prefix = "+"
+	}
+	return append(updated, prefix+pattern)
+}
+
+func packageResourceFilterPattern(filter string) string {
+	filter = strings.TrimSpace(filter)
+	if filter == "" {
+		return ""
+	}
+	if strings.ContainsAny(filter[:1], "!+-") {
+		return strings.TrimSpace(filter[1:])
+	}
+	return filter
+}
+
+func stringSliceToAny(values []string) []any {
+	out := make([]any, len(values))
+	for i, value := range values {
+		out[i] = value
+	}
+	return out
+}
+
+func packageSettingObjectHasFilters(object map[string]any) bool {
+	for _, key := range []string{"extensions", "skills", "prompts", "themes"} {
+		if len(settingsStringSlice(object, key)) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func ParsePackageSource(source string) PackageSource {
@@ -287,6 +714,43 @@ func (m *DefaultPackageManager) Update(sources ...string) error {
 	return nil
 }
 
+func (m *DefaultPackageManager) CheckForAvailableUpdates() ([]PackageUpdate, error) {
+	if m == nil || packageManagerOffline() {
+		return nil, nil
+	}
+	configured := m.ListConfiguredPackages()
+	updates := make([]PackageUpdate, 0, len(configured))
+	seen := map[string]struct{}{}
+	for _, pkg := range configured {
+		parsed := ParsePackageSource(pkg.Source)
+		identity := PackageSourceIdentity(parsed)
+		if _, ok := seen[identity]; ok {
+			continue
+		}
+		seen[identity] = struct{}{}
+		if parsed.Type != "git" || parsed.Pinned {
+			continue
+		}
+		if _, err := os.Stat(pkg.InstalledPath); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		hasUpdate, err := m.gitPackageHasAvailableUpdate(pkg.InstalledPath)
+		if err != nil || !hasUpdate {
+			continue
+		}
+		updates = append(updates, PackageUpdate{
+			Source:      pkg.Source,
+			DisplayName: parsed.Host + "/" + parsed.Path,
+			Type:        "git",
+			Scope:       pkg.Scope,
+		})
+	}
+	return updates, nil
+}
+
 func (m *DefaultPackageManager) SetProgressCallback(callback func(PackageProgressEvent)) {
 	if m == nil {
 		return
@@ -316,7 +780,7 @@ func (m *DefaultPackageManager) RunSelfUpdate(options SelfUpdateOptions) (SelfUp
 	if !options.Force {
 		checker := options.VersionCheck
 		if checker == nil {
-			checker = GetLatestPiRelease
+			checker = GetLatestGiRelease
 		}
 		release, ok := checker(currentVersion, options.VersionCheckOptions)
 		if !ok || !IsNewerPackageVersion(release.Version, currentVersion) {
@@ -327,10 +791,9 @@ func (m *DefaultPackageManager) RunSelfUpdate(options SelfUpdateOptions) (SelfUp
 		}
 	}
 
-	npmCommand := m.globalNPMCommand()
-	command := GetSelfUpdateCommand(packageName, options.Environment, npmCommand, updatePackageName)
+	command := GetSelfUpdateCommand(packageName, options.Environment, nil, updatePackageName)
 	if command == nil {
-		return SelfUpdateResult{}, fmt.Errorf("%s", GetSelfUpdateUnavailableInstruction(packageName, options.Environment, npmCommand, updatePackageName))
+		return SelfUpdateResult{}, fmt.Errorf("%s", GetSelfUpdateUnavailableInstruction(packageName, options.Environment, nil, updatePackageName))
 	}
 	steps := command.Steps
 	if len(steps) == 0 {
@@ -402,6 +865,36 @@ func (m *DefaultPackageManager) refreshGitPackage(packageDir string) error {
 		return err
 	}
 	return m.operations.RunCommand("git", []string{"clean", "-fdx"}, PackageCommandOptions{CWD: packageDir})
+}
+
+func (m *DefaultPackageManager) gitPackageHasAvailableUpdate(packageDir string) (bool, error) {
+	localHead, err := m.operations.RunCommandCapture("git", []string{"rev-parse", "HEAD"}, PackageCommandOptions{CWD: packageDir})
+	if err != nil {
+		return false, err
+	}
+	remoteHead, err := m.gitPackageRemoteHead(packageDir)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(localHead) != "" && strings.TrimSpace(remoteHead) != "" && strings.TrimSpace(localHead) != strings.TrimSpace(remoteHead), nil
+}
+
+func (m *DefaultPackageManager) gitPackageRemoteHead(packageDir string) (string, error) {
+	output, err := m.operations.RunCommandCapture("git", []string{"ls-remote", "origin", "HEAD"}, PackageCommandOptions{CWD: packageDir})
+	if err != nil {
+		return "", err
+	}
+	return parseGitRemoteHead(output), nil
+}
+
+func parseGitRemoteHead(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == "HEAD" {
+			return fields[0]
+		}
+	}
+	return ""
 }
 
 func normalizePackageManagerOperations(operations PackageManagerOperations) PackageManagerOperations {
