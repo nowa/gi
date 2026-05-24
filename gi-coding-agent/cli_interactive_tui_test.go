@@ -4244,6 +4244,8 @@ func TestCLIInteractiveTUIHostRequiresExactNoArgSlashCommandsPiStyle(t *testing.
 			"/thinking off",
 			"/models",
 			"/queue all",
+			"/arminsayshi extra",
+			"/dementedelves extra",
 			"/quit later",
 		},
 		ExitAfterInitial: true,
@@ -4255,7 +4257,7 @@ func TestCLIInteractiveTUIHostRequiresExactNoArgSlashCommandsPiStyle(t *testing.
 		t.Fatal(err)
 	}
 
-	if !reflect.DeepEqual(prompts, []string{"/session extra", "/theme light", "/resources", "/thinking off", "/models", "/queue all", "/quit later"}) {
+	if !reflect.DeepEqual(prompts, []string{"/session extra", "/theme light", "/resources", "/thinking off", "/models", "/queue all", "/arminsayshi extra", "/dementedelves extra", "/quit later"}) {
 		t.Fatalf("prompts = %#v", prompts)
 	}
 	waitForViewport(t, terminal, "agent saw: /quit later")
@@ -4264,6 +4266,42 @@ func TestCLIInteractiveTUIHostRequiresExactNoArgSlashCommandsPiStyle(t *testing.
 	}
 	if sessionHost.settingsManager.GetTheme() == "light" {
 		t.Fatalf("/theme should be submitted as a prompt like Pi, not handled as a Gi builtin")
+	}
+}
+
+func TestCLIInteractiveTUIHostHandlesHiddenPiSlashCommands(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	var prompts int
+	sessionHost.session.Responder = func(prompt string, context []llm.Message, model llm.Model) (llm.Message, error) {
+		prompts++
+		return llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("unexpected")}}, nil
+	}
+	terminal := gitui.NewVirtualTerminal(120, 40)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+		Messages: []string{
+			"/arminsayshi",
+			"/dementedelves",
+		},
+		ExitAfterInitial: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := host.RunContext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	waitForViewport(t, terminal, "ARMIN SAYS HI")
+	waitForViewport(t, terminal, "gi has joined Earendil")
+	waitForViewport(t, terminal, cliEarendilBlogURL)
+	if prompts != 0 {
+		t.Fatalf("hidden slash commands reached responder %d times", prompts)
 	}
 }
 

@@ -3958,6 +3958,16 @@ func (h *CLIInteractiveTUIHost) handleBuiltinSlashCommand(text string) (bool, er
 			return false, nil
 		}
 		return true, h.handleDebugCommand()
+	case "arminsayshi":
+		if hasArgs {
+			return false, nil
+		}
+		return true, h.handleArminSaysHiCommand()
+	case "dementedelves":
+		if hasArgs {
+			return false, nil
+		}
+		return true, h.handleDementedDelvesCommand()
 	case "quit":
 		if hasArgs {
 			return false, nil
@@ -5451,6 +5461,20 @@ func (h *CLIInteractiveTUIHost) handleDebugCommand() error {
 		return err
 	}
 	h.addStatus("Debug log written\n" + debugPath)
+	return nil
+}
+
+func (h *CLIInteractiveTUIHost) handleArminSaysHiCommand() error {
+	h.chat.AddChild(gitui.NewSpacer(1))
+	h.chat.AddChild(newCLIArminComponent())
+	h.requestRender(false)
+	return nil
+}
+
+func (h *CLIInteractiveTUIHost) handleDementedDelvesCommand() error {
+	h.chat.AddChild(gitui.NewSpacer(1))
+	h.chat.AddChild(newCLIEarendilAnnouncementComponent())
+	h.requestRender(false)
 	return nil
 }
 
