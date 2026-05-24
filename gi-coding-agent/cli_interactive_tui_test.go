@@ -3821,9 +3821,9 @@ func TestCLIInteractiveTUIHostHandlesModelThinkingHotkeysPiStyle(t *testing.T) {
 	waitForHostEditor(t, host)
 
 	terminal.SendInput("\x1b[Z")
-	waitForViewport(t, terminal, "Thinking:")
+	waitForViewport(t, terminal, "Thinking level:")
 	terminal.SendInput("\x10")
-	waitForViewport(t, terminal, "Model:")
+	waitForViewport(t, terminal, "Switched to GPT-5 (thinking: medium)")
 	terminal.SendInput("\x0c")
 	waitForViewport(t, terminal, "Only showing models from configured providers")
 
@@ -4239,7 +4239,7 @@ func TestCLIInteractiveTUIHostHandlesBuiltinSlashCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, expected := range []string{"Model: openai/gpt-4o-mini", "Session exported to:"} {
+	for _, expected := range []string{"Model: gpt-4o-mini", "Session exported to:"} {
 		waitForTerminalOutput(t, terminal, expected)
 	}
 	waitForTerminalOutput(t, terminal, "Session Info")
@@ -5531,6 +5531,9 @@ func TestCLIInteractiveTUISettingsListUsesPiStyleSelectSubmenus(t *testing.T) {
 	if theme.Submenu == nil || len(theme.Values) != 0 {
 		t.Fatalf("theme item should use submenu, got %#v", theme)
 	}
+	if theme.CurrentValue != "dark" {
+		t.Fatalf("theme current value = %q, want Pi default dark", theme.CurrentValue)
+	}
 	thinking := settingItemForTest(t, items, "thinking")
 	if thinking.Submenu == nil || len(thinking.Values) != 0 {
 		t.Fatalf("thinking item should use submenu, got %#v", thinking)
@@ -5542,7 +5545,7 @@ func TestCLIInteractiveTUISettingsListUsesPiStyleSelectSubmenus(t *testing.T) {
 
 	var selected string
 	var changed bool
-	component := theme.Submenu("dark", func(value string, didChange bool) {
+	component := theme.Submenu(theme.CurrentValue, func(value string, didChange bool) {
 		selected = value
 		changed = didChange
 	})
@@ -5616,7 +5619,7 @@ func TestCLIInteractiveTUIHostShowsModelSelectorForInteractiveModelCommand(t *te
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Only showing models from configured providers")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Model: openai/gpt-4o-mini")
+	waitForViewport(t, terminal, "Model: gpt-4o-mini")
 	if sessionHost.settingsManager.GetDefaultProvider() != "openai" ||
 		sessionHost.settingsManager.GetDefaultModel() != "gpt-4o-mini" {
 		t.Fatalf("default model settings provider=%q model=%q",

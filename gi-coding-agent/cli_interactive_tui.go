@@ -1655,7 +1655,7 @@ func (h *CLIInteractiveTUIHost) cycleThinkingLevelFromKey() {
 		return
 	}
 	h.updateEditorBorderColor()
-	h.addStatus("Thinking: " + level)
+	h.addStatus("Thinking level: " + level)
 }
 
 func (h *CLIInteractiveTUIHost) cycleModelFromKey(direction string) {
@@ -1670,11 +1670,15 @@ func (h *CLIInteractiveTUIHost) cycleModelFromKey(direction string) {
 		return
 	}
 	if result == nil {
-		h.addStatus("Only one model available")
+		if len(host.ScopedModels) > 0 {
+			h.addStatus("Only one model in scope")
+		} else {
+			h.addStatus("Only one model available")
+		}
 		return
 	}
 	h.updateEditorBorderColor()
-	h.addStatus("Model: " + result.Model.Provider + "/" + result.Model.ID + " (thinking: " + result.ThinkingLevel + ")")
+	h.addStatus(formatModelCycleStatus(result.Model, result.ThinkingLevel))
 	h.maybeWarnAboutAnthropicSubscriptionAuth(result.Model)
 }
 
@@ -4110,7 +4114,7 @@ func (h *CLIInteractiveTUIHost) renderSettingsSummary(state RPCSessionState, set
 			"| Default provider | "+markdownTableValue(settings.GetDefaultProvider())+" |",
 			"| Default model | "+markdownTableValue(settings.GetDefaultModel())+" |",
 			"| Default thinking | "+markdownTableValue(settings.GetDefaultThinkingLevel())+" |",
-			"| Theme | "+markdownTableValue(settings.GetTheme())+" |",
+			"| Theme | "+markdownTableValue(settingsThemeCurrentValue(settings))+" |",
 			"| Session dir | "+markdownTableValue(settings.GetSessionDir())+" |",
 			"| Image auto resize | "+markdownTableValue(fmt.Sprintf("%t", settings.GetImageAutoResize()))+" |",
 			"| Block images | "+markdownTableValue(fmt.Sprintf("%t", settings.GetBlockImages()))+" |",
@@ -4130,7 +4134,8 @@ func (h *CLIInteractiveTUIHost) handleSettingsSelectDialog(host *RPCSessionHost,
 		return errors.New("interactive TUI is not ready")
 	}
 	resultCh := make(chan struct{}, 1)
-	list := gitui.NewSettingsList(settingsListItems(host, state, settings, h.availableThemeNames(settings.GetTheme()), settingsListItemsOptions{
+	currentTheme := settingsThemeCurrentValue(settings)
+	list := gitui.NewSettingsList(settingsListItems(host, state, settings, h.availableThemeNames(currentTheme), settingsListItemsOptions{
 		OnThemePreview: h.previewTUITheme,
 	}), 10, tuiThemeSettingsList(), gitui.SettingsListOptions{
 		EnableSearch: true,
@@ -4304,12 +4309,13 @@ func settingsListItems(host *RPCSessionHost, state RPCSessionState, settings *Se
 	if len(options) > 0 {
 		opts = options[0]
 	}
-	themeSubmenu := settingsSelectSubmenu("Theme", "Select color theme", settingsThemeOptions(themes, settings.GetTheme()))
+	currentTheme := settingsThemeCurrentValue(settings)
+	themeSubmenu := settingsSelectSubmenu("Theme", "Select color theme", settingsThemeOptions(themes, currentTheme))
 	if opts.OnThemePreview != nil {
 		themeSubmenu = settingsSelectSubmenuWithSelectionChange(
 			"Theme",
 			"Select color theme",
-			settingsThemeOptions(themes, settings.GetTheme()),
+			settingsThemeOptions(themes, currentTheme),
 			opts.OnThemePreview,
 		)
 	}
@@ -4335,7 +4341,7 @@ func settingsListItems(host *RPCSessionHost, state RPCSessionState, settings *Se
 		{ID: "tree-filter-mode", Label: "Tree filter mode", Description: "Default filter when opening /tree", CurrentValue: settings.GetTreeFilterMode(), Values: []string{"default", "no-tools", "user-only", "labeled-only", "all"}},
 		{ID: "warnings", Label: "Warnings", Description: "Enable or disable individual warnings", CurrentValue: "configure", Submenu: settingsWarningsSubmenu(settings)},
 		{ID: "thinking", Label: "Thinking level", Description: "Reasoning depth for thinking-capable models", CurrentValue: state.ThinkingLevel, Submenu: settingsSelectSubmenu("Thinking Level", "Select reasoning depth for thinking-capable models", settingsThinkingOptions(thinkingLevels, state.ThinkingLevel))},
-		{ID: "theme", Label: "Theme", Description: "Color theme for the interface", CurrentValue: settings.GetTheme(), Submenu: themeSubmenu},
+		{ID: "theme", Label: "Theme", Description: "Color theme for the interface", CurrentValue: currentTheme, Submenu: themeSubmenu},
 	}
 	if gitui.GetCapabilities().Images {
 		items = insertSettingItems(items, 1,
@@ -4344,6 +4350,16 @@ func settingsListItems(host *RPCSessionHost, state RPCSessionState, settings *Se
 		)
 	}
 	return items
+}
+
+func settingsThemeCurrentValue(settings *SettingsManager) string {
+	if settings == nil {
+		return "dark"
+	}
+	if theme := strings.TrimSpace(settings.GetTheme()); theme != "" {
+		return theme
+	}
+	return "dark"
 }
 
 func insertSettingItems(items []gitui.SettingItem, index int, inserted ...gitui.SettingItem) []gitui.SettingItem {
@@ -4804,7 +4820,7 @@ func (h *CLIInteractiveTUIHost) handleModelSlashCommand(args string) error {
 			return nil
 		}
 		h.updateEditorBorderColor()
-		h.addStatus("Model: " + result.Model.Provider + "/" + result.Model.ID + " (thinking: " + result.ThinkingLevel + ")")
+		h.addStatus(formatModelCycleStatus(result.Model, result.ThinkingLevel))
 		h.maybeWarnAboutAnthropicSubscriptionAuth(result.Model)
 		return nil
 	}
@@ -4828,7 +4844,7 @@ func (h *CLIInteractiveTUIHost) handleModelSlashCommand(args string) error {
 	if strings.TrimSpace(parsed.Warning) != "" {
 		h.addStatus("Warning: " + parsed.Warning)
 	}
-	h.addStatus("Model: " + model.Provider + "/" + model.ID + " (thinking: " + host.Session.Agent.State.ThinkingLevel + ")")
+	h.addStatus(formatModelSelectionStatus(model))
 	h.maybeWarnAboutAnthropicSubscriptionAuth(model)
 	return nil
 }
@@ -5047,9 +5063,25 @@ func (h *CLIInteractiveTUIHost) applyModelSelection(host *RPCSessionHost, provid
 		settings.SetDefaultModel(model.ID)
 	}
 	h.updateEditorBorderColor()
-	h.addStatus("Model: " + model.Provider + "/" + model.ID + " (thinking: " + host.Session.Agent.State.ThinkingLevel + ")")
+	h.addStatus(formatModelSelectionStatus(model))
 	h.maybeWarnAboutAnthropicSubscriptionAuth(model)
 	return nil
+}
+
+func formatModelSelectionStatus(model llm.Model) string {
+	return "Model: " + model.ID
+}
+
+func formatModelCycleStatus(model llm.Model, thinkingLevel string) string {
+	name := strings.TrimSpace(model.Name)
+	if name == "" {
+		name = model.ID
+	}
+	suffix := ""
+	if model.Reasoning && thinkingLevel != "" && thinkingLevel != "off" {
+		suffix = " (thinking: " + thinkingLevel + ")"
+	}
+	return "Switched to " + name + suffix
 }
 
 func modelSelectDialogOptions(host *RPCSessionHost, search string) ([]TUIDialogOption, string) {
