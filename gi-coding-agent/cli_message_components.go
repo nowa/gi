@@ -54,11 +54,50 @@ func (c *cliCollapsibleMarkdownMessage) Render(width int) []string {
 			title = label
 		}
 		body := strings.TrimSpace("[" + label + "]\n\n**" + title + "**\n\n" + c.body)
-		return gitui.NewMarkdownWithOptions(body, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}).Render(width)
+		return newCLIMarkdownWithOptions(body, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}).Render(width)
 	}
 	collapsed := c.collapsed
 	if collapsed == "" {
 		collapsed = "Collapsed message"
 	}
-	return gitui.NewMarkdownWithOptions("["+label+"] "+collapsed, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}).Render(width)
+	return newCLIMarkdownWithOptions("["+label+"] "+collapsed, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}).Render(width)
+}
+
+type cliDynamicBorderComponent struct{}
+
+func (cliDynamicBorderComponent) Invalidate() {}
+
+func (cliDynamicBorderComponent) Render(width int) []string {
+	return []string{tuiThemeBorder(strings.Repeat("─", max(1, width)))}
+}
+
+func newCLIDynamicBorder() gitui.Component {
+	return cliDynamicBorderComponent{}
+}
+
+func newCLIMarkdownWithOptions(text string, options gitui.MarkdownOptions) *gitui.Markdown {
+	if markdownThemeIsZero(options.Theme) {
+		options.Theme = tuiThemeMarkdown()
+	}
+	return gitui.NewMarkdownWithOptions(text, options)
+}
+
+func markdownThemeIsZero(theme gitui.MarkdownTheme) bool {
+	return theme.Text == nil &&
+		theme.Heading == nil &&
+		theme.Link == nil &&
+		theme.LinkURL == nil &&
+		theme.Code == nil &&
+		theme.CodeBlock == nil &&
+		theme.CodeBlockBorder == nil &&
+		theme.Quote == nil &&
+		theme.QuoteBorder == nil &&
+		theme.HR == nil &&
+		theme.ListBullet == nil &&
+		theme.Bold == nil &&
+		theme.Italic == nil &&
+		theme.Strikethrough == nil &&
+		theme.Underline == nil &&
+		theme.HighlightCode == nil &&
+		theme.CodeBlockIndent == ""
 }

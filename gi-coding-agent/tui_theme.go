@@ -137,7 +137,6 @@ func tuiThemeSettingsList() gitui.SettingsListTheme {
 
 func tuiThemeMarkdown() gitui.MarkdownTheme {
 	return gitui.MarkdownTheme{
-		Text:            func(text string) string { return tuiThemeFG("text", text) },
 		Heading:         func(text string) string { return tuiThemeFG("mdHeading", text) },
 		Link:            func(text string) string { return tuiThemeFG("mdLink", text) },
 		LinkURL:         func(text string) string { return tuiThemeFG("mdLinkUrl", text) },

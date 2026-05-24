@@ -858,11 +858,17 @@ func (h *CLIInteractiveTUIHost) showStartupNoticesIfNeeded() {
 	settings := h.settingsManager()
 	if settings != nil && settings.GetCollapseChangelog() {
 		version := displayPackageVersion(firstNonEmptyString(firstChangelogVersion(changelog), h.version))
-		h.chat.AddChild(gitui.NewText("Updated to v"+version+". Use /changelog to view full changelog.", 1, 0))
+		h.chat.AddChild(newCLIDynamicBorder())
+		h.chat.AddChild(gitui.NewText("Updated to v"+version+". Use "+tuiThemeBold("/changelog")+" to view full changelog.", 1, 0))
+		h.chat.AddChild(newCLIDynamicBorder())
 		h.requestRender(false)
 		return
 	}
-	h.chat.AddChild(gitui.NewMarkdownWithOptions("**What's New**\n\n"+changelog, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 0}))
+	h.chat.AddChild(newCLIDynamicBorder())
+	h.chat.AddChild(gitui.NewText(tuiThemeBoldAccent("What's New"), 1, 0))
+	h.chat.AddChild(gitui.NewSpacer(1))
+	h.chat.AddChild(newCLIMarkdownWithOptions(changelog, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 0}))
+	h.chat.AddChild(newCLIDynamicBorder())
 	h.requestRender(false)
 }
 
@@ -933,7 +939,7 @@ func (h *CLIInteractiveTUIHost) showNewVersionNotification(release LatestGiRelea
 		h.chat.AddChild(gitui.NewSpacer(1))
 	}
 	text := fmt.Sprintf("**Update Available**\n\nNew version %s is available.\n%s\n\nChangelog: %s", release.Version, instruction, changelogURL)
-	h.chat.AddChild(gitui.NewMarkdownWithOptions(text, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 0}))
+	h.chat.AddChild(newCLIMarkdownWithOptions(text, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 0}))
 	h.requestRender(false)
 }
 
@@ -968,7 +974,7 @@ func (h *CLIInteractiveTUIHost) showPackageUpdateNotification(packages []string)
 			lines = append(lines, "- "+strings.TrimSpace(pkg))
 		}
 	}
-	h.chat.AddChild(gitui.NewMarkdownWithOptions(strings.Join(lines, "\n"), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 0}))
+	h.chat.AddChild(newCLIMarkdownWithOptions(strings.Join(lines, "\n"), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 0}))
 	h.requestRender(false)
 }
 
@@ -1877,7 +1883,7 @@ func (h *CLIInteractiveTUIHost) handleLiveMessageStart(event AgentSessionEvent) 
 	message := *event.Message
 	switch message.Role {
 	case llm.RoleAssistant:
-		component := gitui.NewMarkdownWithOptions("", gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1})
+		component := newCLIMarkdownWithOptions("", gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1})
 		h.streamingMessage = &message
 		h.streamingComponent = component
 		if h.chat != nil {
@@ -3221,7 +3227,7 @@ func (h *CLIInteractiveTUIHost) addMessage(message llm.Message) {
 	default:
 		prefix = string(message.Role) + ": "
 	}
-	h.chat.AddChild(gitui.NewMarkdownWithOptions(prefix+text, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+	h.chat.AddChild(newCLIMarkdownWithOptions(prefix+text, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
 }
 
 func (h *CLIInteractiveTUIHost) addBranchSummaryMessage(message llm.Message) {
@@ -3280,7 +3286,7 @@ func (h *CLIInteractiveTUIHost) addSkillInvocationMessage(message llm.Message) b
 		Expanded:  h.toolOutputExpanded,
 	}))
 	if skillBlock.UserMessage != "" {
-		h.chat.AddChild(gitui.NewMarkdownWithOptions("You: "+skillBlock.UserMessage, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+		h.chat.AddChild(newCLIMarkdownWithOptions("You: "+skillBlock.UserMessage, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
 	}
 	return true
 }
@@ -3355,13 +3361,13 @@ func (h *CLIInteractiveTUIHost) addFallbackCustomMessage(message llm.Message) {
 	if label == "" {
 		label = "custom"
 	}
-	h.chat.AddChild(gitui.NewMarkdownWithOptions("["+label+"] "+text, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+	h.chat.AddChild(newCLIMarkdownWithOptions("["+label+"] "+text, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
 }
 
 func (h *CLIInteractiveTUIHost) addAssistantMessage(message llm.Message) {
 	text := interactiveAssistantTextFromLLMMessage(message, h.hideThinkingBlock(), h.hiddenThinkingLabelValue())
 	if strings.TrimSpace(text) != "" {
-		h.chat.AddChild(gitui.NewMarkdownWithOptions("Assistant: "+text, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+		h.chat.AddChild(newCLIMarkdownWithOptions("Assistant: "+text, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
 	}
 	for _, part := range message.Content {
 		if part.Type != llm.ContentToolCall {
@@ -3883,8 +3889,6 @@ func (h *CLIInteractiveTUIHost) handleBuiltinSlashCommand(text string) (bool, er
 			return false, nil
 		}
 		return true, h.handlePackageResourcesSlashCommand()
-	case "theme":
-		return true, h.handleThemeSlashCommand(args)
 	case "thinking":
 		return true, h.handleThinkingSlashCommand(args)
 	case "model":
@@ -4060,7 +4064,7 @@ func (h *CLIInteractiveTUIHost) renderSettingsSummary(state RPCSessionState, set
 			"| Install telemetry | "+markdownTableValue(fmt.Sprintf("%t", settings.GetEnableInstallTelemetry()))+" |",
 		)
 	}
-	h.chat.AddChild(gitui.NewMarkdownWithOptions("**Settings**\n\n"+strings.Join(rows, "\n"), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+	h.chat.AddChild(newCLIMarkdownWithOptions("**Settings**\n\n"+strings.Join(rows, "\n"), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
 	h.requestRender(false)
 	return nil
 }
@@ -4139,11 +4143,11 @@ func (c cliSettingsListComponent) Invalidate() {
 
 func (c cliSettingsListComponent) Render(width int) []string {
 	width = max(1, width)
-	lines := []string{strings.Repeat("─", width)}
+	lines := []string{tuiThemeBorder(strings.Repeat("─", width))}
 	if c.list != nil {
 		lines = append(lines, c.list.Render(width)...)
 	}
-	lines = append(lines, strings.Repeat("─", width))
+	lines = append(lines, tuiThemeBorder(strings.Repeat("─", width)))
 	return lines
 }
 
@@ -4598,7 +4602,7 @@ func (h *CLIInteractiveTUIHost) packageResourceManager() (*DefaultPackageManager
 
 func (h *CLIInteractiveTUIHost) renderPackageResourcesSummary(items []PackageResourceToggleItem) error {
 	if len(items) == 0 {
-		h.chat.AddChild(gitui.NewMarkdownWithOptions("**Resources**\n\nNo resources found.", gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+		h.chat.AddChild(newCLIMarkdownWithOptions("**Resources**\n\nNo resources found.", gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
 		h.requestRender(false)
 		return nil
 	}
@@ -4610,7 +4614,7 @@ func (h *CLIInteractiveTUIHost) renderPackageResourcesSummary(items []PackageRes
 		}
 		rows = append(rows, "| "+markdownTableValue(packageResourceLabel(item))+" | "+markdownTableValue(packageResourceSourceLabel(item))+" | "+state+" |")
 	}
-	h.chat.AddChild(gitui.NewMarkdownWithOptions("**Resources**\n\n"+strings.Join(rows, "\n"), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+	h.chat.AddChild(newCLIMarkdownWithOptions("**Resources**\n\n"+strings.Join(rows, "\n"), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
 	h.requestRender(false)
 	return nil
 }
@@ -4751,112 +4755,6 @@ func (h *CLIInteractiveTUIHost) handleThinkingSelectDialog(host *RPCSessionHost)
 	}
 	h.addStatus("Thinking: " + host.Session.Agent.State.ThinkingLevel)
 	return nil
-}
-
-func (h *CLIInteractiveTUIHost) handleThemeSlashCommand(args string) error {
-	settings := h.settingsManager()
-	if settings == nil {
-		return errors.New("theme selector requires settings")
-	}
-	themeName := strings.TrimSpace(args)
-	if themeName != "" {
-		if err := h.SetTUITheme(themeName); err != nil {
-			return err
-		}
-		h.addStatus("Theme: " + themeName)
-		return nil
-	}
-	if h.exitAfterInitial || h.ui == nil {
-		return h.renderThemeSummary(settings)
-	}
-	return h.handleThemeSelectDialog(settings)
-}
-
-func (h *CLIInteractiveTUIHost) renderThemeSummary(settings *SettingsManager) error {
-	current := ""
-	if settings != nil {
-		current = settings.GetTheme()
-	}
-	rows := []string{"| Theme | Value |", "|---|---|", "| Current | " + markdownTableValue(current) + " |"}
-	available := h.availableThemeNames(current)
-	if len(available) > 0 {
-		rows = append(rows, "| Available | "+markdownTableValue(strings.Join(available, ", "))+" |")
-	}
-	h.chat.AddChild(gitui.NewMarkdownWithOptions("**Theme**\n\n"+strings.Join(rows, "\n"), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
-	h.requestRender(false)
-	return nil
-}
-
-func (h *CLIInteractiveTUIHost) handleThemeSelectDialog(settings *SettingsManager) error {
-	if settings == nil {
-		return errors.New("theme selector requires settings")
-	}
-	themes := h.availableThemeNames(settings.GetTheme())
-	options := make([]TUIDialogOption, 0, len(themes))
-	for _, themeName := range themes {
-		description := ""
-		if themeName == settings.GetTheme() {
-			description = "(current)"
-		}
-		options = append(options, TUIDialogOption{ID: themeName, Label: themeName, Description: description, Value: themeName})
-	}
-	result, err := h.showThemeSelectorOverlay(settings, options)
-	if err != nil {
-		return err
-	}
-	if result.Action != "selected" {
-		h.addStatus("Theme selection cancelled")
-		return nil
-	}
-	themeName := dialogStringValue(result.Value)
-	if err := h.SetTUITheme(themeName); err != nil {
-		return err
-	}
-	h.addStatus("Theme: " + themeName)
-	return nil
-}
-
-func (h *CLIInteractiveTUIHost) showThemeSelectorOverlay(settings *SettingsManager, options []TUIDialogOption) (TUIDialogResult, error) {
-	if h == nil || h.ui == nil {
-		return TUIDialogResult{}, errors.New("interactive TUI theme selector is not ready")
-	}
-	if len(options) == 0 {
-		return TUIDialogResult{}, errors.New("theme selector requires options")
-	}
-	current := ""
-	if settings != nil {
-		current = settings.GetTheme()
-	}
-	resultCh := make(chan TUIDialogResult, 1)
-	finish := func(result TUIDialogResult) {
-		select {
-		case resultCh <- result:
-		default:
-		}
-	}
-	component := newCLISelectDialogWithOptions("Theme", "Select interface theme.", options, dialogDefaultOptionIndex(options, current), func(option TUIDialogOption) {
-		finish(TUIDialogResult{Action: "selected", OptionID: option.ID, Value: dialogOptionValue(option)})
-	}, func() {
-		h.previewTUITheme(current)
-		finish(TUIDialogResult{Action: "cancelled"})
-	}, cliSelectDialogOptions{
-		OnSelectionChange: func(option TUIDialogOption) {
-			h.previewTUITheme(dialogStringValue(dialogOptionValue(option)))
-		},
-	})
-	width := gitui.Cells(56)
-	handle := h.ui.ShowOverlay(component, gitui.OverlayOptions{Width: &width, MinWidth: 32, Anchor: gitui.OverlayCenter})
-	h.requestRender(false)
-	select {
-	case result := <-resultCh:
-		handle.Hide()
-		h.clearTUIThemePreview()
-		return result, nil
-	case <-h.done:
-		handle.Hide()
-		h.clearTUIThemePreview()
-		return TUIDialogResult{Action: "cancelled"}, nil
-	}
 }
 
 func (h *CLIInteractiveTUIHost) availableThemeNames(current string) []string {
@@ -5135,7 +5033,7 @@ func (h *CLIInteractiveTUIHost) renderAvailableModelsSummary(host *RPCSessionHos
 		}
 		rows = append(rows, "| "+markdownTableValue(model.Provider)+" | "+markdownTableValue(model.ID)+" |")
 	}
-	h.chat.AddChild(gitui.NewMarkdownWithOptions(strings.Join(rows, "\n"), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+	h.chat.AddChild(newCLIMarkdownWithOptions(strings.Join(rows, "\n"), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
 	h.requestRender(false)
 	return nil
 }
@@ -5401,45 +5299,48 @@ func (h *CLIInteractiveTUIHost) handleSessionSlashCommand() error {
 	}
 	state := host.GetState()
 	stats := host.GetSessionStats()
-	h.chat.AddChild(gitui.NewMarkdownWithOptions(renderInteractiveSessionInfo(state, stats), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+	h.chat.AddChild(gitui.NewText(renderInteractiveSessionInfo(state, stats), 1, 0))
 	h.requestRender(false)
 	return nil
 }
 
 func renderInteractiveSessionInfo(state RPCSessionState, stats RPCSessionStats) string {
-	lines := []string{"**Session Info**", ""}
+	label := func(text string) string {
+		return tuiThemeDim(text + ":")
+	}
+	lines := []string{tuiThemeBold("Session Info"), ""}
 	if state.SessionName != "" {
-		lines = append(lines, "Name: "+state.SessionName)
+		lines = append(lines, label("Name")+" "+state.SessionName)
 	}
 	sessionFile := firstNonEmptyString(stats.SessionFile, state.SessionFile, "In-memory")
 	lines = append(lines,
-		"File: "+sessionFile,
-		"ID: "+firstNonEmptyString(stats.SessionID, state.SessionID),
+		label("File")+" "+sessionFile,
+		label("ID")+" "+firstNonEmptyString(stats.SessionID, state.SessionID),
 	)
 	lines = append(lines,
 		"",
-		"**Messages**",
-		"User: "+formatSessionInfoInt(stats.UserMessages),
-		"Assistant: "+formatSessionInfoInt(stats.AssistantMessages),
-		"Tool Calls: "+formatSessionInfoInt(stats.ToolCalls),
-		"Tool Results: "+formatSessionInfoInt(stats.ToolResults),
-		"Total: "+formatSessionInfoInt(stats.TotalMessages),
+		tuiThemeBold("Messages"),
+		label("User")+" "+formatSessionInfoInt(stats.UserMessages),
+		label("Assistant")+" "+formatSessionInfoInt(stats.AssistantMessages),
+		label("Tool Calls")+" "+formatSessionInfoInt(stats.ToolCalls),
+		label("Tool Results")+" "+formatSessionInfoInt(stats.ToolResults),
+		label("Total")+" "+formatSessionInfoInt(stats.TotalMessages),
 	)
 	lines = append(lines,
 		"",
-		"**Tokens**",
-		"Input: "+formatSessionInfoInt(stats.Tokens.Input),
-		"Output: "+formatSessionInfoInt(stats.Tokens.Output),
+		tuiThemeBold("Tokens"),
+		label("Input")+" "+formatSessionInfoInt(stats.Tokens.Input),
+		label("Output")+" "+formatSessionInfoInt(stats.Tokens.Output),
 	)
 	if stats.Tokens.CacheRead > 0 {
-		lines = append(lines, "Cache Read: "+formatSessionInfoInt(stats.Tokens.CacheRead))
+		lines = append(lines, label("Cache Read")+" "+formatSessionInfoInt(stats.Tokens.CacheRead))
 	}
 	if stats.Tokens.CacheWrite > 0 {
-		lines = append(lines, "Cache Write: "+formatSessionInfoInt(stats.Tokens.CacheWrite))
+		lines = append(lines, label("Cache Write")+" "+formatSessionInfoInt(stats.Tokens.CacheWrite))
 	}
-	lines = append(lines, "Total: "+formatSessionInfoInt(stats.Tokens.Total))
+	lines = append(lines, label("Total")+" "+formatSessionInfoInt(stats.Tokens.Total))
 	if stats.Cost > 0 {
-		lines = append(lines, "", "**Cost**", fmt.Sprintf("Total: %.4f", stats.Cost))
+		lines = append(lines, "", tuiThemeBold("Cost"), label("Total")+" "+fmt.Sprintf("%.4f", stats.Cost))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -5487,7 +5388,7 @@ func (h *CLIInteractiveTUIHost) handleLoginSlashCommand(args string) error {
 	} else if !h.exitAfterInitial {
 		h.addStatus("No API key providers available. Configure ~/.gi/agent/models.json or provider environment variables.")
 	}
-	h.chat.AddChild(gitui.NewMarkdownWithOptions("**Login**\n\n"+message, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+	h.chat.AddChild(newCLIMarkdownWithOptions("**Login**\n\n"+message, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
 	h.requestRender(false)
 	return nil
 }
@@ -5590,7 +5491,11 @@ func (h *CLIInteractiveTUIHost) selectAuthProvider(mode string, registry *ModelR
 
 func (h *CLIInteractiveTUIHost) handleHotkeysSlashCommand() error {
 	hotkeys := strings.TrimSpace(h.hotkeysMarkdown())
-	h.chat.AddChild(gitui.NewMarkdownWithOptions(hotkeys, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+	h.chat.AddChild(newCLIDynamicBorder())
+	h.chat.AddChild(gitui.NewText(tuiThemeBoldAccent("Keyboard Shortcuts"), 1, 0))
+	h.chat.AddChild(gitui.NewSpacer(1))
+	h.chat.AddChild(newCLIMarkdownWithOptions(hotkeys, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+	h.chat.AddChild(newCLIDynamicBorder())
 	h.requestRender(false)
 	return nil
 }
@@ -5604,8 +5509,6 @@ func (h *CLIInteractiveTUIHost) hotkeysMarkdown() string {
 		return formatHotkeyKeys(keybindingValueKeys(keybindings[action]), true)
 	}
 	lines := []string{
-		"**Keyboard Shortcuts**",
-		"",
 		"**Navigation**",
 		"| Key | Action |",
 		"|-----|--------|",
@@ -5722,7 +5625,11 @@ func (h *CLIInteractiveTUIHost) handleChangelogSlashCommand() error {
 	if strings.TrimSpace(changelog) == "" {
 		changelog = "No changelog entries found."
 	}
-	h.chat.AddChild(gitui.NewMarkdownWithOptions("**What's New**\n\n"+changelog, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+	h.chat.AddChild(newCLIDynamicBorder())
+	h.chat.AddChild(gitui.NewText(tuiThemeBoldAccent("What's New"), 1, 0))
+	h.chat.AddChild(gitui.NewSpacer(1))
+	h.chat.AddChild(newCLIMarkdownWithOptions(changelog, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+	h.chat.AddChild(newCLIDynamicBorder())
 	h.requestRender(false)
 	return nil
 }

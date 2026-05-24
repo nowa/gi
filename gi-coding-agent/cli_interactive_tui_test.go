@@ -4244,6 +4244,7 @@ func TestCLIInteractiveTUIHostRequiresExactNoArgSlashCommandsPiStyle(t *testing.
 		Terminal:    terminal,
 		Messages: []string{
 			"/session extra",
+			"/theme light",
 			"/quit later",
 		},
 		ExitAfterInitial: true,
@@ -4255,12 +4256,15 @@ func TestCLIInteractiveTUIHostRequiresExactNoArgSlashCommandsPiStyle(t *testing.
 		t.Fatal(err)
 	}
 
-	if !reflect.DeepEqual(prompts, []string{"/session extra", "/quit later"}) {
+	if !reflect.DeepEqual(prompts, []string{"/session extra", "/theme light", "/quit later"}) {
 		t.Fatalf("prompts = %#v", prompts)
 	}
 	waitForViewport(t, terminal, "agent saw: /quit later")
 	if strings.Contains(terminal.Output(), "Session Info") {
 		t.Fatalf("argument-bearing /session should not run builtin command:\n%s", terminal.Output())
+	}
+	if sessionHost.settingsManager.GetTheme() == "light" {
+		t.Fatalf("/theme should be submitted as a prompt like Pi, not handled as a Gi builtin")
 	}
 }
 
@@ -4923,22 +4927,20 @@ func TestCLIInteractiveTUIHostShowsSettingsSelectorAndTogglesTelemetry(t *testin
 	}
 }
 
-func TestCLIInteractiveTUIHostRunsThemeSlashCommand(t *testing.T) {
+func TestCLIInteractiveTUIHostAppliesThemeThroughHost(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
 	if !ok {
 		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
 	}
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
-		RuntimeHost:      runtimeHost,
-		Terminal:         gitui.NewVirtualTerminal(100, 24),
-		Messages:         []string{"/theme light"},
-		ExitAfterInitial: true,
+		RuntimeHost: runtimeHost,
+		Terminal:    gitui.NewVirtualTerminal(100, 24),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := host.RunContext(context.Background()); err != nil {
+	if err := host.SetTUITheme("light"); err != nil {
 		t.Fatal(err)
 	}
 	if got := sessionHost.settingsManager.GetTheme(); got != "light" {
@@ -4969,16 +4971,14 @@ func TestCLIInteractiveTUIHostDispatchesThemeChangeToViewTreeSubscribers(t *test
 	}
 
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
-		RuntimeHost:      runtimeHost,
-		Terminal:         gitui.NewVirtualTerminal(100, 24),
-		ViewTreeHost:     viewHost,
-		Messages:         []string{"/theme light"},
-		ExitAfterInitial: true,
+		RuntimeHost:  runtimeHost,
+		Terminal:     gitui.NewVirtualTerminal(100, 24),
+		ViewTreeHost: viewHost,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := host.RunContext(context.Background()); err != nil {
+	if err := host.SetTUITheme("light"); err != nil {
 		t.Fatal(err)
 	}
 	if got := sessionHost.settingsManager.GetTheme(); got != "light" {
@@ -4993,100 +4993,6 @@ func TestCLIInteractiveTUIHostDispatchesThemeChangeToViewTreeSubscribers(t *test
 		}
 	}
 	t.Fatalf("theme_change was not dispatched: %#v", events)
-}
-
-func TestCLIInteractiveTUIHostShowsThemeSelector(t *testing.T) {
-	runtimeHost := newOfflineInteractiveRuntimeHost(t)
-	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
-	if !ok {
-		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
-	}
-	sessionHost.settingsManager.SetTheme("dark")
-	terminal := gitui.NewVirtualTerminal(100, 24)
-	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
-		RuntimeHost: runtimeHost,
-		Terminal:    terminal,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- host.RunContext(context.Background())
-	}()
-	t.Cleanup(func() { host.Stop() })
-	waitForHostEditor(t, host)
-
-	host.editor.SetText("/theme")
-	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Select interface theme.")
-	waitForViewport(t, terminal, "light")
-	terminal.SendInput("li")
-	waitForViewport(t, terminal, "light")
-	waitForThemePreview(t, host, "light")
-	if got := sessionHost.settingsManager.GetTheme(); got != "dark" {
-		t.Fatalf("theme should not be persisted during preview, got %q", got)
-	}
-	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Theme: light")
-	if got := sessionHost.settingsManager.GetTheme(); got != "light" {
-		t.Fatalf("theme = %q, want light", got)
-	}
-
-	host.Stop()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("RunContext returned %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("interactive TUI host did not stop")
-	}
-}
-
-func TestCLIInteractiveTUIHostThemeSelectorCancelRestoresPreviewPiStyle(t *testing.T) {
-	runtimeHost := newOfflineInteractiveRuntimeHost(t)
-	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
-	if !ok {
-		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
-	}
-	sessionHost.settingsManager.SetTheme("dark")
-	terminal := gitui.NewVirtualTerminal(100, 24)
-	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
-		RuntimeHost: runtimeHost,
-		Terminal:    terminal,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- host.RunContext(context.Background())
-	}()
-	t.Cleanup(func() { host.Stop() })
-	waitForHostEditor(t, host)
-
-	host.editor.SetText("/theme")
-	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Select interface theme.")
-	terminal.SendInput("li")
-	waitForThemePreview(t, host, "light")
-	terminal.SendInput("\x1b")
-	waitForViewport(t, terminal, "Theme selection cancelled")
-	waitForThemePreview(t, host, "dark")
-	if got := sessionHost.settingsManager.GetTheme(); got != "dark" {
-		t.Fatalf("theme after cancel = %q, want dark", got)
-	}
-
-	host.Stop()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("RunContext returned %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("interactive TUI host did not stop")
-	}
 }
 
 func TestCLIInteractiveTUIHostShowsPackageResourceSelectorAndReloads(t *testing.T) {
@@ -5161,6 +5067,25 @@ func TestCLIInteractiveTUIHostShowsPackageResourceSelectorAndReloads(t *testing.
 		}
 	case <-time.After(time.Second):
 		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLISettingsListComponentUsesPiBorderTheme(t *testing.T) {
+	list := gitui.NewSettingsList([]gitui.SettingItem{{
+		ID:           "autocompact",
+		Label:        "Auto-compact",
+		CurrentValue: "true",
+		Values:       []string{"true", "false"},
+	}}, 5, tuiThemeSettingsList())
+	component := cliSettingsListComponent{list: list}
+
+	lines := component.Render(40)
+	if len(lines) < 2 {
+		t.Fatalf("settings lines = %#v", lines)
+	}
+	wantBorder := "\x1b[38;2;95;135;255m" + strings.Repeat("─", 40)
+	if !strings.HasPrefix(lines[0], wantBorder) || !strings.HasPrefix(lines[len(lines)-1], wantBorder) {
+		t.Fatalf("settings borders not themed: %#v", lines)
 	}
 }
 
@@ -5854,6 +5779,12 @@ func TestCLIInteractiveTUIHostHandlesHotkeysCommand(t *testing.T) {
 	if !strings.Contains(output, "Keyboard Shortcuts") || !strings.Contains(output, "Run bash command (excluded from context)") {
 		t.Fatalf("hotkeys output missing expected content:\n%s", output)
 	}
+	renderedMarkdown := strings.Join(newCLIMarkdownWithOptions(strings.TrimSpace(host.hotkeysMarkdown()), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}).Render(120), "\n")
+	if !strings.Contains(renderedMarkdown, tuiThemeAccent("Ctrl+C")) ||
+		!strings.Contains(newCLIDynamicBorder().Render(120)[0], tuiThemeBorder(strings.Repeat("─", 120))) ||
+		!strings.Contains(tuiThemeBoldAccent("Keyboard Shortcuts"), "\x1b[38;2;138;190;183mKeyboard Shortcuts") {
+		t.Fatalf("hotkeys theme helpers did not match Pi styling:\n%q", renderedMarkdown)
+	}
 }
 
 func TestCLIInteractiveTUIHostHotkeysUseEffectiveKeybindingsPiStyle(t *testing.T) {
@@ -6128,24 +6059,24 @@ func TestRenderInteractiveSessionInfoUsesPiStyleSections(t *testing.T) {
 	)
 
 	for _, expected := range []string{
-		"**Session Info**",
-		"Name: Demo",
-		"File: /tmp/session.jsonl",
-		"ID: stats-id",
-		"**Messages**",
-		"User: 2",
-		"Assistant: 3",
-		"Tool Calls: 4",
-		"Tool Results: 5",
-		"Total: 14",
-		"**Tokens**",
-		"Input: 1,000",
-		"Output: 2,000",
-		"Cache Read: 3,000",
-		"Cache Write: 4,000",
-		"Total: 10,000",
-		"**Cost**",
-		"Total: 0.1234",
+		tuiThemeBold("Session Info"),
+		tuiThemeDim("Name:") + " Demo",
+		tuiThemeDim("File:") + " /tmp/session.jsonl",
+		tuiThemeDim("ID:") + " stats-id",
+		tuiThemeBold("Messages"),
+		tuiThemeDim("User:") + " 2",
+		tuiThemeDim("Assistant:") + " 3",
+		tuiThemeDim("Tool Calls:") + " 4",
+		tuiThemeDim("Tool Results:") + " 5",
+		tuiThemeDim("Total:") + " 14",
+		tuiThemeBold("Tokens"),
+		tuiThemeDim("Input:") + " 1,000",
+		tuiThemeDim("Output:") + " 2,000",
+		tuiThemeDim("Cache Read:") + " 3,000",
+		tuiThemeDim("Cache Write:") + " 4,000",
+		tuiThemeDim("Total:") + " 10,000",
+		tuiThemeBold("Cost"),
+		tuiThemeDim("Total:") + " 0.1234",
 	} {
 		if !strings.Contains(info, expected) {
 			t.Fatalf("session info missing %q:\n%s", expected, info)
