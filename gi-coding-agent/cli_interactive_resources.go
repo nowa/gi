@@ -49,7 +49,37 @@ func (c *cliLoadedResourcesComponent) Render(width int) []string {
 		return nil
 	}
 	text := formatInteractiveLoadedResources(c.resources, c.options, c.expanded.Load())
-	return gitui.NewText(text, 1, 0).Render(width)
+	text = tuiThemeLoadedResources(text)
+	return gitui.NewText(text, 0, 0).Render(width)
+}
+
+func tuiThemeLoadedResources(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	for index, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == "":
+			continue
+		case strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]"):
+			if strings.Contains(trimmed, "conflicts") || strings.Contains(trimmed, "issues") {
+				lines[index] = tuiThemeWarning(line)
+			} else {
+				lines[index] = tuiThemeFG("mdHeading", line)
+			}
+		case strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") &&
+			(trimmed == "project" || trimmed == "user" || trimmed == "path"):
+			lines[index] = strings.TrimSuffix(line, trimmed) + tuiThemeAccent(trimmed)
+		case strings.HasPrefix(line, "    ") && !strings.HasPrefix(line, "      ") &&
+			(strings.HasPrefix(trimmed, "git:") || strings.HasPrefix(trimmed, "official:") || strings.HasPrefix(trimmed, "local:")):
+			lines[index] = strings.TrimSuffix(line, trimmed) + tuiThemeFG("mdLink", trimmed)
+		case strings.HasPrefix(line, "  "):
+			lines[index] = tuiThemeDim(line)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (h *CLIInteractiveTUIHost) showLoadedResourcesOnStartup() {
@@ -75,7 +105,11 @@ func (h *CLIInteractiveTUIHost) showLoadedResourcesOnStartup() {
 		h.toolOutputExpanded,
 	)
 	h.startupResources = append(h.startupResources, component)
+	if len(resources.ContextFiles) > 0 {
+		h.chat.AddChild(gitui.NewSpacer(1))
+	}
 	h.chat.AddChild(component)
+	h.chat.AddChild(gitui.NewSpacer(1))
 	h.requestRender(false)
 }
 

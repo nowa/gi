@@ -214,7 +214,7 @@ func TestInteractiveModeShowLoadedResourcesPromptsAndThemesPiStyle(t *testing.T)
 		Prompts: []InteractivePromptResource{{FilePath: "/tmp/prompts/review.md", Name: "review"}},
 		Themes:  []InteractiveThemeResource{{SourcePath: "/tmp/themes/focus.json", Name: "focus"}},
 	}, InteractiveShowLoadedResourcesOptions{})
-	if !strings.Contains(expanded, "/tmp/prompts/review.md") || !strings.Contains(expanded, "/tmp/themes/focus.json") {
+	if !strings.Contains(expanded, "/review") || !strings.Contains(expanded, "/tmp/themes/focus.json") {
 		t.Fatalf("expanded = %q", expanded)
 	}
 }

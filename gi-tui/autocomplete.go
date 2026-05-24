@@ -245,17 +245,11 @@ func (p *CombinedAutocompleteProvider) providerSuggestionsContext(ctx context.Co
 }
 
 func filterSlashCommandCompletions(items []AutocompleteItem, prefix string) []AutocompleteItem {
-	prefix = strings.ToLower(strings.TrimSpace(prefix))
+	prefix = strings.TrimSpace(prefix)
 	if prefix == "" {
 		return items
 	}
-	filtered := make([]AutocompleteItem, 0, len(items))
-	for _, item := range items {
-		if strings.HasPrefix(strings.ToLower(item.Value), prefix) {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
+	return FuzzyFilter(items, prefix, func(item AutocompleteItem) string { return item.Value })
 }
 
 type CompletionResult struct {

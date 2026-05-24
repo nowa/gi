@@ -399,9 +399,27 @@ func userAgentsDirFromAgentDir(agentDir string) string {
 	agentDir = filepath.Clean(agentDir)
 	configDir := filepath.Dir(agentDir)
 	if filepath.Base(agentDir) != "agent" || filepath.Base(configDir) != ConfigDirName {
+		if cliAgentDirOverridden(agentDir) {
+			if home, err := os.UserHomeDir(); err == nil && home != "" {
+				return filepath.Join(home, ".agents")
+			}
+		}
 		return ""
 	}
 	return filepath.Join(filepath.Dir(configDir), ".agents")
+}
+
+func cliAgentDirOverridden(agentDir string) bool {
+	for _, envName := range []string{"GI_CODING_AGENT_DIR", "PI_CODING_AGENT_DIR"} {
+		value := strings.TrimSpace(os.Getenv(envName))
+		if value == "" {
+			continue
+		}
+		if filepath.Clean(ExpandPath(value)) == agentDir {
+			return true
+		}
+	}
+	return false
 }
 
 func projectAgentsDirs(cwd, userAgentsDir string) []string {

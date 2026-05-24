@@ -164,7 +164,7 @@ func (c *ToolExecutionComponent) Render(width int) []string {
 		lines = append(lines, c.name)
 	}
 	if c.result == nil {
-		return truncateToolExecutionLines(lines, width)
+		return c.renderThemedShell(lines, width)
 	}
 	context = c.renderContext()
 	if renderer := c.resultRenderer(); renderer != nil {
@@ -181,7 +181,46 @@ func (c *ToolExecutionComponent) Render(width int) []string {
 		lines = append(lines, c.renderResultFallback()...)
 	}
 	lines = append(lines, c.renderImageBlocks(width)...)
-	return truncateToolExecutionLines(lines, width)
+	return c.renderThemedShell(lines, width)
+}
+
+func (c *ToolExecutionComponent) renderThemedShell(lines []string, width int) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	if c.shouldRenderPlainShell(lines) {
+		return append([]string{""}, truncateToolExecutionLines(lines, width)...)
+	}
+	innerWidth := max(1, width-2)
+	renderedLines := truncateToolExecutionLines(lines, innerWidth)
+	box := gitui.NewBox(1, 1, func(text string) string {
+		return tuiThemeBG(c.shellBackgroundColor(), text)
+	})
+	box.AddChild(cliRenderedLinesComponent{render: func(int) []string {
+		return renderedLines
+	}})
+	boxLines := box.Render(width)
+	if len(boxLines) == 0 {
+		return nil
+	}
+	return append([]string{""}, boxLines...)
+}
+
+func (c *ToolExecutionComponent) shouldRenderPlainShell(lines []string) bool {
+	// Large edit previews can span hundreds of lines; recoloring every row on
+	// settle causes terminal-wide redraws without changing the visible diff.
+	return c.name == "edit" && len(lines) > 120
+}
+
+func (c *ToolExecutionComponent) shellBackgroundColor() string {
+	switch {
+	case c.result == nil || c.resultIsPartial:
+		return "toolPendingBg"
+	case c.resultIsError:
+		return "toolErrorBg"
+	default:
+		return "toolSuccessBg"
+	}
 }
 
 func (c *ToolExecutionComponent) renderContext() ToolRenderContext {

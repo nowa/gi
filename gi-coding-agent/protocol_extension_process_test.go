@@ -1387,11 +1387,11 @@ func TestProtocolExtensionProcessCanRegisterToolRenderer(t *testing.T) {
 	waitForToolRenderer(t, runtime, "rendered_tool")
 	definition := runtime.GetRegisteredToolDefinition("rendered_tool")
 	component := NewToolExecutionComponent("rendered_tool", "tool-call-1", map[string]any{"foo": "bar"}, definition, sessionManager.GetCWD())
-	if rendered := component.Render(80); !reflect.DeepEqual(rendered, []string{"Tool call render: bar"}) {
+	if rendered := toolExecutionContentLines(component, 80); !reflect.DeepEqual(rendered, []string{"Tool call render: bar"}) {
 		t.Fatalf("call rendered = %#v", rendered)
 	}
 	component.UpdateResult(FileToolResult{Text: "done"}, false)
-	if rendered := component.Render(80); !reflect.DeepEqual(rendered, []string{"Tool call render: bar", "Tool result render: done"}) {
+	if rendered := toolExecutionContentLines(component, 80); !reflect.DeepEqual(rendered, []string{"Tool call render: bar", "Tool result render: done"}) {
 		t.Fatalf("result rendered = %#v", rendered)
 	}
 }

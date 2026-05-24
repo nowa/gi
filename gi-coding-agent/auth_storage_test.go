@@ -228,6 +228,7 @@ func TestAuthStorageOAuthCompromisedLockAllowsRetry(t *testing.T) {
 			return "Bearer " + credentials.Access
 		},
 	})
+	t.Cleanup(func() { UnregisterOAuthProvider(providerID) })
 
 	authPath := writeTestAuthJSON(t, AuthStorageData{
 		providerID: {

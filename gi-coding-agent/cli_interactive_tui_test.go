@@ -43,7 +43,7 @@ func TestCLIInteractiveTUIHostRendersInitialPromptAndViewTreeSlots(t *testing.T)
 
 	terminal.WaitForRender()
 	viewport := strings.Join(terminal.GetViewport(), "\n")
-	for _, expected := range []string{"Package widget", "You: hello", "Assistant: Response to: hello"} {
+	for _, expected := range []string{"Package widget", "hello", "Response to: hello"} {
 		if !strings.Contains(viewport, expected) {
 			t.Fatalf("viewport missing %q:\n%s", expected, viewport)
 		}
@@ -73,7 +73,7 @@ func TestCLIInteractiveTUIHostRendersLiveSessionEventsPiStyle(t *testing.T) {
 
 	user := llm.Message{Role: llm.RoleUser, Content: []llm.ContentPart{llm.Text("live user prompt")}}
 	sessionHost.session.emit(AgentSessionEvent{Type: "message_start", Message: &user})
-	waitForViewport(t, terminal, "You: live user prompt")
+	waitForViewport(t, terminal, "live user prompt")
 
 	assistantStart := llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("final should not flash first")}}
 	sessionHost.session.emit(AgentSessionEvent{Type: "message_start", Message: &assistantStart})
@@ -85,7 +85,7 @@ func TestCLIInteractiveTUIHostRendersLiveSessionEventsPiStyle(t *testing.T) {
 			Partial: partial,
 		},
 	})
-	waitForViewport(t, terminal, "Assistant: partial answer")
+	waitForViewport(t, terminal, "partial answer")
 
 	toolPartial := llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{
 		llm.Text("partial answer"),
@@ -120,7 +120,7 @@ func TestCLIInteractiveTUIHostRendersLiveSessionEventsPiStyle(t *testing.T) {
 
 	final := llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("final answer")}, StopReason: llm.StopReasonStop}
 	sessionHost.session.emit(AgentSessionEvent{Type: "message_end", Message: &final})
-	waitForViewport(t, terminal, "Assistant: final answer")
+	waitForViewport(t, terminal, "final answer")
 
 	host.Stop()
 	select {
@@ -202,8 +202,8 @@ func TestCLIInteractiveTUIHostCoalescesSequentialStatusPiStyle(t *testing.T) {
 	if first == nil || first != second {
 		t.Fatalf("status component was not reused: first=%p second=%p", first, second)
 	}
-	if children := host.chat.Children(); len(children) != 1 {
-		t.Fatalf("children after coalesced statuses = %d, want 1", len(children))
+	if children := host.chat.Children(); len(children) != 2 {
+		t.Fatalf("children after coalesced statuses = %d, want 2", len(children))
 	}
 	rendered := strings.Join(host.chat.Render(80), "\n")
 	if strings.Contains(rendered, "STATUS_ONE") || !strings.Contains(rendered, "STATUS_TWO") {
@@ -212,8 +212,8 @@ func TestCLIInteractiveTUIHostCoalescesSequentialStatusPiStyle(t *testing.T) {
 
 	host.chat.AddChild(gitui.NewText("OTHER", 1, 0))
 	host.addStatus("STATUS_THREE")
-	if children := host.chat.Children(); len(children) != 3 {
-		t.Fatalf("children after intervening message = %d, want 3", len(children))
+	if children := host.chat.Children(); len(children) != 5 {
+		t.Fatalf("children after intervening message = %d, want 5", len(children))
 	}
 	rendered = strings.Join(host.chat.Render(80), "\n")
 	for _, expected := range []string{"STATUS_TWO", "OTHER", "STATUS_THREE"} {
@@ -748,7 +748,7 @@ func TestCLIInteractiveTUIHostSubmitsTrustedInProcessEditorText(t *testing.T) {
 	if err := host.SubmitEditorText(); err != nil {
 		t.Fatal(err)
 	}
-	waitForViewport(t, terminal, "Assistant: Response to: custom submit")
+	waitForViewport(t, terminal, "Response to: custom submit")
 	if got := host.ReadEditorText(); got != "" {
 		t.Fatalf("custom editor text after submit = %q, want empty", got)
 	}
@@ -1314,8 +1314,8 @@ func TestCLIInteractiveTUIHostRendersEditorAfterStartupContentPiStyle(t *testing
 	if inputRow <= headerRow || inputRow >= footerRow {
 		t.Fatalf("editor input row = %d, want between startup header row %d and footer row %d:\n%s", inputRow, headerRow, footerRow, strings.Join(viewport, "\n"))
 	}
-	if inputRow > len(viewport)/2 {
-		t.Fatalf("editor should follow startup content instead of being bottom-pinned, input row=%d rows=%d:\n%s", inputRow, len(viewport), strings.Join(viewport, "\n"))
+	if inputRow >= footerRow-2 {
+		t.Fatalf("editor should follow startup content instead of sitting against the footer, input row=%d footer row=%d:\n%s", inputRow, footerRow, strings.Join(viewport, "\n"))
 	}
 
 	host.Stop()
@@ -1462,7 +1462,7 @@ func TestCLIInteractiveTUIHostCanClearScreenBeforeStartup(t *testing.T) {
 	if firstFrame >= 0 && forcedClear >= 0 && firstFrame < forcedClear {
 		t.Fatalf("startup should not draw a partial frame before the forced clear, output=%q", output)
 	}
-	if viewport := strings.Join(terminal.GetViewport(), "\n"); !strings.Contains(viewport, "gi v0.0.0") {
+	if viewport := strings.Join(terminal.GetViewport(), "\n"); !strings.Contains(viewport, "Press ctrl+o") || !strings.Contains(viewport, strings.Repeat("─", 80)) {
 		t.Fatalf("viewport missing CLI frame after startup clear:\n%s", viewport)
 	}
 
@@ -1849,8 +1849,66 @@ func TestCLIInteractiveTUIHostShowsLoadedResourcesOnStartupPiStyle(t *testing.T)
 	}
 
 	terminal.SendInput("\x0f")
-	waitForViewport(t, terminal, "ctrl+o to expand tools")
 	waitForViewport(t, terminal, "skills/review/SKILL.md")
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostStartupResourcesWithoutContextUsePiSpacing(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	cwd := t.TempDir()
+	agentDir := filepath.Join(cwd, "agent")
+	writeResourceSkill(t, filepath.Join(cwd, ConfigDirName, "skills", "review", "SKILL.md"), "review", "Review code", "Review content")
+	runtimeHost, err := newDefaultCLIPrintModeHost(Args{
+		Offline:   true,
+		NoSession: true,
+		Model:     "openai/gpt-4o-mini",
+	}, CLIOptions{
+		CWD:      cwd,
+		AgentDir: agentDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	terminal := gitui.NewVirtualTerminal(120, 32)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForViewport(t, terminal, "[Skills]")
+
+	viewport := terminal.GetViewport()
+	onboardingIndex := viewportLineIndex(viewport, "Gi can explain its own features")
+	skillsIndex := viewportLineIndex(viewport, "[Skills]")
+	if onboardingIndex < 0 || skillsIndex < 0 {
+		t.Fatalf("startup resources viewport missing expected lines:\n%s", strings.Join(viewport, "\n"))
+	}
+	blankLines := 0
+	for _, line := range viewport[onboardingIndex+1 : skillsIndex] {
+		if strings.TrimSpace(StripAnsi(line)) == "" {
+			blankLines++
+		}
+	}
+	if blankLines != 1 {
+		t.Fatalf("startup resources without context should keep one Pi spacer before [Skills], got %d:\n%s", blankLines, strings.Join(viewport, "\n"))
+	}
 
 	host.Stop()
 	select {
@@ -2502,6 +2560,20 @@ func TestCLIInteractiveTUIHostShowsTmuxKeyboardWarningPiStyle(t *testing.T) {
 	t.Cleanup(func() { host.Stop() })
 
 	waitForViewport(t, terminal, "Warning: tmux extended-keys is off")
+	viewport := terminal.GetViewport()
+	foundWarningEnd := false
+	for index, line := range viewport {
+		if strings.Contains(line, "and restart tmux.") {
+			foundWarningEnd = true
+			if index+1 >= len(viewport) || strings.TrimSpace(viewport[index+1]) != "" {
+				t.Fatalf("tmux warning should keep Pi spacer before editor border:\n%s", strings.Join(viewport, "\n"))
+			}
+			break
+		}
+	}
+	if !foundWarningEnd {
+		t.Fatalf("wrapped tmux warning end not found:\n%s", strings.Join(viewport, "\n"))
+	}
 
 	host.Stop()
 	select {
@@ -2533,7 +2605,7 @@ func TestCLIInteractiveTUIHostSubmitsEditorInputAndStopsOnCtrlD(t *testing.T) {
 	waitForHostEditor(t, host)
 	host.editor.SetText("typed prompt")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Assistant: Response to: typed prompt")
+	waitForViewport(t, terminal, "Response to: typed prompt")
 
 	terminal.SendInput("\x04")
 	select {
@@ -2715,7 +2787,7 @@ func TestCLIInteractiveTUIHostQueuesStreamingEditorMessagesPiStyle(t *testing.T)
 	close(releaseFirst)
 	waitForPrompt(t, prompts, "steer now")
 	waitForPrompt(t, prompts, "follow later")
-	waitForViewport(t, terminal, "Assistant: done follow later")
+	waitForViewport(t, terminal, "done follow later")
 
 	host.Stop()
 	select {
@@ -2790,7 +2862,7 @@ func TestCLIInteractiveTUIHostRendersBashInPendingAreaWhileStreamingPiStyle(t *t
 	}
 
 	close(releaseFirst)
-	waitForViewport(t, terminal, "Assistant: done first")
+	waitForViewport(t, terminal, "done first")
 
 	host.Stop()
 	select {
@@ -3040,7 +3112,7 @@ func TestCLIInteractiveTUIHostQueuesInputDuringCompactionPiStyle(t *testing.T) {
 
 	close(releaseCompaction)
 	waitForPrompt(t, prompts, "after compact")
-	waitForViewport(t, terminal, "Assistant: done after compact")
+	waitForViewport(t, terminal, "done after compact")
 	if got := len(host.compactionQueue); got != 0 {
 		t.Fatalf("compaction queue length after flush = %d, want 0", got)
 	}
@@ -3256,7 +3328,7 @@ func TestCLIInteractiveTUIHostFlushesCompactionFollowUpQueuePiStyle(t *testing.T
 	waitForViewport(t, terminal, "Follow-up: follow after compact")
 	close(releaseFirstPrompt)
 	waitForPrompt(t, prompts, "follow after compact")
-	waitForViewport(t, terminal, "Assistant: done follow after compact")
+	waitForViewport(t, terminal, "done follow after compact")
 
 	host.Stop()
 	select {
@@ -3319,7 +3391,7 @@ func TestCLIInteractiveTUIHostDequeuesStreamingMessagesToEditorPiStyle(t *testin
 	waitForViewport(t, terminal, "Restored 2 queued messages to editor")
 
 	close(releaseFirst)
-	waitForViewport(t, terminal, "Assistant: done first")
+	waitForViewport(t, terminal, "done first")
 
 	host.Stop()
 	select {
@@ -3384,7 +3456,7 @@ func TestCLIInteractiveTUIHostEscapeAbortsStreamingAndRestoresQueuePiStyle(t *te
 	}
 
 	close(releaseFirst)
-	waitForViewport(t, terminal, "Assistant: done first")
+	waitForViewport(t, terminal, "done first")
 
 	host.Stop()
 	select {
@@ -3507,11 +3579,12 @@ func TestCLIInteractiveTUIHostDoubleEscapeOpensTreePiStyle(t *testing.T) {
 
 	host.editor.SetText("tree seed")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Assistant: Response to: tree seed")
+	waitForViewport(t, terminal, "Response to: tree seed")
+	waitForCondition(t, func() bool { return host.streamingComponent == nil }, "tree seed response to finish")
 	terminal.SendInput("\x1b")
 	terminal.SendInput("\x1b")
 	waitForViewport(t, terminal, "Session Tree")
-	waitForViewport(t, terminal, "Ctrl+U users")
+	waitForViewport(t, terminal, "fold/branch")
 
 	host.Stop()
 	select {
@@ -3548,7 +3621,8 @@ func TestCLIInteractiveTUIHostDoubleEscapeOpensForkWhenConfiguredPiStyle(t *test
 
 	host.editor.SetText("fork seed")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Assistant: Response to: fork seed")
+	waitForViewport(t, terminal, "Response to: fork seed")
+	waitForCondition(t, func() bool { return host.streamingComponent == nil }, "fork seed response to finish")
 	terminal.SendInput("\x1b")
 	terminal.SendInput("\x1b")
 	waitForViewport(t, terminal, "Fork from Message")
@@ -3621,7 +3695,7 @@ func TestCLIInteractiveTUIHostUsesSessionActionKeybindingsPiStyle(t *testing.T) 
 
 		host.editor.SetText("tree keybinding seed")
 		terminal.SendInput("\r")
-		waitForViewport(t, terminal, "Assistant: Response to: tree keybinding seed")
+		waitForViewport(t, terminal, "Response to: tree keybinding seed")
 		terminal.SendInput("\x19")
 		waitForViewport(t, terminal, "Session Tree")
 
@@ -3658,7 +3732,7 @@ func TestCLIInteractiveTUIHostUsesSessionActionKeybindingsPiStyle(t *testing.T) 
 
 		host.editor.SetText("fork keybinding seed")
 		terminal.SendInput("\r")
-		waitForViewport(t, terminal, "Assistant: Response to: fork keybinding seed")
+		waitForViewport(t, terminal, "Response to: fork keybinding seed")
 		terminal.SendInput("\x06")
 		waitForViewport(t, terminal, "Fork from Message")
 
@@ -3998,7 +4072,7 @@ func TestCLIInteractiveTUIHostRendersSkillInvocationAsCollapsibleComponentPiStyl
 	host.addMessage(llm.UserMessageText("<skill name=\"review\" location=\"/skills/review/SKILL.md\">\nUse **care**.\n</skill>\n\nCheck this diff"))
 	host.requestRender(false)
 	waitForViewport(t, terminal, "[skill] review")
-	waitForViewport(t, terminal, "You: Check this diff")
+	waitForViewport(t, terminal, "Check this diff")
 	if viewport := strings.Join(terminal.GetViewport(), "\n"); strings.Contains(viewport, "<skill") || strings.Contains(viewport, "Use care") {
 		t.Fatalf("collapsed skill invocation leaked wrapper/details:\n%s", viewport)
 	}
@@ -4140,6 +4214,7 @@ func TestCLIInteractiveTUIHostHandlesBuiltinSlashCommands(t *testing.T) {
 	if !ok {
 		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
 	}
+	mustPrompt(t, sessionHost.session, "seed export session")
 	var prompts int
 	sessionHost.session.Responder = func(prompt string, context []llm.Message, model llm.Model) (llm.Message, error) {
 		prompts++
@@ -4342,7 +4417,65 @@ func TestCLIInteractiveTUIHostShowsBuiltinSlashAutocomplete(t *testing.T) {
 	terminal.SendInput("login")
 	waitForHostAutocompleteChange(t, changed)
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Select provider to configure:")
+	waitForViewport(t, terminal, "Select authentication method:")
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostSlashAutocompleteAfterLongContentDoesNotLeaveStaleEditor(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	terminal := gitui.NewVirtualTerminal(120, 35)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+		ShowFooter:  true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	host.editor.SetText("/hotkeys")
+	terminal.SendInput("\r")
+	waitForTerminalOutput(t, terminal, "Keyboard Shortcuts")
+	waitForViewport(t, terminal, "Run bash command")
+
+	terminal.SendInput("/")
+	waitForViewport(t, terminal, "settings")
+	waitForViewport(t, terminal, "model")
+	viewport := terminal.GetViewport()
+	slashRow := viewportTrimmedLineIndex(viewport, "/")
+	settingsRow := viewportLineIndex(viewport, "settings")
+	footerRow := viewportLineIndex(viewport, "0.0%/")
+	if slashRow < 0 || settingsRow < 0 || footerRow < 0 {
+		t.Fatalf("viewport missing slash autocomplete rows:\n%s", strings.Join(viewport, "\n"))
+	}
+	if settingsRow <= slashRow || footerRow <= settingsRow {
+		t.Fatalf("slash autocomplete row order wrong: slash=%d settings=%d footer=%d\n%s", slashRow, settingsRow, footerRow, strings.Join(viewport, "\n"))
+	}
+	fullWidthBorder := strings.Repeat("─", 120)
+	borderCount := 0
+	for _, line := range viewport {
+		if strings.TrimSpace(StripAnsi(line)) == fullWidthBorder {
+			borderCount++
+		}
+	}
+	if borderCount != 3 {
+		t.Fatalf("slash autocomplete should leave exactly one editor frame after long content, full-width border count=%d\n%s", borderCount, strings.Join(viewport, "\n"))
+	}
 
 	host.Stop()
 	select {
@@ -4964,7 +5097,50 @@ func TestCLIInteractiveTUIHostShowsSettingsSelectorAndTogglesTelemetry(t *testin
 	}
 }
 
+func TestCLIInteractiveTUIHostSettingsSelectorCtrlCCancelsLikePi(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	terminal := gitui.NewVirtualTerminal(120, 48)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	host.editor.SetText("/settings")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Auto-compact")
+	terminal.SendInput("\x03")
+	waitForCondition(t, func() bool { return host.ui.FocusedComponent() == host.editor }, "settings selector to cancel on ctrl+c")
+
+	host.editor.SetText("/login")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select authentication method:")
+	if strings.Contains(strings.Join(terminal.GetViewport(), "\n"), "No matching settings") {
+		t.Fatalf("ctrl+c should cancel settings selector before /login:\n%s", strings.Join(terminal.GetViewport(), "\n"))
+	}
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
 func TestCLIInteractiveTUIHostAppliesThemeThroughHost(t *testing.T) {
+	previousTheme := tuiActiveThemeSnapshot()
+	t.Cleanup(func() { tuiSetActiveThemePalette(previousTheme) })
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
 	if !ok {
@@ -4983,9 +5159,14 @@ func TestCLIInteractiveTUIHostAppliesThemeThroughHost(t *testing.T) {
 	if got := sessionHost.settingsManager.GetTheme(); got != "light" {
 		t.Fatalf("theme = %q, want light", got)
 	}
+	if got, want := tuiThemeAccent("x"), "\x1b[38;2;90;128;128mx"+tuiResetFG; got != want {
+		t.Fatalf("active theme accent = %q, want %q", got, want)
+	}
 }
 
 func TestCLIInteractiveTUIHostDispatchesThemeChangeToViewTreeSubscribers(t *testing.T) {
+	previousTheme := tuiActiveThemeSnapshot()
+	t.Cleanup(func() { tuiSetActiveThemePalette(previousTheme) })
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
 	if !ok {
@@ -5296,8 +5477,7 @@ func TestCLIInteractiveTUIHostModelSlashArgumentAutocompletePiStyle(t *testing.T
 		t.Fatalf("/model scoped completions = %#v, want one scoped item", items)
 	}
 	if items[0].Value != "openai/gpt-5-mini" || items[0].Label != "gpt-5-mini" ||
-		!strings.Contains(items[0].Description, "openai") ||
-		!strings.Contains(items[0].Description, "thinking: off") {
+		items[0].Description != "openai" {
 		t.Fatalf("/model completion = %#v", items[0])
 	}
 
@@ -5608,13 +5788,116 @@ func TestCLIInteractiveTUIHostLoginSlashUsesProviderSelectorPiStyle(t *testing.T
 
 	host.editor.SetText("/login")
 	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select authentication method:")
+	terminal.SendInput("\x1b[B")
+	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Select provider to configure:")
-	terminal.SendInput("openai")
-	waitForViewport(t, terminal, "Search: openai")
+	terminal.SendInput("openai openai")
+	waitForViewport(t, terminal, "> openai openai")
 	waitForViewport(t, terminal, "OpenAI")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "OPENAI_API_KEY")
+	waitForViewport(t, terminal, "Enter API key:")
+	terminal.SendInput("test-openai-key")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Saved API key for OpenAI")
 	waitForViewport(t, terminal, "~/.gi/agent/auth.json")
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostLoginBedrockUsesPiInfoDialog(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	terminal := gitui.NewVirtualTerminal(120, 32)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	host.editor.SetText("/login")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select authentication method:")
+	terminal.SendInput("\x1b[B")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select provider to configure:")
+	terminal.SendInput("bedrock")
+	waitForViewport(t, terminal, "Amazon Bedrock")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Amazon Bedrock setup")
+	waitForViewport(t, terminal, "Amazon Bedrock uses AWS credentials instead of a single API key.")
+	waitForViewport(t, terminal, "docs/providers.md")
+	waitForViewport(t, terminal, "to close")
+	if viewport := strings.Join(terminal.GetViewport(), "\n"); strings.Contains(viewport, "~/.gi/agent/models.json") {
+		t.Fatalf("Bedrock info dialog should point to provider docs, not models.json:\n%s", viewport)
+	}
+	terminal.SendInput("\x1b")
+	waitForHostEditor(t, host)
+	if viewport := strings.Join(terminal.GetViewport(), "\n"); strings.Contains(viewport, "Resume cancelled") {
+		t.Fatalf("/resume cancel should return silently like Pi:\n%s", viewport)
+	}
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostLoginSubscriptionShowsOAuthDialogPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	terminal := gitui.NewVirtualTerminal(120, 32)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	host.editor.SetText("/login")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select authentication method:")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select provider to configure:")
+	waitForViewport(t, terminal, "Anthropic (Claude Pro/Max)")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Login to Anthropic (Claude Pro/Max)")
+	waitForViewport(t, terminal, "https://claude.ai/oauth/authorize")
+	waitForViewport(t, terminal, oauthClickHint())
+	waitForViewport(t, terminal, "Complete login in your browser.")
+	waitForViewport(t, terminal, "Paste redirect URL below, or complete login in browser:")
+	waitForViewport(t, terminal, "to cancel")
+	if viewport := strings.Join(terminal.GetViewport(), "\n"); strings.Contains(viewport, "Subscription login is not implemented yet") {
+		t.Fatalf("OAuth login should show the Pi-style login dialog, not the placeholder status:\n%s", viewport)
+	}
+	terminal.SendInput("\x1b")
+	waitForHostEditor(t, host)
 
 	host.Stop()
 	select {
@@ -5657,6 +5940,52 @@ func TestCLIInteractiveTUIHostLogoutSlashUsesProviderSelectorPiStyle(t *testing.
 	waitForViewport(t, terminal, "Removed stored credential for openai")
 	if sessionHost.modelRegistry.authStorage.Has("openai") {
 		t.Fatalf("openai credential should be removed")
+	}
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostLogoutSlashWithoutCredentialsMatchesPiText(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	sessionHost.modelRegistry.authStorage = NewInMemoryAuthStorage(AuthStorageData{})
+	terminal := gitui.NewVirtualTerminal(120, 32)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	host.editor.SetText("/logout")
+	terminal.SendInput("\r")
+	expected := "No stored credentials to remove. /logout only removes credentials saved by /login; environment variables and models.json config are unchanged."
+	waitForViewport(t, terminal, "No stored credentials to remove. /logout only removes credentials saved by /login")
+	viewport := strings.Join(terminal.GetViewport(), "\n")
+	normalizedViewport := strings.Join(strings.Fields(StripAnsi(viewport)), " ")
+	if !strings.Contains(normalizedViewport, expected) {
+		t.Fatalf("empty /logout text did not match Pi:\n%s", viewport)
+	}
+	if strings.Contains(viewport, "~/.gi/agent/auth.json") {
+		t.Fatalf("empty /logout should not expose Gi-specific auth path:\n%s", viewport)
 	}
 
 	host.Stop()
@@ -5815,8 +6144,91 @@ func TestCLIInteractiveTUIHostHandlesShareCommand(t *testing.T) {
 	}
 }
 
+func TestCLIInteractiveTUIHostShareEmptySessionShowsPiExportError(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	terminal := gitui.NewVirtualTerminal(120, 28)
+	gistCalled := make(chan struct{}, 1)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+		ShareCreateGist: func(_ context.Context, _ string) (string, error) {
+			gistCalled <- struct{}{}
+			return "https://gist.github.com/nowa/empty", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	terminal.SendInput("/share")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Error: Failed to export session: Nothing to export yet - start a conversation first")
+	select {
+	case <-gistCalled:
+		t.Fatal("empty /share should fail before creating a gist")
+	default:
+	}
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostExportEmptySessionShowsPiExportError(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	terminal := gitui.NewVirtualTerminal(120, 28)
+	exportPath := filepath.Join(t.TempDir(), "empty.html")
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	terminal.SendInput("/export " + exportPath)
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Error: Failed to export session: Nothing to export yet - start a conversation first")
+	if _, err := os.Stat(exportPath); !os.IsNotExist(err) {
+		t.Fatalf("empty export file stat err = %v, want not exist", err)
+	}
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
 func TestCLIInteractiveTUIHostShareCommandCanBeCancelled(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	mustPrompt(t, sessionHost.session, "share cancellable session")
 	terminal := gitui.NewVirtualTerminal(120, 28)
 	started := make(chan struct{})
 	cancelled := make(chan struct{})
@@ -6270,6 +6682,55 @@ func TestCLIInteractiveTUIHostResumeCommandOpensSessionSelectorPiStyle(t *testin
 	}
 }
 
+func TestCLIInteractiveTUIHostResumeCommandShowsEmptySelectorPiStyle(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	cwd := t.TempDir()
+	agentDir := filepath.Join(t.TempDir(), "agent")
+	sessionDir := filepath.Join(t.TempDir(), "sessions")
+	runtimeHost, err := newDefaultCLIPrintModeHost(Args{
+		Offline:    true,
+		Model:      "openai/gpt-4o-mini",
+		SessionDir: sessionDir,
+	}, CLIOptions{CWD: cwd, AgentDir: agentDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal := gitui.NewVirtualTerminal(120, 32)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	host.editor.SetText("/resume")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Resume Session (Current Folder)")
+	waitForViewport(t, terminal, "No sessions in current folder. Press Tab to view all.")
+	if viewport := strings.Join(terminal.GetViewport(), "\n"); strings.Contains(viewport, "No sessions to resume") {
+		t.Fatalf("/resume should render Pi-style empty selector instead of status:\n%s", viewport)
+	}
+	terminal.SendInput("\x1b")
+	waitForHostEditor(t, host)
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
 func TestCLIInteractiveTUIHostHandlesCloneCommand(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
@@ -6298,6 +6759,43 @@ func TestCLIInteractiveTUIHostHandlesCloneCommand(t *testing.T) {
 	waitForViewport(t, terminal, "Total: 2")
 	if count := len(sessionHost.session.Messages()); count != 2 {
 		t.Fatalf("messages after /clone = %d, want 2", count)
+	}
+}
+
+func TestCLIInteractiveTUIHostCloneEmptySessionShowsPiStyleEntryError(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	terminal := gitui.NewVirtualTerminal(120, 28)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	terminal.SendInput("/clone")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Error: Entry ")
+	waitForViewport(t, terminal, "not found")
+	viewport := strings.Join(terminal.GetViewport(), "\n")
+	if strings.Contains(viewport, "Nothing to clone yet") {
+		t.Fatalf("empty /clone should match installed Pi entry error, got:\n%s", viewport)
+	}
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
 	}
 }
 
@@ -6410,12 +6908,50 @@ func TestCLIInteractiveTUIHostTreeSlashUsesTreeSelectorPiStyle(t *testing.T) {
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Session Tree")
 	waitForViewport(t, terminal, "tree second")
-	waitForViewport(t, terminal, "Ctrl+U users")
+	waitForViewport(t, terminal, "fold/branch")
 	terminal.SendInput("k")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Summarize branch?")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Navigated to selected point")
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostTreeSlashEscapeReturnsWithoutStatusPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	terminal := gitui.NewVirtualTerminal(120, 32)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	host.editor.SetText("/tree")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Session Tree")
+	waitForViewport(t, terminal, "No entries found")
+	terminal.SendInput("\x1b")
+	waitForFocusedComponent(t, terminal, host, host.editor)
+	if output := terminal.Output(); strings.Contains(output, "Tree switch cancelled") {
+		t.Fatalf("tree selector cancel should return silently like Pi, got output:\n%s", output)
+	}
 
 	host.Stop()
 	select {
@@ -7530,8 +8066,8 @@ func TestCLIInteractiveTUIHostUsesPackageProcessEditorHostAction(t *testing.T) {
 	}()
 	t.Cleanup(func() { host.Stop() })
 
-	waitForViewport(t, terminal, "You: Package plan")
-	waitForViewport(t, terminal, "Assistant: Response to: Package plan")
+	waitForViewport(t, terminal, "Package plan pasted")
+	waitForViewport(t, terminal, "Response to: Package plan pasted")
 
 	host.Stop()
 	select {
@@ -7904,8 +8440,8 @@ func TestCLIInteractiveTUIHostRebindsPackageProcessesOnSessionSwitch(t *testing.
 
 	host.editor.SetText("after switch")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "You: after switch")
-	waitForViewport(t, terminal, "Assistant: Response to: after switch")
+	waitForViewport(t, terminal, "after switch")
+	waitForViewport(t, terminal, "Response to: after switch")
 
 	host.Stop()
 	select {
@@ -8210,7 +8746,7 @@ func TestCLIInteractiveTUIHostUsesRegisteredToolRenderers(t *testing.T) {
 
 	waitForViewport(t, terminal, "TUI call: bar")
 	waitForViewport(t, terminal, "TUI result: rendered result")
-	waitForViewport(t, terminal, "Assistant: final")
+	waitForViewport(t, terminal, "final")
 }
 
 func TestCLIInteractiveTUIHostUsesPackageProcessToolRenderer(t *testing.T) {
@@ -8267,7 +8803,7 @@ func TestCLIInteractiveTUIHostUsesPackageProcessToolRenderer(t *testing.T) {
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Tool call render: bar")
 	waitForViewport(t, terminal, "Tool result render: process rendered result: bar")
-	waitForViewport(t, terminal, "Assistant: final")
+	waitForViewport(t, terminal, "final")
 
 	host.Stop()
 	select {
@@ -8708,12 +9244,16 @@ func TestCLIInteractiveTUIHostReflectsRPCStatusHostAction(t *testing.T) {
 }
 
 func TestCLIInteractiveTUIHostReflectsRPCThemeHostAction(t *testing.T) {
+	previousTheme := tuiActiveThemeSnapshot()
+	t.Cleanup(func() { tuiSetActiveThemePalette(previousTheme) })
 	cwd := t.TempDir()
 	agentDir := filepath.Join(cwd, "agent")
 	settings := NewSettingsManager(cwd, agentDir)
 	settings.SetTheme("dark")
 	themePath := filepath.Join(cwd, ConfigDirName, "themes", "focus.json")
-	writeJSON(t, themePath, map[string]any{"name": "focus"})
+	writeJSON(t, themePath, completeTUIThemeFixture("focus", map[string]any{
+		"accent": "#112233",
+	}))
 	runtimeHost, err := newDefaultCLIPrintModeHost(Args{
 		Offline:   true,
 		NoSession: true,
@@ -8947,7 +9487,7 @@ func TestCLIInteractiveTUIHostReflectsRPCEditorHostAction(t *testing.T) {
 		Params:   []byte(`{"action":"submit"}`),
 	})
 	assertHostActionResponseOK(t, response, "editor_submit")
-	waitForViewport(t, terminal, "Assistant: Response to: Plan mode")
+	waitForViewport(t, terminal, "Response to: Plan mode")
 
 	host.Stop()
 	select {

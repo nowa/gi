@@ -385,7 +385,7 @@ func TestToolExecutionComponentPiBuiltinDisplayParity(t *testing.T) {
 			t.TempDir(),
 		)
 		rendered := toolExecutionRendered(component)
-		if !strings.Contains(rendered, "one   two\nthree") || strings.Contains(rendered, "\t") || strings.Contains(rendered, "\r") {
+		if !strings.Contains(rendered, "one   two") || !strings.Contains(rendered, "three") || strings.Contains(rendered, "\t") || strings.Contains(rendered, "\r") {
 			t.Fatalf("write preview render = %q", rendered)
 		}
 	})
@@ -541,5 +541,22 @@ func TestShortenDisplayPathUsesHomeLikePi(t *testing.T) {
 }
 
 func toolExecutionRendered(component *ToolExecutionComponent) string {
-	return strings.Join(component.Render(120), "\n")
+	lines := component.Render(120)
+	normalized := make([]string, 0, len(lines))
+	for _, line := range lines {
+		normalized = append(normalized, strings.TrimRight(StripAnsi(line), " \t"))
+	}
+	return strings.Join(normalized, "\n")
+}
+
+func toolExecutionContentLines(component *ToolExecutionComponent, width int) []string {
+	rendered := component.Render(width)
+	lines := make([]string, 0, len(rendered))
+	for _, line := range rendered {
+		text := strings.TrimSpace(StripAnsi(line))
+		if text != "" {
+			lines = append(lines, text)
+		}
+	}
+	return lines
 }

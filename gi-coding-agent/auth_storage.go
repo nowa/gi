@@ -475,8 +475,47 @@ func (p OAuthProvider) APIKey(credential AuthCredential) string {
 
 var (
 	oauthProvidersMu sync.Mutex
-	oauthProviders   = map[string]OAuthProvider{}
+	oauthProviders   = builtInOAuthProviderMap()
 )
+
+var builtInOAuthProviders = []OAuthProvider{
+	{
+		ID:           "anthropic",
+		Name:         "Anthropic (Claude Pro/Max)",
+		RefreshToken: unsupportedOAuthTokenRefresh,
+	},
+	{
+		ID:           "github-copilot",
+		Name:         "GitHub Copilot",
+		RefreshToken: unsupportedOAuthTokenRefresh,
+	},
+	{
+		ID:           "openai-codex",
+		Name:         "ChatGPT Plus/Pro (Codex Subscription)",
+		RefreshToken: unsupportedOAuthTokenRefresh,
+	},
+}
+
+func builtInOAuthProviderMap() map[string]OAuthProvider {
+	providers := make(map[string]OAuthProvider, len(builtInOAuthProviders))
+	for _, provider := range builtInOAuthProviders {
+		providers[provider.ID] = provider
+	}
+	return providers
+}
+
+func builtInOAuthProvider(providerID string) (OAuthProvider, bool) {
+	for _, provider := range builtInOAuthProviders {
+		if provider.ID == providerID {
+			return provider, true
+		}
+	}
+	return OAuthProvider{}, false
+}
+
+func unsupportedOAuthTokenRefresh(AuthCredential) (AuthCredential, error) {
+	return AuthCredential{}, errors.New("OAuth token refresh is not implemented for this provider")
+}
 
 func RegisterOAuthProvider(provider OAuthProvider) {
 	oauthProvidersMu.Lock()
@@ -487,6 +526,10 @@ func RegisterOAuthProvider(provider OAuthProvider) {
 func UnregisterOAuthProvider(providerID string) {
 	oauthProvidersMu.Lock()
 	defer oauthProvidersMu.Unlock()
+	if provider, ok := builtInOAuthProvider(providerID); ok {
+		oauthProviders[providerID] = provider
+		return
+	}
 	delete(oauthProviders, providerID)
 }
 
@@ -511,7 +554,7 @@ func GetOAuthProviders() []OAuthProvider {
 func ResetOAuthProviders() {
 	oauthProvidersMu.Lock()
 	defer oauthProvidersMu.Unlock()
-	oauthProviders = map[string]OAuthProvider{}
+	oauthProviders = builtInOAuthProviderMap()
 }
 
 var ErrAuthStorageLockCompromised = errors.New("auth storage lock was compromised")

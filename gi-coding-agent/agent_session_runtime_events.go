@@ -348,7 +348,7 @@ func cloneAgentSessionWithManager(source *AgentSession, manager *SessionManager)
 		model, _ := llm.GetModel(context.Model.Provider, context.Model.ModelID)
 		cloned.Agent.State.Model = model
 	}
-	if context.ThinkingLevel != "" {
+	if hasSessionThinkingLevel(manager) && context.ThinkingLevel != "" {
 		cloned.Agent.State.ThinkingLevel = context.ThinkingLevel
 	}
 	return cloned, nil

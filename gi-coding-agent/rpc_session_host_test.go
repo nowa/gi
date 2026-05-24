@@ -610,6 +610,19 @@ func TestRPCSessionHostExportHTMLCreatesFile(t *testing.T) {
 	}
 }
 
+func TestRPCSessionHostExportHTMLEmptySessionMatchesPiError(t *testing.T) {
+	host, _, _ := createRPCSessionHostForTest(t)
+
+	outputPath := filepath.Join(t.TempDir(), "empty.html")
+	_, err := host.ExportHTML(outputPath)
+	if !errors.Is(err, errNothingToExport) {
+		t.Fatalf("ExportHTML empty error = %v, want %v", err, errNothingToExport)
+	}
+	if _, statErr := os.Stat(outputPath); !os.IsNotExist(statErr) {
+		t.Fatalf("empty export file stat err = %v, want not exist", statErr)
+	}
+}
+
 func TestRPCSessionHostLastAssistantText(t *testing.T) {
 	host, _, _ := createRPCSessionHostForTest(t)
 	initial := mustRPCHandleData[RPCLastAssistantTextResult](t, host, RPCCommand{Type: RPCCommandGetLastAssistantText})

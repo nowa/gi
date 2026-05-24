@@ -76,6 +76,29 @@ func TestOAuthSelectorPiCases(t *testing.T) {
 	}
 }
 
+func TestLoginAuthSelectorProvidersIncludesBuiltInSubscriptionProvidersPiStyle(t *testing.T) {
+	ResetOAuthProviders()
+	t.Cleanup(ResetOAuthProviders)
+
+	registry := NewModelRegistry(NewInMemoryAuthStorage(nil), "")
+	providers := loginAuthSelectorProviders(registry, "oauth")
+	var labels []string
+	for _, provider := range providers {
+		labels = append(labels, provider.Name)
+		if provider.AuthType != "oauth" {
+			t.Fatalf("provider %q auth type = %q, want oauth", provider.ID, provider.AuthType)
+		}
+	}
+	want := []string{
+		"Anthropic (Claude Pro/Max)",
+		"ChatGPT Plus/Pro (Codex Subscription)",
+		"GitHub Copilot",
+	}
+	if strings.Join(labels, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("subscription providers = %#v, want %#v", labels, want)
+	}
+}
+
 func TestOAuthSelectorComponentUsesTUIKeybindingsPiStyle(t *testing.T) {
 	previous := gitui.GetKeybindings()
 	gitui.SetKeybindings(gitui.NewKeybindingsManager(gitui.KeybindingsConfig{
@@ -101,7 +124,7 @@ func TestOAuthSelectorComponentUsesTUIKeybindingsPiStyle(t *testing.T) {
 	selector.OnCancel = func() { cancelled = true }
 
 	rendered := strings.Join(selector.Render(120), "\n")
-	for _, expected := range []string{"P/N move", "X select", "U clear", "Q cancel"} {
+	for _, expected := range []string{"Select provider to configure:", "→ ", "Alpha"} {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("render missing %q:\n%s", expected, rendered)
 		}
@@ -128,6 +151,105 @@ func TestOAuthSelectorComponentUsesTUIKeybindingsPiStyle(t *testing.T) {
 	rendered = strings.Join(selector.Render(120), "\n")
 	if !strings.Contains(rendered, "Alpha") || !strings.Contains(rendered, "Beta") {
 		t.Fatalf("clear search render mismatch:\n%s", rendered)
+	}
+}
+
+func TestExtensionSelectorComponentUsesTUIKeybindingsPiStyle(t *testing.T) {
+	previous := gitui.GetKeybindings()
+	gitui.SetKeybindings(gitui.NewKeybindingsManager(gitui.KeybindingsConfig{
+		"tui.select.up":      []string{"p"},
+		"tui.select.down":    []string{"n"},
+		"tui.select.confirm": []string{"x"},
+		"tui.select.cancel":  []string{"q"},
+	}))
+	t.Cleanup(func() { gitui.SetKeybindings(previous) })
+
+	selector := NewExtensionSelectorComponent("Select authentication method:", []string{"Use a subscription", "Use an API key"})
+	selected := ""
+	selector.OnSelect = func(option string) { selected = option }
+	cancelled := false
+	selector.OnCancel = func() { cancelled = true }
+
+	rendered := strings.Join(selector.Render(120), "\n")
+	for _, expected := range []string{"Select authentication method:", "↑↓", "navigate", "x", "select", "q", "cancel"} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("render missing %q:\n%s", expected, rendered)
+		}
+	}
+
+	selector.HandleInput("n")
+	selector.HandleInput("x")
+	if selected != "Use an API key" {
+		t.Fatalf("selected = %q, want Use an API key", selected)
+	}
+	selector.HandleInput("q")
+	if !cancelled {
+		t.Fatal("cancel keybinding did not call OnCancel")
+	}
+}
+
+func TestLoginDialogComponentShowInfoUsesPiStyle(t *testing.T) {
+	dialog := NewLoginDialogComponent("Amazon Bedrock setup", "")
+	cancelled := false
+	dialog.OnCancel = func() { cancelled = true }
+	dialog.ShowInfo([]string{
+		tuiThemeFG("text", "Amazon Bedrock uses AWS credentials instead of a single API key."),
+		tuiThemeMuted("See:"),
+		tuiThemeAccent("  /tmp/docs/providers.md"),
+	})
+
+	rendered := strings.Join(dialog.Render(120), "\n")
+	for _, expected := range []string{
+		tuiThemeBorder(strings.Repeat("─", 120)),
+		tuiThemeBoldAccent("Amazon Bedrock setup"),
+		tuiThemeFG("text", "Amazon Bedrock uses AWS credentials instead of a single API key."),
+		tuiThemeAccent("  /tmp/docs/providers.md"),
+		"to close",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("render missing %q:\n%s", expected, rendered)
+		}
+	}
+	if strings.Contains(rendered, "to submit") {
+		t.Fatalf("info dialog should not render submit hint:\n%s", rendered)
+	}
+	dialog.HandleInput("\x1b")
+	if !cancelled {
+		t.Fatal("cancel keybinding did not close info dialog")
+	}
+}
+
+func TestLoginDialogComponentShowAuthUsesPiStyle(t *testing.T) {
+	dialog := NewLoginDialogComponent("Login to Anthropic (Claude Pro/Max)", "")
+	cancelled := false
+	dialog.OnCancel = func() { cancelled = true }
+	authURL := "https://claude.ai/oauth/authorize?code=true&client_id=test-client"
+	dialog.ShowAuth(
+		authURL,
+		"Complete login in your browser. If the browser is on another machine, paste the final redirect URL here.",
+		"Paste redirect URL below, or complete login in browser:",
+	)
+
+	rendered := strings.Join(dialog.Render(120), "\n")
+	for _, expected := range []string{
+		tuiThemeBorder(strings.Repeat("─", 120)),
+		tuiThemeBoldAccent("Login to Anthropic (Claude Pro/Max)"),
+		tuiThemeAccent(terminalHyperlink(authURL, authURL)),
+		tuiThemeDim(terminalHyperlink(authURL, oauthClickHint())),
+		tuiThemeWarning("Complete login in your browser. If the browser is on another machine, paste the final redirect URL here."),
+		tuiThemeDim("Paste redirect URL below, or complete login in browser:"),
+		"to cancel",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("render missing %q:\n%s", expected, rendered)
+		}
+	}
+	if strings.Contains(rendered, "to submit") {
+		t.Fatalf("OAuth auth dialog should not render submit hint:\n%s", rendered)
+	}
+	dialog.HandleInput("\x1b")
+	if !cancelled {
+		t.Fatal("cancel keybinding did not cancel OAuth dialog")
 	}
 }
 

@@ -126,6 +126,7 @@ type CLIInteractiveTUIHost struct {
 	customEditorActive      bool
 	autocompleteProvider    gitui.AutocompleteProvider
 	lastStatusText          *gitui.Text
+	lastStatusSpacer        *gitui.Spacer
 	loader                  *gitui.Loader
 	workingMessage          string
 	workingIndicator        *TUIWorkingIndicatorOptions
@@ -168,7 +169,7 @@ type CLIInteractiveTUIHost struct {
 	startupNoticesShown     bool
 	anthropicWarningShown   bool
 	streamingMessage        *llm.Message
-	streamingComponent      *gitui.Markdown
+	streamingComponent      *cliAssistantMessageComponent
 	activePromptMu          sync.Mutex
 	activePromptCount       int
 	themePreviewActive      bool
@@ -244,12 +245,12 @@ func (c *cliStartupHeaderComponent) Render(width int) []string {
 			label,
 			c.appHint("app.interrupt", "escape", "to interrupt"),
 			c.appHint("app.clear", "ctrl+c", "to clear"),
-			c.appKey("app.clear", "ctrl+c") + " twice to exit",
+			tuiThemeKeyHint(c.appKey("app.clear", "ctrl+c")+" twice", "to exit"),
 			c.appHint("app.exit", "ctrl+d", "to exit (empty)"),
 			c.appHint("app.suspend", "ctrl+z", "to suspend"),
 			c.tuiHint("tui.editor.deleteToLineEnd", "ctrl+k", "to delete to end"),
 			c.appHint("app.thinking.cycle", "shift+tab", "to cycle thinking level"),
-			c.appKey("app.model.cycleForward", "ctrl+p") + "/" + c.appKey("app.model.cycleBackward", "shift+ctrl+p") + " to cycle models",
+			tuiThemeKeyHint(c.appKey("app.model.cycleForward", "ctrl+p")+"/"+c.appKey("app.model.cycleBackward", "shift+ctrl+p"), "to cycle models"),
 			c.appHint("app.model.select", "ctrl+l", "to select model"),
 			c.appHint("app.tools.expand", "ctrl+o", "to expand tools"),
 			c.appHint("app.thinking.toggle", "ctrl+t", "to expand thinking"),
@@ -277,7 +278,12 @@ func (c *cliStartupHeaderComponent) Render(width int) []string {
 			tuiThemeDim("Press "+c.appKey("app.tools.expand", "ctrl+o")+" to show full startup help and loaded resources.") + "\n\n" +
 			onboarding
 	}
-	return gitui.NewText(text, 1, 0).Render(width)
+	lines := gitui.NewText(text, 1, 0).Render(width)
+	result := make([]string, 0, len(lines)+2)
+	result = append(result, "")
+	result = append(result, lines...)
+	result = append(result, "")
+	return result
 }
 
 func (c *cliStartupHeaderComponent) appHint(action, fallback, description string) string {
@@ -384,7 +390,7 @@ func (l *cliInteractiveLayout) RenderWithSize(width, height int) []string {
 	top = appendRendered(top, l.host.slots["header"], width, height)
 	top = appendRendered(top, l.host.chat, width, height)
 
-	var bottom []string
+	bottom := []string{""}
 	bottom = appendRendered(bottom, l.host.slots["aboveEditor"], width, height)
 	bottom = appendRendered(bottom, l.host.pendingMessages, width, height)
 	bottom = appendRendered(bottom, l.host.editorContainer, width, height)
@@ -396,9 +402,6 @@ func (l *cliInteractiveLayout) RenderWithSize(width, height int) []string {
 
 	lines := make([]string, 0, len(top)+len(bottom))
 	lines = append(lines, top...)
-	if len(top) > 0 && len(bottom) > 0 && (height <= 0 || len(top)+len(bottom)+1 <= height) {
-		lines = append(lines, "")
-	}
 	lines = append(lines, bottom...)
 	return lines
 }
@@ -762,9 +765,11 @@ func (h *CLIInteractiveTUIHost) CurrentTUITheme() string {
 	}
 	h.mu.Unlock()
 	if settings := h.settingsManager(); settings != nil {
-		return settings.GetTheme()
+		if name := settings.GetTheme(); name != "" {
+			return name
+		}
 	}
-	return ""
+	return tuiActiveThemeSnapshot().name
 }
 
 func (h *CLIInteractiveTUIHost) AvailableTUIThemes() []TUIThemeInfo {
@@ -810,6 +815,9 @@ func (h *CLIInteractiveTUIHost) SetTUITheme(name string) error {
 		return errors.New("theme name is required")
 	}
 	h.clearTUIThemePreview()
+	if err := h.applyTUIThemeName(name); err != nil {
+		return err
+	}
 	settings.SetTheme(name)
 	if h.viewTreeHost != nil && h.viewTreeHost.HasEventSubscription("theme_change") {
 		_ = h.viewTreeHost.DispatchThemeChange(name)
@@ -824,6 +832,9 @@ func (h *CLIInteractiveTUIHost) previewTUITheme(name string) {
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
+		return
+	}
+	if err := h.applyTUIThemeName(name); err != nil {
 		return
 	}
 	h.mu.Lock()
@@ -841,6 +852,22 @@ func (h *CLIInteractiveTUIHost) clearTUIThemePreview() {
 	h.themePreviewActive = false
 	h.themePreviewName = ""
 	h.mu.Unlock()
+	_ = h.applyCurrentTUITheme()
+}
+
+func (h *CLIInteractiveTUIHost) applyCurrentTUITheme() error {
+	name := ""
+	if settings := h.settingsManager(); settings != nil {
+		name = settings.GetTheme()
+	}
+	return h.applyTUIThemeName(name)
+}
+
+func (h *CLIInteractiveTUIHost) applyTUIThemeName(name string) error {
+	if h == nil {
+		return errors.New("interactive TUI theme host is not ready")
+	}
+	return tuiSetActiveTheme(name, h.AvailableTUIThemes())
 }
 
 func (h *CLIInteractiveTUIHost) showStartupNoticesIfNeeded() {
@@ -1179,6 +1206,9 @@ func (h *CLIInteractiveTUIHost) startViewTreeTickLoop(ctx context.Context) {
 
 func (h *CLIInteractiveTUIHost) buildUI() {
 	settings := h.settingsManager()
+	if err := h.applyCurrentTUITheme(); err != nil {
+		_ = tuiSetActiveTheme("dark", nil)
+	}
 	showHardwareCursor := false
 	editorPaddingX := 0
 	autocompleteMaxVisible := 5
@@ -1208,6 +1238,7 @@ func (h *CLIInteractiveTUIHost) buildUI() {
 		PaddingX:               editorPaddingX,
 		AutocompleteMaxVisible: autocompleteMaxVisible,
 	})
+	h.updateEditorBorderColor()
 	h.reloadKeybindings()
 	h.startupHeader = newCLIStartupHeaderComponent(firstNonEmptyString(h.version, DefaultCodingAgentVersion), h.toolOutputExpanded, h.effectiveKeybindings())
 	h.refreshEditorAutocompleteProvider()
@@ -1232,7 +1263,7 @@ func (h *CLIInteractiveTUIHost) buildUI() {
 			return gitui.InputListenerResult{}
 		}
 		keybindings := h.effectiveKeybindings()
-		if matchesKeybindingAction(data, keybindings, "app.clear") {
+		if matchesKeybindingAction(data, keybindings, "app.clear") && h.focusedDefaultEditor() {
 			h.handleClearKey()
 			return gitui.InputListenerResult{Consume: true}
 		}
@@ -1512,6 +1543,9 @@ func (h *CLIInteractiveTUIHost) handleAppActionKey(data string, keybindings Keyb
 		go h.toggleThinkingBlockVisibility()
 		return true
 	case matchesKeybindingAction(data, keybindings, "app.editor.external"):
+		if !h.focusedDefaultEditor() {
+			return false
+		}
 		go h.openExternalEditor()
 		return true
 	case matchesKeybindingAction(data, keybindings, "app.suspend"):
@@ -1620,6 +1654,7 @@ func (h *CLIInteractiveTUIHost) cycleThinkingLevelFromKey() {
 		h.addStatus("Error: " + err.Error())
 		return
 	}
+	h.updateEditorBorderColor()
 	h.addStatus("Thinking: " + level)
 }
 
@@ -1638,6 +1673,7 @@ func (h *CLIInteractiveTUIHost) cycleModelFromKey(direction string) {
 		h.addStatus("Only one model available")
 		return
 	}
+	h.updateEditorBorderColor()
 	h.addStatus("Model: " + result.Model.Provider + "/" + result.Model.ID + " (thinking: " + result.ThinkingLevel + ")")
 	h.maybeWarnAboutAnthropicSubscriptionAuth(result.Model)
 }
@@ -1883,7 +1919,7 @@ func (h *CLIInteractiveTUIHost) handleLiveMessageStart(event AgentSessionEvent) 
 	message := *event.Message
 	switch message.Role {
 	case llm.RoleAssistant:
-		component := newCLIMarkdownWithOptions("", gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1})
+		component := newCLIAssistantMessageComponent(message, h.hideThinkingBlock(), h.hiddenThinkingLabelValue())
 		h.streamingMessage = &message
 		h.streamingComponent = component
 		if h.chat != nil {
@@ -2003,15 +2039,12 @@ func (h *CLIInteractiveTUIHost) updateLiveAssistantComponent(message llm.Message
 	if h == nil || h.streamingComponent == nil {
 		return
 	}
-	text := interactiveAssistantTextFromLLMMessage(message, h.hideThinkingBlock(), h.hiddenThinkingLabelValue())
-	if strings.TrimSpace(text) == "" && strings.TrimSpace(message.ErrorMessage) != "" {
-		text = message.ErrorMessage
+	if strings.TrimSpace(interactiveAssistantTextFromLLMMessage(message, h.hideThinkingBlock(), h.hiddenThinkingLabelValue())) == "" &&
+		strings.TrimSpace(message.ErrorMessage) != "" &&
+		message.StopReason == "" {
+		message.StopReason = llm.StopReasonError
 	}
-	if strings.TrimSpace(text) == "" {
-		h.streamingComponent.SetText("")
-		return
-	}
-	h.streamingComponent.SetText("Assistant: " + text)
+	h.streamingComponent.SetMessage(message)
 }
 
 func (h *CLIInteractiveTUIHost) updateLiveToolCalls(message llm.Message) {
@@ -2234,30 +2267,22 @@ func (h *CLIInteractiveTUIHost) modelArgumentCompletions(prefix string) []gitui.
 		return nil
 	}
 	models := host.getAvailableModels()
-	scoped := map[string]RPCScopedModel{}
 	if len(host.ScopedModels) > 0 {
 		models = models[:0]
 		for _, scopedModel := range host.ScopedModels {
 			models = append(models, scopedModel.Model)
-			scoped[scopedModelFullID(scopedModel.Model)] = scopedModel
 		}
 	}
 	filter := strings.TrimSpace(prefix)
 	if filter != "" {
 		models = gitui.FuzzyFilter(models, filter, func(model llm.Model) string {
-			return strings.Join([]string{model.ID, model.Provider, model.Name, scopedModelFullID(model)}, " ")
+			return strings.Join([]string{model.ID, model.Provider}, " ")
 		})
 	}
 	items := make([]gitui.AutocompleteItem, 0, len(models))
 	for _, model := range models {
 		value := scopedModelFullID(model)
 		description := strings.TrimSpace(model.Provider)
-		if scopedModel, ok := scoped[value]; ok && strings.TrimSpace(scopedModel.ThinkingLevel) != "" {
-			description = strings.TrimSpace(description + " | thinking: " + scopedModel.ThinkingLevel)
-		}
-		if strings.TrimSpace(model.Name) != "" && model.Name != model.ID {
-			description = strings.TrimSpace(description + " | " + model.Name)
-		}
 		items = append(items, gitui.AutocompleteItem{
 			Value:       value,
 			Label:       model.ID,
@@ -2354,11 +2379,11 @@ func builtinInteractiveSlashCommands() []interactiveSlashCommand {
 		{Name: "changelog", Description: "Show changelog entries"},
 		{Name: "hotkeys", Description: "Show all keyboard shortcuts"},
 		{Name: "fork", Description: "Create a new fork from a previous user message"},
-		{Name: "new", Description: "Start a new session"},
 		{Name: "clone", Description: "Duplicate the current session at the current position"},
 		{Name: "tree", Description: "Navigate session tree (switch branches)"},
 		{Name: "login", Description: "Configure provider authentication"},
 		{Name: "logout", Description: "Remove provider authentication"},
+		{Name: "new", Description: "Start a new session"},
 		{Name: "compact", Description: "Manually compact the session context"},
 		{Name: "resume", Description: "Resume a different session"},
 		{Name: "reload", Description: "Reload keybindings, extensions, skills, prompts, and themes"},
@@ -3208,6 +3233,8 @@ func (h *CLIInteractiveTUIHost) addMessage(message llm.Message) {
 		if h.addSkillInvocationMessage(message) {
 			return
 		}
+		h.addUserMessage(message)
+		return
 	}
 	text := interactiveTextFromLLMMessage(message)
 	if text == "" && message.ErrorMessage != "" {
@@ -3218,16 +3245,23 @@ func (h *CLIInteractiveTUIHost) addMessage(message llm.Message) {
 	}
 	prefix := ""
 	switch message.Role {
-	case llm.RoleUser:
-		prefix = "You: "
-	case llm.RoleAssistant:
-		prefix = "Assistant: "
 	case llm.RoleToolResult:
 		prefix = "Tool: "
 	default:
 		prefix = string(message.Role) + ": "
 	}
 	h.chat.AddChild(newCLIMarkdownWithOptions(prefix+text, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+}
+
+func (h *CLIInteractiveTUIHost) addUserMessage(message llm.Message) {
+	if h == nil || h.chat == nil {
+		return
+	}
+	text := interactiveTextFromLLMMessage(message)
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	h.chat.AddChild(newCLIUserMessageComponent(text))
 }
 
 func (h *CLIInteractiveTUIHost) addBranchSummaryMessage(message llm.Message) {
@@ -3286,7 +3320,7 @@ func (h *CLIInteractiveTUIHost) addSkillInvocationMessage(message llm.Message) b
 		Expanded:  h.toolOutputExpanded,
 	}))
 	if skillBlock.UserMessage != "" {
-		h.chat.AddChild(newCLIMarkdownWithOptions("You: "+skillBlock.UserMessage, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+		h.chat.AddChild(newCLIUserMessageComponent(skillBlock.UserMessage))
 	}
 	return true
 }
@@ -3365,9 +3399,9 @@ func (h *CLIInteractiveTUIHost) addFallbackCustomMessage(message llm.Message) {
 }
 
 func (h *CLIInteractiveTUIHost) addAssistantMessage(message llm.Message) {
-	text := interactiveAssistantTextFromLLMMessage(message, h.hideThinkingBlock(), h.hiddenThinkingLabelValue())
-	if strings.TrimSpace(text) != "" {
-		h.chat.AddChild(newCLIMarkdownWithOptions("Assistant: "+text, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+	component := newCLIAssistantMessageComponent(message, h.hideThinkingBlock(), h.hiddenThinkingLabelValue())
+	if len(component.Render(80)) > 0 {
+		h.chat.AddChild(component)
 	}
 	for _, part := range message.Content {
 		if part.Type != llm.ContentToolCall {
@@ -3536,17 +3570,26 @@ func (h *CLIInteractiveTUIHost) addStatus(text string) *gitui.Text {
 	}
 	if statusTextCoalescible(text) {
 		children := h.chat.Children()
-		if len(children) > 0 && h.lastStatusText != nil && children[len(children)-1] == h.lastStatusText {
+		if len(children) > 1 && h.lastStatusText != nil && h.lastStatusSpacer != nil &&
+			children[len(children)-1] == h.lastStatusText &&
+			children[len(children)-2] == h.lastStatusSpacer {
 			h.lastStatusText.SetText(tuiThemeStatusText(text))
 			h.requestRender(false)
 			return h.lastStatusText
 		}
 	}
+	spacer := gitui.NewSpacer(1)
 	status := gitui.NewText(tuiThemeStatusText(text), 1, 0)
+	h.chat.AddChild(spacer)
 	h.chat.AddChild(status)
+	if statusTextNeedsTrailingSpacer(text) {
+		h.chat.AddChild(gitui.NewSpacer(1))
+	}
 	if statusTextCoalescible(text) {
+		h.lastStatusSpacer = spacer
 		h.lastStatusText = status
 	} else {
+		h.lastStatusSpacer = nil
 		h.lastStatusText = nil
 	}
 	h.requestRender(false)
@@ -3567,6 +3610,7 @@ func (h *CLIInteractiveTUIHost) addWarning(text string) *gitui.Text {
 	h.chat.AddChild(gitui.NewSpacer(1))
 	warning := gitui.NewText(tuiThemeWarning(text), 1, 0)
 	h.chat.AddChild(warning)
+	h.lastStatusSpacer = nil
 	h.lastStatusText = nil
 	h.requestRender(false)
 	return warning
@@ -3596,6 +3640,11 @@ func statusTextCoalescible(text string) bool {
 	return true
 }
 
+func statusTextNeedsTrailingSpacer(text string) bool {
+	text = strings.TrimSpace(text)
+	return strings.HasPrefix(text, "Error:") || strings.HasPrefix(text, "Failed ")
+}
+
 func (h *CLIInteractiveTUIHost) showExtensionError(event ProtocolExtensionError) {
 	if h == nil || h.chat == nil {
 		return
@@ -3612,6 +3661,7 @@ func (h *CLIInteractiveTUIHost) showExtensionError(event ProtocolExtensionError)
 	if stackLines := extensionErrorStackLines(event.Stack); len(stackLines) > 0 {
 		h.chat.AddChild(gitui.NewText(strings.Join(stackLines, "\n"), 1, 0))
 	}
+	h.lastStatusSpacer = nil
 	h.lastStatusText = nil
 	h.requestRender(false)
 }
@@ -3849,6 +3899,17 @@ func (h *CLIInteractiveTUIHost) agentSession() *AgentSession {
 		return provider.AgentSession()
 	}
 	return nil
+}
+
+func (h *CLIInteractiveTUIHost) updateEditorBorderColor() {
+	if h == nil || h.editor == nil {
+		return
+	}
+	level := "off"
+	if session := h.agentSession(); session != nil && session.Agent != nil {
+		level = firstNonEmptyString(session.Agent.State.ThinkingLevel, "off")
+	}
+	h.editor.SetBorderColor(tuiThemeThinkingBorder(level))
 }
 
 func (h *CLIInteractiveTUIHost) footerAgentSession() *AgentSession {
@@ -4446,6 +4507,7 @@ func (h *CLIInteractiveTUIHost) applySettingsListChange(host *RPCSessionHost, se
 		if err := host.SetThinkingLevel(newValue); err != nil {
 			h.addStatus("Error: " + err.Error())
 		}
+		h.updateEditorBorderColor()
 	case "theme":
 		h.clearTUIThemePreview()
 		settings.SetTheme(newValue)
@@ -4741,6 +4803,7 @@ func (h *CLIInteractiveTUIHost) handleModelSlashCommand(args string) error {
 			h.addStatus("No models available")
 			return nil
 		}
+		h.updateEditorBorderColor()
 		h.addStatus("Model: " + result.Model.Provider + "/" + result.Model.ID + " (thinking: " + result.ThinkingLevel + ")")
 		h.maybeWarnAboutAnthropicSubscriptionAuth(result.Model)
 		return nil
@@ -4761,6 +4824,7 @@ func (h *CLIInteractiveTUIHost) handleModelSlashCommand(args string) error {
 			return err
 		}
 	}
+	h.updateEditorBorderColor()
 	if strings.TrimSpace(parsed.Warning) != "" {
 		h.addStatus("Warning: " + parsed.Warning)
 	}
@@ -4982,6 +5046,7 @@ func (h *CLIInteractiveTUIHost) applyModelSelection(host *RPCSessionHost, provid
 		settings.SetDefaultProvider(model.Provider)
 		settings.SetDefaultModel(model.ID)
 	}
+	h.updateEditorBorderColor()
 	h.addStatus("Model: " + model.Provider + "/" + model.ID + " (thinking: " + host.Session.Agent.State.ThinkingLevel + ")")
 	h.maybeWarnAboutAnthropicSubscriptionAuth(model)
 	return nil
@@ -5074,7 +5139,7 @@ func (h *CLIInteractiveTUIHost) handleNameSlashCommand(args string) error {
 	if name == "" {
 		current := session.SessionManager.GetSessionName()
 		if current == "" {
-			h.addStatus("Usage: /name <name>")
+			h.addWarning("Usage: /name <name>")
 		} else {
 			h.addStatus("Session name: " + current)
 		}
@@ -5095,6 +5160,7 @@ func (h *CLIInteractiveTUIHost) handleSessionSlashCommand() error {
 	}
 	state := host.GetState()
 	stats := host.GetSessionStats()
+	h.chat.AddChild(gitui.NewSpacer(1))
 	h.chat.AddChild(gitui.NewText(renderInteractiveSessionInfo(state, stats), 1, 0))
 	h.requestRender(false)
 	return nil
@@ -5138,6 +5204,7 @@ func renderInteractiveSessionInfo(state RPCSessionState, stats RPCSessionStats) 
 	if stats.Cost > 0 {
 		lines = append(lines, "", tuiThemeBold("Cost"), label("Total")+" "+fmt.Sprintf("%.4f", stats.Cost))
 	}
+	lines = append(lines, "")
 	return strings.Join(lines, "\n")
 }
 
@@ -5161,22 +5228,23 @@ func formatSessionInfoInt(value int) string {
 
 func (h *CLIInteractiveTUIHost) handleLoginSlashCommand(args string) error {
 	provider := strings.TrimSpace(args)
+	authType := "api_key"
 	if provider == "" && !h.exitAfterInitial {
 		registry := h.modelRegistry()
 		if registry != nil {
-			providers := loginAuthSelectorProviders(registry, "api_key")
-			if len(providers) > 0 {
-				selected, cancelled, err := h.selectAuthProvider("login", registry, providers)
-				if err != nil {
-					return err
-				}
-				if cancelled {
-					h.addStatus("Login cancelled")
-					return nil
-				}
-				provider = selected
+			selected, selectedAuthType, handled, err := h.selectLoginProvider(registry)
+			if err != nil {
+				return err
 			}
+			if !handled {
+				return nil
+			}
+			provider = selected
+			authType = selectedAuthType
 		}
+	}
+	if provider != "" && !h.exitAfterInitial {
+		return h.runInteractiveLogin(provider, authType)
 	}
 	message := providerLoginHelp()
 	if provider != "" {
@@ -5187,6 +5255,216 @@ func (h *CLIInteractiveTUIHost) handleLoginSlashCommand(args string) error {
 	h.chat.AddChild(newCLIMarkdownWithOptions("**Login**\n\n"+message, gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
 	h.requestRender(false)
 	return nil
+}
+
+func (h *CLIInteractiveTUIHost) selectLoginProvider(registry *ModelRegistry) (providerID string, authType string, handled bool, err error) {
+	for {
+		selectedAuthType, cancelled, err := h.selectLoginAuthType()
+		if err != nil {
+			return "", "", false, err
+		}
+		if cancelled {
+			return "", "", false, nil
+		}
+		providers := loginAuthSelectorProviders(registry, selectedAuthType)
+		if len(providers) == 0 {
+			if selectedAuthType == "oauth" {
+				h.addStatus("No subscription providers available.")
+			} else {
+				h.addStatus("No API key providers available.")
+			}
+			return "", "", false, nil
+		}
+		selected, providerCancelled, err := h.selectAuthProvider("login", registry, providers)
+		if err != nil {
+			return "", "", false, err
+		}
+		if providerCancelled {
+			continue
+		}
+		return selected, selectedAuthType, true, nil
+	}
+}
+
+func (h *CLIInteractiveTUIHost) selectLoginAuthType() (string, bool, error) {
+	if h == nil || h.ui == nil {
+		return "", true, errors.New("interactive TUI is not ready")
+	}
+	const subscriptionLabel = "Use a subscription"
+	const apiKeyLabel = "Use an API key"
+	selector := NewExtensionSelectorComponent("Select authentication method:", []string{subscriptionLabel, apiKeyLabel})
+	resultCh := make(chan TUIDialogResult, 1)
+	var closeOnce sync.Once
+	var restore func()
+	finish := func(result TUIDialogResult) {
+		closeOnce.Do(func() {
+			if restore != nil {
+				restore()
+				restore = nil
+			}
+			resultCh <- result
+		})
+	}
+	selector.OnSelect = func(option string) {
+		value := "api_key"
+		if option == subscriptionLabel {
+			value = "oauth"
+		}
+		finish(TUIDialogResult{Action: "selected", Value: value})
+	}
+	selector.OnCancel = func() {
+		finish(TUIDialogResult{Action: "cancelled"})
+	}
+	restore = h.showEditorReplacement(selector, selector)
+	select {
+	case result := <-resultCh:
+		if result.Action != "selected" {
+			return "", true, nil
+		}
+		return dialogStringValue(result.Value), false, nil
+	case <-h.done:
+		if restore != nil {
+			restore()
+		}
+		return "", true, nil
+	}
+}
+
+func (h *CLIInteractiveTUIHost) runInteractiveLogin(providerID, authType string) error {
+	registry := h.modelRegistry()
+	if registry == nil || registry.authStorage == nil {
+		h.chat.AddChild(newCLIMarkdownWithOptions("**Login**\n\n"+formatNoAPIKeyFoundMessage(providerID), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
+		h.requestRender(false)
+		return nil
+	}
+	providerName := registry.GetProviderDisplayName(providerID)
+	if authType == "oauth" {
+		return h.showOAuthLoginDialog(providerID, providerName)
+	}
+	if providerID == "amazon-bedrock" {
+		h.addBedrockSetupInfo(providerID, providerName)
+		return nil
+	}
+	apiKey, cancelled, err := h.promptForAPIKey(providerName)
+	if err != nil {
+		return err
+	}
+	if cancelled {
+		return nil
+	}
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		h.addStatus("Failed to save API key for " + providerName + ": API key cannot be empty.")
+		return nil
+	}
+	registry.authStorage.Set(providerID, AuthCredential{Type: "api_key", Key: apiKey})
+	registry.Refresh()
+	h.addStatus("Saved API key for " + providerName + ". Credentials saved to ~/.gi/agent/auth.json")
+	return nil
+}
+
+func (h *CLIInteractiveTUIHost) showOAuthLoginDialog(providerID, providerName string) error {
+	if h == nil || h.ui == nil {
+		return errors.New("interactive TUI is not ready")
+	}
+	prompt, ok := oauthLoginPromptForProvider(providerID)
+	if !ok {
+		h.addStatus("Subscription login is not implemented yet for " + providerName)
+		return nil
+	}
+	dialog := NewLoginDialogComponent("Login to "+providerName, "")
+	resultCh := make(chan TUIDialogResult, 1)
+	var closeOnce sync.Once
+	var restore func()
+	finish := func(result TUIDialogResult) {
+		closeOnce.Do(func() {
+			if restore != nil {
+				restore()
+				restore = nil
+			}
+			resultCh <- result
+		})
+	}
+	dialog.OnSubmit = func(value string) {
+		finish(TUIDialogResult{Action: "submitted", Value: value})
+	}
+	dialog.OnCancel = func() {
+		finish(TUIDialogResult{Action: "cancelled"})
+	}
+	dialog.ShowAuth(prompt.URL, prompt.Instructions, prompt.ManualPrompt)
+	restore = h.showEditorReplacement(dialog, dialog)
+	select {
+	case result := <-resultCh:
+		if result.Action == "submitted" {
+			h.addStatus("Subscription login token exchange is not implemented yet for " + providerName + ".")
+		}
+		return nil
+	case <-h.done:
+		if restore != nil {
+			restore()
+		}
+		return nil
+	}
+}
+
+func (h *CLIInteractiveTUIHost) promptForAPIKey(providerName string) (string, bool, error) {
+	if h == nil || h.ui == nil {
+		return "", true, errors.New("interactive TUI is not ready")
+	}
+	dialog := NewLoginDialogComponent("Login to "+providerName, "Enter API key:")
+	resultCh := make(chan TUIDialogResult, 1)
+	var closeOnce sync.Once
+	var restore func()
+	finish := func(result TUIDialogResult) {
+		closeOnce.Do(func() {
+			if restore != nil {
+				restore()
+				restore = nil
+			}
+			resultCh <- result
+		})
+	}
+	dialog.OnSubmit = func(value string) {
+		finish(TUIDialogResult{Action: "submitted", Value: value})
+	}
+	dialog.OnCancel = func() {
+		finish(TUIDialogResult{Action: "cancelled"})
+	}
+	restore = h.showEditorReplacement(dialog, dialog)
+	select {
+	case result := <-resultCh:
+		if result.Action != "submitted" {
+			return "", true, nil
+		}
+		return dialogStringValue(result.Value), false, nil
+	case <-h.done:
+		if restore != nil {
+			restore()
+		}
+		return "", true, nil
+	}
+}
+
+func (h *CLIInteractiveTUIHost) addBedrockSetupInfo(providerID, providerName string) {
+	title := "Amazon Bedrock setup"
+	if providerName == "" {
+		providerName = providerID
+	}
+	dialog := NewLoginDialogComponent(title, "")
+	dialog.ShowInfo([]string{
+		tuiThemeFG("text", "Amazon Bedrock uses AWS credentials instead of a single API key."),
+		tuiThemeFG("text", "Configure an AWS profile, IAM keys, bearer token, or role-based credentials."),
+		tuiThemeMuted("See:"),
+		tuiThemeAccent("  " + giProvidersDocumentationPath(h.interactiveCWD())),
+	})
+	var restore func()
+	dialog.OnCancel = func() {
+		if restore != nil {
+			restore()
+			restore = nil
+		}
+	}
+	restore = h.showEditorReplacement(dialog, dialog)
 }
 
 func (h *CLIInteractiveTUIHost) handleLogoutSlashCommand(args string) error {
@@ -5208,7 +5486,7 @@ func (h *CLIInteractiveTUIHost) handleLogoutSlashCommand(args string) error {
 	}
 	providers := registry.authStorage.List()
 	if len(providers) == 0 {
-		h.addStatus("No stored credentials to remove. /logout only removes credentials saved in ~/.gi/agent/auth.json; environment variables and models.json config are unchanged.")
+		h.addStatus("No stored credentials to remove. /logout only removes credentials saved by /login; environment variables and models.json config are unchanged.")
 		return nil
 	}
 	if h.exitAfterInitial {
@@ -5287,6 +5565,7 @@ func (h *CLIInteractiveTUIHost) selectAuthProvider(mode string, registry *ModelR
 
 func (h *CLIInteractiveTUIHost) handleHotkeysSlashCommand() error {
 	hotkeys := strings.TrimSpace(h.hotkeysMarkdown())
+	h.chat.AddChild(gitui.NewSpacer(1))
 	h.chat.AddChild(newCLIDynamicBorder())
 	h.chat.AddChild(gitui.NewText(tuiThemeBoldAccent("Keyboard Shortcuts"), 1, 0))
 	h.chat.AddChild(gitui.NewSpacer(1))
@@ -5306,6 +5585,7 @@ func (h *CLIInteractiveTUIHost) hotkeysMarkdown() string {
 	}
 	lines := []string{
 		"**Navigation**",
+		"",
 		"| Key | Action |",
 		"|-----|--------|",
 		"| " + hotkeyRef(tuiKeys("tui.editor.cursorUp")) + " / " + hotkeyRef(tuiKeys("tui.editor.cursorDown")) + " / " + hotkeyRef(tuiKeys("tui.editor.cursorLeft")) + " / " + hotkeyRef(tuiKeys("tui.editor.cursorRight")) + " | Move cursor / browse history (Up when empty) |",
@@ -5317,6 +5597,7 @@ func (h *CLIInteractiveTUIHost) hotkeysMarkdown() string {
 		"| " + hotkeyRef(tuiKeys("tui.editor.pageUp")) + " / " + hotkeyRef(tuiKeys("tui.editor.pageDown")) + " | Scroll by page |",
 		"",
 		"**Editing**",
+		"",
 		"| Key | Action |",
 		"|-----|--------|",
 		"| " + hotkeyRef(tuiKeys("tui.input.submit")) + " | Send message |",
@@ -5330,6 +5611,7 @@ func (h *CLIInteractiveTUIHost) hotkeysMarkdown() string {
 		"| " + hotkeyRef(tuiKeys("tui.editor.undo")) + " | Undo |",
 		"",
 		"**Other**",
+		"",
 		"| Key | Action |",
 		"|-----|--------|",
 		"| " + hotkeyRef(tuiKeys("tui.input.tab")) + " | Path completion / accept autocomplete |",
@@ -5353,7 +5635,7 @@ func (h *CLIInteractiveTUIHost) hotkeysMarkdown() string {
 	if runtime := h.protocolRuntime(); runtime != nil {
 		shortcuts := runtime.Shortcuts(keybindings).Shortcuts
 		if len(shortcuts) > 0 {
-			lines = append(lines, "", "**Extensions**", "| Key | Action |", "|-----|--------|")
+			lines = append(lines, "", "**Extensions**", "", "| Key | Action |", "|-----|--------|")
 			keys := make([]string, 0, len(shortcuts))
 			for key := range shortcuts {
 				keys = append(keys, key)
@@ -5421,6 +5703,7 @@ func (h *CLIInteractiveTUIHost) handleChangelogSlashCommand() error {
 	if strings.TrimSpace(changelog) == "" {
 		changelog = "No changelog entries found."
 	}
+	h.chat.AddChild(gitui.NewSpacer(1))
 	h.chat.AddChild(newCLIDynamicBorder())
 	h.chat.AddChild(gitui.NewText(tuiThemeBoldAccent("What's New"), 1, 0))
 	h.chat.AddChild(gitui.NewSpacer(1))
@@ -5475,7 +5758,11 @@ func (h *CLIInteractiveTUIHost) handleDebugCommand() error {
 	if err := os.WriteFile(debugPath, []byte(builder.String()), 0o644); err != nil {
 		return err
 	}
-	h.addStatus("Debug log written\n" + debugPath)
+	if h.chat != nil {
+		h.chat.AddChild(gitui.NewSpacer(1))
+		h.chat.AddChild(gitui.NewText(tuiThemeAccent("✓ Debug log written")+"\n"+tuiThemeMuted(debugPath), 1, 1))
+		h.requestRender(false)
+	}
 	return nil
 }
 
@@ -5538,8 +5825,21 @@ func (h *CLIInteractiveTUIHost) handleNewSlashCommand() error {
 		}
 	}
 	h.resetChatState()
-	h.addStatus("New session started")
+	h.addSuccessStatus("✓ New session started")
 	return nil
+}
+
+func (h *CLIInteractiveTUIHost) addSuccessStatus(text string) *gitui.Text {
+	if strings.TrimSpace(text) == "" || h.chat == nil {
+		return nil
+	}
+	h.chat.AddChild(gitui.NewSpacer(1))
+	status := gitui.NewText(tuiThemeAccent(text), 1, 1)
+	h.chat.AddChild(status)
+	h.lastStatusSpacer = nil
+	h.lastStatusText = nil
+	h.requestRender(false)
+	return status
 }
 
 func (h *CLIInteractiveTUIHost) handleExportSlashCommand(path string) error {
@@ -5554,7 +5854,7 @@ func (h *CLIInteractiveTUIHost) handleExportSlashCommand(path string) error {
 		exported, err = host.ExportHTML(path)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to export session: %w", err)
 	}
 	h.addStatus("Session exported to: " + exported)
 	return nil
@@ -5576,7 +5876,7 @@ func (h *CLIInteractiveTUIHost) handleShareSlashCommand() error {
 	}
 	defer os.Remove(tempPath)
 	if _, err := host.ExportHTML(tempPath); err != nil {
-		return err
+		return fmt.Errorf("Failed to export session: %w", err)
 	}
 	createGist := h.shareCreateGist
 	if createGist == nil {
@@ -5715,11 +6015,11 @@ func (h *CLIInteractiveTUIHost) handleResumeSessionSelector() error {
 		return errors.New("resume requires an active session")
 	}
 	manager := session.SessionManager
-	if len(ListSessions(manager.GetCWD(), manager.GetSessionDir())) == 0 {
-		h.addStatus("No sessions to resume")
-		return nil
-	}
 	if h.ui == nil {
+		if len(ListSessions(manager.GetCWD(), manager.GetSessionDir())) == 0 {
+			h.addStatus("No sessions to resume")
+			return nil
+		}
 		options := sessionResumeDialogOptions(manager)
 		result, err := h.RunTUIDialog(TUIDialogRequest{Kind: "select", Title: "Resume Session", Options: options})
 		if err != nil {
@@ -5791,12 +6091,10 @@ func (h *CLIInteractiveTUIHost) handleResumeSessionSelector() error {
 	select {
 	case result := <-resultCh:
 		if result.Action != "selected" {
-			h.addStatus("Resume cancelled")
 			return nil
 		}
 		path := dialogStringValue(result.Value)
 		if strings.TrimSpace(path) == "" {
-			h.addStatus("Resume cancelled")
 			return nil
 		}
 		return h.resumeSessionPath(path)
@@ -5804,7 +6102,6 @@ func (h *CLIInteractiveTUIHost) handleResumeSessionSelector() error {
 		if restore != nil {
 			restore()
 		}
-		h.addStatus("Resume cancelled")
 		return nil
 	}
 }
@@ -5883,7 +6180,7 @@ func (h *CLIInteractiveTUIHost) handleCopySlashCommand() error {
 	}
 	text := host.GetLastAssistantText()
 	if text == nil || strings.TrimSpace(*text) == "" {
-		h.addStatus("No agent messages to copy yet.")
+		h.addStatus("Error: No agent messages to copy yet.")
 		return nil
 	}
 	copyFn := h.clipboardCopy
@@ -5893,7 +6190,8 @@ func (h *CLIInteractiveTUIHost) handleCopySlashCommand() error {
 		}
 	}
 	if err := copyFn(*text); err != nil {
-		return err
+		h.addStatus("Error: " + err.Error())
+		return nil
 	}
 	h.addStatus("Copied last agent message to clipboard")
 	return nil
@@ -5911,7 +6209,7 @@ func (h *CLIInteractiveTUIHost) handleCompactSlashCommand(args string) error {
 		}
 	}
 	if messageCount < 2 {
-		h.addStatus("Nothing to compact (no messages yet)")
+		h.addWarning("Nothing to compact (no messages yet)")
 		return nil
 	}
 	result, err := session.Compact(strings.TrimSpace(args))
@@ -5934,8 +6232,7 @@ func (h *CLIInteractiveTUIHost) handleCloneSlashCommand() error {
 	}
 	leafID := session.SessionManager.GetLeafID()
 	if leafID == nil || strings.TrimSpace(*leafID) == "" {
-		h.addStatus("Nothing to clone yet")
-		return nil
+		return errors.New("Entry " + cloneEmptySessionEntryID(session.SessionManager) + " not found")
 	}
 	if runtimeHost := h.agentSessionRuntimeHost(); runtimeHost != nil {
 		result, err := runtimeHost.Fork(*leafID, AgentSessionRuntimeForkOptions{Position: "at"})
@@ -5966,6 +6263,20 @@ func (h *CLIInteractiveTUIHost) handleCloneSlashCommand() error {
 	return nil
 }
 
+func cloneEmptySessionEntryID(manager *SessionManager) string {
+	if manager == nil {
+		return "unknown"
+	}
+	id := strings.ReplaceAll(strings.TrimSpace(manager.GetSessionID()), "-", "")
+	if id == "" {
+		return "unknown"
+	}
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
+}
+
 func (h *CLIInteractiveTUIHost) handleForkSlashCommand(args string) error {
 	session, err := h.currentAgentSession()
 	if err != nil {
@@ -5979,7 +6290,7 @@ func (h *CLIInteractiveTUIHost) handleForkSlashCommand(args string) error {
 		}
 		messages := session.GetUserMessagesForForking()
 		if len(messages) == 0 {
-			h.addStatus("No user messages to fork")
+			h.addStatus("No messages to fork from")
 			return nil
 		}
 		selectedID, cancelled, err := h.selectForkUserMessage(messages)
@@ -6076,7 +6387,6 @@ func (h *CLIInteractiveTUIHost) handleTreeSlashCommand(args string) error {
 				return err
 			}
 			if cancelled {
-				h.addStatus("Tree switch cancelled")
 				return nil
 			}
 			entryID = selectedID
@@ -6196,10 +6506,6 @@ func (h *CLIInteractiveTUIHost) selectTreeEntry(session *AgentSession, initialSe
 		return "", true, errors.New("interactive TUI session tree is not ready")
 	}
 	roots := session.SessionManager.GetTree()
-	if len(roots) == 0 {
-		h.addStatus("No tree entries to switch to")
-		return "", true, nil
-	}
 	currentLeafID := ""
 	if leafID := session.SessionManager.GetLeafID(); leafID != nil {
 		currentLeafID = *leafID
@@ -6210,7 +6516,7 @@ func (h *CLIInteractiveTUIHost) selectTreeEntry(session *AgentSession, initialSe
 		selector.rebuild()
 	}
 	selector.SetFilter(h.treeSelectorInitialFilter())
-	if selector.GetTreeList() == nil || selector.GetTreeList().GetSelectedNode() == nil {
+	if len(roots) > 0 && (selector.GetTreeList() == nil || selector.GetTreeList().GetSelectedNode() == nil) {
 		h.addStatus("No tree entries to switch to")
 		return "", true, nil
 	}
@@ -6500,6 +6806,9 @@ func (h *CLIInteractiveTUIHost) applyReloadedInteractiveSettings() {
 		h.ui.SetShowHardwareCursor(settings.GetShowHardwareCursor())
 		h.ui.SetClearOnShrink(settings.GetClearOnShrink())
 	}
+	if err := h.applyCurrentTUITheme(); err == nil {
+		h.updateEditorBorderColor()
+	}
 }
 
 func (h *CLIInteractiveTUIHost) handleBashCommand(command string, excludeFromContext bool) error {
@@ -6518,7 +6827,7 @@ func (h *CLIInteractiveTUIHost) handleBashCommand(command string, excludeFromCon
 		h.renderBashResult(session, command, result, excludeFromContext)
 		return nil
 	}
-	component := NewBashExecutionComponent(command)
+	component := NewBashExecutionComponent(command, BashExecutionOptions{ExcludeFromContext: excludeFromContext})
 	if session.IsStreaming() && h.pendingMessages != nil {
 		h.pendingMessages.AddChild(component)
 	} else {
@@ -6586,7 +6895,7 @@ func (h *CLIInteractiveTUIHost) emitUserBashInterception(session *AgentSession, 
 }
 
 func (h *CLIInteractiveTUIHost) renderBashResult(session *AgentSession, command string, result BashResult, excludeFromContext bool) {
-	component := NewBashExecutionComponent(command)
+	component := NewBashExecutionComponent(command, BashExecutionOptions{ExcludeFromContext: excludeFromContext})
 	if session.IsStreaming() && h.pendingMessages != nil {
 		h.pendingMessages.AddChild(component)
 	} else {
@@ -6611,6 +6920,7 @@ func (h *CLIInteractiveTUIHost) resetChatState() {
 	if h.chat != nil {
 		h.chat.Clear()
 	}
+	h.lastStatusSpacer = nil
 	h.lastStatusText = nil
 	h.pendingTools = map[string]*ToolExecutionComponent{}
 	h.rendered = 0
@@ -6817,17 +7127,19 @@ func (h *CLIInteractiveTUIHost) RunTUIDialog(request TUIDialogRequest) (TUIDialo
 			{ID: "yes", Label: "Yes", Value: true},
 			{ID: "no", Label: "No", Value: false},
 		}
-		component := newCLISelectDialog(request.Title, request.Message, options, dialogDefaultOptionIndex(options, request.DefaultValue), func(option TUIDialogOption) {}, func() {})
-		return h.runConfirmDialog(component, request.Timeout)
+		return h.runExtensionOptionDialog(requestDialogTitle(request.Title, request.Message), options, dialogDefaultOptionIndex(options, request.DefaultValue), request.Timeout, func(option TUIDialogOption) TUIDialogResult {
+			if option.ID == "yes" {
+				return TUIDialogResult{Action: "confirmed", OptionID: "yes", Value: true}
+			}
+			return TUIDialogResult{Action: "declined", OptionID: "no", Value: false}
+		})
 	case "select":
 		if len(request.Options) == 0 {
 			return TUIDialogResult{}, errors.New("select dialog requires options")
 		}
-		var selected TUIDialogResult
-		component := newCLISelectDialog(request.Title, request.Message, request.Options, dialogDefaultOptionIndex(request.Options, request.DefaultValue), func(option TUIDialogOption) {
-			selected = TUIDialogResult{Action: "selected", OptionID: option.ID, Value: dialogOptionValue(option)}
-		}, func() {})
-		return h.runSelectionDialog(component, func() TUIDialogResult { return selected }, request.Timeout)
+		return h.runExtensionOptionDialog(requestDialogTitle(request.Title, request.Message), request.Options, dialogDefaultOptionIndex(request.Options, request.DefaultValue), request.Timeout, func(option TUIDialogOption) TUIDialogResult {
+			return TUIDialogResult{Action: "selected", OptionID: option.ID, Value: dialogOptionValue(option)}
+		})
 	case "input":
 		var submitted TUIDialogResult
 		component := newCLIInputDialog(request.Title, request.Message, request.Placeholder, dialogStringValue(request.DefaultValue), func(value string) {
@@ -6842,6 +7154,72 @@ func (h *CLIInteractiveTUIHost) RunTUIDialog(request TUIDialogRequest) (TUIDialo
 		return h.runSelectionDialog(component, func() TUIDialogResult { return submitted }, request.Timeout)
 	default:
 		return TUIDialogResult{}, errors.New("unsupported dialog kind: " + kind)
+	}
+}
+
+func requestDialogTitle(title, message string) string {
+	title = strings.TrimSpace(title)
+	message = strings.TrimSpace(message)
+	switch {
+	case title == "":
+		return message
+	case message == "":
+		return title
+	default:
+		return title + "\n" + message
+	}
+}
+
+func (h *CLIInteractiveTUIHost) runExtensionOptionDialog(title string, options []TUIDialogOption, defaultIndex int, timeout int, resultFor func(TUIDialogOption) TUIDialogResult) (TUIDialogResult, error) {
+	if h == nil || h.ui == nil {
+		return TUIDialogResult{}, errors.New("interactive TUI is not ready")
+	}
+	if len(options) == 0 {
+		return TUIDialogResult{}, errors.New("select dialog requires options")
+	}
+	labels := make([]string, 0, len(options))
+	for idx, option := range options {
+		labels = append(labels, firstNonEmptyString(option.Label, option.ID, strconv.Itoa(idx+1)))
+	}
+	selector := NewExtensionSelectorComponent(firstNonEmptyString(title, "Select"), labels)
+	selector.selected = max(0, min(defaultIndex, len(options)-1))
+
+	resultCh := make(chan TUIDialogResult, 1)
+	var closeOnce sync.Once
+	var restore func()
+	finish := func(result TUIDialogResult) {
+		closeOnce.Do(func() {
+			if restore != nil {
+				restore()
+				restore = nil
+			}
+			resultCh <- result
+		})
+	}
+	selector.OnSelect = func(_ string) {
+		index := max(0, min(selector.selected, len(options)-1))
+		if resultFor != nil {
+			finish(resultFor(options[index]))
+			return
+		}
+		option := options[index]
+		finish(TUIDialogResult{Action: "selected", OptionID: option.ID, Value: dialogOptionValue(option)})
+	}
+	selector.OnCancel = func() {
+		finish(TUIDialogResult{Action: "cancelled"})
+	}
+
+	stopTimeout := h.startExtensionSelectorTimeout(selector, timeout, finish)
+	defer stopTimeout()
+	restore = h.showEditorReplacement(selector, selector)
+	select {
+	case result := <-resultCh:
+		return result, nil
+	case <-h.done:
+		if restore != nil {
+			restore()
+		}
+		return TUIDialogResult{Action: "cancelled"}, nil
 	}
 }
 
@@ -6943,11 +7321,12 @@ func (h *CLIInteractiveTUIHost) runSelectionDialog(component *cliTUIDialogCompon
 	}
 	resultCh := make(chan TUIDialogResult, 1)
 	var closeOnce sync.Once
-	var handle gitui.OverlayHandle
+	var restore func()
 	finish = func(result TUIDialogResult) {
 		closeOnce.Do(func() {
-			if handle != nil {
-				handle.Hide()
+			if restore != nil {
+				restore()
+				restore = nil
 			}
 			resultCh <- result
 		})
@@ -6957,19 +7336,13 @@ func (h *CLIInteractiveTUIHost) runSelectionDialog(component *cliTUIDialogCompon
 	}
 	stopTimeout := h.startDialogTimeout(component, timeoutValues, finish)
 	defer stopTimeout()
-	width := gitui.Cells(64)
-	handle = h.ui.ShowOverlay(component, gitui.OverlayOptions{
-		Width:    &width,
-		MinWidth: 30,
-		Anchor:   gitui.OverlayCenter,
-	})
-	h.requestRender(false)
+	restore = h.showEditorReplacement(component, component)
 	select {
 	case result := <-resultCh:
 		return result, nil
 	case <-h.done:
-		if handle != nil {
-			handle.Hide()
+		if restore != nil {
+			restore()
 		}
 		return TUIDialogResult{Action: "cancelled"}, nil
 	}
@@ -7012,6 +7385,53 @@ func (h *CLIInteractiveTUIHost) startDialogTimeout(component *cliTUIDialogCompon
 			case <-ticker.C:
 				updateTitle()
 			case <-done:
+				return
+			}
+		}
+	}()
+	return stop
+}
+
+func (h *CLIInteractiveTUIHost) startExtensionSelectorTimeout(component *ExtensionSelectorComponent, timeout int, finish func(TUIDialogResult)) func() {
+	if h == nil || component == nil || finish == nil || timeout <= 0 {
+		return func() {}
+	}
+	timeoutDuration := time.Duration(timeout) * time.Millisecond
+	deadline := time.Now().Add(timeoutDuration)
+	baseTitle := component.Title()
+	done := make(chan struct{})
+	var doneOnce sync.Once
+	stop := func() {
+		doneOnce.Do(func() {
+			close(done)
+			component.SetTitle(baseTitle)
+		})
+	}
+	updateTitle := func() {
+		remaining := int(math.Ceil(time.Until(deadline).Seconds()))
+		if remaining < 0 {
+			remaining = 0
+		}
+		component.SetTitle(fmt.Sprintf("%s (%ds)", baseTitle, remaining))
+		h.requestRender(false)
+	}
+	updateTitle()
+	timer := time.NewTimer(timeoutDuration)
+	ticker := time.NewTicker(time.Second)
+	go func() {
+		defer timer.Stop()
+		defer ticker.Stop()
+		for {
+			select {
+			case <-timer.C:
+				stop()
+				finish(TUIDialogResult{Action: "cancelled"})
+				return
+			case <-ticker.C:
+				updateTitle()
+			case <-done:
+				return
+			case <-h.done:
 				return
 			}
 		}

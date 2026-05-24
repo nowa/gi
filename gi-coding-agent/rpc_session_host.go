@@ -46,6 +46,8 @@ const (
 	RPCCommandGetCommands          = "get_commands"
 )
 
+var errNothingToExport = errors.New("Nothing to export yet - start a conversation first")
+
 type RPCSessionHost struct {
 	Session               *AgentSession
 	Settings              *SettingsManager
@@ -685,6 +687,12 @@ func rpcSessionTokens(usage llm.Usage) RPCSessionTokens {
 }
 
 func (h *RPCSessionHost) ExportHTML(outputPath string) (string, error) {
+	if h == nil || h.Session == nil || h.Session.SessionManager == nil {
+		return "", errors.New("RPC session host requires an active session")
+	}
+	if !h.Session.SessionManager.hasAssistantMessage() {
+		return "", errNothingToExport
+	}
 	path := strings.TrimSpace(outputPath)
 	if path == "" {
 		if sessionFile := h.Session.SessionManager.GetSessionFile(); sessionFile != "" {

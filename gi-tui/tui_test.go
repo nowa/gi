@@ -3849,6 +3849,32 @@ func TestTUIAppendPastViewportScrollsFromCurrentCursor(t *testing.T) {
 	}
 }
 
+func TestTUIViewportMovedDownByNonAppendForcesFullRedraw(t *testing.T) {
+	terminal := NewVirtualTerminal(20, 5)
+	ui := NewTUI(terminal)
+	component := &lineComponent{}
+	ui.AddChild(component)
+
+	component.lines = []string{"Line 0", "Line 1", "Line 2", "Line 3", "Line 4", "Line 5", "old editor", "old footer"}
+	ui.RequestRender(true)
+	initialRedraws := ui.FullRedraws()
+	terminal.ClearOutput()
+
+	component.lines = []string{"Line 0", "Line 1", "Line 2", "Line 3", "Line 4", "Line 5", "new editor", "autocomplete", "new footer"}
+	ui.RequestRender(false)
+
+	if ui.FullRedraws() <= initialRedraws {
+		t.Fatalf("viewport-moving non-append update should force a full redraw: got %d <= %d", ui.FullRedraws(), initialRedraws)
+	}
+	if output := terminal.Output(); !strings.Contains(output, "\x1b[2J\x1b[H") {
+		t.Fatalf("viewport-moving non-append redraw should clear the stale viewport: %q", output)
+	}
+	want := []string{"Line 4", "Line 5", "new editor", "autocomplete", "new footer"}
+	if got := terminal.GetViewport(); !equalLines(got, want) {
+		t.Fatalf("viewport = %#v, want %#v", got, want)
+	}
+}
+
 func TestTUIChangeAboveViewportForcesFullRedraw(t *testing.T) {
 	terminal := newFakeTerminal(20, 5)
 	ui := NewTUI(terminal)

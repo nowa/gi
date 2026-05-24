@@ -103,11 +103,12 @@ func (s *TreeSelectorComponent) Render(width int) []string {
 	lines := []string{
 		"",
 		treeSelectorBorder(width),
-		gitui.TruncateToWidth("  Session Tree", width, "", true),
+		gitui.TruncateToWidth(" "+tuiThemeBold("  Session Tree"), width, "", true),
 	}
 	for _, hint := range s.footerHints() {
-		lines = append(lines, gitui.TruncateToWidth(hint, width, "", true))
+		lines = append(lines, gitui.TruncateToWidth(tuiThemeMuted(hint), width, "...", true))
 	}
+	lines = append(lines, gitui.TruncateToWidth("  "+tuiThemeMuted("Type to search:"), width, tuiThemeMuted("..."), true))
 	lines = append(lines,
 		treeSelectorBorder(width),
 		"",
@@ -122,34 +123,43 @@ func (s *TreeSelectorComponent) footerHints() []string {
 	if s != nil && s.keybindings != nil {
 		keybindings = s.keybindings
 	}
-	upDown := formatHotkeyKeys(append(gitui.GetKeybindings().GetKeys("tui.select.up"), gitui.GetKeybindings().GetKeys("tui.select.down")...), true)
-	confirm := formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.select.confirm"), true)
-	cancel := formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.select.cancel"), true)
-	fold := formatHotkeyKeys(keybindingValueKeys(keybindings["app.tree.foldOrUp"]), true)
-	unfold := formatHotkeyKeys(keybindingValueKeys(keybindings["app.tree.unfoldOrDown"]), true)
-	user := formatHotkeyKeys(keybindingValueKeys(keybindings["app.tree.filter.userOnly"]), true)
-	defaultFilter := formatHotkeyKeys(keybindingValueKeys(keybindings["app.tree.filter.default"]), true)
-	noTools := formatHotkeyKeys(keybindingValueKeys(keybindings["app.tree.filter.noTools"]), true)
-	labels := formatHotkeyKeys(keybindingValueKeys(keybindings["app.tree.filter.labeledOnly"]), true)
-	all := formatHotkeyKeys(keybindingValueKeys(keybindings["app.tree.filter.all"]), true)
-	timestamps := formatHotkeyKeys(keybindingValueKeys(keybindings["app.tree.toggleLabelTimestamp"]), true)
+	fold := treeSelectorKeyText(keybindings, "app.tree.foldOrUp")
+	unfold := treeSelectorKeyText(keybindings, "app.tree.unfoldOrDown")
+	editLabel := treeSelectorKeyText(keybindings, "app.tree.editLabel")
+	defaultFilter := treeSelectorKeyText(keybindings, "app.tree.filter.default")
+	noTools := treeSelectorKeyText(keybindings, "app.tree.filter.noTools")
+	user := treeSelectorKeyText(keybindings, "app.tree.filter.userOnly")
+	labels := treeSelectorKeyText(keybindings, "app.tree.filter.labeledOnly")
+	all := treeSelectorKeyText(keybindings, "app.tree.filter.all")
+	cycleForward := treeSelectorKeyText(keybindings, "app.tree.filter.cycleForward")
+	cycleBackward := treeSelectorKeyText(keybindings, "app.tree.filter.cycleBackward")
+	timestamps := treeSelectorKeyText(keybindings, "app.tree.toggleLabelTimestamp")
+	filterKeys := strings.Join(nonEmptyStrings(defaultFilter, noTools, user, labels, all), "/")
+	cycleKeys := strings.Join(nonEmptyStrings(cycleForward, cycleBackward), "/")
 	return []string{
-		fmt.Sprintf("  %s move. %s switch. %s/%s fold. %s cancel.",
-			firstNonEmptyString(upDown, "Up/Down"),
-			firstNonEmptyString(confirm, "Enter"),
-			firstNonEmptyString(fold, "Ctrl+Left"),
-			firstNonEmptyString(unfold, "Ctrl+Right"),
-			firstNonEmptyString(cancel, "Esc"),
-		),
-		fmt.Sprintf("  %s users. %s default. %s no-tools. %s labels. %s all. %s label time.",
-			firstNonEmptyString(user, "Ctrl+U"),
-			firstNonEmptyString(defaultFilter, "Ctrl+D"),
-			firstNonEmptyString(noTools, "Ctrl+T"),
-			firstNonEmptyString(labels, "Ctrl+L"),
-			firstNonEmptyString(all, "Ctrl+A"),
-			firstNonEmptyString(timestamps, "Shift+T"),
+		fmt.Sprintf("  ↑/↓: move. ←/→: page. %s/%s: fold/branch. %s: label. %s: filters (%s cycle). %s: label time",
+			firstNonEmptyString(fold, "ctrl+left/option+left"),
+			firstNonEmptyString(unfold, "ctrl+right/option+right"),
+			firstNonEmptyString(editLabel, "shift+l"),
+			firstNonEmptyString(filterKeys, "ctrl+d/ctrl+t/ctrl+u/ctrl+l/ctrl+a"),
+			firstNonEmptyString(cycleKeys, "ctrl+o/shift+ctrl+o"),
+			firstNonEmptyString(timestamps, "shift+t"),
 		),
 	}
+}
+
+func treeSelectorKeyText(keybindings KeybindingsConfig, action string) string {
+	return formatHotkeyKeys(keybindingValueKeys(keybindings[action]), false)
+}
+
+func nonEmptyStrings(values ...string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func (s *TreeSelectorComponent) HandleInput(input string) {
@@ -223,17 +233,28 @@ func (l *TreeSelectorList) Render(width int) []string {
 				text += " " + formatTreeSelectorLabelTimestamp(node.LabelTimestamp) + " [+label time]"
 			}
 		}
-		prefix := "  "
+		cursor := "  "
 		if l.selected >= 0 && l.selected < len(l.flat) && l.flat[l.selected] == node {
-			prefix = "> "
+			cursor = tuiThemeAccent("› ")
+			text = tuiThemeBold(text)
 		}
-		lines = append(lines, gitui.TruncateToWidth(prefix+text, width, "", true))
+		pathMarker := ""
+		if l.selector != nil && l.selector.activePath[node.Entry.ID] {
+			pathMarker = tuiThemeAccent("• ")
+		}
+		line := cursor + pathMarker + text
+		if l.selected >= 0 && l.selected < len(l.flat) && l.flat[l.selected] == node {
+			line = tuiThemeBG("selectedBg", line)
+		}
+		lines = append(lines, gitui.TruncateToWidth(line, width, "", true))
 	}
 	if len(l.flat) == 0 {
-		lines = append(lines, gitui.TruncateToWidth("  No entries found", width, "", true))
+		lines = append(lines, gitui.TruncateToWidth(tuiThemeMuted("  No entries found"), width, "", true))
 	}
 	if l.selected >= 0 && len(l.flat) > 0 {
-		lines = append(lines, gitui.TruncateToWidth("  ("+fmt.Sprintf("%d/%d", l.selected+1, len(l.flat))+")", width, "", true))
+		lines = append(lines, gitui.TruncateToWidth(tuiThemeMuted("  ("+fmt.Sprintf("%d/%d", l.selected+1, len(l.flat))+")"), width, "", true))
+	} else if len(l.flat) == 0 {
+		lines = append(lines, gitui.TruncateToWidth(tuiThemeMuted("  (0/0)"), width, "", true))
 	}
 	return lines
 }
@@ -547,11 +568,43 @@ func treeSelectorNodeText(node *SessionTreeNode) string {
 	if node.Entry.Type == "branch_summary" {
 		return node.Entry.Summary
 	}
+	if node.Entry.Type == "message" && sessionMessageRole(node.Entry.Message) == "bashExecution" {
+		return tuiThemeDim("[bash]: " + treeSelectorBashCommand(node.Entry.Message))
+	}
 	text := sessionMessageText(node.Entry.Message)
 	if text == "" {
 		text = node.Entry.ID
 	}
 	return text
+}
+
+func treeSelectorBashCommand(message any) string {
+	switch typed := message.(type) {
+	case map[string]any:
+		if command, _ := typed["command"].(string); strings.TrimSpace(command) != "" {
+			return strings.TrimSpace(command)
+		}
+	case llm.Message:
+		if details, ok := typed.Details.(map[string]any); ok {
+			if command, _ := details["command"].(string); strings.TrimSpace(command) != "" {
+				return strings.TrimSpace(command)
+			}
+		}
+	}
+	return extractBashCommandFromExecutionText(sessionMessageText(message))
+}
+
+func extractBashCommandFromExecutionText(text string) string {
+	text = strings.TrimSpace(text)
+	const prefix = "Ran `"
+	if !strings.HasPrefix(text, prefix) {
+		return text
+	}
+	rest := strings.TrimPrefix(text, prefix)
+	if end := strings.Index(rest, "`"); end >= 0 {
+		return strings.TrimSpace(rest[:end])
+	}
+	return strings.TrimSpace(rest)
 }
 
 func formatTreeSelectorLabelTimestamp(value string) string {
@@ -563,5 +616,5 @@ func formatTreeSelectorLabelTimestamp(value string) string {
 }
 
 func treeSelectorBorder(width int) string {
-	return gitui.TruncateToWidth(" "+strings.Repeat("-", max(0, width-1)), width, "", true)
+	return tuiThemeBorder(strings.Repeat("─", max(1, width)))
 }

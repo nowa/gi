@@ -2366,7 +2366,7 @@ func DefaultProtocolKeybindings() KeybindingsConfig {
 		"app.tree.filter.cycleBackward": "shift+ctrl+o",
 		"tui.input.submit":              "enter",
 		"tui.select.confirm":            "enter",
-		"tui.select.cancel":             "escape",
+		"tui.select.cancel":             []any{"escape", "ctrl+c"},
 		"tui.input.copy":                "ctrl+c",
 		"tui.editor.deleteToLineEnd":    "ctrl+k",
 	}

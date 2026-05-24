@@ -52,9 +52,25 @@ func TestBashExecutionRecomputesLinesWhenWidthChangesBetweenRenders(t *testing.T
 func TestBashExecutionShowsRunningCancelHintPiStyle(t *testing.T) {
 	component := NewBashExecutionComponent("sleep 10")
 
+	lines := component.Render(100)
+	if len(lines) == 0 || lines[0] != "" {
+		t.Fatalf("bash execution should render Pi-style leading spacer, got %#v", lines)
+	}
 	output := strings.Join(component.Render(100), "\n")
 	if !strings.Contains(output, "Running... (Esc to cancel)") {
 		t.Fatalf("rendered bash output missing running cancel hint:\n%s", output)
+	}
+}
+
+func TestBashExecutionUsesPiThemeColors(t *testing.T) {
+	component := NewBashExecutionComponent("echo hi")
+	component.AppendOutput("hi\n")
+	component.SetComplete(0, false)
+
+	output := strings.Join(component.Render(40), "\n")
+	if !strings.Contains(output, "\x1b[38;2;181;189;104m") ||
+		!strings.Contains(output, "\x1b[38;2;128;128;128mhi") {
+		t.Fatalf("rendered bash output missing Pi theme colors:\n%q", output)
 	}
 }
 

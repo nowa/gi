@@ -119,7 +119,7 @@ func (s *SessionSelectorComponent) GetSessionList() *SessionSelectorComponent {
 
 func (s *SessionSelectorComponent) Invalidate() {}
 
-func (s *SessionSelectorComponent) Render(_ int) []string {
+func (s *SessionSelectorComponent) Render(width int) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -133,17 +133,22 @@ func (s *SessionSelectorComponent) Render(_ int) []string {
 	if s.scope == sessionSelectorAllScope {
 		title = "Resume Session (All)"
 	}
-	lines := []string{title}
-	if s.allLoading && s.scope == sessionSelectorAllScope {
-		lines = append(lines, "Loading sessions...")
-	}
-	lines = append(lines, s.statusLineLocked())
+	border := tuiThemeAccent(strings.Repeat("─", max(1, width)))
+	lines := []string{"", border, "", s.headerLineLocked(title, width)}
 	lines = append(lines, s.hintLinesLocked()...)
 	if s.deleteConfirm {
-		lines = append(lines, "Delete session? "+s.tuiKeyText("tui.select.confirm", "Enter")+" confirm · "+s.tuiKeyText("tui.select.cancel", "Esc")+" cancel")
+		lines = append(lines, tuiThemeError(gitui.TruncateToWidth("Delete session? "+s.tuiKeyText("tui.select.confirm", "Enter")+" confirm · "+s.tuiKeyText("tui.select.cancel", "Esc")+" cancel", width, "")))
 	}
+	lines = append(lines, "")
+	lines = append(lines, s.searchLineLocked())
+	lines = append(lines, "")
 
 	nodes := s.visibleNodesLocked()
+	if len(nodes) == 0 {
+		lines = append(lines, tuiThemeMuted(gitui.TruncateToWidth(s.emptyMessageLocked(), width, "")))
+		lines = append(lines, "", border)
+		return lines
+	}
 	for index, node := range nodes {
 		session := node.session
 		prefix := "  "
@@ -159,44 +164,86 @@ func (s *SessionSelectorComponent) Render(_ int) []string {
 		}
 		lines = append(lines, prefix+node.treePrefix()+name)
 	}
+	lines = append(lines, "", border)
 	return lines
 }
 
-func (s *SessionSelectorComponent) statusLineLocked() string {
-	scopeLabel := "Current Folder"
-	if s.scope == sessionSelectorAllScope {
-		scopeLabel = "All"
-	}
-	nameLabel := "all"
+func (s *SessionSelectorComponent) headerLineLocked(title string, width int) string {
+	left := tuiThemeBold(title)
+	sortLabel := sessionSelectorSortLabel(s.sortMode)
+	nameLabel := "All"
 	if s.nameFilter == SessionSelectorNameNamed {
-		nameLabel = "named"
+		nameLabel = "Named"
 	}
-	return "Scope: " + scopeLabel + " · Sort: " + string(s.sortMode) + " · Name: " + nameLabel
+	var scopeText string
+	if s.allLoading && s.scope == sessionSelectorAllScope {
+		scopeText = tuiThemeMuted("○ Current Folder | ") + tuiThemeAccent("Loading ...")
+	} else if s.scope == sessionSelectorCurrentScope {
+		scopeText = tuiThemeAccent("◉ Current Folder") + tuiThemeMuted(" | ○ All")
+	} else {
+		scopeText = tuiThemeMuted("○ Current Folder | ") + tuiThemeAccent("◉ All")
+	}
+	right := scopeText + "  " + tuiThemeMuted("Name: ") + tuiThemeAccent(nameLabel) + "  " + tuiThemeMuted("Sort: ") + tuiThemeAccent(sortLabel)
+	right = gitui.TruncateToWidth(right, width, "")
+	availableLeft := max(0, width-gitui.VisibleWidth(right)-1)
+	left = gitui.TruncateToWidth(left, availableLeft, "")
+	spacing := max(0, width-gitui.VisibleWidth(left)-gitui.VisibleWidth(right))
+	return left + strings.Repeat(" ", spacing) + right
+}
+
+func sessionSelectorSortLabel(mode SessionSelectorSortMode) string {
+	switch mode {
+	case SessionSelectorSortThreaded:
+		return "Threaded"
+	case SessionSelectorSortRecent:
+		return "Recent"
+	case SessionSelectorSortRelevance:
+		return "Fuzzy"
+	default:
+		return string(mode)
+	}
+}
+
+func (s *SessionSelectorComponent) searchLineLocked() string {
+	return "> " + s.searchQuery + "\x1b[7m \x1b[0m"
+}
+
+func (s *SessionSelectorComponent) emptyMessageLocked() string {
+	if s.nameFilter == SessionSelectorNameNamed {
+		toggleKey := s.appKeyText("app.session.toggleNamedFilter", "ctrl+n")
+		if s.scope == sessionSelectorAllScope {
+			return "  No named sessions found. Press " + toggleKey + " to show all."
+		}
+		return "  No named sessions in current folder. Press " + toggleKey + " to show all, or Tab to view all."
+	}
+	if s.scope == sessionSelectorAllScope {
+		return "  No sessions found"
+	}
+	return "  No sessions in current folder. Press Tab to view all."
 }
 
 func (s *SessionSelectorComponent) hintLinesLocked() []string {
-	namedAction := "show named sessions"
-	if s.nameFilter == SessionSelectorNameNamed {
-		namedAction = "show all sessions"
-	}
 	pathState := "off"
 	if s.showPath {
 		pathState = "on"
 	}
-	line1 := s.tuiKeyText("tui.input.tab", "Tab") + " scope · " +
-		s.appKeyText("app.session.toggleSort", "Ctrl+S") + " sort · " +
-		s.appKeyText("app.session.toggleNamedFilter", "Ctrl+N") + " " + namedAction
-	line2 := s.appKeyText("app.session.delete", "Ctrl+D") + " delete · " +
-		s.appKeyText("app.session.togglePath", "Ctrl+P") + " path (" + pathState + ")"
-	if s.options.ShowRenameHint {
-		line2 += " · " + s.appKeyText("app.session.rename", "Ctrl+R") + " rename"
+	separator := tuiThemeMuted(" · ")
+	line1 := tuiThemeKeyHint(s.tuiKeyText("tui.input.tab", "tab"), "scope") + separator + tuiThemeMuted(`re:<pattern> regex · "phrase" exact`)
+	parts := []string{
+		tuiThemeKeyHint(s.appKeyText("app.session.toggleSort", "ctrl+s"), "sort"),
+		tuiThemeKeyHint(s.appKeyText("app.session.toggleNamedFilter", "ctrl+n"), "named"),
+		tuiThemeKeyHint(s.appKeyText("app.session.delete", "ctrl+d"), "delete"),
+		tuiThemeKeyHint(s.appKeyText("app.session.togglePath", "ctrl+p"), "path ("+pathState+")"),
 	}
-	return []string{line1, line2}
+	if s.options.ShowRenameHint {
+		parts = append(parts, tuiThemeKeyHint(s.appKeyText("app.session.rename", "ctrl+r"), "rename"))
+	}
+	return []string{line1, strings.Join(parts, separator)}
 }
 
 func (s *SessionSelectorComponent) tuiKeyText(action, fallback string) string {
 	keys := gitui.GetKeybindings().GetKeys(action)
-	if text := formatHotkeyKeys(keys, true); text != "" {
+	if text := formatHotkeyKeys(keys, false); text != "" {
 		return text
 	}
 	return fallback
@@ -207,7 +254,7 @@ func (s *SessionSelectorComponent) appKeyText(action, fallback string) string {
 	if keybindings == nil {
 		keybindings = DefaultProtocolKeybindings()
 	}
-	if text := formatHotkeyKeys(keybindingValueKeys(keybindings[action]), true); text != "" {
+	if text := formatHotkeyKeys(keybindingValueKeys(keybindings[action]), false); text != "" {
 		return text
 	}
 	return fallback

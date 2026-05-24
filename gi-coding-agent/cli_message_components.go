@@ -2,9 +2,145 @@ package gicodingagent
 
 import (
 	"strings"
+	"sync"
 
+	llm "github.com/nowa/gi/gi-llm-provider"
 	gitui "github.com/nowa/gi/gi-tui"
 )
+
+const (
+	cliOSC133ZoneStart = "\x1b]133;A\x07"
+	cliOSC133ZoneEnd   = "\x1b]133;B\x07"
+	cliOSC133ZoneFinal = "\x1b]133;C\x07"
+)
+
+type cliUserMessageComponent struct {
+	text string
+}
+
+func newCLIUserMessageComponent(text string) gitui.Component {
+	return cliUserMessageComponent{text: strings.TrimSpace(text)}
+}
+
+func (c cliUserMessageComponent) Invalidate() {}
+
+func (c cliUserMessageComponent) Render(width int) []string {
+	if strings.TrimSpace(c.text) == "" {
+		return nil
+	}
+	box := gitui.NewBox(1, 1, func(text string) string {
+		return tuiThemeBG("userMessageBg", text)
+	})
+	box.AddChild(newCLIMarkdownWithOptions(c.text, gitui.MarkdownOptions{
+		DefaultTextStyle: &gitui.DefaultTextStyle{
+			Color: func(text string) string { return tuiThemeFG("userMessageText", text) },
+		},
+	}))
+	lines := box.Render(width)
+	return cliOSC133WrappedLines(lines)
+}
+
+type cliAssistantMessageComponent struct {
+	mu                  sync.Mutex
+	message             llm.Message
+	hideThinkingBlock   bool
+	hiddenThinkingLabel string
+}
+
+func newCLIAssistantMessageComponent(message llm.Message, hideThinkingBlock bool, hiddenThinkingLabel string) *cliAssistantMessageComponent {
+	return &cliAssistantMessageComponent{
+		message:             message,
+		hideThinkingBlock:   hideThinkingBlock,
+		hiddenThinkingLabel: firstNonEmptyString(strings.TrimSpace(hiddenThinkingLabel), "Thinking..."),
+	}
+}
+
+func (c *cliAssistantMessageComponent) SetMessage(message llm.Message) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.message = message
+}
+
+func (c *cliAssistantMessageComponent) Invalidate() {}
+
+func (c *cliAssistantMessageComponent) Render(width int) []string {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	message := c.message
+	hideThinkingBlock := c.hideThinkingBlock
+	hiddenThinkingLabel := c.hiddenThinkingLabel
+	c.mu.Unlock()
+	lines := renderCLIAssistantMessage(message, width, hideThinkingBlock, hiddenThinkingLabel)
+	if assistantMessageHasToolCalls(message) {
+		return lines
+	}
+	return cliOSC133WrappedLines(lines)
+}
+
+func renderCLIAssistantMessage(message llm.Message, width int, hideThinkingBlock bool, hiddenThinkingLabel string) []string {
+	var blocks [][]string
+	for _, part := range message.Content {
+		switch part.Type {
+		case llm.ContentText:
+			if text := strings.TrimSpace(part.Text); text != "" {
+				blocks = append(blocks, newCLIMarkdownWithOptions(text, gitui.MarkdownOptions{PaddingX: 1}).Render(width))
+			}
+		case llm.ContentThinking:
+			if thinking := strings.TrimSpace(part.Thinking); thinking != "" {
+				if hideThinkingBlock {
+					thinking = firstNonEmptyString(strings.TrimSpace(hiddenThinkingLabel), "Thinking...")
+				}
+				blocks = append(blocks, newCLIMarkdownWithOptions(thinking, gitui.MarkdownOptions{
+					PaddingX: 1,
+					DefaultTextStyle: &gitui.DefaultTextStyle{
+						Color:  tuiThemeMuted,
+						Italic: true,
+					},
+				}).Render(width))
+			}
+		}
+	}
+	if !assistantMessageHasToolCalls(message) {
+		if status := assistantMessageStatusText(message); status != "" {
+			blocks = append(blocks, gitui.NewText(tuiThemeError(status), 1, 0).Render(width))
+		}
+	}
+	if len(blocks) == 0 {
+		return nil
+	}
+	lines := []string{""}
+	for index, block := range blocks {
+		if index > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, block...)
+	}
+	return lines
+}
+
+func assistantMessageHasToolCalls(message llm.Message) bool {
+	for _, part := range message.Content {
+		if part.Type == llm.ContentToolCall {
+			return true
+		}
+	}
+	return false
+}
+
+func cliOSC133WrappedLines(lines []string) []string {
+	if len(lines) == 0 {
+		return lines
+	}
+	out := append([]string(nil), lines...)
+	out[0] = cliOSC133ZoneStart + out[0]
+	out[len(out)-1] = cliOSC133ZoneEnd + cliOSC133ZoneFinal + out[len(out)-1]
+	return out
+}
 
 type cliCollapsibleMarkdownMessageOptions struct {
 	Label     string

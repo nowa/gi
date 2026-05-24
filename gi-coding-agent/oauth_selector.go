@@ -73,16 +73,16 @@ func (s OAuthSelector) statusIndicator(provider AuthSelectorProvider) string {
 	if s.AuthStorage != nil {
 		if credential, ok := s.AuthStorage.Get(provider.ID); ok {
 			if credential.Type == provider.AuthType {
-				return " ✓ configured"
+				return tuiThemeSuccess(" ✓ configured")
 			}
 			if credential.Type == "oauth" {
-				return " • subscription configured"
+				return tuiThemeMuted(" • ") + tuiThemeWarning("subscription configured")
 			}
-			return " • API key configured"
+			return tuiThemeMuted(" • ") + tuiThemeWarning("API key configured")
 		}
 	}
 	if provider.AuthType != "api_key" {
-		return " • unconfigured"
+		return tuiThemeMuted(" • unconfigured")
 	}
 	status := AuthStatus{}
 	if s.StatusResolver != nil {
@@ -96,17 +96,17 @@ func (s OAuthSelector) statusIndicator(provider AuthSelectorProvider) string {
 		if label == "" {
 			label = "API key"
 		}
-		return " ✓ env: " + label
+		return tuiThemeSuccess(" ✓ env: " + label)
 	case "runtime":
-		return " ✓ runtime API key"
+		return tuiThemeSuccess(" ✓ runtime API key")
 	case "fallback":
-		return " ✓ custom API key"
+		return tuiThemeSuccess(" ✓ custom API key")
 	case "models_json_key":
-		return " ✓ key in models.json"
+		return tuiThemeSuccess(" ✓ key in models.json")
 	case "models_json_command":
-		return " ✓ command in models.json"
+		return tuiThemeSuccess(" ✓ command in models.json")
 	default:
-		return " • unconfigured"
+		return tuiThemeMuted(" • unconfigured")
 	}
 }
 
@@ -135,20 +135,19 @@ func (c *OAuthSelectorComponent) Render(width int) []string {
 	if c == nil {
 		return nil
 	}
-	width = max(32, width)
+	width = max(24, width)
 	title := "Select provider to configure:"
 	if c.selector.Mode == "logout" {
 		title = "Select provider to logout:"
 	}
 	lines := []string{
+		authSelectorBorder(width),
 		"",
-		authSelectorBorder(width),
-		gitui.TruncateToWidth("  "+title, width, "", true),
-		gitui.TruncateToWidth("  Search: "+c.query, width, "", true),
-		gitui.TruncateToWidth(c.footerHint(), width, "", true),
-		authSelectorBorder(width),
+		selectorTextLine(tuiThemeBoldAccent(title), width),
 		"",
 	}
+	lines = append(lines, c.renderSearchInput(width)...)
+	lines = append(lines, "")
 	if len(c.filtered) == 0 {
 		message := "No matching providers"
 		if len(c.selector.Providers) == 0 {
@@ -158,22 +157,21 @@ func (c *OAuthSelectorComponent) Render(width int) []string {
 				message = "No providers available"
 			}
 		}
-		lines = append(lines, gitui.TruncateToWidth("  "+message, width, "", true))
+		lines = append(lines, selectorTextLine(tuiThemeMuted("  "+message), width))
 		return append(lines, "", authSelectorBorder(width))
 	}
 	start := max(0, min(c.selected-4, max(0, len(c.filtered)-8)))
 	end := min(len(c.filtered), start+8)
 	for index := start; index < end; index++ {
 		provider := c.filtered[index]
-		prefix := "  "
+		line := "  " + tuiThemeFG("text", provider.Name) + c.selector.statusIndicator(provider)
 		if index == c.selected {
-			prefix = "> "
+			line = tuiThemeAccent("→ ") + tuiThemeAccent(provider.Name) + c.selector.statusIndicator(provider)
 		}
-		line := prefix + provider.Name + c.selector.statusIndicator(provider)
-		lines = append(lines, gitui.TruncateToWidth(line, width, "", true))
+		lines = append(lines, selectorTextLine(line, width))
 	}
 	if start > 0 || end < len(c.filtered) {
-		lines = append(lines, gitui.TruncateToWidth("  ("+strconv.Itoa(c.selected+1)+"/"+strconv.Itoa(len(c.filtered))+")", width, "", true))
+		lines = append(lines, selectorTextLine(tuiThemeMuted("  ("+strconv.Itoa(c.selected+1)+"/"+strconv.Itoa(len(c.filtered))+")"), width))
 	}
 	return append(lines, "", authSelectorBorder(width))
 }
@@ -213,16 +211,11 @@ func (c *OAuthSelectorComponent) HandleInput(input string) {
 	}
 }
 
-func (c *OAuthSelectorComponent) footerHint() string {
-	upDown := formatHotkeyKeys(append(gitui.GetKeybindings().GetKeys("tui.select.up"), gitui.GetKeybindings().GetKeys("tui.select.down")...), true)
-	confirm := formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.select.confirm"), true)
-	cancel := formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.select.cancel"), true)
-	clear := formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.editor.deleteToLineStart"), true)
-	return "  Type search. " +
-		firstNonEmptyString(upDown, "Up/Down") + " move. " +
-		firstNonEmptyString(confirm, "Enter") + " select. " +
-		firstNonEmptyString(clear, "Ctrl+U") + " clear. " +
-		firstNonEmptyString(cancel, "Esc") + " cancel."
+func (c *OAuthSelectorComponent) renderSearchInput(width int) []string {
+	input := gitui.NewInput()
+	input.SetText(c.query)
+	input.SetFocused(c.Focused())
+	return input.Render(width)
 }
 
 func (c *OAuthSelectorComponent) move(delta int) {
@@ -332,5 +325,5 @@ func sortAuthSelectorProviders(providers []AuthSelectorProvider) {
 }
 
 func authSelectorBorder(width int) string {
-	return gitui.TruncateToWidth(" "+strings.Repeat("-", max(0, width-1)), width, "", true)
+	return selectorDynamicBorder(width)
 }

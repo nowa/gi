@@ -753,11 +753,13 @@ func (t *TUI) requestRenderLocked(force bool) {
 	shrunk := t.clearOnShrink && len(t.overlays) == 0 && len(lines) < len(t.previousLines)
 	previousViewportTop := viewportTopForLineCount(len(t.previousLines), t.previousHeight)
 	newViewportTop := viewportTopForLineCount(len(lines), height)
+	pureAppend := isPureAppend(t.previousLines, lines)
 	viewportMovedUp := len(t.previousLines) > 0 && len(lines) < len(t.previousLines) && newViewportTop < previousViewportTop
+	viewportMovedDown := len(t.previousLines) > 0 && newViewportTop > previousViewportTop && !pureAppend
 	firstChanged, _ := changedRange(t.previousLines, lines)
 	changedAboveViewport := firstChanged >= 0 && firstChanged < previousViewportTop
 	firstRender := len(t.previousLines) == 0
-	full := force || firstRender || widthChanged || heightChanged || shrunk || viewportMovedUp || changedAboveViewport
+	full := force || firstRender || widthChanged || heightChanged || shrunk || viewportMovedUp || viewportMovedDown || changedAboveViewport
 	if !full && equalLines(lines, t.previousLines) {
 		output := t.hardwareCursorBuffer(len(lines), height, t.hardwareCursorRow, t.originAnchored)
 		if output != "" {
@@ -773,7 +775,7 @@ func (t *TUI) requestRenderLocked(force bool) {
 	}
 	result := renderBuffer{finalRow: t.hardwareCursorRow}
 	if full {
-		clear := force || widthChanged || heightChanged || shrunk || viewportMovedUp || changedAboveViewport
+		clear := force || widthChanged || heightChanged || shrunk || viewportMovedUp || viewportMovedDown || changedAboveViewport
 		result = t.fullRenderBuffer(lines, clear)
 		t.originAnchored = clear
 		t.fullRedraws++

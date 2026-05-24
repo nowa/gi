@@ -122,6 +122,25 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("discovers home .agents skills when CLI agent dir is overridden", func(t *testing.T) {
+		home := t.TempDir()
+		agentDir := filepath.Join(t.TempDir(), "custom-agent")
+		cwd := filepath.Join(home, "work")
+		t.Setenv("HOME", home)
+		t.Setenv("GI_CODING_AGENT_DIR", agentDir)
+		writeResourceSkill(t, filepath.Join(home, ".agents", "skills", "user-skill", "SKILL.md"), "user-skill", "User skill", "User content")
+		if err := os.MkdirAll(cwd, 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+
+		if !resourceHasSkill(loader.GetSkills().Skills, "user-skill") {
+			t.Fatalf("skills = %#v", loader.GetSkills().Skills)
+		}
+	})
+
 	t.Run("dedupes user skills when .gi agent skills symlink to .agents skills", func(t *testing.T) {
 		home, agentDir, _, cwd := createResourceLoaderHomeDirs(t, false)
 		userSkills := filepath.Join(home, ".agents", "skills")

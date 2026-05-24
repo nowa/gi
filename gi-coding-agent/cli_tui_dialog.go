@@ -181,33 +181,37 @@ func (c *cliTUIDialogComponent) Render(width int) []string {
 		return nil
 	}
 	width = max(24, width)
-	innerWidth := max(1, width-2)
-	lines := []string{dialogBorder(width)}
-	lines = appendDialogTextLines(lines, c.Title(), innerWidth)
-	lines = appendDialogTextLines(lines, c.message, innerWidth)
-	lines = append(lines, dialogLine("", innerWidth))
-	if c.input != nil {
-		for _, line := range c.input.Render(innerWidth) {
-			lines = append(lines, dialogLine(line, innerWidth))
+	lines := []string{dialogBorder(width), ""}
+	title := c.Title()
+	if strings.TrimSpace(title) != "" {
+		styleTitle := tuiThemeAccent(title)
+		if c.list != nil {
+			styleTitle = tuiThemeBoldAccent(title)
 		}
+		lines = append(lines, gitui.NewText(styleTitle, 1, 0).Render(width)...)
+		lines = append(lines, "")
+	}
+	if strings.TrimSpace(c.message) != "" {
+		lines = append(lines, gitui.NewText(tuiThemeFG("text", c.message), 1, 0).Render(width)...)
+		lines = append(lines, "")
+	}
+	if c.input != nil {
+		lines = append(lines, c.input.Render(width)...)
 	}
 	if c.searchInput != nil {
-		for _, line := range c.searchInput.Render(innerWidth) {
-			lines = append(lines, dialogLine(line, innerWidth))
-		}
+		lines = append(lines, c.searchInput.Render(width)...)
 	}
 	if c.editor != nil {
-		for _, line := range c.editor.Render(innerWidth) {
-			lines = append(lines, dialogLine(line, innerWidth))
-		}
+		lines = append(lines, c.editor.Render(width)...)
 	}
 	if c.list != nil {
-		for _, line := range c.list.Render(innerWidth) {
-			lines = append(lines, dialogLine(line, innerWidth))
-		}
+		lines = append(lines, c.list.Render(width)...)
 	}
-	lines = append(lines, dialogLine("", innerWidth))
-	lines = append(lines, dialogLine(c.footerText(), innerWidth))
+	lines = append(lines, "")
+	if footer := c.footerText(); strings.TrimSpace(footer) != "" {
+		lines = append(lines, gitui.NewText(footer, 1, 0).Render(width)...)
+		lines = append(lines, "")
+	}
 	lines = append(lines, dialogBorder(width))
 	return lines
 }
@@ -322,7 +326,7 @@ func dialogLine(text string, innerWidth int) string {
 }
 
 func dialogBorder(width int) string {
-	return tuiThemeBorder(strings.Repeat("-", max(1, width)))
+	return selectorDynamicBorder(width)
 }
 
 func (c *cliTUIDialogComponent) isExternalEditorInput(data string) bool {

@@ -763,10 +763,13 @@ func sameModel(a, b llm.Model) bool {
 
 func truncateSelectorLine(line string, width int) string {
 	line = strings.TrimRight(line, " \t\r\n")
-	if width <= 0 || gitui.VisibleWidth(line) <= width {
+	if width <= 0 {
 		return line
 	}
-	return gitui.TruncateToWidth(line, width, "...")
+	if gitui.VisibleWidth(line) <= width {
+		return line + strings.Repeat(" ", max(0, width-gitui.VisibleWidth(line)))
+	}
+	return gitui.TruncateToWidth(line, width, "...", true)
 }
 
 func selectorSearchInputLine(value string, focused bool) string {

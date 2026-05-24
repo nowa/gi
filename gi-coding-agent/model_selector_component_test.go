@@ -284,3 +284,34 @@ func TestModelSelectorPreservesScopedModelOrder(t *testing.T) {
 		t.Fatalf("ordered ids = %#v, want %#v", orderedIDs, want)
 	}
 }
+
+func TestModelSelectorRowsPadAfterThemeResetLikePiText(t *testing.T) {
+	setTUIThemeForTest(t, "dark", nil)
+	models := make([]llm.Model, 0, 11)
+	for i := 0; i < 11; i++ {
+		models = append(models, llm.Model{Provider: "faux", ID: "model-" + string(rune('a'+i)), Name: "Model"})
+	}
+	selector := NewInteractiveModelSelectorComponent(ModelSelectorConfig{
+		CurrentModel: models[0],
+		AllModels:    models,
+	}, ModelSelectorCallbacks{})
+
+	const width = 80
+	lines := selector.Render(width)
+	var lastModelLine string
+	for _, line := range lines {
+		if strings.Contains(line, "model-j") {
+			lastModelLine = line
+			break
+		}
+	}
+	if lastModelLine == "" {
+		t.Fatalf("rendered selector missing last visible model line:\n%q", strings.Join(lines, "\n"))
+	}
+	if !strings.Contains(lastModelLine, "[faux]"+tuiResetFG+" ") {
+		t.Fatalf("model line should reset foreground before right padding like Pi Text:\n%q", lastModelLine)
+	}
+	if got := len(StripAnsi(lastModelLine)); got != width {
+		t.Fatalf("model line visible width = %d, want %d: %q", got, width, lastModelLine)
+	}
+}

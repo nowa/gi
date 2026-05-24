@@ -127,20 +127,20 @@ func TestSessionSelectorSearchNameFilterExcludesWhitespaceOnlyNames(t *testing.T
 
 func TestSessionSelectorCtrlNTogglesNamedFilterPiStyle(t *testing.T) {
 	selector := NewSessionSelectorComponent(makeSessionSelectorNamedFilterSessions(), SessionSelectorOptions{})
-	rendered := strings.Join(selector.Render(120), "\n")
-	if !strings.Contains(rendered, "My Project") || !strings.Contains(rendered, "(no messages)") || !strings.Contains(rendered, "Ctrl+N show named sessions") {
+	rendered := StripAnsi(strings.Join(selector.Render(120), "\n"))
+	if !strings.Contains(rendered, "My Project") || !strings.Contains(rendered, "(no messages)") || !strings.Contains(rendered, "ctrl+n named") {
 		t.Fatalf("initial render missing all sessions/hint:\n%s", rendered)
 	}
 
 	selector.HandleInput("\x0e")
-	rendered = strings.Join(selector.Render(120), "\n")
-	if !strings.Contains(rendered, "My Project") || strings.Contains(rendered, "(no messages)") || !strings.Contains(rendered, "Ctrl+N show all sessions") {
+	rendered = StripAnsi(strings.Join(selector.Render(120), "\n"))
+	if !strings.Contains(rendered, "My Project") || strings.Contains(rendered, "(no messages)") || !strings.Contains(rendered, "Name: ") || !strings.Contains(rendered, "Named") || !strings.Contains(rendered, "ctrl+n named") {
 		t.Fatalf("named-filter render mismatch:\n%s", rendered)
 	}
 
 	selector.HandleInput("\x0e")
-	rendered = strings.Join(selector.Render(120), "\n")
-	if !strings.Contains(rendered, "My Project") || !strings.Contains(rendered, "(no messages)") || !strings.Contains(rendered, "Ctrl+N show named sessions") {
+	rendered = StripAnsi(strings.Join(selector.Render(120), "\n"))
+	if !strings.Contains(rendered, "My Project") || !strings.Contains(rendered, "(no messages)") || !strings.Contains(rendered, "ctrl+n named") {
 		t.Fatalf("restored all render mismatch:\n%s", rendered)
 	}
 }
@@ -169,33 +169,33 @@ func TestSessionSelectorUsesEffectiveKeybindingsPiStyle(t *testing.T) {
 		},
 	})
 
-	rendered := strings.Join(selector.Render(160), "\n")
-	for _, expected := range []string{"S sort", "M show named sessions", "P path (off)", "R rename"} {
+	rendered := StripAnsi(strings.Join(selector.Render(160), "\n"))
+	for _, expected := range []string{"s sort", "m named", "p path (off)", "r rename"} {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("render missing %q:\n%s", expected, rendered)
 		}
 	}
 
 	selector.HandleInput("m")
-	rendered = strings.Join(selector.Render(160), "\n")
-	if !strings.Contains(rendered, "Name: named") || !strings.Contains(rendered, "M show all sessions") || strings.Contains(rendered, "(no messages)") {
+	rendered = StripAnsi(strings.Join(selector.Render(160), "\n"))
+	if !strings.Contains(rendered, "Name: ") || !strings.Contains(rendered, "Named") || !strings.Contains(rendered, "m named") || strings.Contains(rendered, "(no messages)") {
 		t.Fatalf("named keybinding render mismatch:\n%s", rendered)
 	}
 
 	selector.HandleInput("s")
-	rendered = strings.Join(selector.Render(160), "\n")
-	if !strings.Contains(rendered, "Sort: recent") {
+	rendered = StripAnsi(strings.Join(selector.Render(160), "\n"))
+	if !strings.Contains(rendered, "Sort: ") || !strings.Contains(rendered, "Recent") {
 		t.Fatalf("sort keybinding render mismatch:\n%s", rendered)
 	}
 
 	selector.HandleInput("p")
-	rendered = strings.Join(selector.Render(160), "\n")
-	if !strings.Contains(rendered, "P path (on)") || !strings.Contains(rendered, sessions[0].Path) {
+	rendered = StripAnsi(strings.Join(selector.Render(160), "\n"))
+	if !strings.Contains(rendered, "p path (on)") || !strings.Contains(rendered, sessions[0].Path) {
 		t.Fatalf("path keybinding render mismatch:\n%s", rendered)
 	}
 
 	selector.HandleInput("r")
-	rendered = strings.Join(selector.Render(160), "\n")
+	rendered = StripAnsi(strings.Join(selector.Render(160), "\n"))
 	if !strings.Contains(rendered, "Rename Session") {
 		t.Fatalf("rename keybinding render mismatch:\n%s", rendered)
 	}
@@ -209,7 +209,7 @@ func TestSessionSelectorUsesEffectiveKeybindingsPiStyle(t *testing.T) {
 
 	selector.HandleInput("a")
 	selector.HandleInput("x")
-	rendered = strings.Join(selector.Render(160), "\n")
+	rendered = StripAnsi(strings.Join(selector.Render(160), "\n"))
 	if !strings.Contains(rendered, "My Project") {
 		t.Fatalf("noninvasive delete key should clear search instead of deleting:\n%s", rendered)
 	}

@@ -298,7 +298,7 @@ func formatInteractiveLoadedResources(resources InteractiveLoadedResources, opti
 		sections = append(sections, diagnostics)
 	}
 	if len(sections) > 0 {
-		return strings.Join(sections, "\n")
+		return strings.Join(sections, "\n\n")
 	}
 	return ""
 }
@@ -375,16 +375,17 @@ func formatInteractiveResourceDiagnostics(resources InteractiveLoadedResources, 
 func formatInteractiveSkills(skills []InteractiveSkillResource, expanded bool) string {
 	lines := []string{"[Skills]"}
 	if expanded {
-		paths := make([]string, 0, len(skills))
+		items := make([]interactiveScopeItem, 0, len(skills))
 		for _, skill := range skills {
 			if skill.FilePath != "" {
-				paths = append(paths, formatInteractiveHomePath(skill.FilePath))
+				items = append(items, interactiveScopeItem{Path: skill.FilePath, SourceInfo: skill.SourceInfo})
 			}
 		}
-		sort.Strings(paths)
-		for _, path := range paths {
-			lines = append(lines, "  "+path)
-		}
+		lines = append(lines, formatInteractiveScopeGroups(
+			buildInteractiveScopeGroups(items),
+			func(item interactiveScopeItem) string { return formatInteractiveHomePath(item.Path) },
+			func(item interactiveScopeItem) string { return getInteractiveShortPath(item.Path, item.SourceInfo) },
+		)...)
 		return strings.Join(lines, "\n")
 	}
 	names := make([]string, 0, len(skills))
@@ -392,10 +393,6 @@ func formatInteractiveSkills(skills []InteractiveSkillResource, expanded bool) s
 		names = append(names, skill.Name)
 	}
 	sort.Strings(names)
-	if len(names) > 8 {
-		lines = append(lines, fmt.Sprintf("  %d skills loaded. Ctrl+O shows details.", len(names)))
-		return strings.Join(lines, "\n")
-	}
 	lines = append(lines, "  "+strings.Join(names, ", "))
 	return strings.Join(lines, "\n")
 }
@@ -403,16 +400,25 @@ func formatInteractiveSkills(skills []InteractiveSkillResource, expanded bool) s
 func formatInteractivePrompts(prompts []InteractivePromptResource, expanded bool) string {
 	lines := []string{"[Prompts]"}
 	if expanded {
-		paths := make([]string, 0, len(prompts))
+		items := make([]interactiveScopeItem, 0, len(prompts))
 		for _, prompt := range prompts {
 			if prompt.FilePath != "" {
-				paths = append(paths, formatInteractiveHomePath(prompt.FilePath))
+				label := "/" + strings.TrimPrefix(strings.TrimSpace(prompt.Name), "/")
+				if label == "/" {
+					label = formatInteractiveHomePath(prompt.FilePath)
+				}
+				items = append(items, interactiveScopeItem{
+					Path:       prompt.FilePath,
+					Label:      label,
+					SourceInfo: prompt.SourceInfo,
+				})
 			}
 		}
-		sort.Strings(paths)
-		for _, path := range paths {
-			lines = append(lines, "  "+path)
-		}
+		lines = append(lines, formatInteractiveScopeGroups(
+			buildInteractiveScopeGroups(items),
+			func(item interactiveScopeItem) string { return item.Label },
+			func(item interactiveScopeItem) string { return item.Label },
+		)...)
 		return strings.Join(lines, "\n")
 	}
 	names := make([]string, 0, len(prompts))
@@ -423,41 +429,136 @@ func formatInteractivePrompts(prompts []InteractivePromptResource, expanded bool
 		}
 	}
 	sort.Strings(names)
-	if len(names) > 8 {
-		lines = append(lines, fmt.Sprintf("  %d prompts loaded. Ctrl+O shows details.", len(names)))
-		return strings.Join(lines, "\n")
-	}
 	lines = append(lines, "  "+strings.Join(names, ", "))
 	return strings.Join(lines, "\n")
 }
 
 func formatInteractiveThemes(themes []InteractiveThemeResource, expanded bool) string {
 	lines := []string{"[Themes]"}
+	if expanded {
+		items := make([]interactiveScopeItem, 0, len(themes))
+		for _, theme := range themes {
+			if theme.SourcePath != "" {
+				items = append(items, interactiveScopeItem{Path: theme.SourcePath, SourceInfo: theme.SourceInfo})
+			}
+		}
+		lines = append(lines, formatInteractiveScopeGroups(
+			buildInteractiveScopeGroups(items),
+			func(item interactiveScopeItem) string { return formatInteractiveHomePath(item.Path) },
+			func(item interactiveScopeItem) string { return getInteractiveShortPath(item.Path, item.SourceInfo) },
+		)...)
+		return strings.Join(lines, "\n")
+	}
 	values := make([]string, 0, len(themes))
 	for _, theme := range themes {
-		if expanded && theme.SourcePath != "" {
-			values = append(values, formatInteractiveHomePath(theme.SourcePath))
-			continue
-		}
 		name := strings.TrimSpace(theme.Name)
 		if name != "" {
 			values = append(values, name)
 		}
 	}
 	sort.Strings(values)
-	if len(values) > 8 && !expanded {
-		lines = append(lines, fmt.Sprintf("  %d themes loaded. Ctrl+O shows details.", len(values)))
-		return strings.Join(lines, "\n")
-	}
 	lines = append(lines, "  "+strings.Join(values, ", "))
 	return strings.Join(lines, "\n")
 }
 
+type interactiveScopeItem struct {
+	Path       string
+	Label      string
+	SourceInfo *InteractiveSourceInfo
+}
+
+type interactiveScopeGroup struct {
+	scope    string
+	paths    []interactiveScopeItem
+	packages map[string][]interactiveScopeItem
+}
+
+func buildInteractiveScopeGroups(items []interactiveScopeItem) []interactiveScopeGroup {
+	groups := map[string]*interactiveScopeGroup{
+		"project": {scope: "project", packages: map[string][]interactiveScopeItem{}},
+		"user":    {scope: "user", packages: map[string][]interactiveScopeItem{}},
+		"path":    {scope: "path", packages: map[string][]interactiveScopeItem{}},
+	}
+	for _, item := range items {
+		scope := interactiveScopeGroupKey(item.SourceInfo)
+		group := groups[scope]
+		if group == nil {
+			group = groups["path"]
+		}
+		if isInteractivePackageSource(item.SourceInfo) {
+			source := strings.TrimSpace(item.SourceInfo.Source)
+			if source == "" {
+				source = "package"
+			}
+			group.packages[source] = append(group.packages[source], item)
+			continue
+		}
+		group.paths = append(group.paths, item)
+	}
+	ordered := make([]interactiveScopeGroup, 0, 3)
+	for _, scope := range []string{"project", "user", "path"} {
+		group := groups[scope]
+		if group != nil && (len(group.paths) > 0 || len(group.packages) > 0) {
+			ordered = append(ordered, *group)
+		}
+	}
+	return ordered
+}
+
+func formatInteractiveScopeGroups(groups []interactiveScopeGroup, formatPath, formatPackagePath func(interactiveScopeItem) string) []string {
+	lines := []string{}
+	for _, group := range groups {
+		lines = append(lines, "  "+group.scope)
+		sort.Slice(group.paths, func(i, j int) bool {
+			return strings.ToLower(group.paths[i].Path) < strings.ToLower(group.paths[j].Path)
+		})
+		for _, item := range group.paths {
+			lines = append(lines, "    "+formatPath(item))
+		}
+		sources := make([]string, 0, len(group.packages))
+		for source := range group.packages {
+			sources = append(sources, source)
+		}
+		sort.Strings(sources)
+		for _, source := range sources {
+			lines = append(lines, "    "+source)
+			items := group.packages[source]
+			sort.Slice(items, func(i, j int) bool {
+				return strings.ToLower(items[i].Path) < strings.ToLower(items[j].Path)
+			})
+			for _, item := range items {
+				lines = append(lines, "      "+formatPackagePath(item))
+			}
+		}
+	}
+	return lines
+}
+
+func interactiveScopeGroupKey(info *InteractiveSourceInfo) string {
+	source := "local"
+	scope := "project"
+	if info != nil {
+		if strings.TrimSpace(info.Source) != "" {
+			source = strings.TrimSpace(info.Source)
+		}
+		if strings.TrimSpace(info.Scope) != "" {
+			scope = strings.TrimSpace(info.Scope)
+		}
+	}
+	switch {
+	case source == "cli", scope == "temporary":
+		return "path"
+	case scope == "user":
+		return "user"
+	case scope == "project":
+		return "project"
+	default:
+		return "path"
+	}
+}
+
 func formatInteractiveExtensionsCompact(extensions []InteractiveExtensionResource) string {
 	labels := compactInteractiveExtensionLabels(extensions)
-	if len(labels) > 8 {
-		return fmt.Sprintf("[Extensions]\n  %d extensions loaded. Ctrl+O shows details.", len(labels))
-	}
 	return "[Extensions]\n  " + strings.Join(labels, ", ")
 }
 
@@ -616,7 +717,21 @@ func interactiveScopeLabel(info *InteractiveSourceInfo) string {
 }
 
 func isInteractivePackageSource(info *InteractiveSourceInfo) bool {
-	return info != nil && info.Origin == "package"
+	if info == nil {
+		return false
+	}
+	source := strings.TrimSpace(info.Source)
+	return info.Origin == "package" || strings.HasPrefix(source, "git:")
+}
+
+func getInteractiveShortPath(fullPath string, sourceInfo *InteractiveSourceInfo) string {
+	if sourceInfo != nil && strings.TrimSpace(sourceInfo.BaseDir) != "" && isInteractivePackageSource(sourceInfo) {
+		relative, err := filepath.Rel(sourceInfo.BaseDir, fullPath)
+		if err == nil && relative != "." && !strings.HasPrefix(relative, "..") && !filepath.IsAbs(relative) {
+			return filepath.ToSlash(relative)
+		}
+	}
+	return formatInteractiveHomePath(fullPath)
 }
 
 func formatInteractiveContextFiles(files []InteractiveContextFile, cwd string, expanded bool) string {

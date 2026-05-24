@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	gitui "github.com/nowa/gi/gi-tui"
 )
 
 func TestKeybindingsMigrationRewritesOldKeyNames(t *testing.T) {
@@ -63,6 +65,13 @@ func TestKeybindingsManagerLoadsOldKeyNamesInMemory(t *testing.T) {
 	effective := keybindings.GetEffectiveConfig()
 	if effective["tui.select.confirm"] != "enter" || effective["app.interrupt"] != "ctrl+x" || effective["app.clear"] != "ctrl+c" {
 		t.Fatalf("effective = %#v", effective)
+	}
+}
+
+func TestDefaultProtocolKeybindingsKeepPiSelectCancelKeys(t *testing.T) {
+	manager := gitui.NewKeybindingsManager(tuiKeybindingsFromProtocol(DefaultProtocolKeybindings()))
+	if !manager.Matches("\x1b", "tui.select.cancel") || !manager.Matches("\x03", "tui.select.cancel") {
+		t.Fatalf("tui.select.cancel keys = %#v, want escape and ctrl+c like Pi", manager.GetKeys("tui.select.cancel"))
 	}
 }
 

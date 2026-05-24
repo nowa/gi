@@ -388,6 +388,7 @@ func TestModelRegistryDynamicProviderLifecycle(t *testing.T) {
 	}
 
 	RegisterOAuthProvider(OAuthProvider{ID: "anthropic", Name: "Built-in Anthropic OAuth"})
+	t.Cleanup(ResetOAuthProviders)
 	err = registry.RegisterProvider("anthropic", ProviderConfigInput{OAuth: &OAuthProvider{Name: "Custom Anthropic OAuth"}})
 	if err != nil {
 		t.Fatalf("register oauth override: %v", err)

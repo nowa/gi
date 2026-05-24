@@ -93,6 +93,8 @@ func TestCombinedAutocompleteGetSuggestionsFallsBackToChildProviders(t *testing.
 func TestCombinedAutocompleteSlashCommands(t *testing.T) {
 	provider := NewCombinedAutocompleteProviderWithCommands(t.TempDir(), []SlashCommand{
 		{Name: "model", Description: "switch model"},
+		{Name: "scoped-models", Description: "scoped model list"},
+		{Name: "import", Description: "import a session"},
 		{Name: "merge", ArgumentHint: "<branch>"},
 		{Name: "open", GetArgumentCompletions: func(prefix string) []AutocompleteItem {
 			if prefix == "r" {
@@ -105,14 +107,17 @@ func TestCombinedAutocompleteSlashCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result == nil || len(result.Items) != 1 || result.Items[0].Value != "model" || result.Prefix != "/mo" {
+	if result == nil || result.Prefix != "/mo" {
 		t.Fatalf("slash suggestions = %#v", result)
+	}
+	if got := suggestionValuesInOrder(result); len(got) < 3 || got[0] != "model" || got[1] != "scoped-models" || got[2] != "import" {
+		t.Fatalf("slash fuzzy suggestions = %#v", got)
 	}
 	applied := provider.ApplyCompletion([]string{"/mo"}, 0, 3, result.Items[0], result.Prefix)
 	if applied.Lines[0] != "/model " || applied.CursorCol != len("/model ") {
 		t.Fatalf("applied slash = %#v", applied)
 	}
-	result, err = provider.GetSuggestions([]string{"/models"}, 0, len("/models"), false)
+	result, err = provider.GetSuggestions([]string{"/modelz"}, 0, len("/modelz"), false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -68,6 +68,32 @@ func TestTreeSelectorLabelTimestamps(t *testing.T) {
 	}
 }
 
+func TestTreeSelectorBashEntriesRenderLikePi(t *testing.T) {
+	setTUIThemeForTest(t, "dark", nil)
+	tree := buildTreeSelectorTree([]FileEntry{
+		treeBash("bash-1", nil, "printf gi-bash"),
+		treeBash("bash-2", ptrString("bash-1"), "printf hidden-bash"),
+	})
+	selector := NewTreeSelectorComponent(tree, "bash-2")
+	rendered := strings.Join(selector.GetTreeList().Render(120), "\n")
+	plain := StripAnsi(rendered)
+
+	for _, want := range []string{
+		"  • [bash]: printf gi-bash",
+		"› • [bash]: printf hidden-bash",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("render missing %q:\n%s", want, plain)
+		}
+	}
+	if strings.Contains(plain, "Ran `") {
+		t.Fatalf("bash tree rows should show compact Pi labels, got:\n%s", plain)
+	}
+	if !strings.Contains(rendered, "\x1b[48;2;58;58;74m") {
+		t.Fatalf("selected bash row should use Pi selected background:\n%q", rendered)
+	}
+}
+
 func TestTreeSelectorEmptyFilterPreservesSelection(t *testing.T) {
 	tree := buildTreeSelectorTree([]FileEntry{
 		treeUser("user-1", nil, "hello"),
@@ -240,7 +266,7 @@ func TestTreeSelectorUsesEffectiveKeybindingsPiStyle(t *testing.T) {
 	selector.HandleInput("y")
 	assertTreeSelected(t, list, "asst-4a")
 	render := strings.Join(selector.Render(200), "\n")
-	for _, want := range []string{"X/Y fold", "R users", "E default", "L labels", "Z label time"} {
+	for _, want := range []string{"x/y: fold/branch", "e/n/r/l/q: filters", "z: label time"} {
 		if !strings.Contains(render, want) {
 			t.Fatalf("render missing %q:\n%s", want, render)
 		}
@@ -340,6 +366,20 @@ func treeAssistant(id string, parent *string, text string) FileEntry {
 
 func treeToolCallAssistant(id string, parent *string) FileEntry {
 	return FileEntry{Type: "message", ID: id, ParentID: parent, Message: llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.ToolCall("tc-"+id, "read", map[string]any{"path": "test.ts"})}, StopReason: "toolUse"}, Timestamp: id}
+}
+
+func treeBash(id string, parent *string, command string) FileEntry {
+	return FileEntry{
+		Type:     "message",
+		ID:       id,
+		ParentID: parent,
+		Message: llm.Message{
+			Role:    "bashExecution",
+			Content: []llm.ContentPart{llm.Text("Ran `" + command + "`\n\noutput")},
+			Details: map[string]any{"command": command},
+		},
+		Timestamp: id,
+	}
 }
 
 func treeModelChange(id string, parent *string) FileEntry {

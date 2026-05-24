@@ -217,6 +217,19 @@ func TestAgentSessionRuntimeSwitchUsesDestinationCWDAndModelState(t *testing.T) 
 	}
 }
 
+func TestAgentSessionRuntimeNewSessionKeepsDefaultThinkingPiStyle(t *testing.T) {
+	host := createRuntimeEventsHost(t, func(*ProtocolExtensionContext) error { return nil })
+	if got := host.Session.Agent.State.ThinkingLevel; got != string(DefaultThinkingLevel) {
+		t.Fatalf("startup thinking = %q, want %q", got, DefaultThinkingLevel)
+	}
+	if _, err := host.NewSession(); err != nil {
+		t.Fatal(err)
+	}
+	if got := host.Session.Agent.State.ThinkingLevel; got != string(DefaultThinkingLevel) {
+		t.Fatalf("/new thinking = %q, want %q", got, DefaultThinkingLevel)
+	}
+}
+
 func TestAgentSessionRuntimeForkInvalidEntryReturnsError(t *testing.T) {
 	host := createRuntimeEventsHost(t, func(*ProtocolExtensionContext) error { return nil })
 	if _, err := host.Fork("missing-entry"); err == nil || !strings.Contains(err.Error(), "Invalid entry ID for forking") {

@@ -9,14 +9,14 @@ import (
 func TestSessionSelectorPiRenameHint(t *testing.T) {
 	sessions := []SessionInfo{makeSessionSelectorSession("a", "Old")}
 	interactive := NewSessionSelectorComponent(sessions, SessionSelectorOptions{ShowRenameHint: true})
-	output := strings.Join(interactive.Render(120), "\n")
-	if !strings.Contains(output, "Ctrl+R") || !strings.Contains(output, "rename") {
+	output := StripAnsi(strings.Join(interactive.Render(120), "\n"))
+	if !strings.Contains(output, "ctrl+r") || !strings.Contains(output, "rename") {
 		t.Fatalf("interactive output = %q", output)
 	}
 
 	resumeFlag := NewSessionSelectorComponent(sessions, SessionSelectorOptions{ShowRenameHint: false})
-	output = strings.Join(resumeFlag.Render(120), "\n")
-	if strings.Contains(output, "Ctrl+R") || strings.Contains(output, "rename") {
+	output = StripAnsi(strings.Join(resumeFlag.Render(120), "\n"))
+	if strings.Contains(output, "ctrl+r") || strings.Contains(output, "rename") {
 		t.Fatalf("resume flag output = %q", output)
 	}
 }
