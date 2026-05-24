@@ -1219,23 +1219,16 @@ func TestCLIInteractiveTUIHostUsesPiStyleFlowLayout(t *testing.T) {
 	}()
 	t.Cleanup(func() { host.Stop() })
 	waitForHostEditor(t, host)
-	waitForViewport(t, terminal, "Gi")
+	waitForViewport(t, terminal, "gi v0.0.0")
 
 	viewport := terminal.GetViewport()
 	viewportText := strings.Join(viewport, "\n")
-	if !strings.Contains(viewportText, "Gi") {
+	if !strings.Contains(viewportText, "gi v0.0.0") {
 		t.Fatalf("viewport missing title:\n%s", strings.Join(viewport, "\n"))
 	}
-	if countExactViewportLine(viewport, "Gi") != 1 {
+	if countExactViewportLine(viewport, "gi v0.0.0") != 1 {
 		t.Fatalf("startup should render one Gi header, viewport:\n%s", viewportText)
 	}
-	if !strings.Contains(viewportText, "Enter sends") {
-		t.Fatalf("viewport missing input hint:\n%s", viewportText)
-	}
-	if strings.Contains(viewportText, "────") {
-		t.Fatalf("default editor should not render scaffold borders:\n%s", viewportText)
-	}
-
 	host.Stop()
 	select {
 	case err := <-errCh:
@@ -1263,31 +1256,28 @@ func TestCLIStartupHelpUsesEffectiveKeybindingsPiStyle(t *testing.T) {
 		"app.tools.expand": "ctrl+y",
 	})
 	header := newCLIStartupHeaderComponent(DefaultCodingAgentVersion, false, keybindings)
-	rendered := strings.Join(header.Render(120), "\n")
-	for _, expected := range []string{"Ctrl+I interrupt", "Ctrl+X/Ctrl+Q clear/exit", "Ctrl+Y more"} {
+	rendered := StripAnsi(strings.Join(header.Render(120), "\n"))
+	for _, expected := range []string{"ctrl+i interrupt", "ctrl+x/ctrl+q clear/exit", "ctrl+y more"} {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("compact startup help missing %q:\n%s", expected, rendered)
 		}
 	}
 	header.SetExpanded(true)
-	rendered = strings.Join(header.Render(120), "\n")
-	for _, expected := range []string{"Ctrl+X clear", "Ctrl+X twice exits", "Ctrl+E delete to end", "Ctrl+Y expands tools"} {
+	rendered = StripAnsi(strings.Join(header.Render(120), "\n"))
+	for _, expected := range []string{"ctrl+x to clear", "ctrl+x twice to exit", "ctrl+e to delete to end", "ctrl+y to expand tools"} {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("expanded startup help missing %q:\n%s", expected, rendered)
 		}
 	}
 
-	host := &CLIInteractiveTUIHost{keybindings: keybindings}
-	layout := &cliInteractiveLayout{host: host}
-	inputHint := layout.inputHint()
-	for _, expected := range []string{"Ctrl+Enter sends", "Ctrl+X clears", "Ctrl+Q exits"} {
-		if !strings.Contains(inputHint, expected) {
-			t.Fatalf("input hint missing %q: %s", expected, inputHint)
-		}
+	header.SetExpanded(false)
+	rendered = StripAnsi(strings.Join(header.Render(120), "\n"))
+	if !strings.Contains(rendered, "Press ctrl+y to show full startup help and loaded resources.") {
+		t.Fatalf("compact startup help missing expanded-help hint:\n%s", rendered)
 	}
 }
 
-func TestCLIInteractiveTUIHostKeepsEditorAtViewportBottom(t *testing.T) {
+func TestCLIInteractiveTUIHostRendersEditorAfterStartupContentPiStyle(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	terminal := gitui.NewVirtualTerminal(80, 18)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
@@ -1316,11 +1306,16 @@ func TestCLIInteractiveTUIHostKeepsEditorAtViewportBottom(t *testing.T) {
 			break
 		}
 	}
-	if inputRow != len(viewport)-4 {
-		t.Fatalf("editor input row = %d, want %d near footer:\n%s", inputRow, len(viewport)-4, strings.Join(viewport, "\n"))
+	headerRow := viewportLineIndex(viewport, "gi v0.0.0")
+	footerRow := viewportLineIndex(viewport, "0.0%/")
+	if headerRow < 0 || footerRow < 0 {
+		t.Fatalf("viewport missing startup header or footer:\n%s", strings.Join(viewport, "\n"))
 	}
-	if !strings.Contains(viewport[len(viewport)-1], "Enter sends") {
-		t.Fatalf("input hint should remain at bottom:\n%s", strings.Join(viewport, "\n"))
+	if inputRow <= headerRow || inputRow >= footerRow {
+		t.Fatalf("editor input row = %d, want between startup header row %d and footer row %d:\n%s", inputRow, headerRow, footerRow, strings.Join(viewport, "\n"))
+	}
+	if inputRow > len(viewport)/2 {
+		t.Fatalf("editor should follow startup content instead of being bottom-pinned, input row=%d rows=%d:\n%s", inputRow, len(viewport), strings.Join(viewport, "\n"))
 	}
 
 	host.Stop()
@@ -1462,12 +1457,12 @@ func TestCLIInteractiveTUIHostCanClearScreenBeforeStartup(t *testing.T) {
 		t.Fatalf("startup output should force a full redraw after terminal start, output=%q", output)
 	}
 	output := terminal.Output()
-	firstFrame := strings.Index(output, "Gi\x1b[0m")
+	firstFrame := strings.Index(output, "gi v0.0.0")
 	forcedClear := strings.LastIndex(output, clearSequence)
 	if firstFrame >= 0 && forcedClear >= 0 && firstFrame < forcedClear {
 		t.Fatalf("startup should not draw a partial frame before the forced clear, output=%q", output)
 	}
-	if viewport := strings.Join(terminal.GetViewport(), "\n"); !strings.Contains(viewport, "Gi") || !strings.Contains(viewport, "Enter sends") {
+	if viewport := strings.Join(terminal.GetViewport(), "\n"); !strings.Contains(viewport, "gi v0.0.0") {
 		t.Fatalf("viewport missing CLI frame after startup clear:\n%s", viewport)
 	}
 
@@ -1482,7 +1477,7 @@ func TestCLIInteractiveTUIHostCanClearScreenBeforeStartup(t *testing.T) {
 	}
 }
 
-func TestCLIInteractiveTUIHostKeepsStartupInputAndSlashAutocompleteInEditorRegion(t *testing.T) {
+func TestCLIInteractiveTUIHostKeepsStartupInputAndSlashAutocompleteInPiFlow(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	terminal := gitui.NewVirtualTerminal(188, 56)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
@@ -1500,7 +1495,7 @@ func TestCLIInteractiveTUIHostKeepsStartupInputAndSlashAutocompleteInEditorRegio
 	}()
 	t.Cleanup(func() { host.Stop() })
 	waitForHostEditor(t, host)
-	waitForViewport(t, terminal, "Enter sends")
+	waitForViewport(t, terminal, "gi v0.0.0")
 
 	input := "here is what I just input into."
 	terminal.SendInput(input)
@@ -1509,18 +1504,16 @@ func TestCLIInteractiveTUIHostKeepsStartupInputAndSlashAutocompleteInEditorRegio
 
 	viewport := terminal.GetViewport()
 	inputRow := viewportLineIndex(viewport, input)
-	hintRow := viewportLineIndex(viewport, "Enter sends")
-	if inputRow < 0 || hintRow < 0 {
-		t.Fatalf("startup editor viewport missing input or hint:\n%s", strings.Join(viewport, "\n"))
+	if inputRow < 0 {
+		t.Fatalf("startup editor viewport missing input:\n%s", strings.Join(viewport, "\n"))
 	}
-	if inputRow < len(viewport)*2/3 {
-		t.Fatalf("editor input rendered outside the lower editor region at row %d of %d:\n%s", inputRow, len(viewport), strings.Join(viewport, "\n"))
+	headerRow := viewportLineIndex(viewport, "gi v0.0.0")
+	footerRow := viewportLineIndex(viewport, "0.0%/")
+	if headerRow < 0 || footerRow < 0 {
+		t.Fatalf("viewport missing startup header or footer:\n%s", strings.Join(viewport, "\n"))
 	}
-	if hintRow != len(viewport)-1 {
-		t.Fatalf("input hint should remain anchored at the bottom row, got row %d of %d:\n%s", hintRow, len(viewport), strings.Join(viewport, "\n"))
-	}
-	if top := strings.Join(viewport[:min(len(viewport), 12)], "\n"); strings.Contains(top, input) {
-		t.Fatalf("editor input leaked into the startup/header region:\n%s", strings.Join(viewport, "\n"))
+	if inputRow <= headerRow || inputRow >= footerRow {
+		t.Fatalf("editor input row = %d, want between startup header row %d and footer row %d:\n%s", inputRow, headerRow, footerRow, strings.Join(viewport, "\n"))
 	}
 
 	host.SetEditorText("")
@@ -1534,8 +1527,15 @@ func TestCLIInteractiveTUIHostKeepsStartupInputAndSlashAutocompleteInEditorRegio
 	viewport = terminal.GetViewport()
 	slashRow := viewportTrimmedLineIndex(viewport, "/")
 	settingsRow := viewportLineIndex(viewport, "settings")
-	if slashRow < len(viewport)*2/3 || settingsRow < len(viewport)*2/3 {
-		t.Fatalf("slash autocomplete rendered outside the lower editor region: slash row=%d settings row=%d rows=%d\n%s", slashRow, settingsRow, len(viewport), strings.Join(viewport, "\n"))
+	footerRow = viewportLineIndex(viewport, "0.0%/")
+	if slashRow < 0 || settingsRow < 0 || footerRow < 0 {
+		t.Fatalf("slash autocomplete viewport missing slash, settings, or footer:\n%s", strings.Join(viewport, "\n"))
+	}
+	if settingsRow <= slashRow || footerRow <= settingsRow {
+		t.Fatalf("slash autocomplete should render below slash input and above footer: slash row=%d settings row=%d footer row=%d\n%s", slashRow, settingsRow, footerRow, strings.Join(viewport, "\n"))
+	}
+	if settingsRow-slashRow > 8 {
+		t.Fatalf("slash autocomplete should follow the editor input without a large spacer: slash row=%d settings row=%d\n%s", slashRow, settingsRow, strings.Join(viewport, "\n"))
 	}
 
 	host.Stop()
@@ -1839,7 +1839,7 @@ func TestCLIInteractiveTUIHostShowsLoadedResourcesOnStartupPiStyle(t *testing.T)
 	waitForViewport(t, terminal, "[Skills]")
 
 	viewport := strings.Join(terminal.GetViewport(), "\n")
-	for _, expected := range []string{"Escape interrupt", "/ commands", "[Context]", "AGENTS.md", "[Skills]", "review", "[Prompts]", "/plan", "[Extensions]", "guard.gi.json", "[Themes]", "focus"} {
+	for _, expected := range []string{"escape interrupt", "/ commands", "[Context]", "AGENTS.md", "[Skills]", "review", "[Prompts]", "/plan", "[Extensions]", "guard.gi.json", "[Themes]", "focus"} {
 		if !strings.Contains(viewport, expected) {
 			t.Fatalf("viewport missing %q:\n%s", expected, viewport)
 		}
@@ -1849,7 +1849,7 @@ func TestCLIInteractiveTUIHostShowsLoadedResourcesOnStartupPiStyle(t *testing.T)
 	}
 
 	terminal.SendInput("\x0f")
-	waitForViewport(t, terminal, "Ctrl+O expands tools")
+	waitForViewport(t, terminal, "ctrl+o to expand tools")
 	waitForViewport(t, terminal, "skills/review/SKILL.md")
 
 	host.Stop()
@@ -2638,7 +2638,7 @@ func TestCLIInteractiveTUIHostCtrlZSuspendsAndRestoresPiStyle(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("ctrl+z did not register SIGCONT restore handler")
 	}
-	waitForViewport(t, terminal, "Enter sends")
+	waitForViewport(t, terminal, "gi v0.0.0")
 
 	host.Stop()
 	select {
@@ -3751,7 +3751,7 @@ func TestCLIInteractiveTUIHostHandlesModelThinkingHotkeysPiStyle(t *testing.T) {
 	terminal.SendInput("\x10")
 	waitForViewport(t, terminal, "Model:")
 	terminal.SendInput("\x0c")
-	waitForViewport(t, terminal, "Select model")
+	waitForViewport(t, terminal, "Only showing models from configured providers")
 
 	host.Stop()
 	select {
@@ -3878,10 +3878,8 @@ func TestCLIInteractiveTUIHostCtrlOTogglesToolOutputExpansionPiStyle(t *testing.
 
 	terminal.SendInput("\x0f")
 	waitForToolExpanded(t, host, true)
-	waitForViewport(t, terminal, "Tool output expanded")
 	terminal.SendInput("\x0f")
 	waitForToolExpanded(t, host, false)
-	waitForViewport(t, terminal, "Tool output collapsed")
 
 	host.Stop()
 	select {
@@ -4169,7 +4167,7 @@ func TestCLIInteractiveTUIHostHandlesBuiltinSlashCommands(t *testing.T) {
 	}
 
 	for _, expected := range []string{"Thinking: off", "Model: openai/gpt-4o-mini", "Queue: all", "Session exported to:"} {
-		waitForViewport(t, terminal, expected)
+		waitForTerminalOutput(t, terminal, expected)
 	}
 	waitForTerminalOutput(t, terminal, "Session Info")
 	if prompts != 0 {
@@ -4240,7 +4238,7 @@ func TestCLIInteractiveTUIHostRequiresExactNoArgSlashCommandsPiStyle(t *testing.
 		prompts = append(prompts, prompt)
 		return llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("agent saw: " + prompt)}}, nil
 	}
-	terminal := gitui.NewVirtualTerminal(120, 28)
+	terminal := gitui.NewVirtualTerminal(120, 36)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
 		Terminal:    terminal,
@@ -4336,7 +4334,7 @@ func TestCLIInteractiveTUIHostDefaultSlashAutocompleteRender(t *testing.T) {
 
 	terminal.SendInput("/")
 	waitForViewport(t, terminal, "settings")
-	waitForViewport(t, terminal, "resources")
+	waitForViewport(t, terminal, "scoped-models")
 	waitForViewport(t, terminal, "model")
 	if !host.editor.IsShowingAutocomplete() {
 		t.Fatalf("slash should show builtin autocomplete")
@@ -4882,7 +4880,7 @@ func TestCLIInteractiveTUIHostShowsSettingsSelectorAndTogglesTelemetry(t *testin
 	if !ok {
 		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
 	}
-	terminal := gitui.NewVirtualTerminal(120, 28)
+	terminal := gitui.NewVirtualTerminal(120, 48)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
 		Terminal:    terminal,
@@ -4900,15 +4898,19 @@ func TestCLIInteractiveTUIHostShowsSettingsSelectorAndTogglesTelemetry(t *testin
 	host.editor.SetText("/settings")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Auto-compact")
+	waitForViewport(t, terminal, "Auto-resize images")
 	terminal.SendInput("installtelemetry")
 	waitForViewport(t, terminal, "Install telemetry")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Anonymous version/update ping")
+	waitForViewport(t, terminal, "Send an anonymous version/update ping")
 	if sessionHost.settingsManager.GetEnableInstallTelemetry() {
 		t.Fatal("install telemetry should be disabled after settings selector toggle")
 	}
 	terminal.SendInput("\x1b")
-	waitForViewport(t, terminal, "Settings updated")
+	waitForCondition(t, func() bool { return host.ui.FocusedComponent() == host.editor }, "settings selector to restore default editor")
+	if strings.Contains(strings.Join(terminal.GetViewport(), "\n"), "Settings updated") {
+		t.Fatalf("settings selector should close silently like Pi:\n%s", strings.Join(terminal.GetViewport(), "\n"))
+	}
 
 	host.Stop()
 	select {
@@ -4935,9 +4937,6 @@ func TestCLIInteractiveTUIHostRunsThemeSlashCommand(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if !slashCommandNamesContain(host.autocompleteSlashCommands(), "theme") {
-		t.Fatalf("theme slash command missing from autocomplete: %#v", host.autocompleteSlashCommands())
 	}
 	if err := host.RunContext(context.Background()); err != nil {
 		t.Fatal(err)
@@ -5548,7 +5547,7 @@ func TestCLIInteractiveTUIHostShowsModelSelectorForInteractiveModelCommand(t *te
 
 	host.editor.SetText("/model")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Select model")
+	waitForViewport(t, terminal, "Only showing models from configured providers")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Model: openai/gpt-4o-mini")
 	if sessionHost.settingsManager.GetDefaultProvider() != "openai" ||
@@ -5597,10 +5596,9 @@ func TestCLIInteractiveTUIHostModelSelectorTabSwitchesFromScopedToAllPiStyle(t *
 
 	host.editor.SetText("/model gpt-4o-mini")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Scope: scoped")
+	waitForViewport(t, terminal, "Scope: all | scoped")
 	waitForViewport(t, terminal, "No matching models")
 	terminal.SendInput("\t")
-	waitForViewport(t, terminal, "Scope: all")
 	waitForViewport(t, terminal, "gpt-4o-mini")
 	terminal.SendInput("\r")
 	waitForNoOverlay(t, host)
@@ -5853,7 +5851,7 @@ func TestCLIInteractiveTUIHostHandlesHotkeysCommand(t *testing.T) {
 	}
 
 	output := strings.Join(terminal.GetScrollBuffer(), "\n")
-	if !strings.Contains(output, "Keyboard Shortcuts") || !strings.Contains(output, "Run bash command excluded from context") {
+	if !strings.Contains(output, "Keyboard Shortcuts") || !strings.Contains(output, "Run bash command (excluded from context)") {
 		t.Fatalf("hotkeys output missing expected content:\n%s", output)
 	}
 }
@@ -6134,9 +6132,6 @@ func TestRenderInteractiveSessionInfoUsesPiStyleSections(t *testing.T) {
 		"Name: Demo",
 		"File: /tmp/session.jsonl",
 		"ID: stats-id",
-		"Model: openai/gpt-4o-mini",
-		"Thinking: off",
-		"Queue: steering=one-at-a-time, follow-up=all",
 		"**Messages**",
 		"User: 2",
 		"Assistant: 3",
@@ -6149,7 +6144,6 @@ func TestRenderInteractiveSessionInfoUsesPiStyleSections(t *testing.T) {
 		"Cache Read: 3,000",
 		"Cache Write: 4,000",
 		"Total: 10,000",
-		"Context: 90 / 200 (45.5%)",
 		"**Cost**",
 		"Total: 0.1234",
 	} {
@@ -6611,7 +6605,7 @@ func TestCLIInteractiveTUIHostHandlesTreeEntryCommand(t *testing.T) {
 	mustPrompt(t, sessionHost.session, "tree first")
 	firstAssistantID := firstSessionEntryIDByRole(t, sessionHost.session, llm.RoleAssistant)
 	mustPrompt(t, sessionHost.session, "tree second")
-	terminal := gitui.NewVirtualTerminal(120, 28)
+	terminal := gitui.NewVirtualTerminal(120, 48)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
 		Terminal:    terminal,
@@ -9872,15 +9866,15 @@ func TestCLIInteractiveTUIHostReflectsRPCDialogTimeoutPiStyle(t *testing.T) {
 
 func newOfflineInteractiveRuntimeHost(t *testing.T) PrintModeRuntimeHost {
 	t.Helper()
-	t.Setenv("OPENAI_API_KEY", "")
 	tempDir := t.TempDir()
 	host, err := newDefaultCLIPrintModeHost(Args{
 		Offline:   true,
 		NoSession: true,
 		Model:     "openai/gpt-4o-mini",
 	}, CLIOptions{
-		CWD:      tempDir,
-		AgentDir: filepath.Join(tempDir, "agent"),
+		CWD:           tempDir,
+		AgentDir:      filepath.Join(tempDir, "agent"),
+		ModelRegistry: newTestOpenAIModelRegistry(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -9890,7 +9884,6 @@ func newOfflineInteractiveRuntimeHost(t *testing.T) PrintModeRuntimeHost {
 
 func newOfflineInteractiveRuntimeHostWithPackages(t *testing.T, packages ...string) PrintModeRuntimeHost {
 	t.Helper()
-	t.Setenv("OPENAI_API_KEY", "")
 	tempDir := t.TempDir()
 	agentDir := filepath.Join(tempDir, "agent")
 	settings := NewSettingsManager(tempDir, agentDir)
@@ -9904,13 +9897,20 @@ func newOfflineInteractiveRuntimeHostWithPackages(t *testing.T, packages ...stri
 		NoSession: true,
 		Model:     "openai/gpt-4o-mini",
 	}, CLIOptions{
-		CWD:      tempDir,
-		AgentDir: agentDir,
+		CWD:           tempDir,
+		AgentDir:      agentDir,
+		ModelRegistry: newTestOpenAIModelRegistry(),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return host
+}
+
+func newTestOpenAIModelRegistry() *ModelRegistry {
+	return NewModelRegistry(NewInMemoryAuthStorage(AuthStorageData{
+		"openai": {Type: "api_key", Key: "test-openai-key"},
+	}), "")
 }
 
 type blockingReloadResourceLoader struct {

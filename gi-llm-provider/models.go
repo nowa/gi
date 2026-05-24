@@ -5,7 +5,11 @@ import "fmt"
 func ptrString(value string) *string { return &value }
 func ptrBool(value bool) *bool       { return &value }
 
-var modelRegistry = map[string]map[string]Model{}
+var (
+	modelRegistry      = map[string]map[string]Model{}
+	modelProviderOrder []string
+	modelOrder         = map[string][]string{}
+)
 
 func init() {
 	RegisterModel(Model{ID: "gpt-4o-mini", Name: "gpt-4o-mini", Provider: "openai", API: "openai-responses", BaseURL: "https://api.openai.com/v1", Input: []string{"text", "image"}, ContextWindow: 128000, MaxTokens: 16384})
@@ -57,6 +61,7 @@ func init() {
 	RegisterModel(Model{ID: "us.anthropic.claude-sonnet-4-5-20250929-v1:0", Name: "Claude Sonnet 4.5", Provider: "amazon-bedrock", API: "bedrock-converse-stream", BaseURL: "https://bedrock-runtime.us-east-1.amazonaws.com", Reasoning: true, Input: []string{"text", "image"}, ContextWindow: 200000, MaxTokens: 32000})
 	RegisterModel(Model{ID: "us.anthropic.claude-opus-4-7", Name: "Claude Opus 4.7", Provider: "amazon-bedrock", API: "bedrock-converse-stream", BaseURL: "https://bedrock-runtime.us-east-1.amazonaws.com", Reasoning: true, Input: []string{"text", "image"}, ContextWindow: 200000, MaxTokens: 64000, ThinkingLevelMap: map[string]*string{"xhigh": ptrString("xhigh")}})
 	RegisterModel(Model{ID: "eu.anthropic.claude-sonnet-4-5-20250929-v1:0", Name: "Claude Sonnet 4.5 (EU)", Provider: "amazon-bedrock", API: "bedrock-converse-stream", BaseURL: "https://bedrock-runtime.eu-central-1.amazonaws.com", Reasoning: true, Input: []string{"text", "image"}, ContextWindow: 200000, MaxTokens: 64000})
+	registerPiGeneratedModels()
 }
 
 func RegisterModel(model Model) {
@@ -65,8 +70,18 @@ func RegisterModel(model Model) {
 	}
 	if modelRegistry[model.Provider] == nil {
 		modelRegistry[model.Provider] = map[string]Model{}
+		modelProviderOrder = append(modelProviderOrder, model.Provider)
+	}
+	if _, exists := modelRegistry[model.Provider][model.ID]; !exists {
+		modelOrder[model.Provider] = append(modelOrder[model.Provider], model.ID)
 	}
 	modelRegistry[model.Provider][model.ID] = model
+}
+
+func resetModelRegistry() {
+	modelRegistry = map[string]map[string]Model{}
+	modelProviderOrder = nil
+	modelOrder = map[string][]string{}
 }
 
 func GetModel(provider, modelID string) (Model, bool) {
@@ -92,18 +107,16 @@ func MustGetModel(provider, modelID string) Model {
 }
 
 func GetProviders() []string {
-	providers := make([]string, 0, len(modelRegistry))
-	for provider := range modelRegistry {
-		providers = append(providers, provider)
-	}
-	return providers
+	return append([]string(nil), modelProviderOrder...)
 }
 
 func GetModels(provider string) []Model {
 	models := modelRegistry[provider]
 	result := make([]Model, 0, len(models))
-	for _, model := range models {
-		result = append(result, model)
+	for _, id := range modelOrder[provider] {
+		if model, ok := models[id]; ok {
+			result = append(result, model)
+		}
 	}
 	return result
 }

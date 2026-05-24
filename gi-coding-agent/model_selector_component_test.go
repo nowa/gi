@@ -54,7 +54,7 @@ func TestScopedModelsSelectorTogglesAndPersists(t *testing.T) {
 	if enabled := selector.EnabledModelIDs(); enabled != nil {
 		t.Fatalf("enabled ids = %#v, want nil for all models enabled", enabled)
 	}
-	if rendered := strings.Join(selector.Render(80), "\n"); !strings.Contains(rendered, "all enabled") {
+	if rendered := StripAnsi(strings.Join(selector.Render(80), "\n")); !strings.Contains(rendered, "all enabled") {
 		t.Fatalf("rendered selector missing all-enabled state:\n%s", rendered)
 	}
 
@@ -63,7 +63,7 @@ func TestScopedModelsSelectorTogglesAndPersists(t *testing.T) {
 	if !reflect.DeepEqual(changes, want) {
 		t.Fatalf("changes = %#v, want %#v", changes, want)
 	}
-	if rendered := strings.Join(selector.Render(80), "\n"); !strings.Contains(rendered, "[x]") || !strings.Contains(rendered, "[ ]") {
+	if rendered := StripAnsi(strings.Join(selector.Render(80), "\n")); !strings.Contains(rendered, "[x]") || !strings.Contains(rendered, "[ ]") {
 		t.Fatalf("rendered selector missing enabled/disabled markers:\n%s", rendered)
 	}
 
@@ -74,6 +74,28 @@ func TestScopedModelsSelectorTogglesAndPersists(t *testing.T) {
 	selector.HandleInput("\x13")
 	if persisted != nil {
 		t.Fatalf("persisted ids = %#v, want nil", persisted)
+	}
+}
+
+func TestScopedModelsSelectorUsesPiDarkThemeAnsi(t *testing.T) {
+	selector := NewScopedModelsSelectorComponent(ScopedModelsSelectorConfig{
+		AllModels: []llm.Model{
+			{Provider: "anthropic", ID: "claude-3-5-haiku-20241022", Name: "Claude Haiku 3.5"},
+		},
+	}, ScopedModelsSelectorCallbacks{})
+	selector.SetFocused(true)
+
+	rendered := strings.Join(selector.Render(80), "\n")
+	for _, expected := range []string{
+		"\x1b[38;2;95;135;255m" + strings.Repeat("─", 80),
+		"\x1b[1m\x1b[38;2;138;190;183mModel Configuration\x1b[0m",
+		"\x1b[38;2;128;128;128m [anthropic]\x1b[39m",
+		"> \x1b[7m \x1b[27m",
+		"\x1b[38;2;102;102;102m  enter toggle",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("rendered selector missing ANSI %q:\n%q", expected, rendered)
+		}
 	}
 }
 
@@ -125,8 +147,8 @@ func TestScopedModelsSelectorUsesEffectiveModelKeybindingsPiStyle(t *testing.T) 
 	if persisted != nil {
 		t.Fatalf("persisted ids = %#v, want nil after custom save", persisted)
 	}
-	rendered := strings.Join(selector.Render(100), "\n")
-	for _, expected := range []string{"V saves to settings", "X all", "Z clear", "Q provider", "D reorder", "V save"} {
+	rendered := StripAnsi(strings.Join(selector.Render(100), "\n"))
+	for _, expected := range []string{"v to save to settings", "x all", "z clear", "q provider", "d reorder", "v save"} {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("rendered selector missing %q:\n%s", expected, rendered)
 		}
@@ -149,8 +171,8 @@ func TestScopedModelsSelectorFiltersAndAppliesBulkActionsToSearchResults(t *test
 	})
 
 	selector.HandleInput("anth")
-	rendered := strings.Join(selector.Render(100), "\n")
-	if !strings.Contains(rendered, "Search: anth") ||
+	rendered := StripAnsi(strings.Join(selector.Render(100), "\n"))
+	if !strings.Contains(rendered, "> anth") ||
 		!strings.Contains(rendered, "claude-sonnet-4-6") ||
 		strings.Contains(rendered, "gpt-4o-mini") {
 		t.Fatalf("filtered render did not show only Anthropic match:\n%s", rendered)
@@ -186,7 +208,7 @@ func TestScopedModelsSelectorSearchEditingAndNoMatch(t *testing.T) {
 	})
 
 	selector.HandleInput("zzz")
-	if rendered := strings.Join(selector.Render(80), "\n"); !strings.Contains(rendered, "No matching models") {
+	if rendered := StripAnsi(strings.Join(selector.Render(80), "\n")); !strings.Contains(rendered, "No matching models") {
 		t.Fatalf("rendered selector missing no-match state:\n%s", rendered)
 	}
 
@@ -194,7 +216,7 @@ func TestScopedModelsSelectorSearchEditingAndNoMatch(t *testing.T) {
 	if cancelled {
 		t.Fatal("ctrl+c with search text should clear search before cancelling")
 	}
-	if rendered := strings.Join(selector.Render(80), "\n"); !strings.Contains(rendered, "gpt-4o-mini") {
+	if rendered := StripAnsi(strings.Join(selector.Render(80), "\n")); !strings.Contains(rendered, "gpt-4o-mini") {
 		t.Fatalf("rendered selector did not restore list after ctrl+c cleared search:\n%s", rendered)
 	}
 
@@ -220,14 +242,14 @@ func TestModelSelectorSupportsScopedAllScopeToggleAndSearch(t *testing.T) {
 		},
 	})
 
-	if rendered := strings.Join(selector.Render(120), "\n"); !strings.Contains(rendered, "Scope: scoped") ||
+	if rendered := StripAnsi(strings.Join(selector.Render(120), "\n")); !strings.Contains(rendered, "Scope: all | scoped") ||
 		!strings.Contains(rendered, "No matching models") {
 		t.Fatalf("scoped render should not include all-scope match yet:\n%s", rendered)
 	}
 
 	selector.HandleInput("\t")
-	rendered := strings.Join(selector.Render(120), "\n")
-	if !strings.Contains(rendered, "Scope: all") || !strings.Contains(rendered, "faux-1") {
+	rendered := StripAnsi(strings.Join(selector.Render(120), "\n"))
+	if !strings.Contains(rendered, "Scope: all | scoped") || !strings.Contains(rendered, "faux-1") {
 		t.Fatalf("all-scope render missing filtered all-model match:\n%s", rendered)
 	}
 	selector.HandleInput("\r")
@@ -251,7 +273,8 @@ func TestModelSelectorPreservesScopedModelOrder(t *testing.T) {
 		if !strings.Contains(line, "[faux]") {
 			continue
 		}
-		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "->"))
+		line = StripAnsi(line)
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "→"))
 		modelID, _, _ := strings.Cut(line, " [")
 		orderedIDs = append(orderedIDs, strings.TrimSpace(modelID))
 	}

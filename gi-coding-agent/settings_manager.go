@@ -34,6 +34,8 @@ type WarningSettings struct {
 	AnthropicExtraUsage bool
 }
 
+const defaultHTTPIdleTimeoutMS = 300_000
+
 func NewSettingsManager(cwd, agentDir string) *SettingsManager {
 	manager := &SettingsManager{
 		cwd:             cwd,
@@ -223,6 +225,21 @@ func (s *SettingsManager) GetTransport() string {
 
 func (s *SettingsManager) SetTransport(transport string) {
 	s.setGlobal("transport", normalizeSettingsEnum(transport, "auto", []string{"sse", "websocket", "websocket-cached", "auto"}))
+}
+
+func (s *SettingsManager) GetHTTPIdleTimeoutMS() int {
+	timeout := settingsInt(s.merged, "httpIdleTimeoutMs", defaultHTTPIdleTimeoutMS)
+	if timeout < 0 {
+		return defaultHTTPIdleTimeoutMS
+	}
+	return timeout
+}
+
+func (s *SettingsManager) SetHTTPIdleTimeoutMS(timeoutMS int) {
+	if timeoutMS < 0 {
+		timeoutMS = defaultHTTPIdleTimeoutMS
+	}
+	s.setGlobal("httpIdleTimeoutMs", timeoutMS)
 }
 
 func (s *SettingsManager) GetShellCommandPrefix() string {

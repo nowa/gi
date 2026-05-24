@@ -164,20 +164,58 @@ func WriteCLIUsage(writer io.Writer, extensionFlags ...ProtocolFlagRegistration)
 	if writer == nil {
 		return
 	}
-	_, _ = fmt.Fprintln(writer, "Usage: gi [options] [message]")
-	_, _ = fmt.Fprintln(writer, "")
-	_, _ = fmt.Fprintln(writer, "Options:")
-	_, _ = fmt.Fprintln(writer, "  -p, --print        Run in non-interactive print mode")
-	_, _ = fmt.Fprintln(writer, "      --mode <mode>  Output mode: text, json, or rpc")
-	_, _ = fmt.Fprintln(writer, "  -h, --help         Show help")
-	_, _ = fmt.Fprintln(writer, "")
-	_, _ = fmt.Fprintln(writer, "Commands:")
-	_, _ = fmt.Fprintln(writer, "  install <source> [-l]  Install a package or extension source")
-	_, _ = fmt.Fprintln(writer, "  remove <source> [-l]   Remove a package or extension source")
-	_, _ = fmt.Fprintln(writer, "  uninstall <source> [-l]")
-	_, _ = fmt.Fprintln(writer, "  config                 Open resource configuration")
-	_, _ = fmt.Fprintln(writer, "  list                   List configured packages")
-	_, _ = fmt.Fprintln(writer, "  update [source]        Update packages or the current CLI")
+	_, _ = fmt.Fprintln(writer, `gi - AI coding assistant with read, bash, edit, write tools
+
+Usage:
+  gi [options] [@files...] [messages...]
+
+Commands:
+  gi install <source> [-l]     Install package source and add to settings
+  gi remove <source> [-l]      Remove package source from settings
+  gi uninstall <source> [-l]   Alias for remove
+  gi update [source|self|gi]   Update gi and installed packages
+  gi list                      List installed packages from settings
+  gi config                    Open TUI to enable/disable package resources
+  gi <command> --help          Show help for install/remove/uninstall/update/list
+
+Options:
+  --provider <name>              Provider name (default: google)
+  --model <pattern>              Model pattern or ID (supports "provider/id" and optional ":<thinking>")
+  --api-key <key>                API key (defaults to env vars)
+  --system-prompt <text>         System prompt (default: coding assistant prompt)
+  --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
+  --mode <mode>                  Output mode: text (default), json, or rpc
+  --print, -p                    Non-interactive mode: process prompt and exit
+  --continue, -c                 Continue previous session
+  --resume, -r                   Select a session to resume
+  --session <path|id>            Use specific session file or partial UUID
+  --fork <path|id>               Fork specific session file or partial UUID into a new session
+  --session-dir <dir>            Directory for session storage and lookup
+  --no-session                   Don't save session (ephemeral)
+  --models <patterns>            Comma-separated model patterns for Ctrl+P cycling
+                                 Supports globs (anthropic/*, *sonnet*) and fuzzy matching
+  --no-tools, -nt                Disable all tools by default (built-in and extension)
+  --no-builtin-tools, -nbt       Disable built-in tools by default but keep extension/custom tools enabled
+  --tools, -t <tools>            Comma-separated allowlist of tool names to enable
+                                 Applies to built-in, extension, and custom tools
+  --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
+  --extension, -e <path>         Load an extension descriptor (can be used multiple times)
+  --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
+  --skill <path>                 Load a skill file or directory (can be used multiple times)
+  --no-skills, -ns               Disable skills discovery and loading
+  --prompt-template <path>       Load a prompt template file or directory (can be used multiple times)
+  --no-prompt-templates, -np     Disable prompt template discovery and loading
+  --theme <path>                 Load a theme file or directory (can be used multiple times)
+  --no-themes                    Disable theme discovery and loading
+  --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
+  --export <file>                Export session file to HTML and exit
+  --list-models [search]         List available models (with optional fuzzy search)
+  --verbose                      Force verbose startup (overrides quietStartup setting)
+  --offline                      Disable startup network operations (same as GI_OFFLINE=1)
+  --help, -h                     Show this help
+  --version, -v                  Show version number
+
+Extensions can register additional flags (e.g., --plan from plan-mode extension).`)
 	if len(extensionFlags) > 0 {
 		_, _ = fmt.Fprintln(writer, "")
 		_, _ = fmt.Fprintln(writer, "Extension CLI Flags:")
@@ -185,6 +223,110 @@ func WriteCLIUsage(writer io.Writer, extensionFlags ...ProtocolFlagRegistration)
 			_, _ = fmt.Fprintln(writer, formatCLIExtensionFlagHelp(flag))
 		}
 	}
+	_, _ = fmt.Fprint(writer, `
+Examples:
+  # Interactive mode
+  gi
+
+  # Interactive mode with initial prompt
+  gi "List all .go files in gi-coding-agent/"
+
+  # Include files in initial message
+  gi @prompt.md @image.png "What color is the sky?"
+
+  # Non-interactive mode (process and exit)
+  gi -p "List all .go files in gi-coding-agent/"
+
+  # Multiple messages (interactive)
+  gi "Read go.mod" "What packages do we have?"
+
+  # Continue previous session
+  gi --continue "What did we discuss?"
+
+  # Use different model
+  gi --provider openai --model gpt-4o-mini "Help me refactor this code"
+
+  # Use model with provider prefix (no --provider needed)
+  gi --model openai/gpt-4o "Help me refactor this code"
+
+  # Use model with thinking level shorthand
+  gi --model sonnet:high "Solve this complex problem"
+
+  # Limit model cycling to specific models
+  gi --models claude-sonnet,claude-haiku,gpt-4o
+
+  # Limit to a specific provider with glob pattern
+  gi --models "github-copilot/*"
+
+  # Cycle models with fixed thinking levels
+  gi --models sonnet:high,haiku:low
+
+  # Start with a specific thinking level
+  gi --thinking high "Solve this complex problem"
+
+  # Read-only mode (no file modifications possible)
+  gi --tools read,grep,find,ls -p "Review the code in gi-coding-agent/"
+
+  # Export a session file to HTML
+  gi --export ~/.gi/agent/sessions/--path--/session.jsonl
+  gi --export session.jsonl output.html
+
+Environment Variables:
+  ANTHROPIC_API_KEY                - Anthropic Claude API key
+  ANTHROPIC_OAUTH_TOKEN            - Anthropic OAuth token (alternative to API key)
+  OPENAI_API_KEY                   - OpenAI GPT API key
+  AZURE_OPENAI_API_KEY             - Azure OpenAI API key
+  AZURE_OPENAI_BASE_URL            - Azure OpenAI/Cognitive Services base URL
+  AZURE_OPENAI_RESOURCE_NAME       - Azure OpenAI resource name (alternative to base URL)
+  AZURE_OPENAI_API_VERSION         - Azure OpenAI API version
+  AZURE_OPENAI_DEPLOYMENT_NAME_MAP - Azure OpenAI model=deployment map (comma-separated)
+  COPILOT_GITHUB_TOKEN             - GitHub Copilot token
+  DEEPSEEK_API_KEY                 - DeepSeek API key
+  GEMINI_API_KEY                   - Google Gemini API key
+  GOOGLE_CLOUD_API_KEY             - Google Vertex AI API key
+  GROQ_API_KEY                     - Groq API key
+  CEREBRAS_API_KEY                 - Cerebras API key
+  XAI_API_KEY                      - xAI Grok API key
+  FIREWORKS_API_KEY                - Fireworks API key
+  TOGETHER_API_KEY                 - Together AI API key
+  OPENROUTER_API_KEY               - OpenRouter API key
+  AI_GATEWAY_API_KEY               - Vercel AI Gateway API key
+  ZAI_API_KEY                      - ZAI API key
+  MISTRAL_API_KEY                  - Mistral API key
+  MINIMAX_API_KEY                  - MiniMax API key
+  MINIMAX_CN_API_KEY               - MiniMax China API key
+  MOONSHOT_API_KEY                 - Moonshot AI API key
+  HF_TOKEN                         - Hugging Face token
+  OPENCODE_API_KEY                 - OpenCode Zen/OpenCode Go API key
+  KIMI_API_KEY                     - Kimi For Coding API key
+  CLOUDFLARE_API_KEY               - Cloudflare API token (Workers AI and AI Gateway)
+  CLOUDFLARE_ACCOUNT_ID            - Cloudflare account id (required for Cloudflare providers)
+  CLOUDFLARE_GATEWAY_ID            - Cloudflare AI Gateway slug
+  XIAOMI_API_KEY                   - Xiaomi MiMo API key
+  XIAOMI_TOKEN_PLAN_CN_API_KEY     - Xiaomi MiMo Token Plan API key (China region)
+  XIAOMI_TOKEN_PLAN_AMS_API_KEY    - Xiaomi MiMo Token Plan API key (Amsterdam region)
+  XIAOMI_TOKEN_PLAN_SGP_API_KEY    - Xiaomi MiMo Token Plan API key (Singapore region)
+  AWS_PROFILE                      - AWS profile for Amazon Bedrock
+  AWS_ACCESS_KEY_ID                - AWS access key for Amazon Bedrock
+  AWS_SECRET_ACCESS_KEY            - AWS secret key for Amazon Bedrock
+  AWS_BEARER_TOKEN_BEDROCK         - Bedrock API key (bearer token)
+  AWS_REGION                       - AWS region for Amazon Bedrock
+  GI_CODING_AGENT_DIR              - Config directory (default: ~/.gi/agent)
+  GI_CODING_AGENT_SESSION_DIR      - Session storage directory (overridden by --session-dir)
+  GI_PACKAGE_DIR                   - Override package directory
+  GI_OFFLINE                       - Disable startup network operations when set to 1/true/yes
+  GI_TELEMETRY                     - Override install telemetry when set to 1/true/yes or 0/false/no
+  GI_SHARE_VIEWER_URL              - Base URL for /share command
+
+Built-in Tool Names:
+  read   - Read file contents
+  bash   - Execute bash commands
+  edit   - Edit files with find/replace
+  write  - Write files (creates/overwrites)
+  grep   - Search file contents (read-only, off by default)
+  find   - Find files by glob pattern (read-only, off by default)
+  ls     - List directory contents (read-only, off by default)
+`)
 }
 
 func cliHelpExtensionFlags(args Args, options CLIOptions) []ProtocolFlagRegistration {
@@ -682,27 +824,72 @@ func writePackageCommandUsage(writer io.Writer, command string) {
 	if writer == nil {
 		return
 	}
-	_, _ = fmt.Fprintln(writer, "Usage:")
-	_, _ = fmt.Fprintf(writer, "  gi %s <source> [-l]\n", command)
+	switch command {
+	case "remove":
+		_, _ = fmt.Fprint(writer, `Usage:
+  gi remove <source> [-l]
+
+Remove a package and its source from settings.
+Alias: gi uninstall <source> [-l]
+
+Options:
+  -l, --local    Remove from project settings (.gi/settings.json)
+
+Examples:
+  gi remove official:gi-tools-ui
+  gi uninstall official:gi-tools-ui
+`)
+	default:
+		_, _ = fmt.Fprint(writer, `Usage:
+  gi install <source> [-l]
+
+Install a package and add it to settings.
+
+Options:
+  -l, --local    Install project-locally (.gi/settings.json)
+
+Examples:
+  gi install official:gi-tools-ui
+  gi install git:github.com/user/repo
+  gi install git:git@github.com:user/repo
+  gi install https://github.com/user/repo
+  gi install ssh://git@github.com/user/repo
+  gi install ./local/path
+`)
+	}
 }
 
 func writeUpdateCommandUsage(writer io.Writer) {
 	if writer == nil {
 		return
 	}
-	_, _ = fmt.Fprintln(writer, "Usage:")
-	_, _ = fmt.Fprintln(writer, "  gi update [source]")
-	_, _ = fmt.Fprintln(writer, "  gi update --extensions")
-	_, _ = fmt.Fprintln(writer, "  gi update --extension <source>")
-	_, _ = fmt.Fprintln(writer, "  gi update --self [--force]")
+	_, _ = fmt.Fprint(writer, `Usage:
+  gi update [source|self|gi] [--self] [--extensions] [--extension <source>] [--force]
+
+Update gi and installed packages.
+
+Options:
+  --self                  Update gi only
+  --extensions            Update installed packages only
+  --extension <source>    Update one package only
+  --force                 Reinstall gi even if the current version is latest
+
+Short forms:
+  gi update                Update gi and all packages
+  gi update <source>       Update one package
+  gi update gi             Update gi only (self works as alias to gi)
+`)
 }
 
 func writeListPackagesUsage(writer io.Writer) {
 	if writer == nil {
 		return
 	}
-	_, _ = fmt.Fprintln(writer, "Usage:")
-	_, _ = fmt.Fprintln(writer, "  gi list")
+	_, _ = fmt.Fprint(writer, `Usage:
+  gi list
+
+List installed packages from user and project settings.
+`)
 }
 
 func writeConfigCommandUsage(writer io.Writer) {

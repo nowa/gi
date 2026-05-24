@@ -53,3 +53,26 @@ func TestFooterComponentKeepsStatsLineWithinWidthForWideModelAndProviderNames(t 
 		}
 	}
 }
+
+func TestFooterComponentUsesPiDarkThemeDimAnsi(t *testing.T) {
+	percent := 0.0
+	footer := NewFooterComponent(FooterState{
+		CWD:                    "/tmp/project",
+		GitBranch:              "main",
+		ModelID:                "gpt-4o-mini",
+		Provider:               "openai",
+		ContextWindow:          128000,
+		ContextPercent:         &percent,
+		AvailableProviderCount: 2,
+	})
+
+	lines := footer.Render(80)
+	if len(lines) < 2 {
+		t.Fatalf("footer lines = %#v", lines)
+	}
+	for _, line := range lines[:2] {
+		if !strings.HasPrefix(line, "\x1b[38;2;102;102;102m") {
+			t.Fatalf("footer line missing Pi dim color: %q", line)
+		}
+	}
+}

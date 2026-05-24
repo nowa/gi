@@ -52,7 +52,7 @@ func newCLIInputDialog(title, message, placeholder, defaultText string, onSubmit
 
 func newCLIEditorDialog(tui *gitui.TUI, title, message, defaultText string, onSubmit func(string), onCancel func()) *cliTUIDialogComponent {
 	editor := gitui.NewEditor(
-		gitui.EditorTheme{Border: func(text string) string { return text }, SelectList: gitui.SelectListTheme{}},
+		tuiThemeEditor(),
 		gitui.EditorOptions{PaddingX: 1, MaxVisibleLines: 8},
 	)
 	if defaultText != "" {
@@ -84,7 +84,7 @@ func newCLISelectDialogWithOptions(title, message string, options []TUIDialogOpt
 		items = append(items, gitui.SelectItem{Value: key, Label: label, Description: option.Description})
 		byKey[key] = option
 	}
-	list := gitui.NewSelectList(items, 8, gitui.SelectListTheme{})
+	list := gitui.NewSelectList(items, 8, tuiThemeSelectList())
 	searchInput := gitui.NewInput()
 	if defaultIndex >= 0 {
 		list.SetSelectedIndex(defaultIndex)
@@ -312,7 +312,7 @@ func appendDialogTextLines(lines []string, text string, innerWidth int) []string
 		return lines
 	}
 	for _, line := range strings.Split(text, "\n") {
-		lines = append(lines, dialogLine(line, innerWidth))
+		lines = append(lines, dialogLine(tuiThemeMuted(line), innerWidth))
 	}
 	return lines
 }
@@ -322,7 +322,7 @@ func dialogLine(text string, innerWidth int) string {
 }
 
 func dialogBorder(width int) string {
-	return strings.Repeat("-", max(1, width))
+	return tuiThemeBorder(strings.Repeat("-", max(1, width)))
 }
 
 func (c *cliTUIDialogComponent) isExternalEditorInput(data string) bool {

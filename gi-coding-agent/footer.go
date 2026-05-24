@@ -121,10 +121,15 @@ func (f *FooterComponent) Render(width int) []string {
 		autoIndicator = " (auto)"
 	}
 	contextPercentValue := 0.0
-	contextPercentDisplay := "?/" + formatFooterTokens(contextWindow) + autoIndicator
+	contextPercentDisplay := fmt.Sprintf("%.1f%%/%s%s", contextPercentValue, formatFooterTokens(contextWindow), autoIndicator)
 	if state.ContextPercent != nil {
 		contextPercentValue = *state.ContextPercent
 		contextPercentDisplay = fmt.Sprintf("%.1f%%/%s%s", contextPercentValue, formatFooterTokens(contextWindow), autoIndicator)
+	}
+	if contextPercentValue > 90 {
+		contextPercentDisplay = tuiThemeError(contextPercentDisplay)
+	} else if contextPercentValue > 70 {
+		contextPercentDisplay = tuiThemeWarning(contextPercentDisplay)
 	}
 	statsParts = append(statsParts, contextPercentDisplay)
 
@@ -171,13 +176,23 @@ func (f *FooterComponent) Render(width int) []string {
 	}
 
 	lines := []string{
-		gitui.TruncateToWidth(pwd, width, "..."),
-		gitui.TruncateToWidth(statsLine, width, ""),
+		gitui.TruncateToWidth(tuiThemeDim(pwd), width, tuiThemeDim("...")),
+		tuiThemeFooterStatsLine(statsLine, statsLeft),
 	}
 	for _, status := range sortedFooterStatuses(state.ExtensionStatuses) {
-		lines = append(lines, gitui.TruncateToWidth(sanitizeStatusText(status), width, "..."))
+		lines = append(lines, gitui.TruncateToWidth(tuiThemeDim(sanitizeStatusText(status)), width, tuiThemeDim("...")))
 	}
 	return lines
+}
+
+func tuiThemeFooterStatsLine(line, statsLeft string) string {
+	if line == "" {
+		return line
+	}
+	if statsLeft == "" || !strings.HasPrefix(line, statsLeft) {
+		return tuiThemeDim(line)
+	}
+	return tuiThemeDim(statsLeft) + tuiThemeDim(line[len(statsLeft):])
 }
 
 func cloneFooterState(state FooterState) FooterState {

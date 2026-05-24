@@ -233,50 +233,59 @@ func (c *cliStartupHeaderComponent) Render(width int) []string {
 	if c == nil {
 		return nil
 	}
-	label := "Gi"
-	if c.version != "" && c.version != DefaultCodingAgentVersion {
-		label += " v" + c.version
+	label := tuiThemeBoldAccent("gi")
+	if c.version != "" {
+		label += tuiThemeDim(" v" + c.version)
 	}
+	onboarding := tuiThemeDim("Gi can explain its own features and look up its docs. Ask it how to use or extend Gi.")
 	var text string
 	if c.expanded.Load() {
 		text = strings.Join([]string{
 			label,
-			c.appHint("app.interrupt", "Esc", "interrupt"),
-			c.appHint("app.clear", "Ctrl+C", "clear"),
-			c.appKey("app.clear", "Ctrl+C") + " twice exits",
-			c.appHint("app.exit", "Ctrl+D", "exit with an empty editor"),
-			c.appHint("app.suspend", "Ctrl+Z", "suspend"),
-			c.tuiHint("tui.editor.deleteToLineEnd", "Ctrl+K", "delete to end"),
-			c.appHint("app.thinking.cycle", "Shift+Tab", "cycle thinking"),
-			c.appKey("app.model.cycleForward", "Ctrl+P") + "/" + c.appKey("app.model.cycleBackward", "Ctrl+Shift+P") + " cycles models",
-			c.appHint("app.model.select", "Ctrl+L", "select model"),
-			c.appHint("app.tools.expand", "Ctrl+O", "expands tools and startup resources"),
-			c.appHint("app.thinking.toggle", "Ctrl+T", "expand thinking"),
-			c.appHint("app.editor.external", "Ctrl+G", "external editor"),
-			"/ commands",
-			"! bash",
-			"!! bash (no context)",
-			c.appHint("app.message.followUp", "Alt+Enter", "queue follow-up"),
-			c.appHint("app.message.dequeue", "Alt+Up", "edit queued messages"),
-			c.appHint("app.clipboard.pasteImage", "Ctrl+V", "paste image"),
-			"drop files attach",
+			c.appHint("app.interrupt", "escape", "to interrupt"),
+			c.appHint("app.clear", "ctrl+c", "to clear"),
+			c.appKey("app.clear", "ctrl+c") + " twice to exit",
+			c.appHint("app.exit", "ctrl+d", "to exit (empty)"),
+			c.appHint("app.suspend", "ctrl+z", "to suspend"),
+			c.tuiHint("tui.editor.deleteToLineEnd", "ctrl+k", "to delete to end"),
+			c.appHint("app.thinking.cycle", "shift+tab", "to cycle thinking level"),
+			c.appKey("app.model.cycleForward", "ctrl+p") + "/" + c.appKey("app.model.cycleBackward", "shift+ctrl+p") + " to cycle models",
+			c.appHint("app.model.select", "ctrl+l", "to select model"),
+			c.appHint("app.tools.expand", "ctrl+o", "to expand tools"),
+			c.appHint("app.thinking.toggle", "ctrl+t", "to expand thinking"),
+			c.appHint("app.editor.external", "ctrl+g", "for external editor"),
+			tuiThemeKeyHint("/", "for commands"),
+			tuiThemeKeyHint("!", "to run bash"),
+			tuiThemeKeyHint("!!", "to run bash (no context)"),
+			c.appHint("app.message.followUp", "option+enter", "to queue follow-up"),
+			c.appHint("app.message.dequeue", "option+up", "to edit all queued messages"),
+			c.appHint("app.clipboard.pasteImage", "ctrl+v", "to paste image"),
+			tuiThemeKeyHint("drop files", "to attach"),
+			"",
+			onboarding,
 		}, "\n")
 	} else {
+		compact := strings.Join([]string{
+			c.appHint("app.interrupt", "escape", "interrupt"),
+			tuiThemeKeyHint(c.appKey("app.clear", "ctrl+c")+"/"+c.appKey("app.exit", "ctrl+d"), "clear/exit"),
+			tuiThemeKeyHint("/", "commands"),
+			tuiThemeKeyHint("!", "bash"),
+			c.appHint("app.tools.expand", "ctrl+o", "more"),
+		}, tuiThemeMuted(" · "))
 		text = label + "\n" +
-			c.appKey("app.interrupt", "Esc") + " interrupt · " +
-			c.appKey("app.clear", "Ctrl+C") + "/" + c.appKey("app.exit", "Ctrl+D") + " clear/exit · " +
-			"/ commands · ! bash · " +
-			c.appKey("app.tools.expand", "Ctrl+O") + " more"
+			compact + "\n" +
+			tuiThemeDim("Press "+c.appKey("app.tools.expand", "ctrl+o")+" to show full startup help and loaded resources.") + "\n\n" +
+			onboarding
 	}
 	return gitui.NewText(text, 1, 0).Render(width)
 }
 
 func (c *cliStartupHeaderComponent) appHint(action, fallback, description string) string {
-	return c.appKey(action, fallback) + " " + description
+	return tuiThemeKeyHint(c.appKey(action, fallback), description)
 }
 
 func (c *cliStartupHeaderComponent) tuiHint(action, fallback, description string) string {
-	return c.tuiKey(action, fallback) + " " + description
+	return tuiThemeKeyHint(c.tuiKey(action, fallback), description)
 }
 
 func (c *cliStartupHeaderComponent) appKey(action, fallback string) string {
@@ -284,19 +293,19 @@ func (c *cliStartupHeaderComponent) appKey(action, fallback string) string {
 	if c != nil && c.keybindings != nil {
 		keybindings = c.keybindings
 	}
-	return firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings[action]), true), fallback)
+	return firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings[action]), false), fallback)
 }
 
 func (c *cliStartupHeaderComponent) tuiKey(action, fallback string) string {
-	return firstNonEmptyString(formatHotkeyKeys(gitui.GetKeybindings().GetKeys(action), true), fallback)
+	return firstNonEmptyString(formatHotkeyKeys(gitui.GetKeybindings().GetKeys(action), false), fallback)
 }
 
 func (c *cliReloadBoxComponent) Invalidate() {}
 
 func (c *cliReloadBoxComponent) Render(width int) []string {
 	width = max(20, width)
-	border := strings.Repeat("─", width)
-	message := " " + firstNonEmptyString(strings.TrimSpace(c.message), "Reloading...")
+	border := tuiThemeBorder(strings.Repeat("─", width))
+	message := tuiThemeMuted(" " + firstNonEmptyString(strings.TrimSpace(c.message), "Reloading..."))
 	return []string{
 		border,
 		"",
@@ -384,28 +393,14 @@ func (l *cliInteractiveLayout) RenderWithSize(width, height int) []string {
 		bottom = appendRendered(bottom, l.host.footer, width, height)
 	}
 	bottom = appendRendered(bottom, l.host.slots["footer"], width, height)
-	bottom = append(bottom, truncateSelectorLine(l.inputHint(), width))
 
 	lines := make([]string, 0, len(top)+len(bottom))
 	lines = append(lines, top...)
-	if height > 0 {
-		for spacer := height - len(top) - len(bottom); spacer > 0; spacer-- {
-			lines = append(lines, "")
-		}
+	if len(top) > 0 && len(bottom) > 0 && (height <= 0 || len(top)+len(bottom)+1 <= height) {
+		lines = append(lines, "")
 	}
 	lines = append(lines, bottom...)
 	return lines
-}
-
-func (l *cliInteractiveLayout) inputHint() string {
-	if l == nil || l.host == nil {
-		return "Enter sends. Ctrl+C clears. Ctrl+D exits. /hotkeys for commands."
-	}
-	keybindings := l.host.effectiveKeybindings()
-	submit := firstNonEmptyString(formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.input.submit"), true), "Enter")
-	clear := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.clear"]), true), "Ctrl+C")
-	exit := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.exit"]), true), "Ctrl+D")
-	return submit + " sends. " + clear + " clears. " + exit + " exits. /hotkeys for commands."
 }
 
 func appendRendered(lines []string, component gitui.Component, width, height int) []string {
@@ -651,7 +646,7 @@ func (h *CLIInteractiveTUIHost) maybeShowTmuxKeyboardWarning(ctx context.Context
 	}
 	go func() {
 		if warning := CheckTmuxKeyboardSetup(ctx, h.tmuxOptionReader); strings.TrimSpace(warning) != "" {
-			h.addStatus("Warning: " + warning)
+			h.addWarning(warning)
 		}
 	}()
 }
@@ -876,14 +871,7 @@ func (h *CLIInteractiveTUIHost) showStartupWarningsIfNeeded() {
 		return
 	}
 	for _, warning := range h.startupWarnings {
-		warning = strings.TrimSpace(warning)
-		if warning == "" {
-			continue
-		}
-		if !strings.HasPrefix(warning, "Warning:") {
-			warning = "Warning: " + warning
-		}
-		h.addStatus(warning)
+		h.addWarning(warning)
 	}
 }
 
@@ -1210,10 +1198,9 @@ func (h *CLIInteractiveTUIHost) buildUI() {
 	h.inProcessMounts = map[string]inProcessMountedComponent{}
 	h.pendingTools = map[string]*ToolExecutionComponent{}
 	h.compactionQueue = nil
-	h.editor = gitui.NewEditor(gitui.EditorTheme{Border: func(text string) string { return text }, SelectList: gitui.SelectListTheme{}}, gitui.EditorOptions{
+	h.editor = gitui.NewEditor(tuiThemeEditor(), gitui.EditorOptions{
 		PaddingX:               editorPaddingX,
 		AutocompleteMaxVisible: autocompleteMaxVisible,
-		Borderless:             true,
 	})
 	h.reloadKeybindings()
 	h.startupHeader = newCLIStartupHeaderComponent(firstNonEmptyString(h.version, DefaultCodingAgentVersion), h.toolOutputExpanded, h.effectiveKeybindings())
@@ -1655,11 +1642,6 @@ func (h *CLIInteractiveTUIHost) toggleToolOutputExpansion() {
 	}
 	h.toolOutputExpanded = !h.toolOutputExpanded
 	h.applyToolOutputExpansion()
-	if h.toolOutputExpanded {
-		h.addStatus("Tool output expanded")
-	} else {
-		h.addStatus("Tool output collapsed")
-	}
 }
 
 func (h *CLIInteractiveTUIHost) applyToolOutputExpansion() {
@@ -2354,31 +2336,26 @@ type interactiveSlashCommand struct {
 
 func builtinInteractiveSlashCommands() []interactiveSlashCommand {
 	return []interactiveSlashCommand{
-		{Name: "settings", Description: "Open settings"},
-		{Name: "resources", Description: "Enable or disable resources"},
-		{Name: "theme", Description: "Select interface theme", ArgumentHint: "<name>"},
-		{Name: "thinking", Description: "Set or cycle thinking level", ArgumentHint: "<level>"},
-		{Name: "model", Description: "Select or switch the active model", ArgumentHint: "<provider/model>"},
-		{Name: "models", Description: "List models or save a default model", ArgumentHint: "<list|provider/model>"},
-		{Name: "scoped-models", Description: "Choose models for model cycling"},
-		{Name: "queue", Description: "Set steering and follow-up queue mode", ArgumentHint: "<one-at-a-time|all>"},
-		{Name: "session", Description: "Show session information"},
-		{Name: "hotkeys", Description: "Show keyboard shortcuts"},
-		{Name: "changelog", Description: "Show changelog entries"},
-		{Name: "export", Description: "Export the session as HTML", ArgumentHint: "<path>"},
-		{Name: "share", Description: "Create a shareable session export"},
-		{Name: "import", Description: "Import and resume a JSONL session", ArgumentHint: "<path>"},
-		{Name: "resume", Description: "Resume a saved session", ArgumentHint: "<session>"},
-		{Name: "fork", Description: "Fork from a previous user message", ArgumentHint: "<index|entry-id>"},
-		{Name: "tree", Description: "Navigate the session tree"},
+		{Name: "settings", Description: "Open settings menu"},
+		{Name: "model", Description: "Select model (opens selector UI)"},
+		{Name: "scoped-models", Description: "Enable/disable models for Ctrl+P cycling"},
+		{Name: "export", Description: "Export session (HTML default, or specify path: .html/.jsonl)"},
+		{Name: "import", Description: "Import and resume a session from a JSONL file"},
+		{Name: "share", Description: "Share session as a secret GitHub gist"},
+		{Name: "copy", Description: "Copy last agent message to clipboard"},
 		{Name: "name", Description: "Set the session display name", ArgumentHint: "<name>"},
+		{Name: "session", Description: "Show session info and stats"},
+		{Name: "changelog", Description: "Show changelog entries"},
+		{Name: "hotkeys", Description: "Show all keyboard shortcuts"},
+		{Name: "fork", Description: "Create a new fork from a previous user message", ArgumentHint: "<index|entry-id>"},
 		{Name: "new", Description: "Start a new session"},
-		{Name: "compact", Description: "Compact conversation context"},
-		{Name: "copy", Description: "Copy the last assistant message"},
-		{Name: "clone", Description: "Clone the current session"},
-		{Name: "login", Description: "Show provider credential setup guidance", ArgumentHint: "<provider>"},
-		{Name: "logout", Description: "Remove a stored provider credential", ArgumentHint: "<provider>"},
-		{Name: "reload", Description: "Reload resources"},
+		{Name: "clone", Description: "Duplicate the current session at the current position"},
+		{Name: "tree", Description: "Navigate session tree (switch branches)"},
+		{Name: "login", Description: "Configure provider authentication", ArgumentHint: "<provider>"},
+		{Name: "logout", Description: "Remove provider authentication", ArgumentHint: "<provider>"},
+		{Name: "compact", Description: "Manually compact the session context"},
+		{Name: "resume", Description: "Resume a different session", ArgumentHint: "<session>"},
+		{Name: "reload", Description: "Reload keybindings, extensions, skills, prompts, and themes"},
 		{Name: "quit", Description: "Quit Gi"},
 	}
 }
@@ -3554,12 +3531,12 @@ func (h *CLIInteractiveTUIHost) addStatus(text string) *gitui.Text {
 	if statusTextCoalescible(text) {
 		children := h.chat.Children()
 		if len(children) > 0 && h.lastStatusText != nil && children[len(children)-1] == h.lastStatusText {
-			h.lastStatusText.SetText(text)
+			h.lastStatusText.SetText(tuiThemeStatusText(text))
 			h.requestRender(false)
 			return h.lastStatusText
 		}
 	}
-	status := gitui.NewText(text, 1, 0)
+	status := gitui.NewText(tuiThemeStatusText(text), 1, 0)
 	h.chat.AddChild(status)
 	if statusTextCoalescible(text) {
 		h.lastStatusText = status
@@ -3568,6 +3545,36 @@ func (h *CLIInteractiveTUIHost) addStatus(text string) *gitui.Text {
 	}
 	h.requestRender(false)
 	return status
+}
+
+func (h *CLIInteractiveTUIHost) addWarning(text string) *gitui.Text {
+	if h == nil || h.chat == nil {
+		return nil
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	if !strings.HasPrefix(text, "Warning:") {
+		text = "Warning: " + text
+	}
+	h.chat.AddChild(gitui.NewSpacer(1))
+	warning := gitui.NewText(tuiThemeWarning(text), 1, 0)
+	h.chat.AddChild(warning)
+	h.lastStatusText = nil
+	h.requestRender(false)
+	return warning
+}
+
+func tuiThemeStatusText(text string) string {
+	switch {
+	case strings.HasPrefix(text, "Error:"), strings.HasPrefix(text, "Failed "):
+		return tuiThemeError(text)
+	case strings.HasPrefix(text, "Warning:"), strings.HasPrefix(text, "models.json error:"):
+		return tuiThemeWarning(text)
+	default:
+		return tuiThemeDim(text)
+	}
 }
 
 func statusTextCoalescible(text string) bool {
@@ -4065,14 +4072,12 @@ func (h *CLIInteractiveTUIHost) handleSettingsSelectDialog(host *RPCSessionHost,
 	if h.ui == nil {
 		return errors.New("interactive TUI is not ready")
 	}
-	var changed atomic.Bool
 	resultCh := make(chan struct{}, 1)
 	list := gitui.NewSettingsList(settingsListItems(host, state, settings, h.availableThemeNames(settings.GetTheme()), settingsListItemsOptions{
 		OnThemePreview: h.previewTUITheme,
-	}), 10, gitui.SettingsListTheme{}, gitui.SettingsListOptions{
+	}), 10, tuiThemeSettingsList(), gitui.SettingsListOptions{
 		EnableSearch: true,
 		OnChange: func(id, newValue string) {
-			changed.Store(true)
 			h.applySettingsListChange(host, settings, id, newValue)
 		},
 		OnCancel: func() {
@@ -4082,24 +4087,69 @@ func (h *CLIInteractiveTUIHost) handleSettingsSelectDialog(host *RPCSessionHost,
 			}
 		},
 	})
-	component := cliSettingsListDialog{title: "Settings", list: list}
-	width := gitui.Cells(72)
-	handle := h.ui.ShowOverlay(component, gitui.OverlayOptions{Width: &width, MinWidth: 40, Anchor: gitui.OverlayCenter})
-	h.requestRender(false)
+	restore := h.showEditorReplacement(cliSettingsListComponent{list: list}, list)
 	select {
 	case <-resultCh:
-		handle.Hide()
+		restore()
 		h.clearTUIThemePreview()
-		if changed.Load() {
-			h.addStatus("Settings updated")
-		} else {
-			h.addStatus("Settings cancelled")
-		}
 		return nil
 	case <-h.done:
-		handle.Hide()
+		restore()
 		h.clearTUIThemePreview()
 		return nil
+	}
+}
+
+func (h *CLIInteractiveTUIHost) showEditorReplacement(component gitui.Component, focus gitui.Component) func() {
+	if h == nil || h.editorContainer == nil || h.ui == nil || component == nil {
+		return func() {}
+	}
+	previousChildren := h.editorContainer.Children()
+	previousFocus := h.ui.FocusedComponent()
+	h.editorContainer.SetChildren([]gitui.Component{component})
+	if focus != nil {
+		h.ui.SetFocus(focus)
+	} else {
+		h.ui.SetFocus(component)
+	}
+	h.requestRender(false)
+	return func() {
+		if len(previousChildren) == 0 && h.editor != nil {
+			previousChildren = []gitui.Component{h.editor}
+		}
+		h.editorContainer.SetChildren(previousChildren)
+		if previousFocus != nil {
+			h.ui.SetFocus(previousFocus)
+		} else if h.editor != nil {
+			h.ui.SetFocus(h.editor)
+		}
+		h.requestRender(false)
+	}
+}
+
+type cliSettingsListComponent struct {
+	list *gitui.SettingsList
+}
+
+func (c cliSettingsListComponent) Invalidate() {
+	if c.list != nil {
+		c.list.Invalidate()
+	}
+}
+
+func (c cliSettingsListComponent) Render(width int) []string {
+	width = max(1, width)
+	lines := []string{strings.Repeat("─", width)}
+	if c.list != nil {
+		lines = append(lines, c.list.Render(width)...)
+	}
+	lines = append(lines, strings.Repeat("─", width))
+	return lines
+}
+
+func (c cliSettingsListComponent) HandleInput(data string) {
+	if c.list != nil {
+		c.list.HandleInput(data)
 	}
 }
 
@@ -4138,6 +4188,53 @@ type settingsListItemsOptions struct {
 	OnThemePreview func(string)
 }
 
+type httpIdleTimeoutChoice struct {
+	Label     string
+	TimeoutMS int
+}
+
+var httpIdleTimeoutChoices = []httpIdleTimeoutChoice{
+	{Label: "30 sec", TimeoutMS: 30_000},
+	{Label: "1 min", TimeoutMS: 60_000},
+	{Label: "2 min", TimeoutMS: 120_000},
+	{Label: "5 min", TimeoutMS: 300_000},
+	{Label: "disabled", TimeoutMS: 0},
+}
+
+func formatHTTPIdleTimeoutMS(timeoutMS int) string {
+	for _, choice := range httpIdleTimeoutChoices {
+		if choice.TimeoutMS == timeoutMS {
+			return choice.Label
+		}
+	}
+	return strconv.FormatFloat(float64(timeoutMS)/1000, 'f', -1, 64) + " sec"
+}
+
+func httpIdleTimeoutLabels() []string {
+	labels := make([]string, 0, len(httpIdleTimeoutChoices))
+	for _, choice := range httpIdleTimeoutChoices {
+		labels = append(labels, choice.Label)
+	}
+	return labels
+}
+
+func httpIdleTimeoutMSForLabel(label string) (int, bool) {
+	for _, choice := range httpIdleTimeoutChoices {
+		if choice.Label == label {
+			return choice.TimeoutMS, true
+		}
+	}
+	return 0, false
+}
+
+func settingsFollowUpDescription() string {
+	key := formatHotkeyKeys(keybindingValueKeys(DefaultProtocolKeybindings()["app.message.followUp"]), true)
+	if key == "" {
+		key = "Option+Enter"
+	}
+	return key + " queues follow-up messages until agent stops. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once."
+}
+
 func settingsListItems(host *RPCSessionHost, state RPCSessionState, settings *SettingsManager, themes []string, options ...settingsListItemsOptions) []gitui.SettingItem {
 	thinkingLevels := []string{string(ThinkingOff)}
 	if host != nil && host.Session != nil && host.Session.Agent != nil {
@@ -4161,26 +4258,27 @@ func settingsListItems(host *RPCSessionHost, state RPCSessionState, settings *Se
 	}
 	items := []gitui.SettingItem{
 		{ID: "autocompact", Label: "Auto-compact", Description: "Automatically compact context when it gets too large", CurrentValue: fmt.Sprintf("%t", state.AutoCompactionEnabled), Values: []string{"true", "false"}},
-		{ID: "auto-resize-images", Label: "Image auto resize", Description: "Resize image inputs before sending them to a model", CurrentValue: fmt.Sprintf("%t", settings.GetImageAutoResize()), Values: []string{"true", "false"}},
-		{ID: "block-images", Label: "Block images", Description: "Prevent image inputs from being sent to models", CurrentValue: fmt.Sprintf("%t", settings.GetBlockImages()), Values: []string{"false", "true"}},
+		{ID: "auto-resize-images", Label: "Auto-resize images", Description: "Resize large images to 2000x2000 max for better model compatibility", CurrentValue: fmt.Sprintf("%t", settings.GetImageAutoResize()), Values: []string{"true", "false"}},
+		{ID: "block-images", Label: "Block images", Description: "Prevent images from being sent to LLM providers", CurrentValue: fmt.Sprintf("%t", settings.GetBlockImages()), Values: []string{"false", "true"}},
 		{ID: "skill-commands", Label: "Skill commands", Description: "Register skills as /skill:name commands", CurrentValue: fmt.Sprintf("%t", settings.GetEnableSkillCommands()), Values: []string{"true", "false"}},
-		{ID: "show-hardware-cursor", Label: "Show hardware cursor", Description: "Show the terminal cursor for IME support", CurrentValue: fmt.Sprintf("%t", settings.GetShowHardwareCursor()), Values: []string{"true", "false"}},
-		{ID: "editor-padding", Label: "Editor padding", Description: "Horizontal padding for input editor", CurrentValue: fmt.Sprintf("%d", settings.GetEditorPaddingX()), Values: []string{"0", "1", "2", "3"}},
-		{ID: "autocomplete-max-visible", Label: "Autocomplete max items", Description: "Max visible items in autocomplete dropdown", CurrentValue: fmt.Sprintf("%d", settings.GetAutocompleteMaxVisible()), Values: []string{"3", "5", "7", "10", "15", "20"}},
-		{ID: "clear-on-shrink", Label: "Clear on shrink", Description: "Clear empty rows when content shrinks", CurrentValue: fmt.Sprintf("%t", settings.GetClearOnShrink()), Values: []string{"true", "false"}},
-		{ID: "terminal-progress", Label: "Terminal progress", Description: "Show OSC 9;4 progress indicators", CurrentValue: fmt.Sprintf("%t", settings.GetShowTerminalProgress()), Values: []string{"true", "false"}},
-		{ID: "thinking", Label: "Thinking level", Description: "Reasoning depth for thinking-capable models", CurrentValue: state.ThinkingLevel, Submenu: settingsSelectSubmenu("Thinking Level", "Select reasoning depth for thinking-capable models", settingsThinkingOptions(thinkingLevels, state.ThinkingLevel))},
-		{ID: "theme", Label: "Theme", Description: "Color theme for the interface", CurrentValue: settings.GetTheme(), Submenu: themeSubmenu},
-		{ID: "steering-mode", Label: "Steering mode", Description: "How Enter messages are queued while streaming", CurrentValue: state.SteeringMode, Values: []string{"one-at-a-time", "all"}},
-		{ID: "follow-up-mode", Label: "Follow-up mode", Description: "How follow-up messages are delivered after a turn", CurrentValue: state.FollowUpMode, Values: []string{"one-at-a-time", "all"}},
-		{ID: "transport", Label: "Transport", Description: "Preferred provider transport", CurrentValue: settings.GetTransport(), Values: []string{"sse", "websocket", "websocket-cached", "auto"}},
+		{ID: "show-hardware-cursor", Label: "Show hardware cursor", Description: "Show the terminal cursor while still positioning it for IME support", CurrentValue: fmt.Sprintf("%t", settings.GetShowHardwareCursor()), Values: []string{"true", "false"}},
+		{ID: "editor-padding", Label: "Editor padding", Description: "Horizontal padding for input editor (0-3)", CurrentValue: fmt.Sprintf("%d", settings.GetEditorPaddingX()), Values: []string{"0", "1", "2", "3"}},
+		{ID: "autocomplete-max-visible", Label: "Autocomplete max items", Description: "Max visible items in autocomplete dropdown (3-20)", CurrentValue: fmt.Sprintf("%d", settings.GetAutocompleteMaxVisible()), Values: []string{"3", "5", "7", "10", "15", "20"}},
+		{ID: "clear-on-shrink", Label: "Clear on shrink", Description: "Clear empty rows when content shrinks (may cause flicker)", CurrentValue: fmt.Sprintf("%t", settings.GetClearOnShrink()), Values: []string{"true", "false"}},
+		{ID: "terminal-progress", Label: "Terminal progress", Description: "Show OSC 9;4 progress indicators in the terminal tab bar", CurrentValue: fmt.Sprintf("%t", settings.GetShowTerminalProgress()), Values: []string{"true", "false"}},
+		{ID: "steering-mode", Label: "Steering mode", Description: "Enter while streaming queues steering messages. 'one-at-a-time': deliver one, wait for response. 'all': deliver all at once.", CurrentValue: state.SteeringMode, Values: []string{"one-at-a-time", "all"}},
+		{ID: "follow-up-mode", Label: "Follow-up mode", Description: settingsFollowUpDescription(), CurrentValue: state.FollowUpMode, Values: []string{"one-at-a-time", "all"}},
+		{ID: "transport", Label: "Transport", Description: "Preferred transport for providers that support multiple transports", CurrentValue: settings.GetTransport(), Values: []string{"sse", "websocket", "websocket-cached", "auto"}},
+		{ID: "http-idle-timeout", Label: "HTTP idle timeout", Description: "Maximum idle gap while waiting for HTTP headers or body chunks. Disable for local models that pause longer than five minutes.", CurrentValue: formatHTTPIdleTimeoutMS(settings.GetHTTPIdleTimeoutMS()), Values: httpIdleTimeoutLabels()},
 		{ID: "hide-thinking", Label: "Hide thinking", Description: "Hide thinking blocks in assistant responses", CurrentValue: fmt.Sprintf("%t", settings.GetHideThinkingBlock()), Values: []string{"true", "false"}},
 		{ID: "collapse-changelog", Label: "Collapse changelog", Description: "Show condensed changelog after updates", CurrentValue: fmt.Sprintf("%t", settings.GetCollapseChangelog()), Values: []string{"true", "false"}},
 		{ID: "quiet-startup", Label: "Quiet startup", Description: "Disable verbose printing at startup", CurrentValue: fmt.Sprintf("%t", settings.GetQuietStartup()), Values: []string{"true", "false"}},
-		{ID: "install-telemetry", Label: "Install telemetry", Description: "Anonymous version/update ping after changelog-detected updates", CurrentValue: fmt.Sprintf("%t", settings.GetEnableInstallTelemetry()), Values: []string{"true", "false"}},
-		{ID: "double-escape-action", Label: "Double-escape action", Description: "Action when pressing Escape twice with an empty editor", CurrentValue: settings.GetDoubleEscapeAction(), Values: []string{"tree", "fork", "none"}},
+		{ID: "install-telemetry", Label: "Install telemetry", Description: "Send an anonymous version/update ping after changelog-detected updates", CurrentValue: fmt.Sprintf("%t", settings.GetEnableInstallTelemetry()), Values: []string{"true", "false"}},
+		{ID: "double-escape-action", Label: "Double-escape action", Description: "Action when pressing Escape twice with empty editor", CurrentValue: settings.GetDoubleEscapeAction(), Values: []string{"tree", "fork", "none"}},
 		{ID: "tree-filter-mode", Label: "Tree filter mode", Description: "Default filter when opening /tree", CurrentValue: settings.GetTreeFilterMode(), Values: []string{"default", "no-tools", "user-only", "labeled-only", "all"}},
 		{ID: "warnings", Label: "Warnings", Description: "Enable or disable individual warnings", CurrentValue: "configure", Submenu: settingsWarningsSubmenu(settings)},
+		{ID: "thinking", Label: "Thinking level", Description: "Reasoning depth for thinking-capable models", CurrentValue: state.ThinkingLevel, Submenu: settingsSelectSubmenu("Thinking Level", "Select reasoning depth for thinking-capable models", settingsThinkingOptions(thinkingLevels, state.ThinkingLevel))},
+		{ID: "theme", Label: "Theme", Description: "Color theme for the interface", CurrentValue: settings.GetTheme(), Submenu: themeSubmenu},
 	}
 	if gitui.GetCapabilities().Images {
 		items = insertSettingItems(items, 1,
@@ -4268,7 +4366,7 @@ func settingsWarningsSubmenu(settings *SettingsManager) func(currentValue string
 				Values:       []string{"true", "false"},
 			},
 		}
-		return gitui.NewSettingsList(items, min(len(items), 10), gitui.SettingsListTheme{}, gitui.SettingsListOptions{
+		return gitui.NewSettingsList(items, min(len(items), 10), tuiThemeSettingsList(), gitui.SettingsListOptions{
 			OnChange: func(id, newValue string) {
 				if id == "warning-anthropic-extra-usage" {
 					settings.SetWarningAnthropicExtraUsage(newValue == "true")
@@ -4366,6 +4464,10 @@ func (h *CLIInteractiveTUIHost) applySettingsListChange(host *RPCSessionHost, se
 		}
 	case "transport":
 		settings.SetTransport(newValue)
+	case "http-idle-timeout":
+		if timeoutMS, ok := httpIdleTimeoutMSForLabel(newValue); ok {
+			settings.SetHTTPIdleTimeoutMS(timeoutMS)
+		}
 	case "hide-thinking":
 		settings.SetHideThinkingBlock(newValue == "true")
 		h.rerenderSessionMessages()
@@ -4431,7 +4533,7 @@ func (h *CLIInteractiveTUIHost) handlePackageResourcesSlashCommand() error {
 	var changed atomic.Bool
 	var hadError atomic.Bool
 	resultCh := make(chan struct{}, 1)
-	list := gitui.NewSettingsList(settingItems, 14, gitui.SettingsListTheme{}, gitui.SettingsListOptions{
+	list := gitui.NewSettingsList(settingItems, 14, tuiThemeSettingsList(), gitui.SettingsListOptions{
 		EnableSearch: true,
 		OnChange: func(id, newValue string) {
 			toggle, ok := toggles[id]
@@ -4987,13 +5089,12 @@ func (h *CLIInteractiveTUIHost) handleScopedModelsSlashCommand() error {
 	if h.ui == nil {
 		return errors.New("interactive TUI is not ready")
 	}
-	var handle gitui.OverlayHandle
+	var restore func()
 	closeSelector := func() {
-		if handle != nil {
-			handle.Hide()
-		}
-		if h.editor != nil {
-			h.ui.SetFocus(h.editor)
+		if restore != nil {
+			restore()
+			restore = nil
+			return
 		}
 		h.requestRender(false)
 	}
@@ -5015,14 +5116,7 @@ func (h *CLIInteractiveTUIHost) handleScopedModelsSlashCommand() error {
 		h.requestRender(false)
 	}
 	selector.callbacks.OnCancel = closeSelector
-	width := gitui.Cells(74)
-	handle = h.ui.ShowOverlay(selector, gitui.OverlayOptions{
-		Width:    &width,
-		MinWidth: 36,
-		Anchor:   gitui.OverlayCenter,
-	})
-	h.ui.SetFocus(selector)
-	h.requestRender(false)
+	restore = h.showEditorReplacement(selector, selector)
 	return nil
 }
 
@@ -5101,7 +5195,7 @@ func (r cliModelSliceRegistry) Find(provider, modelID string) (llm.Model, bool) 
 
 func (h *CLIInteractiveTUIHost) handleModelSelectDialog(host *RPCSessionHost, search string) error {
 	if h.ui != nil {
-		return h.showModelSelectorOverlay(host, search)
+		return h.showModelSelector(host, search)
 	}
 	options, defaultValue := modelSelectDialogOptions(host, search)
 	if len(options) == 0 {
@@ -5133,7 +5227,7 @@ func (h *CLIInteractiveTUIHost) handleModelSelectDialog(host *RPCSessionHost, se
 	return h.applyModelSelection(host, provider, modelID)
 }
 
-func (h *CLIInteractiveTUIHost) showModelSelectorOverlay(host *RPCSessionHost, search string) error {
+func (h *CLIInteractiveTUIHost) showModelSelector(host *RPCSessionHost, search string) error {
 	if host == nil || host.Session == nil || host.Session.Agent == nil {
 		return errors.New("model selector requires a session host")
 	}
@@ -5142,13 +5236,12 @@ func (h *CLIInteractiveTUIHost) showModelSelectorOverlay(host *RPCSessionHost, s
 		h.addStatus("No models available")
 		return nil
 	}
-	var handle gitui.OverlayHandle
+	var restore func()
 	closeSelector := func() {
-		if handle != nil {
-			handle.Hide()
-		}
-		if h.editor != nil {
-			h.ui.SetFocus(h.editor)
+		if restore != nil {
+			restore()
+			restore = nil
+			return
 		}
 		h.requestRender(false)
 	}
@@ -5167,16 +5260,8 @@ func (h *CLIInteractiveTUIHost) showModelSelectorOverlay(host *RPCSessionHost, s
 	}
 	selector.callbacks.OnCancel = func() {
 		closeSelector()
-		h.addStatus("Model selection cancelled")
 	}
-	width := gitui.Cells(74)
-	handle = h.ui.ShowOverlay(selector, gitui.OverlayOptions{
-		Width:    &width,
-		MinWidth: 36,
-		Anchor:   gitui.OverlayCenter,
-	})
-	h.ui.SetFocus(selector)
-	h.requestRender(false)
+	restore = h.showEditorReplacement(selector, selector)
 	return nil
 }
 
@@ -5323,10 +5408,6 @@ func (h *CLIInteractiveTUIHost) handleSessionSlashCommand() error {
 
 func renderInteractiveSessionInfo(state RPCSessionState, stats RPCSessionStats) string {
 	lines := []string{"**Session Info**", ""}
-	model := ""
-	if state.Model != nil {
-		model = state.Model.Provider + "/" + state.Model.ID
-	}
 	if state.SessionName != "" {
 		lines = append(lines, "Name: "+state.SessionName)
 	}
@@ -5335,13 +5416,6 @@ func renderInteractiveSessionInfo(state RPCSessionState, stats RPCSessionStats) 
 		"File: "+sessionFile,
 		"ID: "+firstNonEmptyString(stats.SessionID, state.SessionID),
 	)
-	if model != "" {
-		lines = append(lines,
-			"Model: "+model,
-			"Thinking: "+state.ThinkingLevel,
-		)
-	}
-	lines = append(lines, "Queue: "+sessionInfoQueueLabel(state))
 	lines = append(lines,
 		"",
 		"**Messages**",
@@ -5364,33 +5438,10 @@ func renderInteractiveSessionInfo(state RPCSessionState, stats RPCSessionStats) 
 		lines = append(lines, "Cache Write: "+formatSessionInfoInt(stats.Tokens.CacheWrite))
 	}
 	lines = append(lines, "Total: "+formatSessionInfoInt(stats.Tokens.Total))
-	if usage := stats.ContextUsage; usage != nil {
-		contextLine := "Context: "
-		if usage.Tokens != nil {
-			contextLine += formatSessionInfoInt(*usage.Tokens)
-		} else {
-			contextLine += "unknown"
-		}
-		if usage.ContextWindow > 0 {
-			contextLine += " / " + formatSessionInfoInt(usage.ContextWindow)
-		}
-		if usage.Percent != nil {
-			contextLine += fmt.Sprintf(" (%.1f%%)", *usage.Percent)
-		}
-		lines = append(lines, contextLine)
-	}
 	if stats.Cost > 0 {
 		lines = append(lines, "", "**Cost**", fmt.Sprintf("Total: %.4f", stats.Cost))
 	}
 	return strings.Join(lines, "\n")
-}
-
-func sessionInfoQueueLabel(state RPCSessionState) string {
-	if state.SteeringMode == state.FollowUpMode && strings.TrimSpace(state.SteeringMode) != "" {
-		return state.SteeringMode
-	}
-	return "steering=" + firstNonEmptyString(state.SteeringMode, "one-at-a-time") +
-		", follow-up=" + firstNonEmptyString(state.FollowUpMode, "one-at-a-time")
 }
 
 func formatSessionInfoInt(value int) string {
@@ -5506,11 +5557,12 @@ func (h *CLIInteractiveTUIHost) selectAuthProvider(mode string, registry *ModelR
 	})
 	resultCh := make(chan TUIDialogResult, 1)
 	var closeOnce sync.Once
-	var handle gitui.OverlayHandle
+	var restore func()
 	finish := func(result TUIDialogResult) {
 		closeOnce.Do(func() {
-			if handle != nil {
-				handle.Hide()
+			if restore != nil {
+				restore()
+				restore = nil
 			}
 			resultCh <- result
 		})
@@ -5521,13 +5573,7 @@ func (h *CLIInteractiveTUIHost) selectAuthProvider(mode string, registry *ModelR
 	selector.OnCancel = func() {
 		finish(TUIDialogResult{Action: "cancelled"})
 	}
-	width := gitui.Cells(78)
-	handle = h.ui.ShowOverlay(selector, gitui.OverlayOptions{
-		Width:    &width,
-		MinWidth: 48,
-		Anchor:   gitui.OverlayCenter,
-	})
-	h.requestRender(false)
+	restore = h.showEditorReplacement(selector, selector)
 	select {
 	case result := <-resultCh:
 		if result.Action != "selected" {
@@ -5535,8 +5581,8 @@ func (h *CLIInteractiveTUIHost) selectAuthProvider(mode string, registry *ModelR
 		}
 		return dialogStringValue(result.Value), false, nil
 	case <-h.done:
-		if handle != nil {
-			handle.Hide()
+		if restore != nil {
+			restore()
 		}
 		return "", true, nil
 	}
@@ -5603,7 +5649,7 @@ func (h *CLIInteractiveTUIHost) hotkeysMarkdown() string {
 		"| " + hotkeyRef(appKeys("app.clipboard.pasteImage")) + " | Paste image from clipboard |",
 		"| `/` | Slash commands |",
 		"| `!` | Run bash command |",
-		"| `!!` | Run bash command excluded from context |",
+		"| `!!` | Run bash command (excluded from context) |",
 	}
 	if runtime := h.protocolRuntime(); runtime != nil {
 		shortcuts := runtime.Shortcuts(keybindings).Shortcuts
@@ -5999,14 +6045,12 @@ func (h *CLIInteractiveTUIHost) handleResumeSessionSelector() error {
 
 	resultCh := make(chan TUIDialogResult, 1)
 	var closeOnce sync.Once
-	var handle gitui.OverlayHandle
+	var restore func()
 	finish := func(result TUIDialogResult) {
 		closeOnce.Do(func() {
-			if handle != nil {
-				handle.Hide()
-			}
-			if h.editor != nil {
-				h.ui.SetFocus(h.editor)
+			if restore != nil {
+				restore()
+				restore = nil
 			}
 			resultCh <- result
 		})
@@ -6054,10 +6098,7 @@ func (h *CLIInteractiveTUIHost) handleResumeSessionSelector() error {
 			},
 		},
 	)
-	width := gitui.Cells(88)
-	handle = h.ui.ShowOverlay(selector, gitui.OverlayOptions{Width: &width, MinWidth: 42, Anchor: gitui.OverlayCenter})
-	h.ui.SetFocus(selector)
-	h.requestRender(false)
+	restore = h.showEditorReplacement(selector, selector)
 	select {
 	case result := <-resultCh:
 		if result.Action != "selected" {
@@ -6071,8 +6112,8 @@ func (h *CLIInteractiveTUIHost) handleResumeSessionSelector() error {
 		}
 		return h.resumeSessionPath(path)
 	case <-h.done:
-		if handle != nil {
-			handle.Hide()
+		if restore != nil {
+			restore()
 		}
 		h.addStatus("Resume cancelled")
 		return nil
@@ -6296,11 +6337,12 @@ func (h *CLIInteractiveTUIHost) selectForkUserMessage(messages []AgentSessionFor
 	selector := NewUserMessageSelectorComponent(messages, "")
 	resultCh := make(chan TUIDialogResult, 1)
 	var closeOnce sync.Once
-	var handle gitui.OverlayHandle
+	var restore func()
 	finish := func(result TUIDialogResult) {
 		closeOnce.Do(func() {
-			if handle != nil {
-				handle.Hide()
+			if restore != nil {
+				restore()
+				restore = nil
 			}
 			resultCh <- result
 		})
@@ -6311,13 +6353,7 @@ func (h *CLIInteractiveTUIHost) selectForkUserMessage(messages []AgentSessionFor
 	selector.OnCancel = func() {
 		finish(TUIDialogResult{Action: "cancelled"})
 	}
-	width := gitui.Cells(72)
-	handle = h.ui.ShowOverlay(selector, gitui.OverlayOptions{
-		Width:    &width,
-		MinWidth: 42,
-		Anchor:   gitui.OverlayCenter,
-	})
-	h.requestRender(false)
+	restore = h.showEditorReplacement(selector, selector)
 	select {
 	case result := <-resultCh:
 		if result.Action != "selected" {
@@ -6325,8 +6361,8 @@ func (h *CLIInteractiveTUIHost) selectForkUserMessage(messages []AgentSessionFor
 		}
 		return dialogStringValue(result.Value), false, nil
 	case <-h.done:
-		if handle != nil {
-			handle.Hide()
+		if restore != nil {
+			restore()
 		}
 		return "", true, nil
 	}
@@ -6491,11 +6527,12 @@ func (h *CLIInteractiveTUIHost) selectTreeEntry(session *AgentSession, initialSe
 	}
 	resultCh := make(chan TUIDialogResult, 1)
 	var closeOnce sync.Once
-	var handle gitui.OverlayHandle
+	var restore func()
 	finish := func(result TUIDialogResult) {
 		closeOnce.Do(func() {
-			if handle != nil {
-				handle.Hide()
+			if restore != nil {
+				restore()
+				restore = nil
 			}
 			resultCh <- result
 		})
@@ -6506,13 +6543,7 @@ func (h *CLIInteractiveTUIHost) selectTreeEntry(session *AgentSession, initialSe
 	selector.OnCancel = func() {
 		finish(TUIDialogResult{Action: "cancelled"})
 	}
-	width := gitui.Cells(84)
-	handle = h.ui.ShowOverlay(selector, gitui.OverlayOptions{
-		Width:    &width,
-		MinWidth: 48,
-		Anchor:   gitui.OverlayCenter,
-	})
-	h.requestRender(false)
+	restore = h.showEditorReplacement(selector, selector)
 	select {
 	case result := <-resultCh:
 		if result.Action != "selected" {
@@ -6520,8 +6551,8 @@ func (h *CLIInteractiveTUIHost) selectTreeEntry(session *AgentSession, initialSe
 		}
 		return dialogStringValue(result.Value), false, nil
 	case <-h.done:
-		if handle != nil {
-			handle.Hide()
+		if restore != nil {
+			restore()
 		}
 		return "", true, nil
 	}
@@ -6942,6 +6973,7 @@ func (h *CLIInteractiveTUIHost) newRPCSessionHost() (*RPCSessionHost, error) {
 	host.TUIToolExpansion = h
 	if registry := h.modelRegistry(); registry != nil {
 		host.ProviderAuthStatus = registry.GetProviderAuthStatus
+		host.AvailableModels = registry.GetAvailable()
 	}
 	if owner, ok := h.runtimeHost.(*agentSessionPrintModeHost); ok {
 		host.OnSessionReplaced(func(session *AgentSession) {

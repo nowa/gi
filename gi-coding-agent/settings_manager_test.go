@@ -280,6 +280,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 	settingsPath := filepath.Join(agentDir, "settings.json")
 	writeSettingsJSON(t, settingsPath, map[string]any{
 		"transport":                 "websocket",
+		"httpIdleTimeoutMs":         120000,
 		"enableSkillCommands":       false,
 		"hideThinkingBlock":         true,
 		"collapseChangelog":         true,
@@ -299,6 +300,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 
 	manager := NewSettingsManager(projectDir, agentDir)
 	if manager.GetTransport() != "websocket" ||
+		manager.GetHTTPIdleTimeoutMS() != 120000 ||
 		manager.GetEnableSkillCommands() ||
 		!manager.GetHideThinkingBlock() ||
 		!manager.GetCollapseChangelog() ||
@@ -321,6 +323,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 	}
 
 	manager.SetTransport("websocket-cached")
+	manager.SetHTTPIdleTimeoutMS(0)
 	manager.SetShowImages(true)
 	manager.SetImageWidthCells(120)
 	manager.SetClearOnShrink(false)
@@ -342,6 +345,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 	terminal, _ := saved["terminal"].(map[string]any)
 	warnings, _ := saved["warnings"].(map[string]any)
 	if saved["transport"] != "websocket-cached" ||
+		saved["httpIdleTimeoutMs"] != float64(0) ||
 		saved["enableSkillCommands"] != true ||
 		saved["hideThinkingBlock"] != false ||
 		saved["collapseChangelog"] != false ||
@@ -370,6 +374,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 func TestSettingsManagerPiInteractiveSettingsDefaultsAndValidation(t *testing.T) {
 	manager := NewInMemorySettingsManager(map[string]any{
 		"transport":              "invalid",
+		"httpIdleTimeoutMs":      -1,
 		"doubleEscapeAction":     "invalid",
 		"treeFilterMode":         "invalid",
 		"editorPaddingX":         -2,
@@ -378,6 +383,7 @@ func TestSettingsManagerPiInteractiveSettingsDefaultsAndValidation(t *testing.T)
 	})
 
 	if manager.GetTransport() != "auto" ||
+		manager.GetHTTPIdleTimeoutMS() != defaultHTTPIdleTimeoutMS ||
 		!manager.GetShowImages() ||
 		manager.GetImageWidthCells() != 60 ||
 		manager.GetClearOnShrink() ||
@@ -396,12 +402,14 @@ func TestSettingsManagerPiInteractiveSettingsDefaultsAndValidation(t *testing.T)
 	}
 
 	manager.SetTransport("invalid")
+	manager.SetHTTPIdleTimeoutMS(-1)
 	manager.SetDoubleEscapeAction("invalid")
 	manager.SetTreeFilterMode("invalid")
 	manager.SetEditorPaddingX(-1)
 	manager.SetAutocompleteMaxVisible(0)
 	manager.SetImageWidthCells(0)
 	if manager.GetTransport() != "auto" ||
+		manager.GetHTTPIdleTimeoutMS() != defaultHTTPIdleTimeoutMS ||
 		manager.GetDoubleEscapeAction() != "tree" ||
 		manager.GetTreeFilterMode() != "default" ||
 		manager.GetEditorPaddingX() != 0 ||

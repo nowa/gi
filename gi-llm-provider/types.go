@@ -173,6 +173,7 @@ type ModelCompat struct {
 	SupportsLongCacheRetention                *bool          `json:"supportsLongCacheRetention,omitempty"`
 	SupportsEagerToolInputStreaming           *bool          `json:"supportsEagerToolInputStreaming,omitempty"`
 	SupportsCacheControlOnTools               *bool          `json:"supportsCacheControlOnTools,omitempty"`
+	ForceAdaptiveThinking                     *bool          `json:"forceAdaptiveThinking,omitempty"`
 	SendSessionAffinityHeaders                *bool          `json:"sendSessionAffinityHeaders,omitempty"`
 	SendSessionIDHeader                       *bool          `json:"sendSessionIdHeader,omitempty"`
 	RequiresToolResultName                    *bool          `json:"requiresToolResultName,omitempty"`

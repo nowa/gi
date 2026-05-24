@@ -515,6 +515,9 @@ func applyOpenAICompletionsReasoning(payload *OpenAICompletionsPayload, model Mo
 		}
 		payload.Thinking = map[string]any{"type": state}
 	case "xai":
+		if level == "off" && mapped == "off" {
+			mapped = "none"
+		}
 		if level != "" && compat.SupportsReasoningEffort {
 			payload.ReasoningEffort = mapped
 		}

@@ -88,11 +88,47 @@ func TestPackageCommandPathsGiProtocolBasics(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("exit code = %d", code)
 		}
-		if !strings.Contains(stdout, "Usage:") || !strings.Contains(stdout, "gi install <source> [-l]") {
-			t.Fatalf("stdout = %q", stdout)
+		for _, expected := range []string{
+			"Usage:",
+			"gi install <source> [-l]",
+			"Install a package and add it to settings.",
+			"-l, --local    Install project-locally (.gi/settings.json)",
+			"gi install official:gi-tools-ui",
+			"gi install git:github.com/user/repo",
+			"gi install ./local/path",
+		} {
+			if !strings.Contains(stdout, expected) {
+				t.Fatalf("stdout = %q, want %q", stdout, expected)
+			}
+		}
+		if strings.Contains(stdout, "npm:") {
+			t.Fatalf("install help should not advertise npm sources:\n%s", stdout)
 		}
 		if stderr != "" {
 			t.Fatalf("stderr = %q, want empty", stderr)
+		}
+	})
+
+	t.Run("shows remove subcommand help", func(t *testing.T) {
+		stdout, stderr, code := runPackageCommandCLI(t, []string{"remove", "--help"}, t.TempDir(), t.TempDir())
+		if code != 0 || stderr != "" {
+			t.Fatalf("exit code = %d stderr=%q", code, stderr)
+		}
+		for _, expected := range []string{
+			"Usage:",
+			"gi remove <source> [-l]",
+			"Remove a package and its source from settings.",
+			"Alias: gi uninstall <source> [-l]",
+			"-l, --local    Remove from project settings (.gi/settings.json)",
+			"gi remove official:gi-tools-ui",
+			"gi uninstall official:gi-tools-ui",
+		} {
+			if !strings.Contains(stdout, expected) {
+				t.Fatalf("stdout = %q, want %q", stdout, expected)
+			}
+		}
+		if strings.Contains(stdout, "npm:") {
+			t.Fatalf("remove help should not advertise npm sources:\n%s", stdout)
 		}
 	})
 
@@ -192,6 +228,34 @@ func TestPackageCommandPathsGiProtocolBasics(t *testing.T) {
 		}
 		if !strings.Contains(stdout, "gi config") || !strings.Contains(stdout, "resource configuration") {
 			t.Fatalf("stdout = %q", stdout)
+		}
+	})
+
+	t.Run("shows list subcommand help", func(t *testing.T) {
+		stdout, stderr, code := runPackageCommandCLI(t, []string{"list", "--help"}, t.TempDir(), t.TempDir())
+		if code != 0 || stderr != "" {
+			t.Fatalf("list help code=%d stderr=%q", code, stderr)
+		}
+		if !strings.Contains(stdout, "gi list") || !strings.Contains(stdout, "List installed packages from user and project settings.") {
+			t.Fatalf("stdout = %q", stdout)
+		}
+	})
+
+	t.Run("shows update subcommand help", func(t *testing.T) {
+		stdout, stderr, code := runPackageCommandCLI(t, []string{"update", "--help"}, t.TempDir(), t.TempDir())
+		if code != 0 || stderr != "" {
+			t.Fatalf("update help code=%d stderr=%q", code, stderr)
+		}
+		for _, expected := range []string{
+			"gi update [source|self|gi] [--self] [--extensions] [--extension <source>] [--force]",
+			"Update gi and installed packages.",
+			"--self                  Update gi only",
+			"--extensions            Update installed packages only",
+			"gi update gi             Update gi only (self works as alias to gi)",
+		} {
+			if !strings.Contains(stdout, expected) {
+				t.Fatalf("stdout = %q, want %q", stdout, expected)
+			}
 		}
 	})
 

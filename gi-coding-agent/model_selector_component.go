@@ -122,18 +122,21 @@ func (c *ScopedModelsSelectorComponent) Render(width int) []string {
 	if allEnabled {
 		countText = "all enabled"
 	}
-	save := c.modelKeyText("app.models.save", "Ctrl+S")
+	save := c.modelKeyText("app.models.save", "ctrl+s")
 	lines := []string{
-		"Model Configuration",
-		"Session-only. " + save + " saves to settings.",
-		"Search: " + c.search,
+		tuiThemeBorder(strings.Repeat("─", width)),
+		"",
+		tuiThemeBoldAccent("Model Configuration"),
+		tuiThemeMuted("Session-only. " + save + " to save to settings."),
+		"",
+		selectorSearchInputLine(c.search, c.Focused()),
 		"",
 	}
 	if len(items) == 0 {
 		if strings.TrimSpace(c.search) == "" {
-			lines = append(lines, "  No models available")
+			lines = append(lines, tuiThemeMuted("  No models available"))
 		} else {
-			lines = append(lines, "  No matching models")
+			lines = append(lines, tuiThemeMuted("  No matching models"))
 		}
 	} else {
 		const maxVisible = 8
@@ -143,7 +146,7 @@ func (c *ScopedModelsSelectorComponent) Render(width int) []string {
 			item := items[index]
 			prefix := "  "
 			if index == c.selectedIndex {
-				prefix = "-> "
+				prefix = tuiThemeAccent("→ ")
 			}
 			status := ""
 			if !allEnabled {
@@ -152,11 +155,24 @@ func (c *ScopedModelsSelectorComponent) Render(width int) []string {
 					status = " [x]"
 				}
 			}
-			line := fmt.Sprintf("%s%s [%s]%s", prefix, item.model.ID, item.model.Provider, status)
+			modelID := item.model.ID
+			if index == c.selectedIndex {
+				modelID = tuiThemeAccent(modelID)
+			}
+			statusText := status
+			if status == " [x]" {
+				statusText = tuiThemeSuccess(status)
+			} else if status == " [ ]" {
+				statusText = tuiThemeDim(status)
+			}
+			line := prefix + modelID + tuiThemeMuted(" ["+item.model.Provider+"]") + statusText
 			lines = append(lines, truncateSelectorLine(line, width))
 		}
 		if start > 0 || end < len(items) {
-			lines = append(lines, fmt.Sprintf("  (%d/%d)", c.selectedIndex+1, len(items)))
+			lines = append(lines, tuiThemeMuted(fmt.Sprintf("  (%d/%d)", c.selectedIndex+1, len(items))))
+		}
+		if selected, ok := c.selectedItem(items); ok && strings.TrimSpace(selected.model.Name) != "" {
+			lines = append(lines, "", truncateSelectorLine(tuiThemeMuted("  Model Name: "+selected.model.Name), width))
 		}
 	}
 	lines = append(lines, "")
@@ -165,9 +181,30 @@ func (c *ScopedModelsSelectorComponent) Render(width int) []string {
 	if c.dirty {
 		status += " (unsaved)"
 	}
-	lines = append(lines, truncateSelectorLine(footer, width))
-	lines = append(lines, truncateSelectorLine(status, width))
+	lines = append(lines, scopedModelFooterLine(footer, status, width, c.dirty))
+	lines = append(lines, tuiThemeBorder(strings.Repeat("─", width)))
 	return lines
+}
+
+func scopedModelFooterLine(footer, status string, width int, dirty bool) string {
+	line := "  " + footer + " · " + status
+	if gitui.VisibleWidth(line) > width {
+		suffix := " · " + status
+		suffixWidth := gitui.VisibleWidth(suffix)
+		if suffixWidth >= width {
+			line = gitui.TruncateToWidth(line, width, "...")
+		} else {
+			line = gitui.TruncateToWidth("  "+footer, width-suffixWidth, "...") + suffix
+		}
+	}
+	if !dirty {
+		return tuiThemeDim(line)
+	}
+	prefix, suffix, ok := strings.Cut(line, " (unsaved)")
+	if !ok {
+		return tuiThemeDim(line)
+	}
+	return tuiThemeDim(prefix+" ") + tuiThemeWarning("(unsaved)"+suffix)
 }
 
 func (c *ScopedModelsSelectorComponent) footerHint() string {
@@ -175,15 +212,14 @@ func (c *ScopedModelsSelectorComponent) footerHint() string {
 	if c != nil && c.keybindings != nil {
 		keybindings = c.keybindings
 	}
-	confirm := formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.select.confirm"), true)
-	cancel := formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.select.cancel"), true)
-	all := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.models.enableAll"]), true), "A")
-	clear := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.models.clearAll"]), true), "C")
-	provider := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.models.toggleProvider"]), true), "P")
-	reorderUp := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.models.reorderUp"]), true), "Alt+Up")
-	reorderDown := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.models.reorderDown"]), true), "Alt+Down")
-	save := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.models.save"]), true), "Ctrl+S")
-	return confirm + " toggle  " + all + " all  " + clear + " clear  " + provider + " provider  " + reorderUp + "/" + reorderDown + " reorder  " + save + " save  " + cancel + " close"
+	confirm := formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.select.confirm"), false)
+	all := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.models.enableAll"]), false), "a")
+	clear := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.models.clearAll"]), false), "c")
+	provider := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.models.toggleProvider"]), false), "p")
+	reorderUp := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.models.reorderUp"]), false), "alt+up")
+	reorderDown := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.models.reorderDown"]), false), "alt+down")
+	save := firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings["app.models.save"]), false), "ctrl+s")
+	return confirm + " toggle · " + all + " all · " + clear + " clear · " + provider + " provider · " + reorderUp + "/" + reorderDown + " reorder · " + save + " save"
 }
 
 func (c *ScopedModelsSelectorComponent) modelKeyText(action, fallback string) string {
@@ -191,7 +227,7 @@ func (c *ScopedModelsSelectorComponent) modelKeyText(action, fallback string) st
 	if c != nil && c.keybindings != nil {
 		keybindings = c.keybindings
 	}
-	return firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings[action]), true), fallback)
+	return firstNonEmptyString(formatHotkeyKeys(keybindingValueKeys(keybindings[action]), false), fallback)
 }
 
 func (c *ScopedModelsSelectorComponent) Invalidate() {}
@@ -262,6 +298,13 @@ func (c *ScopedModelsSelectorComponent) items() []scopedModelSelectorItem {
 		})
 	}
 	return items
+}
+
+func (c *ScopedModelsSelectorComponent) selectedItem(items []scopedModelSelectorItem) (scopedModelSelectorItem, bool) {
+	if c == nil || len(items) == 0 || c.selectedIndex < 0 || c.selectedIndex >= len(items) {
+		return scopedModelSelectorItem{}, false
+	}
+	return items[c.selectedIndex], true
 }
 
 func (c *ScopedModelsSelectorComponent) moveSelection(delta int) {
@@ -521,10 +564,7 @@ func sortModelSelectorModels(models []llm.Model, current llm.Model) []llm.Model 
 		if leftCurrent != rightCurrent {
 			return leftCurrent
 		}
-		if result[i].Provider != result[j].Provider {
-			return result[i].Provider < result[j].Provider
-		}
-		return result[i].ID < result[j].ID
+		return result[i].Provider < result[j].Provider
 	})
 	return result
 }
@@ -570,15 +610,15 @@ func (c *ModelSelectorComponent) Render(width int) []string {
 	if c.selectedIndex >= len(items) && len(items) > 0 {
 		c.selectedIndex = len(items) - 1
 	}
-	lines := []string{"Select model"}
+	lines := []string{tuiThemeBorder(strings.Repeat("─", width)), ""}
 	if len(c.scopedModels) > 0 {
-		lines = append(lines, "Scope: "+c.scope, "Tab scope (all/scoped)")
+		lines = append(lines, c.scopeText(), c.tabScopeHint())
 	} else {
-		lines = append(lines, "Only showing models from configured providers. Use /login to add providers.")
+		lines = append(lines, tuiThemeWarning("Only showing models from configured providers. Use /login to add providers."))
 	}
-	lines = append(lines, "Search: "+c.search, "")
+	lines = append(lines, "", selectorSearchInputLine(c.search, c.Focused()), "")
 	if len(items) == 0 {
-		lines = append(lines, "  No matching models")
+		lines = append(lines, tuiThemeMuted("  No matching models"))
 	} else {
 		const maxVisible = 10
 		start := max(0, min(c.selectedIndex-(maxVisible/2), len(items)-maxVisible))
@@ -587,23 +627,44 @@ func (c *ModelSelectorComponent) Render(width int) []string {
 			item := items[index]
 			prefix := "  "
 			if index == c.selectedIndex {
-				prefix = "-> "
+				prefix = tuiThemeAccent("→ ")
 			}
-			line := fmt.Sprintf("%s%s [%s]", prefix, item.model.ID, item.model.Provider)
+			modelID := item.model.ID
+			if index == c.selectedIndex {
+				modelID = tuiThemeAccent(modelID)
+			}
+			line := prefix + modelID + " " + tuiThemeMuted("["+item.model.Provider+"]")
 			if sameModel(c.currentModel, item.model) {
-				line += " *"
+				line += tuiThemeSuccess(" ✓")
 			}
 			lines = append(lines, truncateSelectorLine(line, width))
 		}
 		if start > 0 || end < len(items) {
-			lines = append(lines, fmt.Sprintf("  (%d/%d)", c.selectedIndex+1, len(items)))
+			lines = append(lines, tuiThemeMuted(fmt.Sprintf("  (%d/%d)", c.selectedIndex+1, len(items))))
 		}
 		if selected, ok := c.selectedItem(items); ok && strings.TrimSpace(selected.model.Name) != "" {
-			lines = append(lines, "", truncateSelectorLine("  Model Name: "+selected.model.Name, width))
+			lines = append(lines, "", truncateSelectorLine(tuiThemeMuted("  Model Name: "+selected.model.Name), width))
 		}
 	}
-	lines = append(lines, "", c.footerHint())
+	lines = append(lines, "", tuiThemeBorder(strings.Repeat("─", width)))
 	return lines
+}
+
+func (c *ModelSelectorComponent) scopeText() string {
+	all := tuiThemeMuted("all")
+	scoped := tuiThemeMuted("scoped")
+	if c != nil && c.scope == "all" {
+		all = tuiThemeAccent("all")
+	}
+	if c != nil && c.scope == "scoped" {
+		scoped = tuiThemeAccent("scoped")
+	}
+	return tuiThemeMuted("Scope: ") + all + tuiThemeMuted(" | ") + scoped
+}
+
+func (c *ModelSelectorComponent) tabScopeHint() string {
+	tab := firstNonEmptyString(formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.input.tab"), true), "Tab")
+	return tuiThemeKeyHint(tab, "scope") + tuiThemeMuted(" (all/scoped)")
 }
 
 func (c *ModelSelectorComponent) Focused() bool {
@@ -645,7 +706,7 @@ func (c *ModelSelectorComponent) filteredItems() []modelSelectorItem {
 	if strings.TrimSpace(c.search) != "" {
 		items = gitui.FuzzyFilter(items, c.search, func(item modelSelectorItem) string {
 			model := item.model
-			return model.ID + " " + model.Provider + " " + model.Name + " " + scopedModelFullID(model)
+			return model.ID + " " + model.Provider + " " + scopedModelFullID(model) + " " + model.Provider + " " + model.ID
 		})
 	}
 	return items
@@ -689,17 +750,6 @@ func (c *ModelSelectorComponent) toggleScope() {
 	c.selectedIndex = 0
 }
 
-func (c *ModelSelectorComponent) footerHint() string {
-	confirm := firstNonEmptyString(formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.select.confirm"), true), "Enter")
-	cancel := firstNonEmptyString(formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.select.cancel"), true), "Esc")
-	upDown := firstNonEmptyString(formatHotkeyKeys(append(gitui.GetKeybindings().GetKeys("tui.select.up"), gitui.GetKeybindings().GetKeys("tui.select.down")...), true), "Up/Down")
-	tab := firstNonEmptyString(formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.input.tab"), true), "Tab")
-	if len(c.scopedModels) > 0 {
-		return "Type search  " + tab + " scope  " + upDown + " navigate  " + confirm + " select  " + cancel + " cancel"
-	}
-	return "Type search  " + upDown + " navigate  " + confirm + " select  " + cancel + " cancel"
-}
-
 func scopedModelFullID(model llm.Model) string {
 	if model.Provider == "" {
 		return model.ID
@@ -712,17 +762,19 @@ func sameModel(a, b llm.Model) bool {
 }
 
 func truncateSelectorLine(line string, width int) string {
-	runes := []rune(strings.TrimRight(line, " \t\r\n"))
-	if width <= 0 || len(runes) <= width {
+	line = strings.TrimRight(line, " \t\r\n")
+	if width <= 0 || gitui.VisibleWidth(line) <= width {
 		return line
 	}
-	if width == 1 {
-		return "."
+	return gitui.TruncateToWidth(line, width, "...")
+}
+
+func selectorSearchInputLine(value string, focused bool) string {
+	line := "> " + value
+	if !focused {
+		return line
 	}
-	if width < 4 {
-		return string(runes[:width])
-	}
-	return string(runes[:width-3]) + "..."
+	return line + "\x1b[7m \x1b[27m"
 }
 
 func isBackspaceInput(data string) bool {

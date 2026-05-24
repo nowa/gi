@@ -26,7 +26,7 @@ func TestFireworksModelCatalog(t *testing.T) {
 		t.Fatalf("compat = %#v", model.Compat)
 	}
 
-	router := MustGetModel("fireworks", "accounts/fireworks/routers/kimi-k2p5-turbo")
+	router := MustGetModel("fireworks", "accounts/fireworks/routers/kimi-k2p6-turbo")
 	if router.API != "anthropic-messages" || router.BaseURL != "https://api.fireworks.ai/inference" || !stringSlicesEqual(router.Input, []string{"text", "image"}) {
 		t.Fatalf("router = %#v", router)
 	}
@@ -140,17 +140,11 @@ func TestOfficialGrokAndDeepSeekModelCatalog(t *testing.T) {
 	if grok.Cost != (ModelCost{Input: 1.25, Output: 2.50, CacheRead: 0.20, CacheWrite: 0}) {
 		t.Fatalf("grok cost = %#v", grok.Cost)
 	}
-	if !thinkingMapHas(grok.ThinkingLevelMap, map[string]string{"off": "none", "low": "low", "medium": "medium", "high": "high"}) || !thinkingMapHasNil(grok.ThinkingLevelMap, "xhigh") {
+	if len(grok.ThinkingLevelMap) != 0 {
 		t.Fatalf("grok thinking map = %#v", grok.ThinkingLevelMap)
 	}
-	if got := GetSupportedThinkingLevels(grok); !stringSlicesEqual(got, []string{"off", "low", "medium", "high"}) {
+	if got := GetSupportedThinkingLevels(grok); !stringSlicesEqual(got, []string{"off", "minimal", "low", "medium", "high"}) {
 		t.Fatalf("grok levels = %#v", got)
-	}
-	for _, alias := range []string{"grok-4.3-latest", "grok-latest"} {
-		model := MustGetModel("xai", alias)
-		if model.BaseURL != grok.BaseURL || model.API != grok.API || model.ContextWindow != grok.ContextWindow {
-			t.Fatalf("grok alias %s = %#v", alias, model)
-		}
 	}
 	grokCompat := ResolveOpenAICompletionsCompat(grok)
 	if grokCompat.SupportsStore || grokCompat.SupportsDeveloperRole || !grokCompat.SupportsReasoningEffort || grokCompat.SupportsStrictMode || grokCompat.SupportsLongCacheRetention || grokCompat.MaxTokensField != "max_tokens" || grokCompat.ThinkingFormat != "xai" {
@@ -167,7 +161,10 @@ func TestOfficialGrokAndDeepSeekModelCatalog(t *testing.T) {
 	if deepseek.Cost != (ModelCost{Input: 0.14, Output: 0.28, CacheRead: 0.0028, CacheWrite: 0}) {
 		t.Fatalf("deepseek cost = %#v", deepseek.Cost)
 	}
-	if !thinkingMapHas(deepseek.ThinkingLevelMap, map[string]string{"low": "high", "medium": "high", "high": "high", "xhigh": "max"}) || !thinkingMapHasNil(deepseek.ThinkingLevelMap, "minimal") {
+	if !thinkingMapHas(deepseek.ThinkingLevelMap, map[string]string{"high": "high", "xhigh": "max"}) ||
+		!thinkingMapHasNil(deepseek.ThinkingLevelMap, "minimal") ||
+		!thinkingMapHasNil(deepseek.ThinkingLevelMap, "low") ||
+		!thinkingMapHasNil(deepseek.ThinkingLevelMap, "medium") {
 		t.Fatalf("deepseek thinking map = %#v", deepseek.ThinkingLevelMap)
 	}
 	pro := MustGetModel("deepseek", "deepseek-v4-pro")

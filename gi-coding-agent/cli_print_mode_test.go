@@ -64,7 +64,7 @@ func TestRunCLIPrintsStartupTimingsWhenEnabled(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit code = %d", code)
 	}
-	if !strings.Contains(stdout.String(), "Usage: gi") {
+	if !strings.Contains(stdout.String(), "Usage:\n  gi [options]") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	output := stderr.String()
@@ -72,6 +72,41 @@ func TestRunCLIPrintsStartupTimingsWhenEnabled(t *testing.T) {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("stderr = %q, want %q", output, expected)
 		}
+	}
+}
+
+func TestRunCLIHelpUsesPiStyleReferenceShapeWithoutNPM(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := RunCLI(CLIOptions{
+		Args:   []string{"--help"},
+		Stdout: &stdout,
+		Stderr: &stderr,
+		CWD:    t.TempDir(),
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d stderr=%q", code, stderr.String())
+	}
+	output := stdout.String()
+	for _, want := range []string{
+		"gi - AI coding assistant with read, bash, edit, write tools",
+		"Usage:\n  gi [options] [@files...] [messages...]",
+		"--provider <name>",
+		"--model <pattern>",
+		"--thinking <level>",
+		"--list-models [search]",
+		"Environment Variables:",
+		"GI_CODING_AGENT_DIR",
+		"Built-in Tool Names:",
+		"read   - Read file contents",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "npm:") {
+		t.Fatalf("help should not advertise npm package sources:\n%s", output)
 	}
 }
 
