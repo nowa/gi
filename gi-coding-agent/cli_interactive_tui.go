@@ -2353,7 +2353,7 @@ func builtinInteractiveSlashCommands() []interactiveSlashCommand {
 		{Name: "session", Description: "Show session info and stats"},
 		{Name: "changelog", Description: "Show changelog entries"},
 		{Name: "hotkeys", Description: "Show all keyboard shortcuts"},
-		{Name: "fork", Description: "Create a new fork from a previous user message", ArgumentHint: "<index|entry-id>"},
+		{Name: "fork", Description: "Create a new fork from a previous user message"},
 		{Name: "new", Description: "Start a new session"},
 		{Name: "clone", Description: "Duplicate the current session at the current position"},
 		{Name: "tree", Description: "Navigate session tree (switch branches)"},
@@ -3942,6 +3942,9 @@ func (h *CLIInteractiveTUIHost) handleBuiltinSlashCommand(text string) (bool, er
 		}
 		return true, h.handleCloneSlashCommand()
 	case "fork":
+		if hasArgs {
+			return false, nil
+		}
 		return true, h.handleForkSlashCommand(args)
 	case "tree":
 		return true, h.handleTreeSlashCommand(args)

@@ -6301,21 +6301,23 @@ func TestCLIInteractiveTUIHostHandlesCloneCommand(t *testing.T) {
 	}
 }
 
-func TestCLIInteractiveTUIHostHandlesForkEntryCommand(t *testing.T) {
+func TestCLIInteractiveTUIHostForkWithArgSubmitsAsPromptPiStyle(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
 	if !ok {
 		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
 	}
-	mustPrompt(t, sessionHost.session, "fork source")
-	userID := firstSessionEntryIDByRole(t, sessionHost.session, llm.RoleUser)
+	var prompts []string
+	sessionHost.session.Responder = func(prompt string, context []llm.Message, model llm.Model) (llm.Message, error) {
+		prompts = append(prompts, prompt)
+		return llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("agent saw: " + prompt)}}, nil
+	}
 	terminal := gitui.NewVirtualTerminal(120, 28)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
 		Terminal:    terminal,
 		Messages: []string{
-			"/fork " + userID,
-			"/session",
+			"/fork entry-id",
 		},
 		ExitAfterInitial: true,
 	})
@@ -6326,14 +6328,10 @@ func TestCLIInteractiveTUIHostHandlesForkEntryCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitForViewport(t, terminal, "Forked to new session")
-	waitForViewport(t, terminal, "Total: 0")
-	if count := len(sessionHost.session.Messages()); count != 0 {
-		t.Fatalf("messages after /fork = %d, want 0", count)
+	if !reflect.DeepEqual(prompts, []string{"/fork entry-id"}) {
+		t.Fatalf("prompts = %#v", prompts)
 	}
-	if text := host.editor.GetExpandedText(); text != "fork source" {
-		t.Fatalf("editor text after /fork = %q, want selected user text", text)
-	}
+	waitForViewport(t, terminal, "agent saw: /fork entry-id")
 }
 
 func TestCLIInteractiveTUIHostForkSlashUsesUserMessageSelectorPiStyle(t *testing.T) {
