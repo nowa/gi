@@ -5551,48 +5551,41 @@ func TestCLIInteractiveTUIHostScopedModelsCommandUpdatesSessionAndSettings(t *te
 	}
 }
 
-func TestCLIInteractiveTUIHostLoginLogoutCommandsUseGiAuthStorage(t *testing.T) {
+func TestCLIInteractiveTUIHostLoginLogoutWithArgsSubmitAsPromptsPiStyle(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
 	if !ok {
 		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
 	}
 	sessionHost.modelRegistry.authStorage.Set("openai", AuthCredential{Type: "api_key", Key: "stored-openai"})
+	var prompts []string
+	sessionHost.session.Responder = func(prompt string, context []llm.Message, model llm.Model) (llm.Message, error) {
+		prompts = append(prompts, prompt)
+		return llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("agent saw: " + prompt)}}, nil
+	}
 	terminal := gitui.NewVirtualTerminal(120, 32)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
 		Terminal:    terminal,
+		Messages: []string{
+			"/login openai",
+			"/logout openai",
+		},
+		ExitAfterInitial: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- host.RunContext(context.Background())
-	}()
-	t.Cleanup(func() { host.Stop() })
-	waitForHostEditor(t, host)
-
-	host.editor.SetText("/login openai")
-	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "OPENAI_API_KEY")
-	waitForViewport(t, terminal, "~/.gi/agent/auth.json")
-
-	host.editor.SetText("/logout openai")
-	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Removed stored credential for openai")
-	if sessionHost.modelRegistry.authStorage.Has("openai") {
-		t.Fatalf("openai credential should be removed")
+	if err := host.RunContext(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 
-	host.Stop()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("RunContext returned %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("interactive TUI host did not stop")
+	if !reflect.DeepEqual(prompts, []string{"/login openai", "/logout openai"}) {
+		t.Fatalf("prompts = %#v", prompts)
+	}
+	waitForViewport(t, terminal, "agent saw: /logout openai")
+	if !sessionHost.modelRegistry.authStorage.Has("openai") {
+		t.Fatal("/logout with args should not remove credentials")
 	}
 }
 

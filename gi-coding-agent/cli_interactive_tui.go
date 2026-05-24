@@ -3943,8 +3943,14 @@ func (h *CLIInteractiveTUIHost) handleBuiltinSlashCommand(text string) (bool, er
 	case "tree":
 		return true, h.handleTreeSlashCommand(args)
 	case "login":
+		if hasArgs {
+			return false, nil
+		}
 		return true, h.handleLoginSlashCommand(args)
 	case "logout":
+		if hasArgs {
+			return false, nil
+		}
 		return true, h.handleLogoutSlashCommand(args)
 	case "compact":
 		return true, h.handleCompactSlashCommand(args)
