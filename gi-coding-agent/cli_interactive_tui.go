@@ -2360,7 +2360,7 @@ func builtinInteractiveSlashCommands() []interactiveSlashCommand {
 		{Name: "login", Description: "Configure provider authentication", ArgumentHint: "<provider>"},
 		{Name: "logout", Description: "Remove provider authentication", ArgumentHint: "<provider>"},
 		{Name: "compact", Description: "Manually compact the session context"},
-		{Name: "resume", Description: "Resume a different session", ArgumentHint: "<session>"},
+		{Name: "resume", Description: "Resume a different session"},
 		{Name: "reload", Description: "Reload keybindings, extensions, skills, prompts, and themes"},
 		{Name: "quit", Description: "Quit Gi"},
 	}
@@ -3922,6 +3922,9 @@ func (h *CLIInteractiveTUIHost) handleBuiltinSlashCommand(text string) (bool, er
 	case "import":
 		return true, h.handleImportSlashCommand(text)
 	case "resume":
+		if hasArgs {
+			return false, nil
+		}
 		return true, h.handleResumeSlashCommand(text)
 	case "copy":
 		if hasArgs {

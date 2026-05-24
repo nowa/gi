@@ -6161,31 +6161,24 @@ func TestCLIInteractiveTUIHostHandlesImportCommand(t *testing.T) {
 	}
 }
 
-func TestCLIInteractiveTUIHostHandlesResumePathCommand(t *testing.T) {
-	sourceCWD := t.TempDir()
-	sourceSessionDir := filepath.Join(t.TempDir(), "sessions")
-	sourceManager, err := CreateSessionManager(sourceCWD, sourceSessionDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sourceManager.AppendMessage(llm.Message{Role: llm.RoleUser, Content: []llm.ContentPart{llm.Text("Resume question")}})
-	sourceManager.AppendMessage(llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("Resume answer")}})
-	if err := sourceManager.rewriteFile(); err != nil {
-		t.Fatal(err)
-	}
-
+func TestCLIInteractiveTUIHostResumeWithPathSubmitsAsPromptPiStyle(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
 	if !ok {
 		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	resumePath := "session.jsonl"
+	var prompts []string
+	sessionHost.session.Responder = func(prompt string, context []llm.Message, model llm.Model) (llm.Message, error) {
+		prompts = append(prompts, prompt)
+		return llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("agent saw: " + prompt)}}, nil
 	}
 	terminal := gitui.NewVirtualTerminal(120, 28)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
 		Terminal:    terminal,
 		Messages: []string{
-			"/resume " + sourceManager.GetSessionFile(),
-			"/session",
+			"/resume " + resumePath,
 		},
 		ExitAfterInitial: true,
 	})
@@ -6196,12 +6189,11 @@ func TestCLIInteractiveTUIHostHandlesResumePathCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitForTerminalOutput(t, terminal, "Session resumed from:")
-	waitForTerminalOutput(t, terminal, "Resume answer")
-	waitForViewport(t, terminal, "Total: 2")
-	if got := sessionHost.session.SessionManager.GetSessionFile(); got != sourceManager.GetSessionFile() {
-		t.Fatalf("resumed session file = %q, want %q", got, sourceManager.GetSessionFile())
+	expected := "/resume " + resumePath
+	if !reflect.DeepEqual(prompts, []string{expected}) {
+		t.Fatalf("prompts = %#v", prompts)
 	}
+	waitForViewport(t, terminal, "agent saw: "+expected)
 }
 
 func TestCLIInteractiveTUIHostResumeCommandOpensSessionSelectorPiStyle(t *testing.T) {
