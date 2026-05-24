@@ -3884,17 +3884,8 @@ func (h *CLIInteractiveTUIHost) handleBuiltinSlashCommand(text string) (bool, er
 			return false, nil
 		}
 		return true, h.handleSettingsSlashCommand()
-	case "resources":
-		if hasArgs {
-			return false, nil
-		}
-		return true, h.handlePackageResourcesSlashCommand()
-	case "thinking":
-		return true, h.handleThinkingSlashCommand(args)
 	case "model":
 		return true, h.handleModelSlashCommand(args)
-	case "models":
-		return true, h.handleModelsSlashCommand(args)
 	case "scoped-models":
 		if hasArgs {
 			return false, nil
@@ -3917,8 +3908,6 @@ func (h *CLIInteractiveTUIHost) handleBuiltinSlashCommand(text string) (bool, er
 			return false, nil
 		}
 		return true, h.handleChangelogSlashCommand()
-	case "queue":
-		return true, h.handleQueueSlashCommand(args)
 	case "export":
 		path := ""
 		if parsed, ok := GetPathCommandArgument(text, "/export"); ok {
@@ -4002,28 +3991,6 @@ func (h *CLIInteractiveTUIHost) handleInlineCommand(text string) (bool, error) {
 		return true, nil
 	}
 	return true, h.handleBashCommand(command, excluded)
-}
-
-func (h *CLIInteractiveTUIHost) handleThinkingSlashCommand(args string) error {
-	host, err := h.newRPCSessionHost()
-	if err != nil {
-		return err
-	}
-	level := strings.TrimSpace(args)
-	if level == "" {
-		if !h.exitAfterInitial {
-			return h.handleThinkingSelectDialog(host)
-		}
-		level, err = host.CycleThinkingLevel()
-	} else {
-		err = host.SetThinkingLevel(level)
-		level = host.Session.Agent.State.ThinkingLevel
-	}
-	if err != nil {
-		return err
-	}
-	h.addStatus("Thinking: " + level)
-	return nil
 }
 
 func (h *CLIInteractiveTUIHost) handleSettingsSlashCommand() error {
@@ -4514,80 +4481,6 @@ func (h *CLIInteractiveTUIHost) applyToolImageSettings(settings *SettingsManager
 	h.requestRender(false)
 }
 
-func (h *CLIInteractiveTUIHost) handlePackageResourcesSlashCommand() error {
-	manager, err := h.packageResourceManager()
-	if err != nil {
-		return err
-	}
-	items, err := manager.ListResourceToggles()
-	if err != nil {
-		return err
-	}
-	if h.exitAfterInitial {
-		return h.renderPackageResourcesSummary(items)
-	}
-	if h.ui == nil {
-		return errors.New("interactive TUI is not ready")
-	}
-	settingItems, toggles := packageResourceSettingItems(items)
-	if len(settingItems) == 0 {
-		h.addStatus("No resources found")
-		return nil
-	}
-	var changed atomic.Bool
-	var hadError atomic.Bool
-	resultCh := make(chan struct{}, 1)
-	list := gitui.NewSettingsList(settingItems, 14, tuiThemeSettingsList(), gitui.SettingsListOptions{
-		EnableSearch: true,
-		OnChange: func(id, newValue string) {
-			toggle, ok := toggles[id]
-			if !ok {
-				h.addStatus("Resource not found")
-				hadError.Store(true)
-				return
-			}
-			updated, err := applyResourceToggle(manager, toggle, newValue == "enabled")
-			if err != nil {
-				h.addStatus("Error: " + err.Error())
-				hadError.Store(true)
-				return
-			}
-			if !updated {
-				h.addStatus("Resource not found")
-				hadError.Store(true)
-				return
-			}
-			changed.Store(true)
-		},
-		OnCancel: func() {
-			select {
-			case resultCh <- struct{}{}:
-			default:
-			}
-		},
-	})
-	component := cliSettingsListDialog{title: "Resource Configuration", list: list}
-	width := gitui.Cells(88)
-	handle := h.ui.ShowOverlay(component, gitui.OverlayOptions{Width: &width, MinWidth: 48, Anchor: gitui.OverlayCenter})
-	h.requestRender(false)
-	select {
-	case <-resultCh:
-		handle.Hide()
-		if changed.Load() {
-			if err := h.handleReloadSlashCommand(); err != nil {
-				return err
-			}
-			h.addStatus("Resources updated")
-		} else if !hadError.Load() {
-			h.addStatus("Resources cancelled")
-		}
-		return nil
-	case <-h.done:
-		handle.Hide()
-		return nil
-	}
-}
-
 func (h *CLIInteractiveTUIHost) packageResourceManager() (*DefaultPackageManager, error) {
 	settings := h.settingsManager()
 	if settings == nil {
@@ -4598,25 +4491,6 @@ func (h *CLIInteractiveTUIHost) packageResourceManager() (*DefaultPackageManager
 		AgentDir:        settings.agentDir,
 		SettingsManager: settings,
 	}), nil
-}
-
-func (h *CLIInteractiveTUIHost) renderPackageResourcesSummary(items []PackageResourceToggleItem) error {
-	if len(items) == 0 {
-		h.chat.AddChild(newCLIMarkdownWithOptions("**Resources**\n\nNo resources found.", gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
-		h.requestRender(false)
-		return nil
-	}
-	rows := []string{"| Resource | Source | State |", "|---|---|---|"}
-	for _, item := range items {
-		state := "disabled"
-		if item.Enabled {
-			state = "enabled"
-		}
-		rows = append(rows, "| "+markdownTableValue(packageResourceLabel(item))+" | "+markdownTableValue(packageResourceSourceLabel(item))+" | "+state+" |")
-	}
-	h.chat.AddChild(newCLIMarkdownWithOptions("**Resources**\n\n"+strings.Join(rows, "\n"), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
-	h.requestRender(false)
-	return nil
 }
 
 func packageResourceSettingItems(resources []PackageResourceToggleItem) ([]gitui.SettingItem, map[string]resourceToggleSelection) {
@@ -4716,45 +4590,6 @@ func packageResourceSourceLabel(resource PackageResourceToggleItem) string {
 		return "User agent"
 	}
 	return resource.Source
-}
-
-func (h *CLIInteractiveTUIHost) handleThinkingSelectDialog(host *RPCSessionHost) error {
-	if host == nil || host.Session == nil || host.Session.Agent == nil {
-		return errors.New("thinking selector requires a session host")
-	}
-	levels := llm.GetSupportedThinkingLevels(host.Session.Agent.State.Model)
-	if len(levels) == 0 {
-		levels = []string{string(ThinkingOff)}
-	}
-	options := make([]TUIDialogOption, 0, len(levels))
-	current := host.Session.Agent.State.ThinkingLevel
-	for _, level := range levels {
-		description := thinkingLevelDescription(level)
-		if level == current {
-			description = strings.TrimSpace(description + " (current)")
-		}
-		options = append(options, TUIDialogOption{ID: level, Label: level, Description: description, Value: level})
-	}
-	result, err := h.RunTUIDialog(TUIDialogRequest{
-		Kind:         "select",
-		Title:        "Thinking level",
-		Message:      "Select reasoning depth for the active model.",
-		Options:      options,
-		DefaultValue: current,
-	})
-	if err != nil {
-		return err
-	}
-	if result.Action != "selected" {
-		h.addStatus("Thinking selection cancelled")
-		return nil
-	}
-	level := dialogStringValue(result.Value)
-	if err := host.SetThinkingLevel(level); err != nil {
-		return err
-	}
-	h.addStatus("Thinking: " + host.Session.Agent.State.ThinkingLevel)
-	return nil
 }
 
 func (h *CLIInteractiveTUIHost) availableThemeNames(current string) []string {
@@ -4923,50 +4758,6 @@ func modelCommandCandidates(host *RPCSessionHost) []llm.Model {
 	return models
 }
 
-func (h *CLIInteractiveTUIHost) handleModelsSlashCommand(args string) error {
-	host, err := h.newRPCSessionHost()
-	if err != nil {
-		return err
-	}
-	if h.exitAfterInitial || strings.TrimSpace(args) == "list" {
-		return h.renderAvailableModelsSummary(host)
-	}
-	options, defaultValue := modelSelectDialogOptions(host, args)
-	if len(options) == 0 {
-		h.addStatus("No models available")
-		return nil
-	}
-	result, err := h.RunTUIDialog(TUIDialogRequest{
-		Kind:         "select",
-		Title:        "Select default model",
-		Message:      "Choose a model to use now and save as the default.",
-		Options:      options,
-		DefaultValue: defaultValue,
-	})
-	if err != nil {
-		return err
-	}
-	if result.Action != "selected" {
-		h.addStatus("Model defaults unchanged")
-		return nil
-	}
-	provider, modelID, ok := splitModelReference(dialogStringValue(result.Value))
-	if !ok {
-		return errors.New("invalid model selection")
-	}
-	model, err := selectModelFromDialog(host, provider, modelID)
-	if err != nil {
-		return err
-	}
-	if settings := h.settingsManager(); settings != nil {
-		settings.SetDefaultProvider(model.Provider)
-		settings.SetDefaultModel(model.ID)
-	}
-	h.addStatus("Default model: " + model.Provider + "/" + model.ID)
-	h.maybeWarnAboutAnthropicSubscriptionAuth(model)
-	return nil
-}
-
 func (h *CLIInteractiveTUIHost) handleScopedModelsSlashCommand() error {
 	host, err := h.newRPCSessionHost()
 	if err != nil {
@@ -5015,26 +4806,6 @@ func (h *CLIInteractiveTUIHost) handleScopedModelsSlashCommand() error {
 	}
 	selector.callbacks.OnCancel = closeSelector
 	restore = h.showEditorReplacement(selector, selector)
-	return nil
-}
-
-func (h *CLIInteractiveTUIHost) renderAvailableModelsSummary(host *RPCSessionHost) error {
-	models := host.getAvailableModels()
-	if len(models) == 0 {
-		h.addStatus("No models available")
-		return nil
-	}
-	const limit = 30
-	rows := []string{"**Available Models**", "", "| Provider | Model |", "|---|---|"}
-	for index, model := range models {
-		if index >= limit {
-			rows = append(rows, "", fmt.Sprintf("_Showing %d of %d models. Use `/models` in interactive TTY to choose a default._", limit, len(models)))
-			break
-		}
-		rows = append(rows, "| "+markdownTableValue(model.Provider)+" | "+markdownTableValue(model.ID)+" |")
-	}
-	h.chat.AddChild(newCLIMarkdownWithOptions(strings.Join(rows, "\n"), gitui.MarkdownOptions{PaddingX: 1, PaddingY: 1}))
-	h.requestRender(false)
 	return nil
 }
 
@@ -5729,34 +5500,6 @@ func (h *CLIInteractiveTUIHost) handleNewSlashCommand() error {
 	}
 	h.resetChatState()
 	h.addStatus("New session started")
-	return nil
-}
-
-func (h *CLIInteractiveTUIHost) handleQueueSlashCommand(args string) error {
-	host, err := h.newRPCSessionHost()
-	if err != nil {
-		return err
-	}
-	mode := strings.TrimSpace(args)
-	if mode == "" {
-		state := host.GetState()
-		h.addStatus("Queue: steering=" + state.SteeringMode + " follow-up=" + state.FollowUpMode)
-		return nil
-	}
-	switch mode {
-	case "one", "single", "serial":
-		mode = "one-at-a-time"
-	case "all", "one-at-a-time":
-	default:
-		return errors.New("invalid queue mode: " + mode)
-	}
-	if err := host.SetSteeringMode(mode); err != nil {
-		return err
-	}
-	if err := host.SetFollowUpMode(mode); err != nil {
-		return err
-	}
-	h.addStatus("Queue: " + mode)
 	return nil
 }
 

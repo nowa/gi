@@ -162,7 +162,7 @@ func (p *CombinedAutocompleteProvider) GetSuggestionsContext(ctx context.Context
 				}
 				items = append(items, AutocompleteItem{Value: cmd.Name, Label: cmd.Name, Description: desc})
 			}
-			items = FuzzyFilter(items, prefix, func(item AutocompleteItem) string { return item.Value })
+			items = filterSlashCommandCompletions(items, prefix)
 			if len(items) == 0 {
 				return fallbackProviderSuggestions()
 			}
@@ -242,6 +242,20 @@ func (p *CombinedAutocompleteProvider) providerSuggestionsContext(ctx context.Co
 		}
 	}
 	return nil, nil
+}
+
+func filterSlashCommandCompletions(items []AutocompleteItem, prefix string) []AutocompleteItem {
+	prefix = strings.ToLower(strings.TrimSpace(prefix))
+	if prefix == "" {
+		return items
+	}
+	filtered := make([]AutocompleteItem, 0, len(items))
+	for _, item := range items {
+		if strings.HasPrefix(strings.ToLower(item.Value), prefix) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 type CompletionResult struct {

@@ -4422,6 +4422,30 @@ func TestEditorAutocompleteRetainsExactTypedSlashArgument(t *testing.T) {
 	}
 }
 
+func TestEditorAutocompleteDoesNotApplyStaleSlashCommandOnSubmit(t *testing.T) {
+	editor := NewEditor(EditorTheme{})
+	var submitted string
+	editor.SetOnSubmit(func(text string) {
+		submitted = text
+	})
+	editor.SetText("/models")
+	editor.autocomplete = &AutocompleteSuggestions{
+		Items:  []AutocompleteItem{{Value: "model", Label: "model"}},
+		Prefix: "/model",
+		Start:  0,
+		End:    len("/model"),
+	}
+	editor.autocompleteList = editor.newAutocompleteList("/model", []SelectItem{{Value: "model", Label: "model"}})
+
+	editor.HandleInput("\r")
+	if submitted != "/models" {
+		t.Fatalf("submitted = %q, want /models", submitted)
+	}
+	if editor.GetText() != "" {
+		t.Fatalf("editor text after submit = %q, want empty", editor.GetText())
+	}
+}
+
 func TestEditorAutocompleteCombinedProviderRetainsExactSlashArgument(t *testing.T) {
 	editor := NewEditor(EditorTheme{})
 	changed := make(chan struct{}, 1)

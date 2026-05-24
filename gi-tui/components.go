@@ -4471,6 +4471,10 @@ func (e *Editor) handleInputLocked(data string) {
 			if e.autocomplete != nil {
 				autocompletePrefix = e.autocomplete.Prefix
 			}
+			if strings.HasPrefix(autocompletePrefix, "/") && !e.autocompletePrefixMatchesCurrentCursor() {
+				e.cancelAutocomplete()
+				break
+			}
 			if !e.applySelectedAutocompleteWithNotify(!strings.HasPrefix(autocompletePrefix, "/")) {
 				return
 			}
@@ -5235,6 +5239,23 @@ func (e *Editor) newAutocompleteList(prefix string, items []SelectItem) *SelectL
 		return NewSelectList(items, e.options.AutocompleteMaxVisible, e.theme.SelectList, slashCommandSelectListLayout)
 	}
 	return NewSelectList(items, e.options.AutocompleteMaxVisible, e.theme.SelectList)
+}
+
+func (e *Editor) autocompletePrefixMatchesCurrentCursor() bool {
+	if e == nil || e.autocomplete == nil {
+		return false
+	}
+	lines, cursorLine, cursorCol := e.linesAndCursor()
+	if cursorLine < 0 || cursorLine >= len(lines) {
+		return false
+	}
+	lineRunes := []rune(lines[cursorLine])
+	start := max(0, min(e.autocomplete.Start, len(lineRunes)))
+	end := max(start, min(e.autocomplete.End, len(lineRunes)))
+	if end != cursorCol {
+		return false
+	}
+	return string(lineRunes[start:end]) == e.autocomplete.Prefix
 }
 
 func (e *Editor) applySelectedAutocomplete() {

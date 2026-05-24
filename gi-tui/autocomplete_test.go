@@ -112,6 +112,13 @@ func TestCombinedAutocompleteSlashCommands(t *testing.T) {
 	if applied.Lines[0] != "/model " || applied.CursorCol != len("/model ") {
 		t.Fatalf("applied slash = %#v", applied)
 	}
+	result, err = provider.GetSuggestions([]string{"/models"}, 0, len("/models"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != nil {
+		t.Fatalf("unknown slash command should not fuzzy-match model commands: %#v", result)
+	}
 	result, err = provider.GetSuggestions([]string{"/open r"}, 0, len("/open r"), false)
 	if err != nil {
 		t.Fatal(err)

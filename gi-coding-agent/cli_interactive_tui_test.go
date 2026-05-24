@@ -4151,9 +4151,7 @@ func TestCLIInteractiveTUIHostHandlesBuiltinSlashCommands(t *testing.T) {
 		RuntimeHost: runtimeHost,
 		Terminal:    terminal,
 		Messages: []string{
-			"/thinking off",
 			"/model openai/gpt-4o-mini",
-			"/queue all",
 			"/session",
 			"/export " + exportPath,
 		},
@@ -4166,7 +4164,7 @@ func TestCLIInteractiveTUIHostHandlesBuiltinSlashCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, expected := range []string{"Thinking: off", "Model: openai/gpt-4o-mini", "Queue: all", "Session exported to:"} {
+	for _, expected := range []string{"Model: openai/gpt-4o-mini", "Session exported to:"} {
 		waitForTerminalOutput(t, terminal, expected)
 	}
 	waitForTerminalOutput(t, terminal, "Session Info")
@@ -4175,9 +4173,6 @@ func TestCLIInteractiveTUIHostHandlesBuiltinSlashCommands(t *testing.T) {
 	}
 	if _, err := os.Stat(exportPath); err != nil {
 		t.Fatalf("export path missing: %v", err)
-	}
-	if sessionHost.session.SteeringMode != "all" || sessionHost.session.FollowUpMode != "all" {
-		t.Fatalf("queue modes steering=%q followUp=%q", sessionHost.session.SteeringMode, sessionHost.session.FollowUpMode)
 	}
 }
 
@@ -4245,6 +4240,10 @@ func TestCLIInteractiveTUIHostRequiresExactNoArgSlashCommandsPiStyle(t *testing.
 		Messages: []string{
 			"/session extra",
 			"/theme light",
+			"/resources",
+			"/thinking off",
+			"/models",
+			"/queue all",
 			"/quit later",
 		},
 		ExitAfterInitial: true,
@@ -4256,7 +4255,7 @@ func TestCLIInteractiveTUIHostRequiresExactNoArgSlashCommandsPiStyle(t *testing.
 		t.Fatal(err)
 	}
 
-	if !reflect.DeepEqual(prompts, []string{"/session extra", "/theme light", "/quit later"}) {
+	if !reflect.DeepEqual(prompts, []string{"/session extra", "/theme light", "/resources", "/thinking off", "/models", "/queue all", "/quit later"}) {
 		t.Fatalf("prompts = %#v", prompts)
 	}
 	waitForViewport(t, terminal, "agent saw: /quit later")
@@ -4995,81 +4994,6 @@ func TestCLIInteractiveTUIHostDispatchesThemeChangeToViewTreeSubscribers(t *test
 	t.Fatalf("theme_change was not dispatched: %#v", events)
 }
 
-func TestCLIInteractiveTUIHostShowsPackageResourceSelectorAndReloads(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "")
-	root := t.TempDir()
-	cwd := filepath.Join(root, "project")
-	agentDir := filepath.Join(root, "agent")
-	pkgDir := filepath.Join(cwd, "toggle-pkg")
-	writeResourceSkill(t, filepath.Join(pkgDir, "skills", "skill-a", "SKILL.md"), "skill-a", "Skill A", "Use skill A.")
-	settings := NewSettingsManager(cwd, agentDir)
-	settings.SetPackages([]any{pkgDir})
-	runtimeHost, err := newDefaultCLIPrintModeHost(Args{
-		Offline:   true,
-		NoSession: true,
-		Model:     "openai/gpt-4o-mini",
-	}, CLIOptions{
-		CWD:      cwd,
-		AgentDir: agentDir,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
-	if !ok {
-		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
-	}
-	if resourceFindSkill(sessionHost.session.ResourceLoader.GetSkills().Skills, "skill-a") == nil {
-		t.Fatalf("skill-a should be loaded before toggle")
-	}
-	terminal := gitui.NewVirtualTerminal(120, 30)
-	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
-		RuntimeHost: runtimeHost,
-		Terminal:    terminal,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- host.RunContext(context.Background())
-	}()
-	t.Cleanup(func() { host.Stop() })
-	waitForHostEditor(t, host)
-
-	host.editor.SetText("/resources")
-	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Resource Configuration")
-	waitForViewport(t, terminal, "Skill skill-a")
-	terminal.SendInput("\r")
-	terminal.SendInput("\x1b")
-	waitForViewport(t, terminal, "Resources updated")
-	if resourceFindSkill(sessionHost.session.ResourceLoader.GetSkills().Skills, "skill-a") != nil {
-		t.Fatalf("skill-a should be disabled after package resource toggle")
-	}
-	packages := settingsSlice(sessionHost.settingsManager.global, "packages")
-	if len(packages) != 1 {
-		t.Fatalf("packages = %#v", packages)
-	}
-	object, ok := packages[0].(map[string]any)
-	if !ok {
-		t.Fatalf("package setting = %#v", packages[0])
-	}
-	if got := settingsStringSlice(object, "skills"); len(got) != 1 || got[0] != "-skills/skill-a/SKILL.md" {
-		t.Fatalf("skill filters = %#v", got)
-	}
-
-	host.Stop()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("RunContext returned %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("interactive TUI host did not stop")
-	}
-}
-
 func TestCLISettingsListComponentUsesPiBorderTheme(t *testing.T) {
 	list := gitui.NewSettingsList([]gitui.SettingItem{{
 		ID:           "autocompact",
@@ -5529,50 +5453,6 @@ func TestCLIInteractiveTUIHostModelSelectorTabSwitchesFromScopedToAllPiStyle(t *
 	waitForNoOverlay(t, host)
 	if got := sessionHost.session.Agent.State.Model.ID; got != "gpt-4o-mini" {
 		t.Fatalf("selected model = %q, want gpt-4o-mini", got)
-	}
-
-	host.Stop()
-	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("RunContext returned %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("interactive TUI host did not stop")
-	}
-}
-
-func TestCLIInteractiveTUIHostModelsCommandSavesDefaultModel(t *testing.T) {
-	runtimeHost := newOfflineInteractiveRuntimeHost(t)
-	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
-	if !ok {
-		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
-	}
-	terminal := gitui.NewVirtualTerminal(120, 28)
-	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
-		RuntimeHost: runtimeHost,
-		Terminal:    terminal,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- host.RunContext(context.Background())
-	}()
-	t.Cleanup(func() { host.Stop() })
-	waitForHostEditor(t, host)
-
-	host.editor.SetText("/models")
-	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Select default model")
-	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Default model: openai/gpt-4o-mini")
-	if sessionHost.settingsManager.GetDefaultProvider() != "openai" ||
-		sessionHost.settingsManager.GetDefaultModel() != "gpt-4o-mini" {
-		t.Fatalf("default model settings provider=%q model=%q",
-			sessionHost.settingsManager.GetDefaultProvider(),
-			sessionHost.settingsManager.GetDefaultModel())
 	}
 
 	host.Stop()
