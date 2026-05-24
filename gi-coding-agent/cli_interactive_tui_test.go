@@ -6428,22 +6428,23 @@ func TestCLIInteractiveTUIHostTreeSlashUsesTreeSelectorPiStyle(t *testing.T) {
 	}
 }
 
-func TestCLIInteractiveTUIHostHandlesTreeEntryCommand(t *testing.T) {
+func TestCLIInteractiveTUIHostTreeWithArgSubmitsAsPromptPiStyle(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
 	if !ok {
 		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
 	}
-	mustPrompt(t, sessionHost.session, "tree first")
-	firstAssistantID := firstSessionEntryIDByRole(t, sessionHost.session, llm.RoleAssistant)
-	mustPrompt(t, sessionHost.session, "tree second")
-	terminal := gitui.NewVirtualTerminal(120, 48)
+	var prompts []string
+	sessionHost.session.Responder = func(prompt string, context []llm.Message, model llm.Model) (llm.Message, error) {
+		prompts = append(prompts, prompt)
+		return llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("agent saw: " + prompt)}}, nil
+	}
+	terminal := gitui.NewVirtualTerminal(120, 28)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
 		Terminal:    terminal,
 		Messages: []string{
-			"/tree " + firstAssistantID,
-			"/session",
+			"/tree entry-id",
 		},
 		ExitAfterInitial: true,
 	})
@@ -6454,12 +6455,10 @@ func TestCLIInteractiveTUIHostHandlesTreeEntryCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitForViewport(t, terminal, "Navigated to selected point")
-	waitForViewport(t, terminal, "Response to: tree first")
-	waitForViewport(t, terminal, "Total: 2")
-	if count := len(sessionHost.session.Messages()); count != 2 {
-		t.Fatalf("messages after /tree = %d, want 2", count)
+	if !reflect.DeepEqual(prompts, []string{"/tree entry-id"}) {
+		t.Fatalf("prompts = %#v", prompts)
 	}
+	waitForViewport(t, terminal, "agent saw: /tree entry-id")
 }
 
 func TestCLIInteractiveTUIHostTreeSlashCurrentLeafNoopsPiStyle(t *testing.T) {
@@ -6469,29 +6468,36 @@ func TestCLIInteractiveTUIHostTreeSlashCurrentLeafNoopsPiStyle(t *testing.T) {
 		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
 	}
 	mustPrompt(t, sessionHost.session, "tree current")
-	leafID := sessionHost.session.SessionManager.GetLeafID()
-	if leafID == nil {
-		t.Fatal("session leaf missing")
-	}
 	terminal := gitui.NewVirtualTerminal(120, 28)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
 		Terminal:    terminal,
-		Messages: []string{
-			"/tree " + *leafID,
-			"/session",
-		},
-		ExitAfterInitial: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := host.RunContext(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
 
+	host.editor.SetText("/tree")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Session Tree")
+	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Already at this point")
-	waitForViewport(t, terminal, "Total: 2")
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
 }
 
 func TestCLIInteractiveTUIHostTreeSlashPromptsForBranchSummaryPiStyle(t *testing.T) {
@@ -6501,7 +6507,6 @@ func TestCLIInteractiveTUIHostTreeSlashPromptsForBranchSummaryPiStyle(t *testing
 		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
 	}
 	mustPrompt(t, sessionHost.session, "summary first")
-	firstAssistantID := firstSessionEntryIDByRole(t, sessionHost.session, llm.RoleAssistant)
 	mustPrompt(t, sessionHost.session, "summary second")
 	sessionHost.session.BranchSummarizer = func(entries []FileEntry, customInstructions string, abort <-chan struct{}) (string, error) {
 		if customInstructions != "" {
@@ -6524,7 +6529,10 @@ func TestCLIInteractiveTUIHostTreeSlashPromptsForBranchSummaryPiStyle(t *testing
 	t.Cleanup(func() { host.Stop() })
 	waitForHostEditor(t, host)
 
-	host.editor.SetText("/tree " + firstAssistantID)
+	host.editor.SetText("/tree")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Session Tree")
+	terminal.SendInput("k")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Summarize branch?")
 	terminal.SendInput("\x1b[B")
@@ -6554,7 +6562,6 @@ func TestCLIInteractiveTUIHostTreeSlashUsesCustomBranchSummaryInstructionsPiStyl
 		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
 	}
 	mustPrompt(t, sessionHost.session, "custom summary first")
-	firstAssistantID := firstSessionEntryIDByRole(t, sessionHost.session, llm.RoleAssistant)
 	mustPrompt(t, sessionHost.session, "custom summary second")
 	sessionHost.session.BranchSummarizer = func(entries []FileEntry, customInstructions string, abort <-chan struct{}) (string, error) {
 		if customInstructions != "Focus risk" {
@@ -6577,7 +6584,10 @@ func TestCLIInteractiveTUIHostTreeSlashUsesCustomBranchSummaryInstructionsPiStyl
 	t.Cleanup(func() { host.Stop() })
 	waitForHostEditor(t, host)
 
-	host.editor.SetText("/tree " + firstAssistantID)
+	host.editor.SetText("/tree")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Session Tree")
+	terminal.SendInput("k")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Summarize branch?")
 	terminal.SendInput("\x1b[B")
@@ -6611,7 +6621,6 @@ func TestCLIInteractiveTUIHostTreeSlashEscAbortsBranchSummaryPiStyle(t *testing.
 		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
 	}
 	mustPrompt(t, sessionHost.session, "abort summary first")
-	firstAssistantID := firstSessionEntryIDByRole(t, sessionHost.session, llm.RoleAssistant)
 	mustPrompt(t, sessionHost.session, "abort summary second")
 	started := make(chan struct{})
 	var startedOnce sync.Once
@@ -6635,7 +6644,10 @@ func TestCLIInteractiveTUIHostTreeSlashEscAbortsBranchSummaryPiStyle(t *testing.
 	t.Cleanup(func() { host.Stop() })
 	waitForHostEditor(t, host)
 
-	host.editor.SetText("/tree " + firstAssistantID)
+	host.editor.SetText("/tree")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Session Tree")
+	terminal.SendInput("k")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Summarize branch?")
 	terminal.SendInput("\x1b[B")
@@ -6672,7 +6684,6 @@ func TestCLIInteractiveTUIHostTreeSlashRespectsSkipSummaryPromptSetting(t *testi
 	}
 	sessionHost.settingsManager.SetBranchSummarySkipPrompt(true)
 	mustPrompt(t, sessionHost.session, "skip first")
-	firstAssistantID := firstSessionEntryIDByRole(t, sessionHost.session, llm.RoleAssistant)
 	mustPrompt(t, sessionHost.session, "skip second")
 	sessionHost.session.BranchSummarizer = func(entries []FileEntry, customInstructions string, abort <-chan struct{}) (string, error) {
 		t.Fatal("branch summarizer should not run when skipPrompt defaults to no summary")
@@ -6693,7 +6704,10 @@ func TestCLIInteractiveTUIHostTreeSlashRespectsSkipSummaryPromptSetting(t *testi
 	t.Cleanup(func() { host.Stop() })
 	waitForHostEditor(t, host)
 
-	host.editor.SetText("/tree " + firstAssistantID)
+	host.editor.SetText("/tree")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Session Tree")
+	terminal.SendInput("k")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Navigated to selected point")
 
