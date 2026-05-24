@@ -360,12 +360,14 @@ func TestRunCLIDefaultInteractiveModeRunsBasicHostOffline(t *testing.T) {
 	var stderr bytes.Buffer
 
 	code := RunCLI(CLIOptions{
-		Args:     []string{"--offline", "--no-session", "--model", "openai/gpt-4o-mini", "hello"},
-		Stdin:    strings.NewReader(""),
-		Stdout:   &stdout,
-		Stderr:   &stderr,
-		CWD:      tempDir,
-		AgentDir: filepath.Join(tempDir, "agent"),
+		Args:          []string{"--offline", "--no-session", "--model", "openai/gpt-4o-mini", "hello"},
+		Stdin:         strings.NewReader(""),
+		Stdout:        &stdout,
+		Stderr:        &stderr,
+		CWD:           tempDir,
+		AgentDir:      filepath.Join(tempDir, "agent"),
+		ModelRegistry: newTestOpenAIModelRegistry(),
+		Responder:     DefaultAgentSessionResponder,
 	})
 
 	if code != 0 {
@@ -386,12 +388,14 @@ func TestRunCLIDefaultInteractiveModeUsesPipedStdinAsPrompt(t *testing.T) {
 	var stderr bytes.Buffer
 
 	code := RunCLI(CLIOptions{
-		Args:     []string{"--offline", "--no-session", "--model", "openai/gpt-4o-mini"},
-		Stdin:    strings.NewReader("hello from stdin\n"),
-		Stdout:   &stdout,
-		Stderr:   &stderr,
-		CWD:      tempDir,
-		AgentDir: filepath.Join(tempDir, "agent"),
+		Args:          []string{"--offline", "--no-session", "--model", "openai/gpt-4o-mini"},
+		Stdin:         strings.NewReader("hello from stdin\n"),
+		Stdout:        &stdout,
+		Stderr:        &stderr,
+		CWD:           tempDir,
+		AgentDir:      filepath.Join(tempDir, "agent"),
+		ModelRegistry: newTestOpenAIModelRegistry(),
+		Responder:     DefaultAgentSessionResponder,
 	})
 
 	if code != 0 {
@@ -521,11 +525,13 @@ func TestRunCLIDefaultOfflinePrintMode(t *testing.T) {
 	var stderr bytes.Buffer
 
 	code := RunCLI(CLIOptions{
-		Args:     []string{"--offline", "--no-session", "--model", "openai/gpt-4o-mini", "-p", "hello"},
-		Stdout:   &stdout,
-		Stderr:   &stderr,
-		CWD:      tempDir,
-		AgentDir: agentDir,
+		Args:          []string{"--offline", "--no-session", "--model", "openai/gpt-4o-mini", "-p", "hello"},
+		Stdout:        &stdout,
+		Stderr:        &stderr,
+		CWD:           tempDir,
+		AgentDir:      agentDir,
+		ModelRegistry: newTestOpenAIModelRegistry(),
+		Responder:     DefaultAgentSessionResponder,
 	})
 
 	if code != 0 {
@@ -539,6 +545,37 @@ func TestRunCLIDefaultOfflinePrintMode(t *testing.T) {
 	}
 	if _, err := os.Stat(agentDir); !os.IsNotExist(err) {
 		t.Fatalf("agent dir stat err = %v, want not exist", err)
+	}
+}
+
+func TestRunCLIOfflinePrintModeMissingAPIKeyUsesAuthGuidancePiStyle(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	tempDir := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := RunCLI(CLIOptions{
+		Args:     []string{"--offline", "--no-session", "--model", "openai/gpt-4o-mini", "-p", "hello"},
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		CWD:      tempDir,
+		AgentDir: filepath.Join(tempDir, "agent"),
+	})
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, stdout = %q stderr = %q", code, stdout.String(), stderr.String())
+	}
+	if stdout.String() != "" {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	output := stderr.String()
+	for _, expected := range []string{"No API key found for openai.", "Use /login to log into a provider via OAuth or API key. See:", "docs/providers.md", "docs/models.md"} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("stderr = %q, want %q", output, expected)
+		}
+	}
+	if strings.Contains(output, "Response to:") {
+		t.Fatalf("offline mode should not install fake responder in CLI path: %q", output)
 	}
 }
 
@@ -560,7 +597,7 @@ func TestRunCLIPrintModeMissingAPIKeyUsesAuthGuidance(t *testing.T) {
 		t.Fatalf("exit code = %d, stdout = %q stderr = %q", code, stdout.String(), stderr.String())
 	}
 	output := stderr.String()
-	for _, expected := range []string{"No API key found for openai.", "OPENAI_API_KEY", "--api-key", "~/.gi/agent/auth.json", "gi --list-models"} {
+	for _, expected := range []string{"No API key found for openai.", "Use /login to log into a provider via OAuth or API key. See:", "docs/providers.md", "docs/models.md"} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("stderr = %q, want %q", output, expected)
 		}

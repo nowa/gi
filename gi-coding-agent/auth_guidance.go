@@ -1,22 +1,25 @@
 package gicodingagent
 
 import (
-	"fmt"
 	"strings"
 )
 
 const unknownProvider = "unknown"
 
 func providerLoginHelp() string {
-	return "Configure provider credentials with --api-key, provider environment variables, ~/.gi/agent/auth.json, or ~/.gi/agent/models.json.\nRun gi --list-models to verify available models."
+	return strings.Join([]string{
+		"Use /login to log into a provider via OAuth or API key. See:",
+		"  " + giDocumentationFilePath("", "providers.md"),
+		"  " + giDocumentationFilePath("", "models.md"),
+	}, "\n")
 }
 
 func formatNoModelsAvailableMessage() string {
-	return "No models available.\n\n" + providerLoginHelp()
+	return "No models available. " + providerLoginHelp()
 }
 
 func formatNoModelSelectedMessage() string {
-	return "No model selected.\n\n" + providerLoginHelp()
+	return "No model selected.\n\n" + providerLoginHelp() + "\n\nThen use /model to select a model."
 }
 
 func formatNoAPIKeyFoundMessage(provider string) string {
@@ -24,9 +27,5 @@ func formatNoAPIKeyFoundMessage(provider string) string {
 	if providerDisplay == "" || providerDisplay == unknownProvider {
 		providerDisplay = "the selected model"
 	}
-	help := providerLoginHelp()
-	if keys := providerEnvKeys(provider); len(keys) > 0 {
-		help = fmt.Sprintf("Set %s, pass --api-key, or configure ~/.gi/agent/auth.json or ~/.gi/agent/models.json.\nRun gi --list-models to verify available models.", strings.Join(keys, " or "))
-	}
-	return fmt.Sprintf("No API key found for %s.\n\n%s", providerDisplay, help)
+	return "No API key found for " + providerDisplay + ".\n\n" + providerLoginHelp()
 }

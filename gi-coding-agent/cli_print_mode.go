@@ -289,10 +289,7 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	}
 
 	host := &agentSessionPrintModeHost{}
-	var preflight AgentSessionPreflight
-	if !args.Offline {
-		preflight = cliProviderPreflight(modelRegistry, args)
-	}
+	preflight := cliProviderPreflight(modelRegistry, args)
 	session, err := CreateAgentSession(AgentSessionOptions{
 		CWD:            cwd,
 		AgentDir:       agentDir,
@@ -309,8 +306,8 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	if err != nil {
 		return nil, err
 	}
-	if args.Offline {
-		session.Responder = DefaultAgentSessionResponder
+	if options.Responder != nil {
+		session.Responder = options.Responder
 	} else {
 		session.Responder = host.providerResponder(modelRegistry, args, installTelemetryEnabled)
 	}

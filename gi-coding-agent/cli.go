@@ -28,6 +28,7 @@ type CLIOptions struct {
 	VersionCheck           VersionReleaseChecker
 	VersionCheckOptions    VersionCheckOptions
 	StartupWarnings        []string
+	Responder              AgentSessionResponder
 }
 
 func RunCLI(options CLIOptions) int {

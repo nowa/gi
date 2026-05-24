@@ -7,19 +7,19 @@ import (
 
 func TestAuthGuidanceMessagesUseGiConfigurationPaths(t *testing.T) {
 	help := providerLoginHelp()
-	for _, expected := range []string{"--api-key", "~/.gi/agent/auth.json", "~/.gi/agent/models.json", "gi --list-models"} {
+	for _, expected := range []string{"/login", "docs/providers.md", "docs/models.md"} {
 		if !strings.Contains(help, expected) {
 			t.Fatalf("providerLoginHelp() = %q, want %q", help, expected)
 		}
 	}
-	if strings.Contains(help, "/login") || strings.Contains(help, ".pi") {
-		t.Fatalf("providerLoginHelp() = %q, should not mention Pi-only login/config paths", help)
+	if strings.Contains(help, ".pi") {
+		t.Fatalf("providerLoginHelp() = %q, should not mention Pi config paths", help)
 	}
 
 	apiKeyMessage := formatNoAPIKeyFoundMessage("openai")
 	if !strings.Contains(apiKeyMessage, "No API key found for openai.") ||
-		!strings.Contains(apiKeyMessage, "OPENAI_API_KEY") ||
-		!strings.Contains(apiKeyMessage, "--api-key") {
+		!strings.Contains(apiKeyMessage, "Use /login to log into a provider via OAuth or API key. See:") ||
+		!strings.Contains(apiKeyMessage, "docs/models.md") {
 		t.Fatalf("formatNoAPIKeyFoundMessage = %q", apiKeyMessage)
 	}
 

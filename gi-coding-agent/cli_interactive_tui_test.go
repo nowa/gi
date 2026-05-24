@@ -10264,6 +10264,7 @@ func newOfflineInteractiveRuntimeHost(t *testing.T) PrintModeRuntimeHost {
 		CWD:           tempDir,
 		AgentDir:      filepath.Join(tempDir, "agent"),
 		ModelRegistry: newTestOpenAIModelRegistry(),
+		Responder:     DefaultAgentSessionResponder,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -10289,6 +10290,7 @@ func newOfflineInteractiveRuntimeHostWithPackages(t *testing.T, packages ...stri
 		CWD:           tempDir,
 		AgentDir:      agentDir,
 		ModelRegistry: newTestOpenAIModelRegistry(),
+		Responder:     DefaultAgentSessionResponder,
 	})
 	if err != nil {
 		t.Fatal(err)

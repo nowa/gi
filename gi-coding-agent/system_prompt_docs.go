@@ -30,18 +30,22 @@ func defaultGiDocumentationPaths(cwd string) []SystemPromptDocumentationPath {
 }
 
 func giProvidersDocumentationPath(cwd string) string {
+	return giDocumentationFilePath(cwd, "providers.md")
+}
+
+func giDocumentationFilePath(cwd, name string) string {
 	if root, ok := findGiDocumentationRoot(cwd); ok {
-		return slashPath(filepath.Join(root, "docs", "providers.md"))
+		return slashPath(filepath.Join(root, "docs", name))
 	}
 	if _, file, _, ok := runtime.Caller(0); ok {
 		if root, ok := findGiDocumentationRoot(filepath.Dir(file)); ok {
-			return slashPath(filepath.Join(root, "docs", "providers.md"))
+			return slashPath(filepath.Join(root, "docs", name))
 		}
 	}
 	if packageDir := DefaultInstallEnvironment().PackageDir; strings.TrimSpace(packageDir) != "" {
-		return slashPath(filepath.Join(packageDir, "docs", "providers.md"))
+		return slashPath(filepath.Join(packageDir, "docs", name))
 	}
-	return "~/.gi/agent/docs/providers.md"
+	return slashPath(filepath.Join("~/.gi/agent/docs", name))
 }
 
 func findGiDocumentationRoot(start string) (string, bool) {
