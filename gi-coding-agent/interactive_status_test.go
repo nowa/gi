@@ -197,6 +197,21 @@ func TestInteractiveModeShowLoadedResourcesSkillsAndDiagnosticsMatchPi(t *testin
 			t.Fatalf("output = %q", output)
 		}
 	})
+
+	t.Run("formats theme diagnostics with Pi path and message lines", func(t *testing.T) {
+		output := renderInteractiveLoadedResources(InteractiveLoadedResources{
+			ThemeDiagnostics: []InteractiveResourceDiagnostic{{
+				Type:    "warning",
+				Path:    "/tmp/project/light",
+				Message: "theme path does not exist",
+			}},
+		}, InteractiveShowLoadedResourcesOptions{ShowDiagnosticsWhenQuiet: true})
+		if !strings.Contains(output, "[Theme conflicts]") ||
+			!strings.Contains(output, "  /tmp/project/light") ||
+			!strings.Contains(output, "    theme path does not exist") {
+			t.Fatalf("output = %q", output)
+		}
+	})
 }
 
 func TestInteractiveModeShowLoadedResourcesPromptsAndThemesPiStyle(t *testing.T) {

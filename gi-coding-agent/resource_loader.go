@@ -49,7 +49,8 @@ type ResourceTheme struct {
 }
 
 type ResourceThemesResult struct {
-	Themes []ResourceTheme
+	Themes      []ResourceTheme
+	Diagnostics []agentharness.SkillDiagnostic
 }
 
 type ResourceContextFile struct {
@@ -174,7 +175,7 @@ func (l *DefaultResourceLoader) Reload() {
 	l.discoverRuntimeResources(reason)
 	l.skills = l.loadSkills()
 	l.prompts = ResourcePromptsResult{Prompts: l.loadPrompts()}
-	l.themes = ResourceThemesResult{Themes: l.loadThemes()}
+	l.themes = l.loadThemes()
 	l.agentsFiles = ResourceAgentsFilesResult{AgentsFiles: l.loadAgentsFiles()}
 	l.systemPrompt = l.loadSystemPrompt()
 	l.appendSystem = l.loadAppendSystemPrompt()
@@ -191,7 +192,7 @@ func (l *DefaultResourceLoader) ExtendResources(resources ResourceExtension) {
 	}
 	l.skills = l.loadSkills()
 	l.prompts = ResourcePromptsResult{Prompts: l.loadPrompts()}
-	l.themes = ResourceThemesResult{Themes: l.loadThemes()}
+	l.themes = l.loadThemes()
 }
 
 func (l *DefaultResourceLoader) GetExtensions() ResourceExtensionsResult {
@@ -539,8 +540,9 @@ func sourceInfoFromProtocolMetadata(metadata ProtocolSourceInfo) SourceInfo {
 	}
 }
 
-func (l *DefaultResourceLoader) loadThemes() []ResourceTheme {
+func (l *DefaultResourceLoader) loadThemes() ResourceThemesResult {
 	var themes []ResourceTheme
+	var diagnostics []agentharness.SkillDiagnostic
 	if !l.noThemes {
 		for _, resource := range l.packageResources.Themes {
 			if resource.Enabled {
@@ -553,10 +555,23 @@ func (l *DefaultResourceLoader) loadThemes() []ResourceTheme {
 	}
 	for _, path := range l.additionalThemePaths {
 		resolved := ResolveToCwd(path, l.cwd)
-		if info, err := os.Stat(resolved); err == nil && info.IsDir() {
+		info, err := os.Stat(resolved)
+		if err != nil {
+			diagnostics = append(diagnostics, agentharness.SkillDiagnostic{
+				Type:    "warning",
+				Message: "theme path does not exist",
+				Path:    resolved,
+			})
+		} else if info.IsDir() {
 			themes = append(themes, loadThemesFromDir(resolved)...)
-		} else {
+		} else if info.Mode().IsRegular() && strings.HasSuffix(resolved, ".json") {
 			themes = append(themes, loadThemeFile(resolved)...)
+		} else {
+			diagnostics = append(diagnostics, agentharness.SkillDiagnostic{
+				Type:    "warning",
+				Message: "theme path is not a json file",
+				Path:    resolved,
+			})
 		}
 	}
 	for _, path := range l.extendedThemes {
@@ -569,7 +584,7 @@ func (l *DefaultResourceLoader) loadThemes() []ResourceTheme {
 		themes = append(themes, loadThemeResourcePath(path, l.cwd)...)
 	}
 	themes = filterThemes(themes, l.resourceFilters("themes"), l.cwd, l.agentDir)
-	return dedupeThemesByName(themes)
+	return ResourceThemesResult{Themes: dedupeThemesByName(themes), Diagnostics: diagnostics}
 }
 
 func loadThemeResourcePath(path ResourceThemePath, cwd string) []ResourceTheme {

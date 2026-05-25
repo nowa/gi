@@ -107,6 +107,7 @@ type InteractiveThemeResource struct {
 type InteractiveResourceDiagnostic struct {
 	Type    string
 	Message string
+	Path    string
 }
 
 type InteractiveContextFile struct {
@@ -320,6 +321,10 @@ func formatInteractiveDiagnosticsSection(header string, diagnostics []Interactiv
 		message := diagnostic.Message
 		if !expanded {
 			message = compactInteractiveDiagnosticMessage(message)
+		}
+		if strings.TrimSpace(diagnostic.Path) != "" {
+			lines = append(lines, "  "+formatInteractiveHomePath(diagnostic.Path), "    "+message)
+			continue
 		}
 		lines = append(lines, "  "+message)
 	}

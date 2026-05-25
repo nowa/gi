@@ -58,17 +58,21 @@ func tuiThemeLoadedResources(text string) string {
 		return text
 	}
 	lines := strings.Split(text, "\n")
+	inDiagnosticSection := false
 	for index, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		switch {
 		case trimmed == "":
 			continue
 		case strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]"):
-			if strings.Contains(trimmed, "conflicts") || strings.Contains(trimmed, "issues") {
+			inDiagnosticSection = strings.Contains(trimmed, "conflicts") || strings.Contains(trimmed, "issues")
+			if inDiagnosticSection {
 				lines[index] = tuiThemeWarning(line)
 			} else {
 				lines[index] = tuiThemeFG("mdHeading", line)
 			}
+		case inDiagnosticSection && strings.HasPrefix(line, "  "):
+			lines[index] = tuiThemeWarning(line)
 		case strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") &&
 			(trimmed == "project" || trimmed == "user" || trimmed == "path"):
 			lines[index] = strings.TrimSuffix(line, trimmed) + tuiThemeAccent(trimmed)
@@ -181,7 +185,9 @@ func (h *CLIInteractiveTUIHost) loadedResourcesForSession(session *AgentSession)
 	resources.ExtensionDiagnostics = append(resources.ExtensionDiagnostics, interactiveBuiltinCommandConflictDiagnostics(session.ExtensionRuntime)...)
 	resources.ExtensionDiagnostics = append(resources.ExtensionDiagnostics, interactiveShortcutDiagnostics(session.ExtensionRuntime, h.effectiveKeybindings())...)
 	if loader, ok := session.ResourceLoader.(agentSessionThemesResourceLoader); ok {
-		resources.Themes = interactiveThemesFromResourceThemes(loader.GetThemes().Themes)
+		themes := loader.GetThemes()
+		resources.Themes = interactiveThemesFromResourceThemes(themes.Themes)
+		resources.ThemeDiagnostics = interactiveDiagnosticsFromSkillDiagnostics(themes.Diagnostics)
 	}
 	if loader, ok := session.ResourceLoader.(agentSessionAgentsFilesResourceLoader); ok {
 		resources.ContextFiles = interactiveContextFilesFromResources(loader.GetAgentsFiles().AgentsFiles)
@@ -284,7 +290,7 @@ func interactiveContextFilesFromResources(files []ResourceContextFile) []Interac
 func interactiveDiagnosticsFromSkillDiagnostics(diagnostics []agentharness.SkillDiagnostic) []InteractiveResourceDiagnostic {
 	result := make([]InteractiveResourceDiagnostic, 0, len(diagnostics))
 	for _, diagnostic := range diagnostics {
-		result = append(result, InteractiveResourceDiagnostic{Type: diagnostic.Type, Message: diagnostic.Message})
+		result = append(result, InteractiveResourceDiagnostic{Type: diagnostic.Type, Message: diagnostic.Message, Path: diagnostic.Path})
 	}
 	return result
 }

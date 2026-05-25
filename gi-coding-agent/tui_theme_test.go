@@ -18,12 +18,12 @@ func TestTUIThemeForegroundTokensMatchPiDarkTheme(t *testing.T) {
 		"warning":            "\x1b[38;2;255;255;0m",
 		"muted":              "\x1b[38;2;128;128;128m",
 		"dim":                "\x1b[38;2;102;102;102m",
-		"text":               "\x1b[38;2;212;212;212m",
+		"text":               tuiResetFG,
 		"thinkingText":       "\x1b[38;2;128;128;128m",
-		"userMessageText":    "\x1b[38;2;212;212;212m",
-		"customMessageText":  "\x1b[38;2;212;212;212m",
+		"userMessageText":    tuiResetFG,
+		"customMessageText":  tuiResetFG,
 		"customMessageLabel": "\x1b[38;2;149;117;205m",
-		"toolTitle":          "\x1b[38;2;212;212;212m",
+		"toolTitle":          tuiResetFG,
 		"toolOutput":         "\x1b[38;2;128;128;128m",
 		"mdHeading":          "\x1b[38;2;240;198;116m",
 		"mdLink":             "\x1b[38;2;129;162;190m",
@@ -99,12 +99,12 @@ func TestTUIThemeForegroundTokensMatchPiLightTheme(t *testing.T) {
 		"warning":            "\x1b[38;2;154;115;38m",
 		"muted":              "\x1b[38;2;108;108;108m",
 		"dim":                "\x1b[38;2;118;118;118m",
-		"text":               "\x1b[38;2;31;35;40m",
+		"text":               tuiResetFG,
 		"thinkingText":       "\x1b[38;2;108;108;108m",
-		"userMessageText":    "\x1b[38;2;31;35;40m",
-		"customMessageText":  "\x1b[38;2;31;35;40m",
+		"userMessageText":    tuiResetFG,
+		"customMessageText":  tuiResetFG,
 		"customMessageLabel": "\x1b[38;2;126;87;194m",
-		"toolTitle":          "\x1b[38;2;31;35;40m",
+		"toolTitle":          tuiResetFG,
 		"toolOutput":         "\x1b[38;2;108;108;108m",
 		"mdHeading":          "\x1b[38;2;154;115;38m",
 		"mdLink":             "\x1b[38;2;84;125;167m",
@@ -236,12 +236,12 @@ func TestTUIThemeTruecolorOverridesScreenTermLikePi(t *testing.T) {
 	}
 }
 
-func TestTUIThemeUserMessageUsesInstalledPiTextForeground(t *testing.T) {
+func TestTUIThemeUserMessageUsesPiDefaultTextForeground(t *testing.T) {
 	setTUIThemeForTest(t, "dark", nil)
 	lines := newCLIUserMessageComponent("hello").Render(40)
 	rendered := strings.Join(lines, "\n")
-	if !strings.Contains(rendered, "\x1b[38;2;212;212;212mhello"+tuiResetFG) {
-		t.Fatalf("user message should use installed Pi dark text foreground:\n%q", rendered)
+	if strings.Contains(rendered, "\x1b[38;2;212;212;212mhello") || !strings.Contains(rendered, tuiResetFG+"hello"+tuiResetFG) {
+		t.Fatalf("user message should use Pi default foreground reset:\n%q", rendered)
 	}
 }
 

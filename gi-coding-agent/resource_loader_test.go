@@ -841,6 +841,25 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("missing explicit theme path reports Pi-style diagnostic", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		missingTheme := filepath.Join(cwd, "light")
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+			CWD:                  cwd,
+			AgentDir:             agentDir,
+			AdditionalThemePaths: []string{"light"},
+		})
+		loader.Reload()
+
+		themes := loader.GetThemes()
+		if len(themes.Diagnostics) != 1 ||
+			themes.Diagnostics[0].Type != "warning" ||
+			themes.Diagnostics[0].Message != "theme path does not exist" ||
+			themes.Diagnostics[0].Path != missingTheme {
+			t.Fatalf("theme diagnostics = %#v", themes.Diagnostics)
+		}
+	})
+
 	t.Run("applies skills and system prompt overrides", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		injected := agentharness.Skill{Name: "injected", Description: "Injected skill", FilePath: "/fake/path"}
