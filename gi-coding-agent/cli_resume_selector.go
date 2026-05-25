@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -75,7 +76,7 @@ func runCLIResumeSelector(cwd, sessionDir string, terminal gitui.Terminal, keybi
 			return ListSessions(cwd, sessionDir, progress), nil
 		},
 		func(progress SessionListProgress) ([]SessionInfo, error) {
-			return ListAllSessions(progress), nil
+			return ListAllSessions(filepath.Dir(sessionDir), progress), nil
 		},
 		SessionSelectorOptions{
 			ShowRenameHint: true,

@@ -6149,7 +6149,7 @@ func (h *CLIInteractiveTUIHost) handleResumeSessionSelector() error {
 			return ListSessions(manager.GetCWD(), manager.GetSessionDir(), progress), nil
 		},
 		func(progress SessionListProgress) ([]SessionInfo, error) {
-			return ListAllSessions(progress), nil
+			return ListAllSessions(filepath.Dir(manager.GetSessionDir()), progress), nil
 		},
 		SessionSelectorOptions{
 			ShowRenameHint:     true,

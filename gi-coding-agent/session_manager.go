@@ -416,16 +416,20 @@ func ListSessions(cwd string, args ...any) []SessionInfo {
 	return sessions
 }
 
-func ListAllSessions(args ...SessionListProgress) []SessionInfo {
+func ListAllSessions(args ...any) []SessionInfo {
 	var onProgress SessionListProgress
-	if len(args) > 0 {
-		onProgress = args[0]
+	root := ""
+	for _, arg := range args {
+		switch value := arg.(type) {
+		case SessionListProgress:
+			onProgress = value
+		case string:
+			root = value
+		}
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil
+	if root == "" {
+		root = defaultSessionRoot()
 	}
-	root := filepath.Join(home, ConfigDirName, "agent", "sessions")
 	dirEntries, err := os.ReadDir(root)
 	if err != nil {
 		return nil
@@ -450,6 +454,17 @@ func ListAllSessions(args ...SessionListProgress) []SessionInfo {
 		return sessions[i].Modified.After(sessions[j].Modified)
 	})
 	return sessions
+}
+
+func defaultSessionRoot() string {
+	if env := firstNonEmptyString(os.Getenv("GI_CODING_AGENT_DIR"), os.Getenv("PI_CODING_AGENT_DIR")); env != "" {
+		return filepath.Join(ExpandPath(env), "sessions")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ConfigDirName, "agent", "sessions")
 }
 
 func listSessionsFromDir(dir string, onProgress SessionListProgress, progressOffset, progressTotal int) []SessionInfo {

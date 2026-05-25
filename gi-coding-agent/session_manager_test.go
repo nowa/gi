@@ -218,6 +218,58 @@ func TestSessionManagerCreateContinueAndDefaultDirMatchPiPaths(t *testing.T) {
 	}
 }
 
+func TestListAllSessionsUsesConfiguredAgentDirPiStyle(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	agentDir := filepath.Join(t.TempDir(), "agent")
+	t.Setenv("GI_CODING_AGENT_DIR", agentDir)
+
+	writeSessionHeader := func(root, encodedCWD, id, cwd string) {
+		t.Helper()
+		dir := filepath.Join(root, encodedCWD)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, id+".jsonl")
+		header := `{"type":"session","version":3,"id":"` + id + `","timestamp":"2026-01-01T00:00:00Z","cwd":"` + cwd + `"}` + "\n"
+		if err := os.WriteFile(path, []byte(header), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeSessionHeader(filepath.Join(agentDir, "sessions"), "--project--", "configured", "/project")
+	writeSessionHeader(filepath.Join(home, ConfigDirName, "agent", "sessions"), "--leaked--", "leaked", "/leaked")
+
+	sessions := ListAllSessions()
+	if len(sessions) != 1 || sessions[0].ID != "configured" {
+		t.Fatalf("sessions from configured agent dir = %#v", sessions)
+	}
+}
+
+func TestListAllSessionsCanUseExplicitSessionRoot(t *testing.T) {
+	firstRoot := filepath.Join(t.TempDir(), "first")
+	secondRoot := filepath.Join(t.TempDir(), "second")
+	writeSessionHeader := func(root, id string) {
+		t.Helper()
+		dir := filepath.Join(root, "--project--")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, id+".jsonl")
+		header := `{"type":"session","version":3,"id":"` + id + `","timestamp":"2026-01-01T00:00:00Z","cwd":"/project"}` + "\n"
+		if err := os.WriteFile(path, []byte(header), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeSessionHeader(firstRoot, "first")
+	writeSessionHeader(secondRoot, "second")
+
+	sessions := ListAllSessions(firstRoot)
+	if len(sessions) != 1 || sessions[0].ID != "first" {
+		t.Fatalf("sessions from explicit root = %#v", sessions)
+	}
+}
+
 func nonEmptyLines(content string) []string {
 	var lines []string
 	for _, line := range strings.Split(strings.TrimSpace(content), "\n") {

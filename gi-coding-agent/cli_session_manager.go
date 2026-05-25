@@ -118,7 +118,7 @@ func resolveCLISessionPath(sessionArg, cwd, sessionDir string) cliResolvedSessio
 			return cliResolvedSession{Type: cliResolvedSessionLocal, Path: session.Path, CWD: session.CWD, Arg: sessionArg}
 		}
 	}
-	for _, session := range ListAllSessions() {
+	for _, session := range ListAllSessions(filepath.Dir(sessionDir)) {
 		if strings.HasPrefix(session.ID, sessionArg) {
 			return cliResolvedSession{Type: cliResolvedSessionGlobal, Path: session.Path, CWD: session.CWD, Arg: sessionArg}
 		}

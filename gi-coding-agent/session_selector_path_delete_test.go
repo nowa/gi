@@ -118,6 +118,21 @@ func TestSessionSelectorAllLoadResolveDoesNotSwitchBackToAll(t *testing.T) {
 	}
 }
 
+func TestSessionSelectorAllEmptyCancelsPiStyle(t *testing.T) {
+	cancelled := make(chan struct{})
+	var cancelOnce sync.Once
+	selector := NewLoadingSessionSelectorComponent(
+		func(SessionListProgress) ([]SessionInfo, error) { return nil, nil },
+		func(SessionListProgress) ([]SessionInfo, error) { return nil, nil },
+		SessionSelectorOptions{
+			OnCancel: func() { cancelOnce.Do(func() { close(cancelled) }) },
+		},
+	)
+
+	selector.HandleInput(sessionSelectorTab)
+	waitForSessionSelectorSignal(t, cancelled)
+}
+
 func TestSessionSelectorDoesNotStartRedundantAllLoadsWhileLoading(t *testing.T) {
 	currentSessions := []SessionInfo{makeSessionSelectorSession("current", "Current")}
 	allSessions := []SessionInfo{makeSessionSelectorSession("all", "All")}

@@ -459,6 +459,8 @@ func (s *SessionSelectorComponent) loadAllSessions(seq int, loader SessionSelect
 	sessions, err := loader(nil)
 	var onError func(string)
 	var errorMessage string
+	var onCancel func()
+	shouldCancel := false
 
 	s.mu.Lock()
 	if seq != s.allLoadSeq {
@@ -481,10 +483,21 @@ func (s *SessionSelectorComponent) loadAllSessions(seq int, loader SessionSelect
 	s.allSessions = cloneSessionInfos(sessions)
 	if s.scope == sessionSelectorAllScope {
 		s.sessions = cloneSessionInfos(sessions)
-		s.clampSelectedLocked()
+		if len(sessions) == 0 && len(s.currentSessions) == 0 {
+			onCancel = s.options.OnCancel
+			shouldCancel = true
+		} else {
+			s.clampSelectedLocked()
+		}
 	}
 	requestRender := s.options.RequestRender
 	s.mu.Unlock()
+	if shouldCancel {
+		if onCancel != nil {
+			onCancel()
+		}
+		return
+	}
 	if requestRender != nil {
 		requestRender()
 	}
