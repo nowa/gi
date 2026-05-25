@@ -218,7 +218,7 @@ func (c InteractiveExtensionUIContext) AddAutocompleteProvider(wrapper Autocompl
 
 func isInteractiveThemeName(theme string) bool {
 	switch theme {
-	case "dark", "light", "system":
+	case "dark", "light":
 		return true
 	default:
 		return false

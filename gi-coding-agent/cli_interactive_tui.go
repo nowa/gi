@@ -788,7 +788,6 @@ func (h *CLIInteractiveTUIHost) AvailableTUIThemes() []TUIThemeInfo {
 	}
 	add(TUIThemeInfo{Name: "dark", Builtin: true})
 	add(TUIThemeInfo{Name: "light", Builtin: true})
-	add(TUIThemeInfo{Name: "system", Builtin: true})
 	if session, err := h.currentAgentSession(); err == nil && session != nil && session.ResourceLoader != nil {
 		if loader, ok := session.ResourceLoader.(interface{ GetThemes() ResourceThemesResult }); ok {
 			for _, theme := range loader.GetThemes().Themes {
@@ -796,7 +795,7 @@ func (h *CLIInteractiveTUIHost) AvailableTUIThemes() []TUIThemeInfo {
 			}
 		}
 	}
-	if current := h.CurrentTUITheme(); current != "" {
+	if current := h.CurrentTUITheme(); current != "" && current != "system" {
 		add(TUIThemeInfo{Name: current})
 	}
 	return themes
@@ -4250,6 +4249,11 @@ type settingsListItemsOptions struct {
 	OnThemePreview func(string)
 }
 
+var settingsSubmenuSelectListLayout = gitui.SelectListLayoutOptions{
+	MinPrimaryColumnWidth: 12,
+	MaxPrimaryColumnWidth: 32,
+}
+
 type httpIdleTimeoutChoice struct {
 	Label     string
 	TimeoutMS int
@@ -4376,53 +4380,118 @@ func insertSettingItems(items []gitui.SettingItem, index int, inserted ...gitui.
 
 func settingsSelectSubmenu(title, message string, options []TUIDialogOption) func(currentValue string, done func(selectedValue string, changed bool)) gitui.Component {
 	return func(currentValue string, done func(selectedValue string, changed bool)) gitui.Component {
-		return newCLISelectDialog(title, message, options, dialogDefaultOptionIndex(options, currentValue), func(option TUIDialogOption) {
-			done(dialogStringValue(dialogOptionValue(option)), true)
-		}, func() {
-			done(currentValue, false)
-		})
+		return newCLISettingsSelectSubmenu(title, message, options, currentValue, done, nil)
 	}
 }
 
 func settingsSelectSubmenuWithSelectionChange(title, message string, options []TUIDialogOption, onSelectionChange func(string)) func(currentValue string, done func(selectedValue string, changed bool)) gitui.Component {
 	return func(currentValue string, done func(selectedValue string, changed bool)) gitui.Component {
-		return newCLISelectDialogWithOptions(title, message, options, dialogDefaultOptionIndex(options, currentValue), func(option TUIDialogOption) {
-			done(dialogStringValue(dialogOptionValue(option)), true)
-		}, func() {
-			if onSelectionChange != nil {
-				onSelectionChange(currentValue)
-			}
-			done(currentValue, false)
-		}, cliSelectDialogOptions{
-			OnSelectionChange: func(option TUIDialogOption) {
-				if onSelectionChange != nil {
-					onSelectionChange(dialogStringValue(dialogOptionValue(option)))
-				}
-			},
-		})
+		return newCLISettingsSelectSubmenu(title, message, options, currentValue, done, onSelectionChange)
 	}
 }
 
-func settingsThinkingOptions(levels []string, current string) []TUIDialogOption {
+type cliSettingsSelectSubmenu struct {
+	title             string
+	message           string
+	list              *gitui.SelectList
+	currentValue      string
+	done              func(selectedValue string, changed bool)
+	onSelectionChange func(string)
+}
+
+func newCLISettingsSelectSubmenu(title, message string, options []TUIDialogOption, currentValue string, done func(selectedValue string, changed bool), onSelectionChange func(string)) *cliSettingsSelectSubmenu {
+	items := make([]gitui.SelectItem, 0, len(options))
+	for _, option := range options {
+		value := dialogStringValue(dialogOptionValue(option))
+		label := strings.TrimSpace(option.Label)
+		if label == "" {
+			label = firstNonEmptyString(option.ID, value)
+		}
+		items = append(items, gitui.SelectItem{Value: value, Label: label, Description: option.Description})
+	}
+	list := gitui.NewSelectList(items, min(len(items), 10), tuiThemeSelectList(), settingsSubmenuSelectListLayout)
+	if index := settingsSelectItemIndex(items, currentValue); index >= 0 {
+		list.SetSelectedIndex(index)
+	}
+	component := &cliSettingsSelectSubmenu{
+		title:             title,
+		message:           message,
+		list:              list,
+		currentValue:      currentValue,
+		done:              done,
+		onSelectionChange: onSelectionChange,
+	}
+	list.OnSelect = func(item gitui.SelectItem) {
+		if component.done != nil {
+			component.done(item.Value, true)
+		}
+	}
+	list.OnCancel = func() {
+		if component.onSelectionChange != nil {
+			component.onSelectionChange(component.currentValue)
+		}
+		if component.done != nil {
+			component.done(component.currentValue, false)
+		}
+	}
+	list.OnSelectionChange = func(item gitui.SelectItem) {
+		if component.onSelectionChange != nil {
+			component.onSelectionChange(item.Value)
+		}
+	}
+	return component
+}
+
+func settingsSelectItemIndex(items []gitui.SelectItem, currentValue string) int {
+	for idx, item := range items {
+		if item.Value == currentValue {
+			return idx
+		}
+	}
+	return -1
+}
+
+func (c *cliSettingsSelectSubmenu) Invalidate() {
+	if c != nil && c.list != nil {
+		c.list.Invalidate()
+	}
+}
+
+func (c *cliSettingsSelectSubmenu) Render(width int) []string {
+	if c == nil {
+		return nil
+	}
+	width = max(1, width)
+	lines := []string{tuiThemeBoldAccent(c.title)}
+	if strings.TrimSpace(c.message) != "" {
+		lines = append(lines, "", tuiThemeMuted(c.message))
+	}
+	lines = append(lines, "")
+	if c.list != nil {
+		lines = append(lines, c.list.Render(width)...)
+	}
+	lines = append(lines, "", tuiThemeDim("  Enter to select · Esc to go back"))
+	return lines
+}
+
+func (c *cliSettingsSelectSubmenu) HandleInput(data string) {
+	if c != nil && c.list != nil {
+		c.list.HandleInput(data)
+	}
+}
+
+func settingsThinkingOptions(levels []string, _ string) []TUIDialogOption {
 	options := make([]TUIDialogOption, 0, len(levels))
 	for _, level := range levels {
-		description := thinkingLevelDescription(level)
-		if level == current {
-			description = strings.TrimSpace(description + " (current)")
-		}
-		options = append(options, TUIDialogOption{ID: level, Label: level, Description: description, Value: level})
+		options = append(options, TUIDialogOption{ID: level, Label: level, Description: thinkingLevelDescription(level), Value: level})
 	}
 	return options
 }
 
-func settingsThemeOptions(themes []string, current string) []TUIDialogOption {
+func settingsThemeOptions(themes []string, _ string) []TUIDialogOption {
 	options := make([]TUIDialogOption, 0, len(themes))
 	for _, themeName := range themes {
-		description := ""
-		if themeName == current {
-			description = "(current)"
-		}
-		options = append(options, TUIDialogOption{ID: themeName, Label: themeName, Description: description, Value: themeName})
+		options = append(options, TUIDialogOption{ID: themeName, Label: themeName, Value: themeName})
 	}
 	return options
 }

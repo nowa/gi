@@ -5164,6 +5164,29 @@ func TestCLIInteractiveTUIHostAppliesThemeThroughHost(t *testing.T) {
 	}
 }
 
+func TestCLIInteractiveTUIHostAvailableThemesMatchPiBuiltins(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	sessionHost.settingsManager.SetTheme("system")
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    gitui.NewVirtualTerminal(100, 24),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	themes := host.AvailableTUIThemes()
+	if !tuiThemeInfoHasName(themes, "dark") || !tuiThemeInfoHasName(themes, "light") {
+		t.Fatalf("themes missing Pi builtins: %#v", themes)
+	}
+	if tuiThemeInfoHasName(themes, "system") {
+		t.Fatalf("themes should not expose system builtin like Pi: %#v", themes)
+	}
+}
+
 func TestCLIInteractiveTUIHostDispatchesThemeChangeToViewTreeSubscribers(t *testing.T) {
 	previousTheme := tuiActiveThemeSnapshot()
 	t.Cleanup(func() { tuiSetActiveThemePalette(previousTheme) })
@@ -5553,15 +5576,29 @@ func TestCLIInteractiveTUISettingsListUsesPiStyleSelectSubmenus(t *testing.T) {
 	if !ok {
 		t.Fatalf("submenu component = %T, want InputHandler", component)
 	}
-	handler.HandleInput("l")
-	handler.HandleInput("i")
+	handler.HandleInput("\x1b[B")
 	rendered := strings.Join(component.Render(80), "\n")
-	if !strings.Contains(rendered, "light") || strings.Contains(rendered, "dark (current)") {
-		t.Fatalf("theme submenu should search by label: %q", rendered)
+	if !strings.Contains(rendered, "Theme") ||
+		!strings.Contains(rendered, "Select color theme") ||
+		!strings.Contains(rendered, "→ light") ||
+		!strings.Contains(rendered, "Enter to select · Esc to go back") ||
+		strings.Contains(rendered, "Type search") ||
+		strings.Contains(rendered, "(current)") {
+		t.Fatalf("theme submenu should use Pi settings select layout: %q", rendered)
 	}
 	handler.HandleInput("\r")
 	if selected != "light" || !changed {
 		t.Fatalf("theme selection selected=%q changed=%v", selected, changed)
+	}
+
+	component = thinking.Submenu("off", func(string, bool) {})
+	rendered = strings.Join(component.Render(100), "\n")
+	if !strings.Contains(rendered, "Thinking Level") ||
+		!strings.Contains(rendered, "→ off") ||
+		!strings.Contains(rendered, "No reasoning") ||
+		strings.Contains(rendered, "(current)") ||
+		strings.Contains(rendered, "Type search") {
+		t.Fatalf("thinking submenu should match Pi settings select layout: %q", rendered)
 	}
 
 	var previews []string
@@ -5576,10 +5613,9 @@ func TestCLIInteractiveTUISettingsListUsesPiStyleSelectSubmenus(t *testing.T) {
 	if !ok {
 		t.Fatalf("preview submenu component = %T, want InputHandler", component)
 	}
-	handler.HandleInput("l")
-	handler.HandleInput("i")
+	handler.HandleInput("\x1b[B")
 	handler.HandleInput("\x1b")
-	if !reflect.DeepEqual(previews, []string{"light", "light", "dark"}) {
+	if !reflect.DeepEqual(previews, []string{"light", "dark"}) {
 		t.Fatalf("theme previews = %#v", previews)
 	}
 
