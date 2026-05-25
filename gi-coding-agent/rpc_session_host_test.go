@@ -457,11 +457,16 @@ func TestRPCSessionHostCloneForksCurrentLeafLikePi(t *testing.T) {
 	}
 }
 
-func TestRPCSessionHostCloneRequiresCurrentLeafLikePi(t *testing.T) {
+func TestRPCSessionHostCloneStartsNewEmptySessionLikePi(t *testing.T) {
 	host, _, _ := createRPCSessionHostForTest(t)
-	response := host.HandleCommand(context.Background(), RPCCommand{Type: RPCCommandClone})
-	if response.Success || !strings.Contains(response.Error, "no current entry selected") {
-		t.Fatalf("clone response = %#v", response)
+	before := mustRPCHandleData[RPCSessionState](t, host, RPCCommand{Type: RPCCommandGetState})
+	result := mustRPCHandleData[RPCCloneResult](t, host, RPCCommand{Type: RPCCommandClone})
+	if result.Cancelled {
+		t.Fatalf("clone result = %#v", result)
+	}
+	after := mustRPCHandleData[RPCSessionState](t, host, RPCCommand{Type: RPCCommandGetState})
+	if after.SessionID == before.SessionID || after.MessageCount != 0 {
+		t.Fatalf("after clone = %#v before = %#v", after, before)
 	}
 }
 

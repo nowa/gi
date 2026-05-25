@@ -634,7 +634,16 @@ func (h *RPCSessionHost) Fork(entryID string) (RPCForkResult, error) {
 func (h *RPCSessionHost) Clone() (RPCCloneResult, error) {
 	leafID := h.Session.SessionManager.GetLeafID()
 	if leafID == nil || strings.TrimSpace(*leafID) == "" {
-		return RPCCloneResult{}, errors.New("Cannot clone session: no current entry selected")
+		manager, err := CreateSessionManager(h.Session.SessionManager.GetCWD(), h.Session.SessionManager.GetSessionDir())
+		if err != nil {
+			return RPCCloneResult{}, err
+		}
+		newSession, err := cloneAgentSessionWithManager(h.Session, manager)
+		if err != nil {
+			return RPCCloneResult{}, err
+		}
+		h.replaceSession(newSession)
+		return RPCCloneResult{Cancelled: false}, nil
 	}
 	forkedManager, err := h.Session.SessionManager.ForkAtEntry(*leafID)
 	if err != nil {

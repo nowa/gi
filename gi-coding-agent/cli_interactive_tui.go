@@ -5894,16 +5894,15 @@ func (h *CLIInteractiveTUIHost) debugLogPath() string {
 
 func (h *CLIInteractiveTUIHost) loadChangelogMarkdown() string {
 	cwd := h.interactiveCWD()
-	if strings.TrimSpace(cwd) == "" {
-		return ""
-	}
-	for _, name := range []string{"CHANGELOG.md", "CHANGELOG"} {
-		content, err := os.ReadFile(filepath.Join(cwd, name))
-		if err == nil {
-			return string(content)
+	if strings.TrimSpace(cwd) != "" {
+		for _, name := range []string{"CHANGELOG.md", "CHANGELOG"} {
+			content, err := os.ReadFile(filepath.Join(cwd, name))
+			if err == nil {
+				return string(content)
+			}
 		}
 	}
-	return ""
+	return embeddedCodingAgentChangelog
 }
 
 func (h *CLIInteractiveTUIHost) handleNewSlashCommand() error {
@@ -6031,7 +6030,7 @@ func (h *CLIInteractiveTUIHost) showShareLoader(ctx *context.Context) func() {
 func (h *CLIInteractiveTUIHost) handleImportSlashCommand(text string) error {
 	path, ok := GetPathCommandArgument(strings.TrimSpace(text), "/import")
 	if !ok {
-		h.addStatus("Usage: /import <path.jsonl>")
+		h.addStatus("Error: Usage: /import <path.jsonl>")
 		return nil
 	}
 	if !h.exitAfterInitial {
@@ -6333,7 +6332,34 @@ func (h *CLIInteractiveTUIHost) handleCloneSlashCommand() error {
 	}
 	leafID := session.SessionManager.GetLeafID()
 	if leafID == nil || strings.TrimSpace(*leafID) == "" {
-		return errors.New("Entry " + cloneEmptySessionEntryID(session.SessionManager) + " not found")
+		if runtimeHost := h.agentSessionRuntimeHost(); runtimeHost != nil {
+			result, err := runtimeHost.NewSession()
+			if err != nil {
+				return err
+			}
+			if result.Cancelled {
+				h.addStatus("Clone cancelled")
+				return nil
+			}
+		} else {
+			newManager, err := CreateSessionManager(session.SessionManager.GetCWD(), session.SessionManager.GetSessionDir())
+			if err != nil {
+				return err
+			}
+			newSession, err := cloneAgentSessionWithManager(session, newManager)
+			if err != nil {
+				return err
+			}
+			if owner, ok := h.runtimeHost.(*agentSessionPrintModeHost); ok {
+				owner.session = newSession
+			} else {
+				return errors.New("clone requires a replaceable agent session host")
+			}
+		}
+		h.resetChatState()
+		h.renderExistingMessages()
+		h.addStatus("Cloned to new session")
+		return nil
 	}
 	if runtimeHost := h.agentSessionRuntimeHost(); runtimeHost != nil {
 		result, err := runtimeHost.Fork(*leafID, AgentSessionRuntimeForkOptions{Position: "at"})
@@ -6362,20 +6388,6 @@ func (h *CLIInteractiveTUIHost) handleCloneSlashCommand() error {
 	h.renderExistingMessages()
 	h.addStatus("Cloned to new session")
 	return nil
-}
-
-func cloneEmptySessionEntryID(manager *SessionManager) string {
-	if manager == nil {
-		return "unknown"
-	}
-	id := strings.ReplaceAll(strings.TrimSpace(manager.GetSessionID()), "-", "")
-	if id == "" {
-		return "unknown"
-	}
-	if len(id) > 8 {
-		return id[:8]
-	}
-	return id
 }
 
 func (h *CLIInteractiveTUIHost) handleForkSlashCommand(args string) error {

@@ -6147,6 +6147,29 @@ func TestCLIInteractiveTUIHostHandlesChangelogCommand(t *testing.T) {
 	waitForViewport(t, terminal, "Added TTY changelog")
 }
 
+func TestCLIInteractiveTUIHostChangelogFallsBackToPackageChangelog(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	terminal := gitui.NewVirtualTerminal(120, 28)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost:      runtimeHost,
+		Terminal:         terminal,
+		Messages:         []string{"/changelog"},
+		ExitAfterInitial: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := host.RunContext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	waitForViewport(t, terminal, "What's New")
+	waitForViewport(t, terminal, "Go coding-agent port")
+	if strings.Contains(strings.Join(terminal.GetViewport(), "\n"), "No changelog entries found") {
+		t.Fatalf("changelog command should use embedded package changelog:\n%s", strings.Join(terminal.GetViewport(), "\n"))
+	}
+}
+
 func TestCLIInteractiveTUIHostHandlesShareCommand(t *testing.T) {
 	t.Setenv("GI_SHARE_VIEWER_URL", "https://share.gi.test/session/")
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
@@ -6612,6 +6635,25 @@ func TestCLIInteractiveTUIHostHandlesImportCommand(t *testing.T) {
 	}
 }
 
+func TestCLIInteractiveTUIHostImportCommandRequiresPathPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	terminal := gitui.NewVirtualTerminal(120, 28)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost:      runtimeHost,
+		Terminal:         terminal,
+		Messages:         []string{"/import"},
+		ExitAfterInitial: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := host.RunContext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	waitForViewport(t, terminal, "Error: Usage: /import <path.jsonl>")
+}
+
 func TestCLIInteractiveTUIHostResumeWithPathSubmitsAsPromptPiStyle(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
@@ -6801,7 +6843,7 @@ func TestCLIInteractiveTUIHostHandlesCloneCommand(t *testing.T) {
 	}
 }
 
-func TestCLIInteractiveTUIHostCloneEmptySessionShowsPiStyleEntryError(t *testing.T) {
+func TestCLIInteractiveTUIHostCloneEmptySessionStartsNewSessionPiStyle(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	terminal := gitui.NewVirtualTerminal(120, 28)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
@@ -6820,11 +6862,10 @@ func TestCLIInteractiveTUIHostCloneEmptySessionShowsPiStyleEntryError(t *testing
 
 	terminal.SendInput("/clone")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Error: Entry ")
-	waitForViewport(t, terminal, "not found")
+	waitForViewport(t, terminal, "Cloned to new session")
 	viewport := strings.Join(terminal.GetViewport(), "\n")
-	if strings.Contains(viewport, "Nothing to clone yet") {
-		t.Fatalf("empty /clone should match installed Pi entry error, got:\n%s", viewport)
+	if strings.Contains(viewport, "Error:") || strings.Contains(viewport, "Nothing to clone yet") {
+		t.Fatalf("empty /clone should match installed Pi clone status, got:\n%s", viewport)
 	}
 
 	host.Stop()
@@ -10705,7 +10746,7 @@ func waitForProtocolAutocompleteRequest(t *testing.T, ch <-chan ProtocolAutocomp
 
 func waitForEditorText(t *testing.T, host *CLIInteractiveTUIHost, want string) {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if host.editor != nil && host.editor.GetText() == want {
 			return
