@@ -48,5 +48,8 @@ func BuildAnthropicRequestHeaders(model Model, context Context, options Anthropi
 	for key, value := range BuildAnthropicHeaders(model, context, options) {
 		headers[key] = value
 	}
+	for key, value := range options.Headers {
+		headers[key] = value
+	}
 	return headers
 }

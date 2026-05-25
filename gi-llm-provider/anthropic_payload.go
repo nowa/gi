@@ -43,26 +43,27 @@ type AnthropicPayloadOptions struct {
 	ThinkingBudgets  map[string]int
 	ThinkingDisplay  string
 	Metadata         map[string]any
+	Headers          map[string]string
 	IsOAuthToken     bool
 	InterleavedThink *bool
 }
 
 type AnthropicPayload struct {
-	Model        string
-	Messages     []AnthropicMessage
-	System       []AnthropicContentBlock
-	MaxTokens    int
-	Stream       bool
-	Temperature  *float64
-	Tools        []AnthropicTool
-	Thinking     map[string]any
-	OutputConfig map[string]any
-	Metadata     map[string]any
+	Model        string                  `json:"model"`
+	Messages     []AnthropicMessage      `json:"messages"`
+	System       []AnthropicContentBlock `json:"system,omitempty"`
+	MaxTokens    int                     `json:"max_tokens"`
+	Stream       bool                    `json:"stream"`
+	Temperature  *float64                `json:"temperature,omitempty"`
+	Tools        []AnthropicTool         `json:"tools,omitempty"`
+	Thinking     map[string]any          `json:"thinking,omitempty"`
+	OutputConfig map[string]any          `json:"output_config,omitempty"`
+	Metadata     map[string]any          `json:"metadata,omitempty"`
 }
 
 type AnthropicMessage struct {
-	Role    string
-	Content any
+	Role    string `json:"role"`
+	Content any    `json:"content"`
 }
 
 type AnthropicContentBlock struct {
@@ -98,9 +99,13 @@ type AnthropicTool struct {
 func BuildAnthropicPayload(model Model, context Context, options AnthropicPayloadOptions) AnthropicPayload {
 	compat := ResolveAnthropicCompat(model)
 	cacheControl := anthropicCacheControl(options.CacheRetention, compat)
+	reasoning := options.Reasoning
+	if reasoning == "off" {
+		reasoning = ""
+	}
 	maxTokens := options.MaxTokens
-	if maxTokens == 0 {
-		maxTokens = model.MaxTokens / 3
+	if maxTokens == 0 && model.MaxTokens > 0 {
+		maxTokens = model.MaxTokens
 	}
 	payload := AnthropicPayload{
 		Model:     model.ID,
@@ -117,7 +122,7 @@ func BuildAnthropicPayload(model Model, context Context, options AnthropicPayloa
 		payload.Tools = ConvertAnthropicTools(context.Tools, options.IsOAuthToken, compat.SupportsEagerToolInputStreaming, toolCacheControl)
 	}
 	if model.Reasoning {
-		if options.Reasoning == "" {
+		if reasoning == "" {
 			payload.Thinking = map[string]any{"type": "disabled"}
 			payload.Temperature = options.Temperature
 		} else if SupportsAnthropicAdaptiveThinking(model) {
@@ -126,13 +131,14 @@ func BuildAnthropicPayload(model Model, context Context, options AnthropicPayloa
 				display = "summarized"
 			}
 			payload.Thinking = map[string]any{"type": "adaptive", "display": display}
-			payload.OutputConfig = map[string]any{"effort": MapAnthropicThinkingEffort(model, options.Reasoning)}
+			payload.OutputConfig = map[string]any{"effort": MapAnthropicThinkingEffort(model, reasoning)}
 		} else {
 			display := options.ThinkingDisplay
 			if display == "" {
 				display = "summarized"
 			}
-			budget := anthropicThinkingBudget(options.Reasoning, options.ThinkingBudgets)
+			adjustedMaxTokens, budget := adjustAnthropicMaxTokensForThinking(maxTokens, model.MaxTokens, reasoning, options.ThinkingBudgets)
+			payload.MaxTokens = adjustedMaxTokens
 			payload.Thinking = map[string]any{"type": "enabled", "budget_tokens": budget, "display": display}
 		}
 	} else {
@@ -148,6 +154,10 @@ func BuildAnthropicHeaders(model Model, context Context, options AnthropicPayloa
 	headers := map[string]string{}
 	features := []string{}
 	compat := ResolveAnthropicCompat(model)
+	reasoning := options.Reasoning
+	if reasoning == "off" {
+		reasoning = ""
+	}
 	if len(context.Tools) > 0 && !compat.SupportsEagerToolInputStreaming {
 		features = append(features, fineGrainedToolStreamingBeta)
 	}
@@ -155,7 +165,7 @@ func BuildAnthropicHeaders(model Model, context Context, options AnthropicPayloa
 	if options.InterleavedThink != nil {
 		interleaved = *options.InterleavedThink
 	}
-	if interleaved && options.Reasoning != "" && !SupportsAnthropicAdaptiveThinking(model) {
+	if interleaved && reasoning != "" && !SupportsAnthropicAdaptiveThinking(model) {
 		features = append(features, interleavedThinkingBeta)
 	}
 	if len(features) > 0 {
@@ -439,14 +449,9 @@ func anthropicThinkingBudget(level string, overrides map[string]int) int {
 		"low":     2048,
 		"medium":  8192,
 		"high":    16384,
-		"xhigh":   16384,
 	}
 	if level == "xhigh" {
-		if overrides != nil {
-			if value, ok := overrides["high"]; ok {
-				return value
-			}
-		}
+		level = "high"
 	}
 	if overrides != nil {
 		if value, ok := overrides[level]; ok {
@@ -457,4 +462,20 @@ func anthropicThinkingBudget(level string, overrides map[string]int) int {
 		return value
 	}
 	return 1024
+}
+
+func adjustAnthropicMaxTokensForThinking(baseMaxTokens, modelMaxTokens int, level string, overrides map[string]int) (int, int) {
+	budget := anthropicThinkingBudget(level, overrides)
+	maxTokens := baseMaxTokens + budget
+	if modelMaxTokens > 0 && maxTokens > modelMaxTokens {
+		maxTokens = modelMaxTokens
+	}
+	if maxTokens <= budget {
+		const minOutputTokens = 1024
+		budget = maxTokens - minOutputTokens
+		if budget < 0 {
+			budget = 0
+		}
+	}
+	return maxTokens, budget
 }

@@ -63,6 +63,33 @@ func TestBuildAnthropicPayloadThinkingDisableAndAdaptive(t *testing.T) {
 	}
 }
 
+func TestBuildAnthropicPayloadThinkingBudgetMaxTokensPiParity(t *testing.T) {
+	model := MustGetModel("anthropic", "claude-sonnet-4-5")
+	contextValue := Context{Messages: []Message{UserMessageText("Hello")}}
+
+	payload := BuildAnthropicPayload(model, contextValue, AnthropicPayloadOptions{Reasoning: "high"})
+	if payload.MaxTokens != model.MaxTokens || payload.Thinking["budget_tokens"] != 16384 {
+		t.Fatalf("default budget payload max=%d thinking=%#v", payload.MaxTokens, payload.Thinking)
+	}
+
+	payload = BuildAnthropicPayload(model, contextValue, AnthropicPayloadOptions{MaxTokens: 4096, Reasoning: "high"})
+	if payload.MaxTokens != 20480 || payload.Thinking["budget_tokens"] != 16384 {
+		t.Fatalf("explicit budget payload max=%d thinking=%#v", payload.MaxTokens, payload.Thinking)
+	}
+
+	constrained := model
+	constrained.MaxTokens = 4096
+	payload = BuildAnthropicPayload(constrained, contextValue, AnthropicPayloadOptions{Reasoning: "high"})
+	if payload.MaxTokens != 4096 || payload.Thinking["budget_tokens"] != 3072 {
+		t.Fatalf("constrained budget payload max=%d thinking=%#v", payload.MaxTokens, payload.Thinking)
+	}
+
+	payload = BuildAnthropicPayload(model, contextValue, AnthropicPayloadOptions{Reasoning: "xhigh", ThinkingBudgets: map[string]int{"high": 12000}})
+	if payload.Thinking["budget_tokens"] != 12000 {
+		t.Fatalf("xhigh should use high budget override: %#v", payload.Thinking)
+	}
+}
+
 func TestAnthropicClaudeCodeToolNameRoundTrip(t *testing.T) {
 	tools := []Tool{
 		{Name: "todowrite"},

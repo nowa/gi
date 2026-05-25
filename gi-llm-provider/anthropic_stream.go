@@ -24,10 +24,13 @@ type rawAnthropicEvent struct {
 		ID    string         `json:"id"`
 		Name  string         `json:"name"`
 		Input map[string]any `json:"input"`
+		Data  string         `json:"data"`
 	} `json:"content_block"`
 	Delta struct {
 		Type        string `json:"type"`
 		Text        string `json:"text"`
+		Thinking    string `json:"thinking"`
+		Signature   string `json:"signature"`
 		PartialJSON string `json:"partial_json"`
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
@@ -44,6 +47,7 @@ type AnthropicRawUsage struct {
 func ProcessAnthropicSSEEvents(model Model, events []AnthropicSSEEvent) (Message, error) {
 	output := AssistantMessage(nil, StopReasonStop, model)
 	partialJSONByIndex := map[int]string{}
+	contentIndexByEventIndex := map[int]int{}
 	stopped := false
 	for _, sse := range events {
 		if stopped {
@@ -68,26 +72,45 @@ func ProcessAnthropicSSEEvents(model Model, events []AnthropicSSEEvent) (Message
 			switch event.ContentBlock.Type {
 			case "text":
 				output.Content = append(output.Content, Text(event.ContentBlock.Text))
+				contentIndexByEventIndex[event.Index] = len(output.Content) - 1
+			case "thinking":
+				output.Content = append(output.Content, Thinking(""))
+				contentIndexByEventIndex[event.Index] = len(output.Content) - 1
+			case "redacted_thinking":
+				output.Content = append(output.Content, ContentPart{
+					Type:              ContentThinking,
+					Thinking:          "[Reasoning redacted]",
+					ThinkingSignature: event.ContentBlock.Data,
+					Redacted:          true,
+				})
+				contentIndexByEventIndex[event.Index] = len(output.Content) - 1
 			case "tool_use":
 				output.Content = append(output.Content, ToolCall(event.ContentBlock.ID, event.ContentBlock.Name, event.ContentBlock.Input))
+				contentIndexByEventIndex[event.Index] = len(output.Content) - 1
 				partialJSONByIndex[event.Index] = ""
 			}
 		case "content_block_delta":
-			if event.Index < 0 || event.Index >= len(output.Content) {
+			contentIndex, ok := contentIndexByEventIndex[event.Index]
+			if !ok || contentIndex < 0 || contentIndex >= len(output.Content) {
 				continue
 			}
-			block := &output.Content[event.Index]
+			block := &output.Content[contentIndex]
 			switch event.Delta.Type {
 			case "text_delta":
 				block.Text += SanitizeSurrogates(event.Delta.Text)
+			case "thinking_delta":
+				block.Thinking += SanitizeSurrogates(event.Delta.Thinking)
+			case "signature_delta":
+				block.ThinkingSignature += event.Delta.Signature
 			case "input_json_delta":
 				partialJSONByIndex[event.Index] += event.Delta.PartialJSON
 				block.Arguments = parseJSONRepairObject(partialJSONByIndex[event.Index])
 			}
 		case "content_block_stop":
-			if event.Index >= 0 && event.Index < len(output.Content) {
+			contentIndex, ok := contentIndexByEventIndex[event.Index]
+			if ok && contentIndex >= 0 && contentIndex < len(output.Content) {
 				if partial := partialJSONByIndex[event.Index]; partial != "" {
-					output.Content[event.Index].Arguments = parseJSONRepairObject(partial)
+					output.Content[contentIndex].Arguments = parseJSONRepairObject(partial)
 				}
 			}
 		case "message_delta":

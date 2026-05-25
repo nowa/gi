@@ -51,3 +51,31 @@ func TestProcessAnthropicSSEEventsIgnoresUnknownEventsAfterStop(t *testing.T) {
 		t.Fatalf("metadata = id:%q usage:%#v", result.ResponseID, result.Usage)
 	}
 }
+
+func TestProcessAnthropicSSEEventsPreservesThinkingAndTextIndexMapping(t *testing.T) {
+	model := MustGetModel("anthropic", "claude-haiku-4-5")
+	result, err := ProcessAnthropicSSEEvents(model, []AnthropicSSEEvent{
+		{Event: "message_start", Data: `{"type":"message_start","message":{"id":"msg_think","usage":{"input_tokens":12,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}`},
+		{Event: "content_block_start", Data: `{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`},
+		{Event: "content_block_delta", Data: `{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Need answer."}}`},
+		{Event: "content_block_delta", Data: `{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig_1"}}`},
+		{Event: "content_block_stop", Data: `{"type":"content_block_stop","index":0}`},
+		{Event: "content_block_start", Data: `{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}`},
+		{Event: "content_block_delta", Data: `{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"OK"}}`},
+		{Event: "content_block_stop", Data: `{"type":"content_block_stop","index":1}`},
+		{Event: "message_delta", Data: `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":12,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}`},
+		{Event: "message_stop", Data: `{"type":"message_stop"}`},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Content) != 2 {
+		t.Fatalf("content = %#v", result.Content)
+	}
+	if result.Content[0].Type != ContentThinking || result.Content[0].Thinking != "Need answer." || result.Content[0].ThinkingSignature != "sig_1" {
+		t.Fatalf("thinking = %#v", result.Content[0])
+	}
+	if result.Content[1].Type != ContentText || result.Content[1].Text != "OK" {
+		t.Fatalf("text = %#v", result.Content[1])
+	}
+}
