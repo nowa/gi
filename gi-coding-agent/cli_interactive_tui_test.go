@@ -1626,6 +1626,94 @@ func TestCLIInteractiveTUIHostSeparatesAssistantAndNextUserMessagePiStyle(t *tes
 	}
 }
 
+func TestCLIInteractiveLayoutReservesBottomRegionWithLargeOutput(t *testing.T) {
+	host := &CLIInteractiveTUIHost{
+		chat:            gitui.NewContainer(),
+		pendingMessages: gitui.NewContainer(),
+		statusContainer: gitui.NewContainer(),
+		editorContainer: gitui.NewContainer(),
+		workingVisible:  true,
+		runtimeHost:     cliInteractiveLayoutRuntimeHost{session: &AgentSession{isStreaming: true}},
+		slots:           map[string]*gitui.Container{"footer": gitui.NewContainer()},
+	}
+	for i := 0; i < 40; i++ {
+		host.chat.AddChild(gitui.NewText(fmt.Sprintf("output-%02d", i), 0, 0))
+	}
+	host.statusContainer.AddChild(gitui.NewText("Working...", 1, 0))
+	host.editorContainer.AddChild(gitui.NewText("editor prompt", 0, 0))
+	host.slots["footer"].AddChild(gitui.NewText("footer status", 0, 0))
+
+	lines := (&cliInteractiveLayout{host: host}).RenderWithSize(80, 12)
+	if len(lines) != 12 {
+		t.Fatalf("rendered line count = %d, want terminal height 12:\n%s", len(lines), strings.Join(lines, "\n"))
+	}
+	plain := StripAnsi(strings.Join(lines, "\n"))
+	for _, expected := range []string{"Working...", "editor prompt", "footer status"} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("bottom region missing %q:\n%s", expected, plain)
+		}
+	}
+	workingRow := viewportLineIndex(lines, "Working...")
+	editorRow := viewportLineIndex(lines, "editor prompt")
+	footerRow := viewportLineIndex(lines, "footer status")
+	if workingRow < 0 || editorRow < 0 || footerRow < 0 || !(workingRow < editorRow && editorRow < footerRow) {
+		t.Fatalf("bottom region order mismatch: working=%d editor=%d footer=%d\n%s", workingRow, editorRow, footerRow, plain)
+	}
+	if chatRow := viewportLineIndex(lines[footerRow+1:], "output-"); chatRow >= 0 {
+		t.Fatalf("chat output rendered after footer:\n%s", plain)
+	}
+}
+
+func TestCLIInteractiveLayoutKeepsBottomRegionStableWhileOutputGrows(t *testing.T) {
+	terminal := gitui.NewVirtualTerminal(80, 12)
+	ui := gitui.NewTUI(terminal)
+	host := &CLIInteractiveTUIHost{
+		chat:            gitui.NewContainer(),
+		pendingMessages: gitui.NewContainer(),
+		statusContainer: gitui.NewContainer(),
+		editorContainer: gitui.NewContainer(),
+		workingVisible:  true,
+		runtimeHost:     cliInteractiveLayoutRuntimeHost{session: &AgentSession{isStreaming: true}},
+		slots:           map[string]*gitui.Container{"footer": gitui.NewContainer()},
+	}
+	host.statusContainer.AddChild(gitui.NewText("Working...", 1, 0))
+	host.editorContainer.AddChild(gitui.NewText("editor prompt", 0, 0))
+	host.slots["footer"].AddChild(gitui.NewText("footer status", 0, 0))
+	ui.AddChild(&cliInteractiveLayout{host: host})
+	ui.Start()
+	defer ui.Stop()
+
+	for i := 0; i < 10; i++ {
+		host.chat.AddChild(gitui.NewText(fmt.Sprintf("output-%02d", i), 0, 0))
+	}
+	ui.RequestRender(true)
+	for i := 10; i < 40; i++ {
+		host.chat.AddChild(gitui.NewText(fmt.Sprintf("output-%02d", i), 0, 0))
+	}
+	ui.RequestRender(false)
+
+	viewport := terminal.GetViewport()
+	plain := StripAnsi(strings.Join(viewport, "\n"))
+	for _, expected := range []string{"Working...", "editor prompt", "footer status"} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("viewport missing %q after output growth:\n%s", expected, plain)
+		}
+	}
+	if chatRow := viewportLineIndex(viewport[viewportLineIndex(viewport, "footer status")+1:], "output-"); chatRow >= 0 {
+		t.Fatalf("chat output rendered after footer while output grew:\n%s", plain)
+	}
+}
+
+type cliInteractiveLayoutRuntimeHost struct {
+	session *AgentSession
+}
+
+func (h cliInteractiveLayoutRuntimeHost) PrintModeSession() PrintModeSession { return nil }
+
+func (h cliInteractiveLayoutRuntimeHost) Dispose() error { return nil }
+
+func (h cliInteractiveLayoutRuntimeHost) AgentSession() *AgentSession { return h.session }
+
 func TestCLIStartupHelpUsesEffectiveKeybindingsPiStyle(t *testing.T) {
 	previous := gitui.GetKeybindings()
 	gitui.SetKeybindings(gitui.NewKeybindingsManager(gitui.KeybindingsConfig{
@@ -2992,6 +3080,14 @@ func TestCLIInteractiveTUIHostSubmitsEditorInputAndStopsOnCtrlD(t *testing.T) {
 	host.editor.SetText("typed prompt")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Response to: typed prompt")
+	terminal.SendInput("\x1b[A")
+	waitForCondition(t, func() bool {
+		return host.editor.GetText() == "typed prompt"
+	}, "up arrow should restore submitted prompt from editor history")
+	terminal.SendInput("\x1b[B")
+	waitForCondition(t, func() bool {
+		return host.editor.GetText() == ""
+	}, "down arrow should leave prompt history at empty editor")
 
 	terminal.SendInput("\x04")
 	select {
@@ -3001,6 +3097,61 @@ func TestCLIInteractiveTUIHostSubmitsEditorInputAndStopsOnCtrlD(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("interactive TUI host did not stop on ctrl+d")
+	}
+}
+
+func TestCLIInteractiveTUIHostPopulatesEditorHistoryFromSessionMessages(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	sessionHost.session.SessionManager.AppendMessage(sessionMessageValue(llm.Message{
+		Role:    llm.RoleUser,
+		Content: []llm.ContentPart{llm.Text("first question")},
+	}))
+	sessionHost.session.SessionManager.AppendMessage(sessionMessageValue(llm.Message{
+		Role:    llm.RoleAssistant,
+		Content: []llm.ContentPart{llm.Text("first answer")},
+	}))
+	sessionHost.session.SessionManager.AppendMessage(sessionMessageValue(llm.Message{
+		Role:    llm.RoleUser,
+		Content: []llm.ContentPart{llm.Text("second question")},
+	}))
+
+	terminal := gitui.NewVirtualTerminal(100, 20)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+	waitForViewport(t, terminal, "second question")
+
+	terminal.SendInput("\x1b[A")
+	waitForCondition(t, func() bool {
+		return host.editor.GetText() == "second question"
+	}, "up arrow should restore newest session user message")
+	terminal.SendInput("\x1b[A")
+	waitForCondition(t, func() bool {
+		return host.editor.GetText() == "first question"
+	}, "second up arrow should restore older session user message")
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
 	}
 }
 

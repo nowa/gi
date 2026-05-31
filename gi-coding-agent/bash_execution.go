@@ -44,7 +44,7 @@ func (b *BashExecutionComponent) SetExpanded(expanded bool) {
 func (b *BashExecutionComponent) Invalidate() {}
 
 func (b *BashExecutionComponent) AppendOutput(chunk string) {
-	clean := strings.ReplaceAll(strings.ReplaceAll(StripAnsi(chunk), "\r\n", "\n"), "\r", "\n")
+	clean := sanitizeInteractiveBashOutput(chunk)
 	newLines := strings.Split(clean, "\n")
 	if len(b.outputLines) > 0 && len(newLines) > 0 {
 		b.outputLines[len(b.outputLines)-1] += newLines[0]
@@ -52,6 +52,23 @@ func (b *BashExecutionComponent) AppendOutput(chunk string) {
 		return
 	}
 	b.outputLines = append(b.outputLines, newLines...)
+}
+
+func sanitizeInteractiveBashOutput(chunk string) string {
+	clean := strings.ReplaceAll(strings.ReplaceAll(StripAnsi(chunk), "\r\n", "\n"), "\r", "\n")
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '\t', '\n':
+			return r
+		}
+		if r <= 0x1f {
+			return -1
+		}
+		if r >= 0xfff9 && r <= 0xfffb {
+			return -1
+		}
+		return r
+	}, clean)
 }
 
 func (b *BashExecutionComponent) SetComplete(exitCode int, cancelled bool, options ...BashExecutionCompleteOptions) {

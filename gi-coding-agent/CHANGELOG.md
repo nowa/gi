@@ -1,8 +1,10 @@
-# Changelog
+## 0.0.3
+
+- Stabilized large-output TUI rendering, sanitized streamed tool output, and restored editor history.
 
 ## 0.0.2
 
-- Fixed TUI diff rendering after viewport overflow so working status, tool output, editor, and footer stay in Pi-compatible row order.
+- Fixed TUI viewport overflow row ordering.
 
 ## 0.0.1
 
@@ -10,4 +12,4 @@
 
 ## 0.0.0
 
-- Added the Go coding-agent port with Pi-compatible interactive TUI, provider configuration, session commands, settings, model selectors, authentication flows, and protocol-based packages/extensions.
+- Added the Go coding-agent port.

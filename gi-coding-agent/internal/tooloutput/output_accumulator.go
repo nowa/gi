@@ -238,7 +238,19 @@ func SanitizeBytes(data []byte) string {
 	text = stripANSI(text)
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
-	return text
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '\t', '\n':
+			return r
+		}
+		if r <= 0x1f {
+			return -1
+		}
+		if r >= 0xfff9 && r <= 0xfffb {
+			return -1
+		}
+		return r
+	}, text)
 }
 
 func stripANSI(text string) string {

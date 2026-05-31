@@ -266,7 +266,7 @@ func (h *CLIInteractiveTUIHost) importSessionFromJSONL(path string, cwdOverride 
 			return nil
 		}
 		h.resetChatState()
-		h.renderExistingMessages()
+		h.renderExistingMessages(true)
 		h.addStatus("Session imported from: " + path)
 		return nil
 	}
@@ -472,7 +472,7 @@ func (h *CLIInteractiveTUIHost) resumeSessionPath(path string) error {
 		}
 	}
 	h.resetChatState()
-	h.renderExistingMessages()
+	h.renderExistingMessages(true)
 	h.addStatus("Session resumed from: " + path)
 	return nil
 }
@@ -557,7 +557,7 @@ func (h *CLIInteractiveTUIHost) handleCloneSlashCommand() error {
 			}
 		}
 		h.resetChatState()
-		h.renderExistingMessages()
+		h.renderExistingMessages(true)
 		h.addStatus("Cloned to new session")
 		return nil
 	}
@@ -585,7 +585,7 @@ func (h *CLIInteractiveTUIHost) handleCloneSlashCommand() error {
 		}
 	}
 	h.resetChatState()
-	h.renderExistingMessages()
+	h.renderExistingMessages(true)
 	h.addStatus("Cloned to new session")
 	return nil
 }
@@ -635,7 +635,7 @@ func (h *CLIInteractiveTUIHost) handleForkSlashCommand(args string) error {
 		return nil
 	}
 	h.resetChatState()
-	h.renderExistingMessages()
+	h.renderExistingMessages(true)
 	if strings.TrimSpace(result.SelectedText) != "" && h.editor != nil {
 		h.editor.SetText(result.SelectedText)
 	}
@@ -743,7 +743,7 @@ func (h *CLIInteractiveTUIHost) handleTreeSlashCommand(args string) error {
 			return nil
 		}
 		h.resetChatState()
-		h.renderExistingMessages()
+		h.renderExistingMessages(true)
 		if strings.TrimSpace(result.EditorText) != "" && h.editor != nil {
 			h.editor.SetText(result.EditorText)
 		}

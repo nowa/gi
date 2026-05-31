@@ -385,19 +385,52 @@ func (l *cliInteractiveLayout) RenderWithSize(width, height int) []string {
 	bottom = appendRendered(bottom, l.host.slots["footer"], width, height)
 
 	lines := make([]string, 0, len(top)+len(bottom))
+	if height > 0 && len(top)+len(bottom) > height && l.host.shouldReserveBottomRegion() {
+		if len(bottom) >= height {
+			return bottom[len(bottom)-height:]
+		}
+		availableTopLines := height - len(bottom)
+		if len(top) > availableTopLines {
+			top = top[len(top)-availableTopLines:]
+		}
+	}
 	lines = append(lines, top...)
 	lines = append(lines, bottom...)
 	return lines
 }
 
+func (h *CLIInteractiveTUIHost) shouldReserveBottomRegion() bool {
+	if h == nil {
+		return false
+	}
+	if h.compactionLoader != nil {
+		return true
+	}
+	session := h.agentSession()
+	if session == nil {
+		return false
+	}
+	return session.IsStreaming() || session.IsBashRunning() || session.IsCompacting()
+}
+
 func appendRendered(lines []string, component gitui.Component, width, height int) []string {
-	if component == nil {
+	if component == nil || isNilComponent(component) {
 		return lines
 	}
 	if sized, ok := component.(gitui.SizeAwareComponent); ok {
 		return append(lines, sized.RenderWithSize(width, height)...)
 	}
 	return append(lines, component.Render(width)...)
+}
+
+func isNilComponent(component gitui.Component) bool {
+	value := reflect.ValueOf(component)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 func NewCLIInteractiveTUIHost(options CLIInteractiveTUIHostOptions) (*CLIInteractiveTUIHost, error) {
@@ -496,7 +529,7 @@ func (h *CLIInteractiveTUIHost) RunContext(ctx context.Context) (runErr error) {
 	}
 	h.startViewTreeTickLoop(ctx)
 	h.refreshViewTreeSlots()
-	h.renderExistingMessages()
+	h.renderExistingMessages(true)
 	h.showSessionCompactionNoticeOnStartup()
 	h.showModelScopeOnStartup()
 	h.showLoadedResourcesOnStartup()
@@ -1232,6 +1265,7 @@ func (h *CLIInteractiveTUIHost) buildUI() {
 		if strings.TrimSpace(text) == "" {
 			return
 		}
+		h.addEditorHistory(text)
 		go func() {
 			if err := h.submitPrompt(text, nil); err != nil {
 				h.addStatus("Error: " + err.Error())
@@ -1690,7 +1724,7 @@ func (h *CLIInteractiveTUIHost) handleCompactionEnd(event AgentSessionEvent) {
 		}
 	case event.Result != nil:
 		h.resetChatState()
-		h.renderExistingMessages()
+		h.renderExistingMessages(false)
 	case strings.TrimSpace(event.ErrorMessage) != "":
 		h.addStatus(strings.TrimSpace(event.ErrorMessage))
 	}
@@ -2302,7 +2336,7 @@ func viewTreeSizeValueToTUI(value ViewTreeSizeValue) *gitui.SizeValue {
 	return &size
 }
 
-func (h *CLIInteractiveTUIHost) renderExistingMessages() {
+func (h *CLIInteractiveTUIHost) renderExistingMessages(populateHistory bool) {
 	session := h.runtimeHost.PrintModeSession()
 	if session == nil {
 		return
@@ -2310,9 +2344,25 @@ func (h *CLIInteractiveTUIHost) renderExistingMessages() {
 	messages := session.Messages()
 	for _, message := range messages {
 		h.addMessage(message)
+		if populateHistory && message.Role == llm.RoleUser {
+			h.addEditorHistory(interactiveTextFromLLMMessage(message))
+		}
 	}
 	h.rendered = len(messages)
 	h.requestRender(false)
+}
+
+func (h *CLIInteractiveTUIHost) addEditorHistory(text string) {
+	if h == nil || strings.TrimSpace(text) == "" {
+		return
+	}
+	editor, ok := h.activeEditorComponent()
+	if !ok {
+		return
+	}
+	if history, ok := editor.(gitui.EditorHistoryComponent); ok {
+		history.AddToHistory(text)
+	}
 }
 
 func (h *CLIInteractiveTUIHost) showSessionCompactionNoticeOnStartup() {

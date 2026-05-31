@@ -75,6 +75,23 @@ func TestBashExecutionUsesPiThemeColors(t *testing.T) {
 	}
 }
 
+func TestBashExecutionSanitizesTerminalControlOutput(t *testing.T) {
+	component := NewBashExecutionComponent("printf controls")
+	component.AppendOutput("ok\x1b[31m red\x1b[0m\rnext\bline\x00\n")
+	component.SetComplete(0, false)
+
+	rendered := strings.Join(component.Render(80), "\n")
+	plain := StripAnsi(rendered)
+	if strings.ContainsAny(plain, "\r\b\x00") {
+		t.Fatalf("rendered bash output leaked terminal controls:\n%q", rendered)
+	}
+	for _, expected := range []string{"ok red", "nextline"} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("rendered bash output missing %q:\n%s", expected, plain)
+		}
+	}
+}
+
 func TestBashExecutionShowsTruncatedFullOutputPathPiStyle(t *testing.T) {
 	component := NewBashExecutionComponent("printf lots")
 	component.AppendOutput("tail output\n")

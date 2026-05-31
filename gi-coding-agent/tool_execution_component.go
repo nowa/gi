@@ -867,7 +867,8 @@ func fileToolResultText(result FileToolResult) string {
 
 func sanitizeToolOutputText(text string) string {
 	text = StripAnsi(text)
-	text = strings.ReplaceAll(text, "\r", "")
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
 	return strings.Map(func(r rune) rune {
 		switch r {
 		case '\t', '\n':
