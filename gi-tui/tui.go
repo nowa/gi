@@ -333,6 +333,7 @@ type TUI struct {
 	previousLines          []string
 	previousWidth          int
 	previousHeight         int
+	previousViewportTop    int
 	cursorPosition         terminalCursorPosition
 	hardwareCursorRow      int
 	originAnchored         bool
@@ -362,8 +363,9 @@ type terminalCursorPosition struct {
 }
 
 type renderBuffer struct {
-	output   string
-	finalRow int
+	output      string
+	finalRow    int
+	viewportTop int
 }
 
 func NewTUI(terminal Terminal, showHardwareCursor ...bool) *TUI {
@@ -750,8 +752,12 @@ func (t *TUI) requestRenderLocked(force bool) {
 	height := t.terminal.Rows()
 	widthChanged := t.previousWidth != 0 && t.previousWidth != width
 	heightChanged := t.previousHeight != 0 && t.previousHeight != height && os.Getenv("TERMUX_VERSION") == ""
+	previousViewportTop := t.previousViewportTop
+	if heightChanged && t.previousHeight > 0 {
+		previousBufferLength := t.previousViewportTop + t.previousHeight
+		previousViewportTop = max(0, previousBufferLength-height)
+	}
 	shrunk := t.clearOnShrink && len(t.overlays) == 0 && len(lines) < len(t.previousLines)
-	previousViewportTop := viewportTopForLineCount(len(t.previousLines), t.previousHeight)
 	newViewportTop := viewportTopForLineCount(len(lines), height)
 	pureAppend := isPureAppend(t.previousLines, lines)
 	viewportMovedUp := len(t.previousLines) > 0 && len(lines) < len(t.previousLines) && newViewportTop < previousViewportTop
@@ -761,53 +767,55 @@ func (t *TUI) requestRenderLocked(force bool) {
 	firstRender := len(t.previousLines) == 0
 	full := force || firstRender || widthChanged || heightChanged || shrunk || viewportMovedUp || viewportMovedDown || changedAboveViewport
 	if !full && equalLines(lines, t.previousLines) {
-		output := t.hardwareCursorBuffer(len(lines), height, t.hardwareCursorRow, t.originAnchored)
+		output := t.hardwareCursorBuffer(len(lines), height, t.hardwareCursorRow, previousViewportTop, t.originAnchored)
 		if output != "" {
 			if err := t.terminal.Write(output); err != nil {
 				t.reportTerminalError(err)
 				return
 			}
 			if t.cursorPosition.ok {
-				t.hardwareCursorRow = terminalCursorContentRow(lines, height, t.cursorPosition)
+				t.hardwareCursorRow = terminalCursorContentRow(lines, height, t.cursorPosition, previousViewportTop)
 			}
+			t.previousViewportTop = previousViewportTop
 		}
 		return
 	}
 	result := renderBuffer{finalRow: t.hardwareCursorRow}
 	if full {
 		clear := force || widthChanged || heightChanged || shrunk || viewportMovedUp || viewportMovedDown || changedAboveViewport
-		result = t.fullRenderBuffer(lines, clear)
+		result = t.fullRenderBuffer(lines, clear, height)
 		t.originAnchored = clear
 		t.fullRedraws++
 	} else {
-		result = t.diffRenderBuffer(lines)
+		result = t.diffRenderBuffer(lines, height, previousViewportTop)
 	}
-	output := result.output + t.hardwareCursorBuffer(len(lines), height, result.finalRow, t.originAnchored)
+	output := result.output + t.hardwareCursorBuffer(len(lines), height, result.finalRow, result.viewportTop, t.originAnchored)
 	if err := t.terminal.Write(output); err != nil {
 		t.reportTerminalError(err)
 		return
 	}
 	if t.cursorPosition.ok {
-		t.hardwareCursorRow = terminalCursorContentRow(lines, height, t.cursorPosition)
+		t.hardwareCursorRow = terminalCursorContentRow(lines, height, t.cursorPosition, result.viewportTop)
 	} else {
 		t.hardwareCursorRow = result.finalRow
 	}
 	t.previousLines = lines
 	t.previousWidth = width
 	t.previousHeight = height
+	t.previousViewportTop = result.viewportTop
 }
 
-func terminalCursorContentRow(lines []string, height int, position terminalCursorPosition) int {
+func terminalCursorContentRow(lines []string, height int, position terminalCursorPosition, viewportTop int) int {
 	if len(lines) == 0 {
 		return 0
 	}
 	if position.ok {
-		return viewportTopForLineCount(len(lines), height) + position.row
+		return viewportTop + position.row
 	}
 	return len(lines) - 1
 }
 
-func (t *TUI) fullRenderBuffer(lines []string, clear bool) renderBuffer {
+func (t *TUI) fullRenderBuffer(lines []string, clear bool, height int) renderBuffer {
 	var b strings.Builder
 	b.WriteString("\x1b[?2026h")
 	if clear {
@@ -821,7 +829,12 @@ func (t *TUI) fullRenderBuffer(lines []string, clear bool) renderBuffer {
 		b.WriteString(line)
 	}
 	b.WriteString("\x1b[?2026l")
-	return renderBuffer{output: b.String(), finalRow: max(0, len(lines)-1)}
+	bufferLength := max(height, len(lines))
+	return renderBuffer{
+		output:      b.String(),
+		finalRow:    max(0, len(lines)-1),
+		viewportTop: max(0, bufferLength-height),
+	}
 }
 
 func viewportTopForLineCount(lineCount, height int) int {
@@ -831,13 +844,13 @@ func viewportTopForLineCount(lineCount, height int) int {
 	return max(0, lineCount-height)
 }
 
-func (t *TUI) diffRenderBuffer(lines []string) renderBuffer {
+func (t *TUI) diffRenderBuffer(lines []string, height, previousViewportTop int) renderBuffer {
 	if isPureAppend(t.previousLines, lines) {
-		return t.appendRenderBuffer(lines)
+		return t.appendRenderBuffer(lines, height, previousViewportTop)
 	}
 	first, last := changedRange(t.previousLines, lines)
 	if first < 0 {
-		return renderBuffer{finalRow: t.hardwareCursorRow}
+		return renderBuffer{finalRow: t.hardwareCursorRow, viewportTop: previousViewportTop}
 	}
 	last = max(last, lastKittyImageLineFrom(t.previousLines, first))
 	var b strings.Builder
@@ -845,18 +858,17 @@ func (t *TUI) diffRenderBuffer(lines []string) renderBuffer {
 	if first < len(t.previousLines) {
 		b.WriteString(deleteImageIDsFromLines(t.previousLines[first:min(last+1, len(t.previousLines))]))
 	}
-	if t.originAnchored {
-		b.WriteString("\x1b[H")
-		moveToLine(&b, first)
-	} else {
-		moveRelativeToLine(&b, t.hardwareCursorRow, first)
-	}
+	cursorRow, viewportTop := moveContentCursor(&b, t.hardwareCursorRow, first, previousViewportTop, height)
 	renderEnd := min(last, len(lines)-1)
 	finalRow := max(0, renderEnd)
 	if first < len(lines) {
 		for i := first; i <= renderEnd; i++ {
 			if i > first {
 				b.WriteString("\r\n")
+				cursorRow++
+				if cursorRow >= viewportTop+height {
+					viewportTop = cursorRow - height + 1
+				}
 			}
 			b.WriteString("\x1b[2K\r")
 			b.WriteString(lines[i])
@@ -867,12 +879,20 @@ func (t *TUI) diffRenderBuffer(lines []string) renderBuffer {
 			for i := first; i <= min(last, len(t.previousLines)-1); i++ {
 				if i > first {
 					b.WriteString("\r\n")
+					cursorRow++
+					if cursorRow >= viewportTop+height {
+						viewportTop = cursorRow - height + 1
+					}
 				}
 				b.WriteString("\x1b[2K\r")
 			}
 		} else {
 			for i := len(lines); i <= min(last, len(t.previousLines)-1); i++ {
 				b.WriteString("\r\n\x1b[2K")
+				cursorRow++
+				if cursorRow >= viewportTop+height {
+					viewportTop = cursorRow - height + 1
+				}
 			}
 		}
 		extraLines := max(0, min(last, len(t.previousLines)-1)-max(first, len(lines))+1)
@@ -881,40 +901,47 @@ func (t *TUI) diffRenderBuffer(lines []string) renderBuffer {
 			b.WriteString(strconv.Itoa(extraLines))
 			b.WriteString("A")
 			finalRow = max(0, len(lines)-1)
+			cursorRow = max(0, cursorRow-extraLines)
 		}
 	}
 	b.WriteString("\x1b[?2026l")
-	return renderBuffer{output: b.String(), finalRow: finalRow}
+	if height > 0 {
+		viewportTop = max(viewportTop, finalRow-height+1)
+	}
+	return renderBuffer{output: b.String(), finalRow: finalRow, viewportTop: max(0, viewportTop)}
 }
 
-func (t *TUI) appendRenderBuffer(lines []string) renderBuffer {
+func (t *TUI) appendRenderBuffer(lines []string, height, previousViewportTop int) renderBuffer {
 	first := len(t.previousLines)
 	if first == 0 || first >= len(lines) {
-		return renderBuffer{finalRow: t.hardwareCursorRow}
+		return renderBuffer{finalRow: t.hardwareCursorRow, viewportTop: previousViewportTop}
 	}
 	targetRow := first - 1
-	lineDelta := targetRow - t.hardwareCursorRow
 	var b strings.Builder
 	b.WriteString("\x1b[?2026h")
-	if lineDelta > 0 {
-		b.WriteString("\x1b[")
-		b.WriteString(strconv.Itoa(lineDelta))
-		b.WriteString("B")
-	} else if lineDelta < 0 {
-		b.WriteString("\x1b[")
-		b.WriteString(strconv.Itoa(-lineDelta))
-		b.WriteString("A")
-	}
+	cursorRow, viewportTop := moveContentCursor(&b, t.hardwareCursorRow, targetRow, previousViewportTop, height)
 	b.WriteString("\r\n")
+	cursorRow++
+	if cursorRow >= viewportTop+height {
+		viewportTop = cursorRow - height + 1
+	}
 	for i := first; i < len(lines); i++ {
 		if i > first {
 			b.WriteString("\r\n")
+			cursorRow++
+			if cursorRow >= viewportTop+height {
+				viewportTop = cursorRow - height + 1
+			}
 		}
 		b.WriteString("\x1b[2K")
 		b.WriteString(lines[i])
 	}
 	b.WriteString("\x1b[?2026l")
-	return renderBuffer{output: b.String(), finalRow: len(lines) - 1}
+	finalRow := len(lines) - 1
+	if height > 0 {
+		viewportTop = max(viewportTop, finalRow-height+1)
+	}
+	return renderBuffer{output: b.String(), finalRow: finalRow, viewportTop: max(0, viewportTop)}
 }
 
 func moveToLine(b *strings.Builder, row int) {
@@ -937,6 +964,42 @@ func moveRelativeToLine(b *strings.Builder, from, to int) {
 		b.WriteString(strconv.Itoa(-delta))
 		b.WriteString("A")
 	}
+}
+
+func moveContentCursor(b *strings.Builder, currentRow, targetRow, viewportTop, height int) (int, int) {
+	if height <= 0 {
+		moveRelativeToLine(b, currentRow, targetRow)
+		return targetRow, viewportTop
+	}
+	viewportTop = max(0, viewportTop)
+	viewportBottom := viewportTop + height - 1
+	currentScreenRow := max(0, min(height-1, currentRow-viewportTop))
+	if targetRow > viewportBottom {
+		if delta := height - 1 - currentScreenRow; delta > 0 {
+			b.WriteString("\x1b[")
+			b.WriteString(strconv.Itoa(delta))
+			b.WriteString("B")
+		}
+		scroll := targetRow - viewportBottom
+		for i := 0; i < scroll; i++ {
+			b.WriteString("\r\n")
+		}
+		viewportTop += scroll
+		currentRow = targetRow
+		currentScreenRow = height - 1
+	}
+	targetScreenRow := max(0, min(height-1, targetRow-viewportTop))
+	switch delta := targetScreenRow - currentScreenRow; {
+	case delta > 0:
+		b.WriteString("\x1b[")
+		b.WriteString(strconv.Itoa(delta))
+		b.WriteString("B")
+	case delta < 0:
+		b.WriteString("\x1b[")
+		b.WriteString(strconv.Itoa(-delta))
+		b.WriteString("A")
+	}
+	return targetRow, viewportTop
 }
 
 func isPureAppend(oldLines, newLines []string) bool {
@@ -1096,7 +1159,7 @@ func extractTerminalCursorPosition(lines []string, width, height int) terminalCu
 	return position
 }
 
-func (t *TUI) hardwareCursorBuffer(lineCount, height, currentRow int, anchored bool) string {
+func (t *TUI) hardwareCursorBuffer(lineCount, height, currentRow, viewportTop int, anchored bool) string {
 	if !t.cursorPosition.ok {
 		return "\x1b[?25l"
 	}
@@ -1110,7 +1173,8 @@ func (t *TUI) hardwareCursorBuffer(lineCount, height, currentRow int, anchored b
 		b.WriteString(strconv.Itoa(col + 1))
 		b.WriteString("H")
 	} else {
-		moveRelativeToLine(&b, currentRow, row)
+		currentScreenRow := currentRow - max(0, viewportTop)
+		moveRelativeToLine(&b, max(0, min(max(0, height-1), currentScreenRow)), row)
 		b.WriteString("\r")
 		if col > 0 {
 			b.WriteString("\x1b[")

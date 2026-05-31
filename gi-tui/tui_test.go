@@ -3823,6 +3823,36 @@ func TestVirtualTerminalTUIAppendAfterViewportResetUsesDiff(t *testing.T) {
 	}
 }
 
+func TestTUIHardwareCursorMovementUsesViewportRowsAfterOverflow(t *testing.T) {
+	terminal := NewVirtualTerminal(20, 5)
+	ui := NewTUI(terminal)
+	component := &lineComponent{lines: []string{
+		"history 0",
+		"history 1",
+		"history 2",
+		"history 3",
+		"status",
+		"input " + CursorMarker,
+		"footer",
+	}}
+	ui.AddChild(component)
+	ui.RequestRender(true)
+
+	if x, y := terminal.GetCursorPosition(); x != len("input ") || y != 3 {
+		t.Fatalf("cursor after overflow render = %d,%d, want %d,3; viewport=%#v", x, y, len("input "), terminal.GetViewport())
+	}
+
+	component.lines[4] = "status updated"
+	ui.RequestRender(false)
+	viewport := terminal.GetViewport()
+	if !strings.Contains(viewport[2], "status updated") || strings.Contains(viewport[0], "status updated") {
+		t.Fatalf("viewport-relative diff wrote status to wrong row: %#v", viewport)
+	}
+	if x, y := terminal.GetCursorPosition(); x != len("input ") || y != 3 {
+		t.Fatalf("cursor after viewport-relative diff = %d,%d, want %d,3; viewport=%#v", x, y, len("input "), viewport)
+	}
+}
+
 func TestTUIAppendPastViewportScrollsFromCurrentCursor(t *testing.T) {
 	terminal := NewVirtualTerminal(20, 5)
 	ui := NewTUI(terminal)
