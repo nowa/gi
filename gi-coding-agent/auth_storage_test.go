@@ -181,7 +181,7 @@ func TestAuthStorageAPIKeyResolutionCaching(t *testing.T) {
 		}
 	})
 
-	t.Run("failed commands are cached (not retried)", func(t *testing.T) {
+	t.Run("failed commands are retried", func(t *testing.T) {
 		counterFile := writeCounterFile(t)
 		storage := newTestAuthStorage(t, AuthStorageData{
 			"anthropic": {Type: "api_key", Key: incrementCounterCommand(counterFile, "", true)},
@@ -193,7 +193,7 @@ func TestAuthStorageAPIKeyResolutionCaching(t *testing.T) {
 		if got, ok := storage.GetAPIKey("anthropic"); ok || got != "" {
 			t.Fatalf("second api key = %q, %v", got, ok)
 		}
-		if got := readCounterFile(t, counterFile); got != 1 {
+		if got := readCounterFile(t, counterFile); got != 2 {
 			t.Fatalf("counter = %d", got)
 		}
 	})

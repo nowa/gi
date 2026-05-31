@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -164,4 +165,245 @@ func TestFauxProviderStreamsContentEvents(t *testing.T) {
 	if message.StopReason != "toolUse" || len(message.Content) != 3 {
 		t.Fatalf("message = %#v", message)
 	}
+}
+
+func TestFauxProviderPiCaseNames(t *testing.T) {
+	t.Run("supports multiple models with per-model reasoning and model-aware factories", func(t *testing.T) {
+		registration := RegisterFauxProvider(WithFauxModels(
+			FauxModelDefinition{ID: "faux-fast", Name: "Faux Fast", Reasoning: false},
+			FauxModelDefinition{ID: "faux-thinker", Name: "Faux Thinker", Reasoning: true},
+		))
+		defer registration.Unregister()
+		registration.SetResponses([]FauxResponseStep{
+			{Factory: func(_ Context, _ StreamOptions, _ FauxState, model Model) (Message, error) {
+				return FauxAssistantText(model.ID + ":" + boolString(model.Reasoning)), nil
+			}},
+			{Factory: func(_ Context, _ StreamOptions, _ FauxState, model Model) (Message, error) {
+				return FauxAssistantText(model.ID + ":" + boolString(model.Reasoning)), nil
+			}},
+		})
+
+		fast, err := Complete(context.Background(), registration.MustModel("faux-fast"), Context{Messages: []Message{UserMessageText("hi")}}, StreamOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		thinker, err := Complete(context.Background(), registration.MustModel("faux-thinker"), Context{Messages: []Message{UserMessageText("hi")}}, StreamOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fast.Content[0].Text != "faux-fast:false" || thinker.Content[0].Text != "faux-thinker:true" {
+			t.Fatalf("responses = %#v / %#v", fast.Content, thinker.Content)
+		}
+	})
+
+	t.Run("supports async response factories", func(t *testing.T) {
+		registration := RegisterFauxProvider()
+		defer registration.Unregister()
+		registration.SetResponses([]FauxResponseStep{{
+			Factory: func(contextValue Context, _ StreamOptions, state FauxState, _ Model) (Message, error) {
+				return FauxAssistantText(string(rune('0'+len(contextValue.Messages))) + ":" + string(rune('0'+state.CallCount))), nil
+			},
+		}})
+
+		response, err := Complete(context.Background(), registration.MustModel(), Context{Messages: []Message{UserMessageText("hi")}}, StreamOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.Content[0].Text != "1:1" {
+			t.Fatalf("response = %#v", response.Content)
+		}
+	})
+
+	t.Run("estimates prompt and output tokens from serialized context", func(t *testing.T) {
+		registration := RegisterFauxProvider()
+		defer registration.Unregister()
+		registration.SetResponses([]FauxResponseStep{{Message: FauxAssistantText("done")}})
+		tool := Tool{
+			Name:        "echo",
+			Description: "Echo back text",
+			Parameters:  Object(map[string]Schema{"text": String()}, "text"),
+		}
+		contextValue := Context{
+			SystemPrompt: "sys",
+			Messages: []Message{
+				{Role: RoleUser, Content: []ContentPart{Text("hello"), Image("abcd", "image/png")}, Timestamp: 1},
+				FauxAssistantText("prior"),
+				{Role: RoleToolResult, ToolCallID: "tool-1", ToolName: "echo", Content: []ContentPart{Text("tool out")}, Timestamp: 2},
+			},
+			Tools: []Tool{tool},
+		}
+
+		response, err := Complete(context.Background(), registration.MustModel(), contextValue, StreamOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		promptText := serializeFauxContext(contextValue)
+		if !strings.Contains(promptText, "tools:[") || !strings.Contains(promptText, "[image:image/png:4]") {
+			t.Fatalf("serialized context = %q", promptText)
+		}
+		if response.Usage.Input != estimateFauxTokens(promptText) ||
+			response.Usage.Output != estimateFauxTokens("done") ||
+			response.Usage.TotalTokens != response.Usage.Input+response.Usage.Output {
+			t.Fatalf("usage = %#v prompt=%q", response.Usage, promptText)
+		}
+	})
+
+	t.Run("does not share cache across sessions or requests without sessionId", func(t *testing.T) {
+		registration := RegisterFauxProvider()
+		defer registration.Unregister()
+		registration.SetResponses([]FauxResponseStep{{Message: FauxAssistantText("first")}, {Message: FauxAssistantText("second")}, {Message: FauxAssistantText("third")}})
+		contextValue := Context{Messages: []Message{UserMessageText("hello")}}
+		first, _ := Complete(context.Background(), registration.MustModel(), contextValue, StreamOptions{SessionID: "session-1", CacheRetention: "short"})
+		if first.Usage.CacheWrite <= 0 {
+			t.Fatalf("first usage = %#v", first.Usage)
+		}
+		contextValue.Messages = append(contextValue.Messages, first, UserMessageText("follow up"))
+		second, _ := Complete(context.Background(), registration.MustModel(), contextValue, StreamOptions{SessionID: "session-2", CacheRetention: "short"})
+		if second.Usage.CacheRead != 0 || second.Usage.CacheWrite <= 0 {
+			t.Fatalf("second usage = %#v", second.Usage)
+		}
+		third, _ := Complete(context.Background(), registration.MustModel(), contextValue, StreamOptions{})
+		if third.Usage.CacheRead != 0 || third.Usage.CacheWrite != 0 {
+			t.Fatalf("third usage = %#v", third.Usage)
+		}
+	})
+
+	t.Run("simulates prompt caching per sessionId", func(t *testing.T) {
+		registration := RegisterFauxProvider()
+		defer registration.Unregister()
+		registration.SetResponses([]FauxResponseStep{{Message: FauxAssistantText("first")}, {Message: FauxAssistantText("second")}})
+		contextValue := Context{SystemPrompt: "Be concise.", Messages: []Message{UserMessageText("hello")}}
+		first, _ := Complete(context.Background(), registration.MustModel(), contextValue, StreamOptions{SessionID: "session-1", CacheRetention: "short"})
+		contextValue.Messages = append(contextValue.Messages, first, UserMessageText("follow up"))
+		second, _ := Complete(context.Background(), registration.MustModel(), contextValue, StreamOptions{SessionID: "session-1", CacheRetention: "short"})
+		if first.Usage.CacheRead != 0 || first.Usage.CacheWrite <= 0 || second.Usage.CacheRead <= 0 {
+			t.Fatalf("first=%#v second=%#v", first.Usage, second.Usage)
+		}
+	})
+
+	t.Run("does not simulate caching when cacheRetention is none", func(t *testing.T) {
+		registration := RegisterFauxProvider()
+		defer registration.Unregister()
+		registration.SetResponses([]FauxResponseStep{{Message: FauxAssistantText("first")}, {Message: FauxAssistantText("second")}})
+		contextValue := Context{Messages: []Message{UserMessageText("hello")}}
+		first, _ := Complete(context.Background(), registration.MustModel(), contextValue, StreamOptions{SessionID: "session-1", CacheRetention: "none"})
+		contextValue.Messages = append(contextValue.Messages, first, UserMessageText("follow up"))
+		second, _ := Complete(context.Background(), registration.MustModel(), contextValue, StreamOptions{SessionID: "session-1", CacheRetention: "none"})
+		if first.Usage.CacheRead != 0 || first.Usage.CacheWrite != 0 || second.Usage.CacheRead != 0 || second.Usage.CacheWrite != 0 {
+			t.Fatalf("first=%#v second=%#v", first.Usage, second.Usage)
+		}
+	})
+
+	t.Run("supports aborting mid-text stream when paced", func(t *testing.T) {
+		registration := RegisterFauxProvider(WithFauxTokensPerSecond(100), WithFauxTokenSize(3, 3))
+		defer registration.Unregister()
+		registration.SetResponses([]FauxResponseStep{{Message: FauxAssistantText("abcdefghijklmnopqrstuvwxyz")}})
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		stream, err := Stream(registration.MustModel(), Context{Messages: []Message{UserMessageText("hi")}}, StreamOptions{Context: ctx})
+		if err != nil {
+			t.Fatal(err)
+		}
+		events := collectAndCancelOnEvent(stream, "text_delta", cancel)
+		if countEvents(events, "text_delta") != 1 || !containsEvent(events, "error") || containsEvent(events, "text_end") {
+			t.Fatalf("events = %#v", eventTypes(events))
+		}
+	})
+
+	t.Run("supports aborting mid-toolcall stream when paced", func(t *testing.T) {
+		registration := RegisterFauxProvider(WithFauxTokensPerSecond(100), WithFauxTokenSize(3, 3))
+		defer registration.Unregister()
+		registration.SetResponses([]FauxResponseStep{{Message: FauxAssistantMessage([]ContentPart{
+			FauxToolCall("echo", map[string]any{"text": "abcdefghijklmnopqrstuvwxyz", "count": 123456789}, "tool-1"),
+		}, StopReasonToolUse)}})
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		stream, err := Stream(registration.MustModel(), Context{Messages: []Message{UserMessageText("hi")}}, StreamOptions{Context: ctx})
+		if err != nil {
+			t.Fatal(err)
+		}
+		events := collectAndCancelOnEvent(stream, "toolcall_delta", cancel)
+		if countEvents(events, "toolcall_delta") != 1 || !containsEvent(events, "error") || containsEvent(events, "toolcall_end") {
+			t.Fatalf("events = %#v", eventTypes(events))
+		}
+	})
+
+	t.Run("supports aborting mid-thinking stream when paced", func(t *testing.T) {
+		registration := RegisterFauxProvider(WithFauxTokensPerSecond(100), WithFauxTokenSize(3, 3))
+		defer registration.Unregister()
+		registration.SetResponses([]FauxResponseStep{{Message: FauxAssistantMessage([]ContentPart{
+			FauxThinking("abcdefghijklmnopqrstuvwxyz"),
+		}, StopReasonStop)}})
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		stream, err := Stream(registration.MustModel(), Context{Messages: []Message{UserMessageText("hi")}}, StreamOptions{Context: ctx})
+		if err != nil {
+			t.Fatal(err)
+		}
+		events := collectAndCancelOnEvent(stream, "thinking_delta", cancel)
+		if countEvents(events, "thinking_delta") != 1 || !containsEvent(events, "error") || containsEvent(events, "thinking_end") {
+			t.Fatalf("events = %#v", eventTypes(events))
+		}
+	})
+
+	t.Run("streams an exact event order for fixed-size chunks", func(t *testing.T) {
+		registration := RegisterFauxProvider(WithFauxTokenSize(1, 1))
+		defer registration.Unregister()
+		registration.SetResponses([]FauxResponseStep{{Message: FauxAssistantMessage([]ContentPart{
+			FauxThinking("go"),
+			FauxText("ok"),
+			FauxToolCall("echo", map[string]any{}, "tool-1"),
+		}, StopReasonToolUse)}})
+		stream, err := Stream(registration.MustModel(), Context{Messages: []Message{UserMessageText("hi")}}, StreamOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := eventTypes(collectAssistantEvents(stream))
+		want := []string{"start", "thinking_start", "thinking_delta", "thinking_end", "text_start", "text_delta", "text_end", "toolcall_start", "toolcall_delta", "toolcall_end", "done"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("events = %#v, want %#v", got, want)
+		}
+	})
+}
+
+func boolString(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
+}
+
+func collectAndCancelOnEvent(stream *AssistantMessageEventStream, eventType string, cancel context.CancelFunc) []AssistantMessageEvent {
+	var events []AssistantMessageEvent
+	cancelled := false
+	for event := range stream.Events() {
+		events = append(events, event)
+		if event.Type == eventType && !cancelled {
+			cancel()
+			cancelled = true
+		}
+	}
+	return events
+}
+
+func eventTypes(events []AssistantMessageEvent) []string {
+	types := make([]string, len(events))
+	for i, event := range events {
+		types[i] = event.Type
+	}
+	return types
+}
+
+func containsEvent(events []AssistantMessageEvent, eventType string) bool {
+	return countEvents(events, eventType) > 0
+}
+
+func countEvents(events []AssistantMessageEvent, eventType string) int {
+	count := 0
+	for _, event := range events {
+		if event.Type == eventType {
+			count++
+		}
+	}
+	return count
 }

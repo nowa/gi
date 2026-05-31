@@ -121,6 +121,19 @@ func TestAnthropicClaudeCodeToolNameRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAnthropicToolNameNormalizationPiCaseNames(t *testing.T) {
+	t.Run("should handle pi's built-in tools (read, write, edit, bash)", func(t *testing.T) {
+		tools := []Tool{{Name: "read"}, {Name: "write"}, {Name: "edit"}, {Name: "bash"}}
+		for _, tool := range tools {
+			outbound := ToClaudeCodeToolName(tool.Name)
+			inbound := FromClaudeCodeToolName(outbound, tools)
+			if inbound != tool.Name {
+				t.Fatalf("%s round trip via %s = %s", tool.Name, outbound, inbound)
+			}
+		}
+	})
+}
+
 func TestBuildAnthropicPayloadOAuthToolNamesAndSystemPrompt(t *testing.T) {
 	model := MustGetModel("anthropic", "claude-sonnet-4-6")
 	context := Context{

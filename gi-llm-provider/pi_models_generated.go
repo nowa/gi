@@ -1,4 +1,4 @@
-// Code generated from the installed @earendil-works/pi-ai@0.75.5 models.generated.js; DO NOT EDIT.
+// Code generated from /Users/nowa/Projects/agents/pi/packages/ai/src/models.generated.ts; DO NOT EDIT.
 
 package gillmprovider
 
@@ -626,8 +626,8 @@ func registerPiGeneratedModels() {
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 0.6, Output: 2.5, CacheRead: 0, CacheWrite: 0},
-		ContextWindow: 262143,
-		MaxTokens:     16000,
+		ContextWindow: 256000,
+		MaxTokens:     256000,
 	})
 	RegisterModel(Model{
 		ID:            "moonshotai.kimi-k2.5",
@@ -638,8 +638,8 @@ func registerPiGeneratedModels() {
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.6, Output: 3, CacheRead: 0, CacheWrite: 0},
-		ContextWindow: 262143,
-		MaxTokens:     16000,
+		ContextWindow: 256000,
+		MaxTokens:     256000,
 	})
 	RegisterModel(Model{
 		ID:            "nvidia.nemotron-nano-12b-v2",
@@ -1181,7 +1181,6 @@ func registerPiGeneratedModels() {
 		API:              "anthropic-messages",
 		Provider:         "anthropic",
 		BaseURL:          "https://api.anthropic.com",
-		Compat:           ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
 		Cost:             ModelCost{Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25},
@@ -1195,7 +1194,6 @@ func registerPiGeneratedModels() {
 		API:              "anthropic-messages",
 		Provider:         "anthropic",
 		BaseURL:          "https://api.anthropic.com",
-		Compat:           ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
 		Cost:             ModelCost{Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25},
@@ -1257,7 +1255,6 @@ func registerPiGeneratedModels() {
 		API:           "anthropic-messages",
 		Provider:      "anthropic",
 		BaseURL:       "https://api.anthropic.com",
-		Compat:        ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 3, Output: 15, CacheRead: 0.3, CacheWrite: 3.75},
@@ -1903,7 +1900,6 @@ func registerPiGeneratedModels() {
 		API:              "anthropic-messages",
 		Provider:         "cloudflare-ai-gateway",
 		BaseURL:          "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic",
-		Compat:           ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
 		Cost:             ModelCost{Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25},
@@ -1917,7 +1913,6 @@ func registerPiGeneratedModels() {
 		API:              "anthropic-messages",
 		Provider:         "cloudflare-ai-gateway",
 		BaseURL:          "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic",
-		Compat:           ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
 		Cost:             ModelCost{Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25},
@@ -1955,7 +1950,6 @@ func registerPiGeneratedModels() {
 		API:           "anthropic-messages",
 		Provider:      "cloudflare-ai-gateway",
 		BaseURL:       "https://gateway.ai.cloudflare.com/v1/{CLOUDFLARE_ACCOUNT_ID}/{CLOUDFLARE_GATEWAY_ID}/anthropic",
-		Compat:        ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 3, Output: 15, CacheRead: 0.3, CacheWrite: 3.75},
@@ -2223,30 +2217,6 @@ func registerPiGeneratedModels() {
 		MaxTokens:     16384,
 	})
 	RegisterModel(Model{
-		ID:            "@cf/ibm-granite/granite-4.0-h-micro",
-		Name:          "Granite 4.0 H Micro",
-		API:           "openai-completions",
-		Provider:      "cloudflare-workers-ai",
-		BaseURL:       "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true)},
-		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.017, Output: 0.112, CacheRead: 0, CacheWrite: 0},
-		ContextWindow: 131000,
-		MaxTokens:     131000,
-	})
-	RegisterModel(Model{
-		ID:            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-		Name:          "Llama 3.3 70B Instruct fp8 Fast",
-		API:           "openai-completions",
-		Provider:      "cloudflare-workers-ai",
-		BaseURL:       "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true)},
-		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.293, Output: 2.253, CacheRead: 0, CacheWrite: 0},
-		ContextWindow: 24000,
-		MaxTokens:     24000,
-	})
-	RegisterModel(Model{
 		ID:            "@cf/meta/llama-4-scout-17b-16e-instruct",
 		Name:          "Llama 4 Scout 17B 16E Instruct",
 		API:           "openai-completions",
@@ -2255,20 +2225,8 @@ func registerPiGeneratedModels() {
 		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true)},
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.27, Output: 0.85, CacheRead: 0, CacheWrite: 0},
-		ContextWindow: 131000,
-		MaxTokens:     16384,
-	})
-	RegisterModel(Model{
-		ID:            "@cf/mistralai/mistral-small-3.1-24b-instruct",
-		Name:          "Mistral Small 3.1 24B Instruct",
-		API:           "openai-completions",
-		Provider:      "cloudflare-workers-ai",
-		BaseURL:       "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true)},
-		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.351, Output: 0.555, CacheRead: 0, CacheWrite: 0},
 		ContextWindow: 128000,
-		MaxTokens:     128000,
+		MaxTokens:     16384,
 	})
 	RegisterModel(Model{
 		ID:            "@cf/moonshotai/kimi-k2.5",
@@ -2293,7 +2251,7 @@ func registerPiGeneratedModels() {
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.95, Output: 4, CacheRead: 0.16, CacheWrite: 0},
-		ContextWindow: 262144,
+		ContextWindow: 256000,
 		MaxTokens:     256000,
 	})
 	RegisterModel(Model{
@@ -2336,19 +2294,6 @@ func registerPiGeneratedModels() {
 		MaxTokens:     16384,
 	})
 	RegisterModel(Model{
-		ID:            "@cf/qwen/qwen3-30b-a3b-fp8",
-		Name:          "Qwen3 30B A3b fp8",
-		API:           "openai-completions",
-		Provider:      "cloudflare-workers-ai",
-		BaseURL:       "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true)},
-		Reasoning:     true,
-		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.0509, Output: 0.335, CacheRead: 0, CacheWrite: 0},
-		ContextWindow: 32768,
-		MaxTokens:     32768,
-	})
-	RegisterModel(Model{
 		ID:            "@cf/zai-org/glm-4.7-flash",
 		Name:          "GLM-4.7-Flash",
 		API:           "openai-completions",
@@ -2357,7 +2302,7 @@ func registerPiGeneratedModels() {
 		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true)},
 		Reasoning:     true,
 		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.0605, Output: 0.4, CacheRead: 0, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.06, Output: 0.4, CacheRead: 0, CacheWrite: 0},
 		ContextWindow: 131072,
 		MaxTokens:     131072,
 	})
@@ -2390,17 +2335,30 @@ func registerPiGeneratedModels() {
 		ThinkingLevelMap: map[string]*string{"minimal": nil, "low": nil, "medium": nil, "high": ptrString("high"), "xhigh": ptrString("max")},
 	})
 	RegisterModel(Model{
-		ID:            "accounts/fireworks/models/deepseek-v4-flash",
-		Name:          "DeepSeek V4 Flash",
+		ID:            "accounts/fireworks/models/deepseek-v3p1",
+		Name:          "DeepSeek V3.1",
 		API:           "anthropic-messages",
 		Provider:      "fireworks",
 		BaseURL:       "https://api.fireworks.ai/inference",
 		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
 		Reasoning:     true,
 		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.14, Output: 0.28, CacheRead: 0.03, CacheWrite: 0},
-		ContextWindow: 1000000,
-		MaxTokens:     384000,
+		Cost:          ModelCost{Input: 0.56, Output: 1.68, CacheRead: 0, CacheWrite: 0},
+		ContextWindow: 163840,
+		MaxTokens:     163840,
+	})
+	RegisterModel(Model{
+		ID:            "accounts/fireworks/models/deepseek-v3p2",
+		Name:          "DeepSeek V3.2",
+		API:           "anthropic-messages",
+		Provider:      "fireworks",
+		BaseURL:       "https://api.fireworks.ai/inference",
+		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
+		Reasoning:     true,
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 0.56, Output: 1.68, CacheRead: 0.28, CacheWrite: 0},
+		ContextWindow: 160000,
+		MaxTokens:     160000,
 	})
 	RegisterModel(Model{
 		ID:            "accounts/fireworks/models/deepseek-v4-pro",
@@ -2411,9 +2369,61 @@ func registerPiGeneratedModels() {
 		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
 		Reasoning:     true,
 		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 1.74, Output: 3.48, CacheRead: 0.145, CacheWrite: 0},
+		Cost:          ModelCost{Input: 1.74, Output: 3.48, CacheRead: 0.15, CacheWrite: 0},
 		ContextWindow: 1000000,
 		MaxTokens:     384000,
+	})
+	RegisterModel(Model{
+		ID:            "accounts/fireworks/models/glm-4p5",
+		Name:          "GLM 4.5",
+		API:           "anthropic-messages",
+		Provider:      "fireworks",
+		BaseURL:       "https://api.fireworks.ai/inference",
+		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
+		Reasoning:     true,
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 0.55, Output: 2.19, CacheRead: 0, CacheWrite: 0},
+		ContextWindow: 131072,
+		MaxTokens:     131072,
+	})
+	RegisterModel(Model{
+		ID:            "accounts/fireworks/models/glm-4p5-air",
+		Name:          "GLM 4.5 Air",
+		API:           "anthropic-messages",
+		Provider:      "fireworks",
+		BaseURL:       "https://api.fireworks.ai/inference",
+		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
+		Reasoning:     true,
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 0.22, Output: 0.88, CacheRead: 0, CacheWrite: 0},
+		ContextWindow: 131072,
+		MaxTokens:     131072,
+	})
+	RegisterModel(Model{
+		ID:            "accounts/fireworks/models/glm-4p7",
+		Name:          "GLM 4.7",
+		API:           "anthropic-messages",
+		Provider:      "fireworks",
+		BaseURL:       "https://api.fireworks.ai/inference",
+		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
+		Reasoning:     true,
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 0.6, Output: 2.2, CacheRead: 0.3, CacheWrite: 0},
+		ContextWindow: 198000,
+		MaxTokens:     198000,
+	})
+	RegisterModel(Model{
+		ID:            "accounts/fireworks/models/glm-5",
+		Name:          "GLM 5",
+		API:           "anthropic-messages",
+		Provider:      "fireworks",
+		BaseURL:       "https://api.fireworks.ai/inference",
+		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
+		Reasoning:     true,
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 1, Output: 3.2, CacheRead: 0.5, CacheWrite: 0},
+		ContextWindow: 202752,
+		MaxTokens:     131072,
 	})
 	RegisterModel(Model{
 		ID:            "accounts/fireworks/models/glm-5p1",
@@ -2437,7 +2447,7 @@ func registerPiGeneratedModels() {
 		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
 		Reasoning:     true,
 		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.15, Output: 0.6, CacheRead: 0.015, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.15, Output: 0.6, CacheRead: 0, CacheWrite: 0},
 		ContextWindow: 131072,
 		MaxTokens:     32768,
 	})
@@ -2450,9 +2460,34 @@ func registerPiGeneratedModels() {
 		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
 		Reasoning:     true,
 		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.07, Output: 0.3, CacheRead: 0.035, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.05, Output: 0.2, CacheRead: 0, CacheWrite: 0},
 		ContextWindow: 131072,
 		MaxTokens:     32768,
+	})
+	RegisterModel(Model{
+		ID:            "accounts/fireworks/models/kimi-k2-instruct",
+		Name:          "Kimi K2 Instruct",
+		API:           "anthropic-messages",
+		Provider:      "fireworks",
+		BaseURL:       "https://api.fireworks.ai/inference",
+		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 1, Output: 3, CacheRead: 0, CacheWrite: 0},
+		ContextWindow: 128000,
+		MaxTokens:     16384,
+	})
+	RegisterModel(Model{
+		ID:            "accounts/fireworks/models/kimi-k2-thinking",
+		Name:          "Kimi K2 Thinking",
+		API:           "anthropic-messages",
+		Provider:      "fireworks",
+		BaseURL:       "https://api.fireworks.ai/inference",
+		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
+		Reasoning:     true,
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 0.6, Output: 2.5, CacheRead: 0.3, CacheWrite: 0},
+		ContextWindow: 256000,
+		MaxTokens:     256000,
 	})
 	RegisterModel(Model{
 		ID:            "accounts/fireworks/models/kimi-k2p5",
@@ -2481,6 +2516,19 @@ func registerPiGeneratedModels() {
 		MaxTokens:     262000,
 	})
 	RegisterModel(Model{
+		ID:            "accounts/fireworks/models/minimax-m2p1",
+		Name:          "MiniMax-M2.1",
+		API:           "anthropic-messages",
+		Provider:      "fireworks",
+		BaseURL:       "https://api.fireworks.ai/inference",
+		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
+		Reasoning:     true,
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 0.3, Output: 1.2, CacheRead: 0.03, CacheWrite: 0},
+		ContextWindow: 200000,
+		MaxTokens:     200000,
+	})
+	RegisterModel(Model{
 		ID:            "accounts/fireworks/models/minimax-m2p5",
 		Name:          "MiniMax-M2.5",
 		API:           "anthropic-messages",
@@ -2502,7 +2550,7 @@ func registerPiGeneratedModels() {
 		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
 		Reasoning:     true,
 		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.3, Output: 1.2, CacheRead: 0.06, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.3, Output: 1.2, CacheRead: 0.03, CacheWrite: 0},
 		ContextWindow: 196608,
 		MaxTokens:     196608,
 	})
@@ -2520,30 +2568,16 @@ func registerPiGeneratedModels() {
 		MaxTokens:     8192,
 	})
 	RegisterModel(Model{
-		ID:            "accounts/fireworks/routers/glm-5p1-fast",
-		Name:          "GLM 5.1 Fast",
-		API:           "anthropic-messages",
-		Provider:      "fireworks",
-		BaseURL:       "https://api.fireworks.ai/inference",
-		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
-		Reasoning:     true,
-		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 2.8, Output: 8.8, CacheRead: 0.52, CacheWrite: 0},
-		ContextWindow: 202800,
-		MaxTokens:     131072,
-	})
-	RegisterModel(Model{
-		ID:            "accounts/fireworks/routers/kimi-k2p6-turbo",
-		Name:          "Kimi K2.6 Turbo",
+		ID:            "accounts/fireworks/routers/kimi-k2p5-turbo",
+		Name:          "Kimi K2.5 Turbo",
 		API:           "anthropic-messages",
 		Provider:      "fireworks",
 		BaseURL:       "https://api.fireworks.ai/inference",
 		Compat:        ModelCompat{SendSessionAffinityHeaders: ptrBool(true), SupportsEagerToolInputStreaming: ptrBool(false), SupportsCacheControlOnTools: ptrBool(false), SupportsLongCacheRetention: ptrBool(false)},
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 2, Output: 8, CacheRead: 0.3, CacheWrite: 0},
-		ContextWindow: 262000,
-		MaxTokens:     262000,
+		ContextWindow: 256000,
+		MaxTokens:     256000,
 	})
 	RegisterModel(Model{
 		ID:            "claude-haiku-4.5",
@@ -2577,7 +2611,6 @@ func registerPiGeneratedModels() {
 		Provider:         "github-copilot",
 		BaseURL:          "https://api.individual.githubcopilot.com",
 		Headers:          map[string]string{"User-Agent": "GitHubCopilotChat/0.35.0", "Editor-Version": "vscode/1.107.0", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Copilot-Integration-Id": "vscode-chat"},
-		Compat:           ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
 		ContextWindow:    1000000,
@@ -2591,7 +2624,6 @@ func registerPiGeneratedModels() {
 		Provider:         "github-copilot",
 		BaseURL:          "https://api.individual.githubcopilot.com",
 		Headers:          map[string]string{"User-Agent": "GitHubCopilotChat/0.35.0", "Editor-Version": "vscode/1.107.0", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Copilot-Integration-Id": "vscode-chat"},
-		Compat:           ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
 		ContextWindow:    144000,
@@ -2618,7 +2650,6 @@ func registerPiGeneratedModels() {
 		Provider:      "github-copilot",
 		BaseURL:       "https://api.individual.githubcopilot.com",
 		Headers:       map[string]string{"User-Agent": "GitHubCopilotChat/0.35.0", "Editor-Version": "vscode/1.107.0", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Copilot-Integration-Id": "vscode-chat"},
-		Compat:        ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		ContextWindow: 1000000,
@@ -2652,19 +2683,6 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "gemini-3.1-pro-preview",
 		Name:          "Gemini 3.1 Pro Preview",
-		API:           "openai-completions",
-		Provider:      "github-copilot",
-		BaseURL:       "https://api.individual.githubcopilot.com",
-		Headers:       map[string]string{"User-Agent": "GitHubCopilotChat/0.35.0", "Editor-Version": "vscode/1.107.0", "Editor-Plugin-Version": "copilot-chat/0.35.0", "Copilot-Integration-Id": "vscode-chat"},
-		Compat:        ModelCompat{SupportsStore: ptrBool(false), SupportsDeveloperRole: ptrBool(false), SupportsReasoningEffort: ptrBool(false)},
-		Reasoning:     true,
-		Input:         []string{"text", "image"},
-		ContextWindow: 128000,
-		MaxTokens:     64000,
-	})
-	RegisterModel(Model{
-		ID:            "gemini-3.5-flash",
-		Name:          "Gemini 3.5 Flash",
 		API:           "openai-completions",
 		Provider:      "github-copilot",
 		BaseURL:       "https://api.individual.githubcopilot.com",
@@ -2710,7 +2728,7 @@ func registerPiGeneratedModels() {
 		Input:            []string{"text", "image"},
 		ContextWindow:    264000,
 		MaxTokens:        64000,
-		ThinkingLevelMap: map[string]*string{"off": nil, "minimal": ptrString("low")},
+		ThinkingLevelMap: map[string]*string{"off": nil},
 	})
 	RegisterModel(Model{
 		ID:               "gpt-5.2",
@@ -2723,7 +2741,7 @@ func registerPiGeneratedModels() {
 		Input:            []string{"text", "image"},
 		ContextWindow:    264000,
 		MaxTokens:        64000,
-		ThinkingLevelMap: map[string]*string{"off": nil, "minimal": ptrString("low"), "xhigh": ptrString("xhigh")},
+		ThinkingLevelMap: map[string]*string{"off": nil, "xhigh": ptrString("xhigh")},
 	})
 	RegisterModel(Model{
 		ID:               "gpt-5.2-codex",
@@ -2736,7 +2754,7 @@ func registerPiGeneratedModels() {
 		Input:            []string{"text", "image"},
 		ContextWindow:    400000,
 		MaxTokens:        128000,
-		ThinkingLevelMap: map[string]*string{"off": nil, "minimal": ptrString("low"), "xhigh": ptrString("xhigh")},
+		ThinkingLevelMap: map[string]*string{"off": nil, "xhigh": ptrString("xhigh")},
 	})
 	RegisterModel(Model{
 		ID:               "gpt-5.3-codex",
@@ -2749,7 +2767,7 @@ func registerPiGeneratedModels() {
 		Input:            []string{"text", "image"},
 		ContextWindow:    400000,
 		MaxTokens:        128000,
-		ThinkingLevelMap: map[string]*string{"off": nil, "minimal": ptrString("low"), "xhigh": ptrString("xhigh")},
+		ThinkingLevelMap: map[string]*string{"off": nil, "xhigh": ptrString("xhigh")},
 	})
 	RegisterModel(Model{
 		ID:               "gpt-5.4",
@@ -2762,7 +2780,7 @@ func registerPiGeneratedModels() {
 		Input:            []string{"text", "image"},
 		ContextWindow:    400000,
 		MaxTokens:        128000,
-		ThinkingLevelMap: map[string]*string{"off": nil, "minimal": ptrString("low"), "xhigh": ptrString("xhigh")},
+		ThinkingLevelMap: map[string]*string{"off": nil, "xhigh": ptrString("xhigh")},
 	})
 	RegisterModel(Model{
 		ID:               "gpt-5.4-mini",
@@ -2775,7 +2793,7 @@ func registerPiGeneratedModels() {
 		Input:            []string{"text", "image"},
 		ContextWindow:    400000,
 		MaxTokens:        128000,
-		ThinkingLevelMap: map[string]*string{"off": nil, "minimal": ptrString("low"), "xhigh": ptrString("xhigh")},
+		ThinkingLevelMap: map[string]*string{"off": nil, "xhigh": ptrString("xhigh")},
 	})
 	RegisterModel(Model{
 		ID:               "gpt-5.5",
@@ -2788,7 +2806,7 @@ func registerPiGeneratedModels() {
 		Input:            []string{"text", "image"},
 		ContextWindow:    400000,
 		MaxTokens:        128000,
-		ThinkingLevelMap: map[string]*string{"off": nil, "minimal": ptrString("low"), "xhigh": ptrString("xhigh")},
+		ThinkingLevelMap: map[string]*string{"off": nil, "xhigh": ptrString("xhigh")},
 	})
 	RegisterModel(Model{
 		ID:            "grok-code-fast-1",
@@ -2804,6 +2822,39 @@ func registerPiGeneratedModels() {
 		MaxTokens:     64000,
 	})
 	RegisterModel(Model{
+		ID:            "gemini-1.5-flash",
+		Name:          "Gemini 1.5 Flash",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 0.075, Output: 0.3, CacheRead: 0.01875, CacheWrite: 0},
+		ContextWindow: 1000000,
+		MaxTokens:     8192,
+	})
+	RegisterModel(Model{
+		ID:            "gemini-1.5-flash-8b",
+		Name:          "Gemini 1.5 Flash-8B",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 0.0375, Output: 0.15, CacheRead: 0.01, CacheWrite: 0},
+		ContextWindow: 1000000,
+		MaxTokens:     8192,
+	})
+	RegisterModel(Model{
+		ID:            "gemini-1.5-pro",
+		Name:          "Gemini 1.5 Pro",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 1.25, Output: 5, CacheRead: 0.3125, CacheWrite: 0},
+		ContextWindow: 1000000,
+		MaxTokens:     8192,
+	})
+	RegisterModel(Model{
 		ID:            "gemini-2.0-flash",
 		Name:          "Gemini 2.0 Flash",
 		API:           "google-generative-ai",
@@ -2816,7 +2867,7 @@ func registerPiGeneratedModels() {
 	})
 	RegisterModel(Model{
 		ID:            "gemini-2.0-flash-lite",
-		Name:          "Gemini 2.0 Flash-Lite",
+		Name:          "Gemini 2.0 Flash Lite",
 		API:           "google-generative-ai",
 		Provider:      "google",
 		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
@@ -2839,13 +2890,73 @@ func registerPiGeneratedModels() {
 	})
 	RegisterModel(Model{
 		ID:            "gemini-2.5-flash-lite",
-		Name:          "Gemini 2.5 Flash-Lite",
+		Name:          "Gemini 2.5 Flash Lite",
 		API:           "google-generative-ai",
 		Provider:      "google",
 		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.1, Output: 0.4, CacheRead: 0.01, CacheWrite: 0},
+		ContextWindow: 1048576,
+		MaxTokens:     65536,
+	})
+	RegisterModel(Model{
+		ID:            "gemini-2.5-flash-lite-preview-06-17",
+		Name:          "Gemini 2.5 Flash Lite Preview 06-17",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Reasoning:     true,
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 0.1, Output: 0.4, CacheRead: 0.025, CacheWrite: 0},
+		ContextWindow: 1048576,
+		MaxTokens:     65536,
+	})
+	RegisterModel(Model{
+		ID:            "gemini-2.5-flash-lite-preview-09-2025",
+		Name:          "Gemini 2.5 Flash Lite Preview 09-25",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Reasoning:     true,
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 0.1, Output: 0.4, CacheRead: 0.025, CacheWrite: 0},
+		ContextWindow: 1048576,
+		MaxTokens:     65536,
+	})
+	RegisterModel(Model{
+		ID:            "gemini-2.5-flash-preview-04-17",
+		Name:          "Gemini 2.5 Flash Preview 04-17",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Reasoning:     true,
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 0.15, Output: 0.6, CacheRead: 0.0375, CacheWrite: 0},
+		ContextWindow: 1048576,
+		MaxTokens:     65536,
+	})
+	RegisterModel(Model{
+		ID:            "gemini-2.5-flash-preview-05-20",
+		Name:          "Gemini 2.5 Flash Preview 05-20",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Reasoning:     true,
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 0.15, Output: 0.6, CacheRead: 0.0375, CacheWrite: 0},
+		ContextWindow: 1048576,
+		MaxTokens:     65536,
+	})
+	RegisterModel(Model{
+		ID:            "gemini-2.5-flash-preview-09-2025",
+		Name:          "Gemini 2.5 Flash Preview 09-25",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Reasoning:     true,
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 0.3, Output: 2.5, CacheRead: 0.075, CacheWrite: 0},
 		ContextWindow: 1048576,
 		MaxTokens:     65536,
 	})
@@ -2858,6 +2969,30 @@ func registerPiGeneratedModels() {
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 1.25, Output: 10, CacheRead: 0.125, CacheWrite: 0},
+		ContextWindow: 1048576,
+		MaxTokens:     65536,
+	})
+	RegisterModel(Model{
+		ID:            "gemini-2.5-pro-preview-05-06",
+		Name:          "Gemini 2.5 Pro Preview 05-06",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Reasoning:     true,
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 1.25, Output: 10, CacheRead: 0.31, CacheWrite: 0},
+		ContextWindow: 1048576,
+		MaxTokens:     65536,
+	})
+	RegisterModel(Model{
+		ID:            "gemini-2.5-pro-preview-06-05",
+		Name:          "Gemini 2.5 Pro Preview 06-05",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Reasoning:     true,
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 1.25, Output: 10, CacheRead: 0.31, CacheWrite: 0},
 		ContextWindow: 1048576,
 		MaxTokens:     65536,
 	})
@@ -2883,8 +3018,8 @@ func registerPiGeneratedModels() {
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
 		Cost:             ModelCost{Input: 2, Output: 12, CacheRead: 0.2, CacheWrite: 0},
-		ContextWindow:    1048576,
-		MaxTokens:        65536,
+		ContextWindow:    1000000,
+		MaxTokens:        64000,
 		ThinkingLevelMap: map[string]*string{"off": nil, "minimal": nil, "low": ptrString("LOW"), "medium": nil, "high": ptrString("HIGH")},
 	})
 	RegisterModel(Model{
@@ -2940,19 +3075,6 @@ func registerPiGeneratedModels() {
 		ThinkingLevelMap: map[string]*string{"off": nil, "minimal": nil, "low": ptrString("LOW"), "medium": nil, "high": ptrString("HIGH")},
 	})
 	RegisterModel(Model{
-		ID:               "gemini-3.5-flash",
-		Name:             "Gemini 3.5 Flash",
-		API:              "google-generative-ai",
-		Provider:         "google",
-		BaseURL:          "https://generativelanguage.googleapis.com/v1beta",
-		Reasoning:        true,
-		Input:            []string{"text", "image"},
-		Cost:             ModelCost{Input: 1.5, Output: 9, CacheRead: 0.15, CacheWrite: 0},
-		ContextWindow:    1048576,
-		MaxTokens:        65536,
-		ThinkingLevelMap: map[string]*string{"off": nil},
-	})
-	RegisterModel(Model{
 		ID:            "gemini-flash-latest",
 		Name:          "Gemini Flash Latest",
 		API:           "google-generative-ai",
@@ -2977,27 +3099,61 @@ func registerPiGeneratedModels() {
 		MaxTokens:     65536,
 	})
 	RegisterModel(Model{
+		ID:            "gemini-live-2.5-flash",
+		Name:          "Gemini Live 2.5 Flash",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Reasoning:     true,
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 0.5, Output: 2, CacheRead: 0, CacheWrite: 0},
+		ContextWindow: 128000,
+		MaxTokens:     8000,
+	})
+	RegisterModel(Model{
+		ID:            "gemini-live-2.5-flash-preview-native-audio",
+		Name:          "Gemini Live 2.5 Flash Preview Native Audio",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Reasoning:     true,
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 0.5, Output: 2, CacheRead: 0, CacheWrite: 0},
+		ContextWindow: 131072,
+		MaxTokens:     65536,
+	})
+	RegisterModel(Model{
+		ID:            "gemma-3-27b-it",
+		Name:          "Gemma 3 27B",
+		API:           "google-generative-ai",
+		Provider:      "google",
+		BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+		Input:         []string{"text", "image"},
+		ContextWindow: 131072,
+		MaxTokens:     8192,
+	})
+	RegisterModel(Model{
 		ID:               "gemma-4-26b-a4b-it",
-		Name:             "Gemma 4 26B A4B IT",
+		Name:             "Gemma 4 26B",
 		API:              "google-generative-ai",
 		Provider:         "google",
 		BaseURL:          "https://generativelanguage.googleapis.com/v1beta",
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
-		ContextWindow:    262144,
-		MaxTokens:        32768,
+		ContextWindow:    256000,
+		MaxTokens:        8192,
 		ThinkingLevelMap: map[string]*string{"off": nil, "minimal": ptrString("MINIMAL"), "low": nil, "medium": nil, "high": ptrString("HIGH")},
 	})
 	RegisterModel(Model{
 		ID:               "gemma-4-31b-it",
-		Name:             "Gemma 4 31B IT",
+		Name:             "Gemma 4 31B",
 		API:              "google-generative-ai",
 		Provider:         "google",
 		BaseURL:          "https://generativelanguage.googleapis.com/v1beta",
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
-		ContextWindow:    262144,
-		MaxTokens:        32768,
+		ContextWindow:    256000,
+		MaxTokens:        8192,
 		ThinkingLevelMap: map[string]*string{"off": nil, "minimal": ptrString("MINIMAL"), "low": nil, "medium": nil, "high": ptrString("HIGH")},
 	})
 	RegisterModel(Model{
@@ -4719,8 +4875,58 @@ func registerPiGeneratedModels() {
 		MaxTokens:     100000,
 	})
 	RegisterModel(Model{
+		ID:            "gpt-5.1",
+		Name:          "GPT-5.1",
+		API:           "openai-codex-responses",
+		Provider:      "openai-codex",
+		BaseURL:       "https://chatgpt.com/backend-api",
+		Reasoning:     true,
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 1.25, Output: 10, CacheRead: 0.125, CacheWrite: 0},
+		ContextWindow: 272000,
+		MaxTokens:     128000,
+	})
+	RegisterModel(Model{
+		ID:            "gpt-5.1-codex-max",
+		Name:          "GPT-5.1 Codex Max",
+		API:           "openai-codex-responses",
+		Provider:      "openai-codex",
+		BaseURL:       "https://chatgpt.com/backend-api",
+		Reasoning:     true,
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 1.25, Output: 10, CacheRead: 0.125, CacheWrite: 0},
+		ContextWindow: 272000,
+		MaxTokens:     128000,
+	})
+	RegisterModel(Model{
+		ID:               "gpt-5.1-codex-mini",
+		Name:             "GPT-5.1 Codex Mini",
+		API:              "openai-codex-responses",
+		Provider:         "openai-codex",
+		BaseURL:          "https://chatgpt.com/backend-api",
+		Reasoning:        true,
+		Input:            []string{"text", "image"},
+		Cost:             ModelCost{Input: 0.25, Output: 2, CacheRead: 0.025, CacheWrite: 0},
+		ContextWindow:    272000,
+		MaxTokens:        128000,
+		ThinkingLevelMap: map[string]*string{"minimal": ptrString("medium"), "low": ptrString("medium"), "medium": ptrString("medium"), "high": ptrString("high")},
+	})
+	RegisterModel(Model{
 		ID:               "gpt-5.2",
 		Name:             "GPT-5.2",
+		API:              "openai-codex-responses",
+		Provider:         "openai-codex",
+		BaseURL:          "https://chatgpt.com/backend-api",
+		Reasoning:        true,
+		Input:            []string{"text", "image"},
+		Cost:             ModelCost{Input: 1.75, Output: 14, CacheRead: 0.175, CacheWrite: 0},
+		ContextWindow:    272000,
+		MaxTokens:        128000,
+		ThinkingLevelMap: map[string]*string{"xhigh": ptrString("xhigh"), "minimal": ptrString("low")},
+	})
+	RegisterModel(Model{
+		ID:               "gpt-5.2-codex",
+		Name:             "GPT-5.2 Codex",
 		API:              "openai-codex-responses",
 		Provider:         "openai-codex",
 		BaseURL:          "https://chatgpt.com/backend-api",
@@ -4752,8 +4958,7 @@ func registerPiGeneratedModels() {
 		BaseURL:          "https://chatgpt.com/backend-api",
 		Reasoning:        true,
 		Input:            []string{"text"},
-		Cost:             ModelCost{Input: 1.75, Output: 14, CacheRead: 0.175, CacheWrite: 0},
-		ContextWindow:    272000,
+		ContextWindow:    128000,
 		MaxTokens:        128000,
 		ThinkingLevelMap: map[string]*string{"xhigh": ptrString("xhigh"), "minimal": ptrString("low")},
 	})
@@ -4772,7 +4977,7 @@ func registerPiGeneratedModels() {
 	})
 	RegisterModel(Model{
 		ID:               "gpt-5.4-mini",
-		Name:             "GPT-5.4 mini",
+		Name:             "GPT-5.4 Mini",
 		API:              "openai-codex-responses",
 		Provider:         "openai-codex",
 		BaseURL:          "https://chatgpt.com/backend-api",
@@ -4849,7 +5054,6 @@ func registerPiGeneratedModels() {
 		API:              "anthropic-messages",
 		Provider:         "opencode",
 		BaseURL:          "https://opencode.ai/zen",
-		Compat:           ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
 		Cost:             ModelCost{Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25},
@@ -4863,7 +5067,6 @@ func registerPiGeneratedModels() {
 		API:              "anthropic-messages",
 		Provider:         "opencode",
 		BaseURL:          "https://opencode.ai/zen",
-		Compat:           ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
 		Cost:             ModelCost{Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25},
@@ -4901,7 +5104,6 @@ func registerPiGeneratedModels() {
 		API:           "anthropic-messages",
 		Provider:      "opencode",
 		BaseURL:       "https://opencode.ai/zen",
-		Compat:        ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 3, Output: 15, CacheRead: 0.3, CacheWrite: 3.75},
@@ -4946,19 +5148,6 @@ func registerPiGeneratedModels() {
 		ContextWindow:    1048576,
 		MaxTokens:        65536,
 		ThinkingLevelMap: map[string]*string{"off": nil, "minimal": nil, "low": ptrString("LOW"), "medium": nil, "high": ptrString("HIGH")},
-	})
-	RegisterModel(Model{
-		ID:               "gemini-3.5-flash",
-		Name:             "Gemini 3.5 Flash",
-		API:              "google-generative-ai",
-		Provider:         "opencode",
-		BaseURL:          "https://opencode.ai/zen/v1",
-		Reasoning:        true,
-		Input:            []string{"text", "image"},
-		Cost:             ModelCost{Input: 1.5, Output: 9, CacheRead: 0.15, CacheWrite: 0},
-		ContextWindow:    1048576,
-		MaxTokens:        65536,
-		ThinkingLevelMap: map[string]*string{"off": nil},
 	})
 	RegisterModel(Model{
 		ID:            "glm-5",
@@ -5193,18 +5382,6 @@ func registerPiGeneratedModels() {
 		ThinkingLevelMap: map[string]*string{"off": nil, "xhigh": ptrString("xhigh")},
 	})
 	RegisterModel(Model{
-		ID:            "grok-build-0.1",
-		Name:          "Grok Build 0.1",
-		API:           "openai-completions",
-		Provider:      "opencode",
-		BaseURL:       "https://opencode.ai/zen/v1",
-		Reasoning:     true,
-		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 1, Output: 2, CacheRead: 0.2, CacheWrite: 0},
-		ContextWindow: 256000,
-		MaxTokens:     256000,
-	})
-	RegisterModel(Model{
 		ID:            "kimi-k2.5",
 		Name:          "Kimi K2.5",
 		API:           "openai-completions",
@@ -5237,6 +5414,17 @@ func registerPiGeneratedModels() {
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 0.3, Output: 1.2, CacheRead: 0.06, CacheWrite: 0},
+		ContextWindow: 204800,
+		MaxTokens:     131072,
+	})
+	RegisterModel(Model{
+		ID:            "minimax-m2.5-free",
+		Name:          "MiniMax M2.5 Free",
+		API:           "anthropic-messages",
+		Provider:      "opencode",
+		BaseURL:       "https://opencode.ai/zen",
+		Reasoning:     true,
+		Input:         []string{"text"},
 		ContextWindow: 204800,
 		MaxTokens:     131072,
 	})
@@ -5284,6 +5472,17 @@ func registerPiGeneratedModels() {
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.5, Output: 3, CacheRead: 0.05, CacheWrite: 0.625},
+		ContextWindow: 262144,
+		MaxTokens:     65536,
+	})
+	RegisterModel(Model{
+		ID:            "qwen3.6-plus-free",
+		Name:          "Qwen3.6 Plus Free",
+		API:           "anthropic-messages",
+		Provider:      "opencode",
+		BaseURL:       "https://opencode.ai/zen",
+		Reasoning:     true,
+		Input:         []string{"text", "image"},
 		ContextWindow: 262144,
 		MaxTokens:     65536,
 	})
@@ -5675,6 +5874,17 @@ func registerPiGeneratedModels() {
 		MaxTokens:     128000,
 	})
 	RegisterModel(Model{
+		ID:            "arcee-ai/trinity-large-preview",
+		Name:          "Arcee AI: Trinity Large Preview",
+		API:           "openai-completions",
+		Provider:      "openrouter",
+		BaseURL:       "https://openrouter.ai/api/v1",
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 0.15, Output: 0.44999999999999996, CacheRead: 0, CacheWrite: 0},
+		ContextWindow: 131000,
+		MaxTokens:     4096,
+	})
+	RegisterModel(Model{
 		ID:            "arcee-ai/trinity-large-thinking",
 		Name:          "Arcee AI: Trinity Large Thinking",
 		API:           "openai-completions",
@@ -5938,9 +6148,9 @@ func registerPiGeneratedModels() {
 		Compat:           ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
 		Reasoning:        true,
 		Input:            []string{"text"},
-		Cost:             ModelCost{Input: 0.09999999999999999, Output: 0.19999999999999998, CacheRead: 0.02, CacheWrite: 0},
+		Cost:             ModelCost{Input: 0.112, Output: 0.224, CacheRead: 0.022, CacheWrite: 0},
 		ContextWindow:    1048576,
-		MaxTokens:        16384,
+		MaxTokens:        4096,
 		ThinkingLevelMap: map[string]*string{"minimal": nil, "low": nil, "medium": nil, "high": ptrString("high"), "xhigh": ptrString("max")},
 	})
 	RegisterModel(Model{
@@ -5989,7 +6199,7 @@ func registerPiGeneratedModels() {
 		BaseURL:       "https://openrouter.ai/api/v1",
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.09999999999999999, Output: 0.39999999999999997, CacheRead: 0.024999999999999998, CacheWrite: 0.08333333333333334},
-		ContextWindow: 1000000,
+		ContextWindow: 1048576,
 		MaxTokens:     8192,
 	})
 	RegisterModel(Model{
@@ -6136,18 +6346,6 @@ func registerPiGeneratedModels() {
 		MaxTokens:     65536,
 	})
 	RegisterModel(Model{
-		ID:            "google/gemini-3.5-flash",
-		Name:          "Google: Gemini 3.5 Flash",
-		API:           "openai-completions",
-		Provider:      "openrouter",
-		BaseURL:       "https://openrouter.ai/api/v1",
-		Reasoning:     true,
-		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 1.5, Output: 9, CacheRead: 0.15, CacheWrite: 0.08333333333333334},
-		ContextWindow: 1048576,
-		MaxTokens:     65536,
-	})
-	RegisterModel(Model{
 		ID:            "google/gemma-3-12b-it",
 		Name:          "Google: Gemma 3 12B",
 		API:           "openai-completions",
@@ -6177,9 +6375,9 @@ func registerPiGeneratedModels() {
 		BaseURL:       "https://openrouter.ai/api/v1",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 0.06, Output: 0.33, CacheRead: 0, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.07, Output: 0.33999999999999997, CacheRead: 0, CacheWrite: 0},
 		ContextWindow: 262144,
-		MaxTokens:     4096,
+		MaxTokens:     16384,
 	})
 	RegisterModel(Model{
 		ID:            "google/gemma-4-26b-a4b-it:free",
@@ -6246,7 +6444,7 @@ func registerPiGeneratedModels() {
 		Provider:      "openrouter",
 		BaseURL:       "https://openrouter.ai/api/v1",
 		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.075, Output: 0.625, CacheRead: 0.015, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.3, Output: 2.5, CacheRead: 0.06, CacheWrite: 0},
 		ContextWindow: 262144,
 		MaxTokens:     32768,
 	})
@@ -6571,9 +6769,9 @@ func registerPiGeneratedModels() {
 		Provider:      "openrouter",
 		BaseURL:       "https://openrouter.ai/api/v1",
 		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.02, Output: 0.03, CacheRead: 0, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.02, Output: 0.04, CacheRead: 0, CacheWrite: 0},
 		ContextWindow: 131072,
-		MaxTokens:     4096,
+		MaxTokens:     16384,
 	})
 	RegisterModel(Model{
 		ID:            "mistralai/mistral-saba",
@@ -6765,9 +6963,9 @@ func registerPiGeneratedModels() {
 		BaseURL:       "https://openrouter.ai/api/v1",
 		Reasoning:     true,
 		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.09, Output: 0.44999999999999996, CacheRead: 0, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.09999999999999999, Output: 0.5, CacheRead: 0, CacheWrite: 0},
 		ContextWindow: 1000000,
-		MaxTokens:     4096,
+		MaxTokens:     16384,
 	})
 	RegisterModel(Model{
 		ID:            "nvidia/nemotron-3-super-120b-a12b:free",
@@ -7326,9 +7524,9 @@ func registerPiGeneratedModels() {
 		BaseURL:       "https://openrouter.ai/api/v1",
 		Reasoning:     true,
 		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.039, Output: 0.18, CacheRead: 0, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.039, Output: 0.19, CacheRead: 0, CacheWrite: 0},
 		ContextWindow: 131072,
-		MaxTokens:     4096,
+		MaxTokens:     131072,
 	})
 	RegisterModel(Model{
 		ID:            "openai/gpt-oss-120b:free",
@@ -7924,7 +8122,7 @@ func registerPiGeneratedModels() {
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.26, Output: 2.08, CacheRead: 0, CacheWrite: 0},
 		ContextWindow: 262144,
-		MaxTokens:     262144,
+		MaxTokens:     65536,
 	})
 	RegisterModel(Model{
 		ID:            "qwen/qwen3.5-27b",
@@ -7946,9 +8144,9 @@ func registerPiGeneratedModels() {
 		BaseURL:       "https://openrouter.ai/api/v1",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 0.13899999999999998, Output: 1, CacheRead: 0, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.14, Output: 1, CacheRead: 0.049999999999999996, CacheWrite: 0},
 		ContextWindow: 262144,
-		MaxTokens:     4096,
+		MaxTokens:     81920,
 	})
 	RegisterModel(Model{
 		ID:            "qwen/qwen3.5-397b-a17b",
@@ -7958,7 +8156,7 @@ func registerPiGeneratedModels() {
 		BaseURL:       "https://openrouter.ai/api/v1",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 0.39, Output: 2.34, CacheRead: 0, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.39, Output: 2.34, CacheRead: 0.195, CacheWrite: 0},
 		ContextWindow: 262144,
 		MaxTokens:     65536,
 	})
@@ -8018,9 +8216,9 @@ func registerPiGeneratedModels() {
 		BaseURL:       "https://openrouter.ai/api/v1",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 0.3, Output: 3.1999999999999997, CacheRead: 0, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.32, Output: 3.1999999999999997, CacheRead: 0, CacheWrite: 0},
 		ContextWindow: 262144,
-		MaxTokens:     262144,
+		MaxTokens:     81920,
 	})
 	RegisterModel(Model{
 		ID:            "qwen/qwen3.6-35b-a3b",
@@ -8030,9 +8228,9 @@ func registerPiGeneratedModels() {
 		BaseURL:       "https://openrouter.ai/api/v1",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 0.15, Output: 1, CacheRead: 0, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.15, Output: 1, CacheRead: 0.049999999999999996, CacheWrite: 0},
 		ContextWindow: 262144,
-		MaxTokens:     262140,
+		MaxTokens:     262144,
 	})
 	RegisterModel(Model{
 		ID:            "qwen/qwen3.6-flash",
@@ -8067,18 +8265,6 @@ func registerPiGeneratedModels() {
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.325, Output: 1.95, CacheRead: 0, CacheWrite: 0.40625},
-		ContextWindow: 1000000,
-		MaxTokens:     65536,
-	})
-	RegisterModel(Model{
-		ID:            "qwen/qwen3.7-max",
-		Name:          "Qwen: Qwen3.7 Max",
-		API:           "openai-completions",
-		Provider:      "openrouter",
-		BaseURL:       "https://openrouter.ai/api/v1",
-		Reasoning:     true,
-		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 2.5, Output: 7.5, CacheRead: 0, CacheWrite: 3.125},
 		ContextWindow: 1000000,
 		MaxTokens:     65536,
 	})
@@ -8134,9 +8320,9 @@ func registerPiGeneratedModels() {
 		BaseURL:       "https://openrouter.ai/api/v1",
 		Reasoning:     true,
 		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 0.09, Output: 0.3, CacheRead: 0.02, CacheWrite: 0},
+		Cost:          ModelCost{Input: 0.09999999999999999, Output: 0.3, CacheRead: 0, CacheWrite: 0},
 		ContextWindow: 262144,
-		MaxTokens:     16384,
+		MaxTokens:     65536,
 	})
 	RegisterModel(Model{
 		ID:            "tencent/hy3-preview",
@@ -8206,18 +8392,6 @@ func registerPiGeneratedModels() {
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 1.25, Output: 2.5, CacheRead: 0.19999999999999998, CacheWrite: 0},
 		ContextWindow: 1000000,
-		MaxTokens:     4096,
-	})
-	RegisterModel(Model{
-		ID:            "x-ai/grok-build-0.1",
-		Name:          "xAI: Grok Build 0.1",
-		API:           "openai-completions",
-		Provider:      "openrouter",
-		BaseURL:       "https://openrouter.ai/api/v1",
-		Reasoning:     true,
-		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 1, Output: 2, CacheRead: 0.19999999999999998, CacheWrite: 0},
-		ContextWindow: 256000,
 		MaxTokens:     4096,
 	})
 	RegisterModel(Model{
@@ -8478,7 +8652,7 @@ func registerPiGeneratedModels() {
 		BaseURL:       "https://openrouter.ai/api/v1",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 1.5, Output: 9, CacheRead: 0.15, CacheWrite: 0.08333333333333334},
+		Cost:          ModelCost{Input: 0.5, Output: 3, CacheRead: 0.049999999999999996, CacheWrite: 0.08333333333333334},
 		ContextWindow: 1048576,
 		MaxTokens:     65536,
 	})
@@ -8622,20 +8796,6 @@ func registerPiGeneratedModels() {
 		Reasoning:        true,
 		Input:            []string{"text"},
 		Cost:             ModelCost{Input: 0.5, Output: 3, CacheRead: 0, CacheWrite: 0},
-		ContextWindow:    1000000,
-		MaxTokens:        500000,
-		ThinkingLevelMap: map[string]*string{"minimal": nil, "low": nil, "medium": nil},
-	})
-	RegisterModel(Model{
-		ID:               "Qwen/Qwen3.7-Max",
-		Name:             "Qwen3.7 Max",
-		API:              "openai-completions",
-		Provider:         "together",
-		BaseURL:          "https://api.together.ai/v1",
-		Compat:           ModelCompat{SupportsStore: ptrBool(false), SupportsDeveloperRole: ptrBool(false), SupportsReasoningEffort: ptrBool(false), MaxTokensField: "max_tokens", SupportsStrictMode: ptrBool(false), SupportsLongCacheRetention: ptrBool(false), ThinkingFormat: "together"},
-		Reasoning:        true,
-		Input:            []string{"text"},
-		Cost:             ModelCost{Input: 2.5, Output: 7.5, CacheRead: 0, CacheWrite: 0},
 		ContextWindow:    1000000,
 		MaxTokens:        500000,
 		ThinkingLevelMap: map[string]*string{"minimal": nil, "low": nil, "medium": nil},
@@ -8987,18 +9147,6 @@ func registerPiGeneratedModels() {
 		MaxTokens:     64000,
 	})
 	RegisterModel(Model{
-		ID:            "alibaba/qwen3.7-max",
-		Name:          "Qwen 3.7 Max",
-		API:           "anthropic-messages",
-		Provider:      "vercel-ai-gateway",
-		BaseURL:       "https://ai-gateway.vercel.sh",
-		Reasoning:     true,
-		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 1.25, Output: 3.75, CacheRead: 0.25, CacheWrite: 1.5625},
-		ContextWindow: 991000,
-		MaxTokens:     64000,
-	})
-	RegisterModel(Model{
 		ID:            "anthropic/claude-3-haiku",
 		Name:          "Claude 3 Haiku",
 		API:           "anthropic-messages",
@@ -9074,7 +9222,6 @@ func registerPiGeneratedModels() {
 		API:              "anthropic-messages",
 		Provider:         "vercel-ai-gateway",
 		BaseURL:          "https://ai-gateway.vercel.sh",
-		Compat:           ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
 		Cost:             ModelCost{Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25},
@@ -9088,7 +9235,6 @@ func registerPiGeneratedModels() {
 		API:              "anthropic-messages",
 		Provider:         "vercel-ai-gateway",
 		BaseURL:          "https://ai-gateway.vercel.sh",
-		Compat:           ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:        true,
 		Input:            []string{"text", "image"},
 		Cost:             ModelCost{Input: 5, Output: 25, CacheRead: 0.5, CacheWrite: 6.25},
@@ -9126,7 +9272,6 @@ func registerPiGeneratedModels() {
 		API:           "anthropic-messages",
 		Provider:      "vercel-ai-gateway",
 		BaseURL:       "https://ai-gateway.vercel.sh",
-		Compat:        ModelCompat{ForceAdaptiveThinking: ptrBool(true)},
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 3, Output: 15, CacheRead: 0.3, CacheWrite: 3.75},
@@ -9391,18 +9536,6 @@ func registerPiGeneratedModels() {
 		MaxTokens:     64000,
 	})
 	RegisterModel(Model{
-		ID:            "google/gemini-3.5-flash",
-		Name:          "Gemini 3.5 Flash",
-		API:           "anthropic-messages",
-		Provider:      "vercel-ai-gateway",
-		BaseURL:       "https://ai-gateway.vercel.sh",
-		Reasoning:     true,
-		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 1.5, Output: 9, CacheRead: 0.15, CacheWrite: 0},
-		ContextWindow: 1000000,
-		MaxTokens:     64000,
-	})
-	RegisterModel(Model{
 		ID:            "google/gemma-4-26b-a4b-it",
 		Name:          "Gemma 4 26B A4B IT",
 		API:           "anthropic-messages",
@@ -9608,7 +9741,7 @@ func registerPiGeneratedModels() {
 	})
 	RegisterModel(Model{
 		ID:            "minimax/minimax-m2.7",
-		Name:          "MiniMax M2.7",
+		Name:          "Minimax M2.7",
 		API:           "anthropic-messages",
 		Provider:      "vercel-ai-gateway",
 		BaseURL:       "https://ai-gateway.vercel.sh",
@@ -9706,18 +9839,6 @@ func registerPiGeneratedModels() {
 		Cost:          ModelCost{Input: 0.39999999999999997, Output: 2, CacheRead: 0, CacheWrite: 0},
 		ContextWindow: 128000,
 		MaxTokens:     64000,
-	})
-	RegisterModel(Model{
-		ID:            "mistral/mistral-medium-3.5",
-		Name:          "Mistral Medium Latest",
-		API:           "anthropic-messages",
-		Provider:      "vercel-ai-gateway",
-		BaseURL:       "https://ai-gateway.vercel.sh",
-		Reasoning:     true,
-		Input:         []string{"text"},
-		Cost:          ModelCost{Input: 1.5, Output: 7.5, CacheRead: 0, CacheWrite: 0},
-		ContextWindow: 256000,
-		MaxTokens:     256000,
 	})
 	RegisterModel(Model{
 		ID:            "mistral/mistral-small",
@@ -10422,18 +10543,6 @@ func registerPiGeneratedModels() {
 		MaxTokens:     1000000,
 	})
 	RegisterModel(Model{
-		ID:            "xai/grok-build-0.1",
-		Name:          "Grok Build 0.1",
-		API:           "anthropic-messages",
-		Provider:      "vercel-ai-gateway",
-		BaseURL:       "https://ai-gateway.vercel.sh",
-		Reasoning:     true,
-		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 1, Output: 2, CacheRead: 0.19999999999999998, CacheWrite: 0},
-		ContextWindow: 256000,
-		MaxTokens:     256000,
-	})
-	RegisterModel(Model{
 		ID:            "xiaomi/mimo-v2-flash",
 		Name:          "MiMo V2 Flash",
 		API:           "anthropic-messages",
@@ -10636,6 +10745,72 @@ func registerPiGeneratedModels() {
 		MaxTokens:     128000,
 	})
 	RegisterModel(Model{
+		ID:            "grok-2",
+		Name:          "Grok 2",
+		API:           "openai-completions",
+		Provider:      "xai",
+		BaseURL:       "https://api.x.ai/v1",
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 2, Output: 10, CacheRead: 2, CacheWrite: 0},
+		ContextWindow: 131072,
+		MaxTokens:     8192,
+	})
+	RegisterModel(Model{
+		ID:            "grok-2-1212",
+		Name:          "Grok 2 (1212)",
+		API:           "openai-completions",
+		Provider:      "xai",
+		BaseURL:       "https://api.x.ai/v1",
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 2, Output: 10, CacheRead: 2, CacheWrite: 0},
+		ContextWindow: 131072,
+		MaxTokens:     8192,
+	})
+	RegisterModel(Model{
+		ID:            "grok-2-latest",
+		Name:          "Grok 2 Latest",
+		API:           "openai-completions",
+		Provider:      "xai",
+		BaseURL:       "https://api.x.ai/v1",
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 2, Output: 10, CacheRead: 2, CacheWrite: 0},
+		ContextWindow: 131072,
+		MaxTokens:     8192,
+	})
+	RegisterModel(Model{
+		ID:            "grok-2-vision",
+		Name:          "Grok 2 Vision",
+		API:           "openai-completions",
+		Provider:      "xai",
+		BaseURL:       "https://api.x.ai/v1",
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 2, Output: 10, CacheRead: 2, CacheWrite: 0},
+		ContextWindow: 8192,
+		MaxTokens:     4096,
+	})
+	RegisterModel(Model{
+		ID:            "grok-2-vision-1212",
+		Name:          "Grok 2 Vision (1212)",
+		API:           "openai-completions",
+		Provider:      "xai",
+		BaseURL:       "https://api.x.ai/v1",
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 2, Output: 10, CacheRead: 2, CacheWrite: 0},
+		ContextWindow: 8192,
+		MaxTokens:     4096,
+	})
+	RegisterModel(Model{
+		ID:            "grok-2-vision-latest",
+		Name:          "Grok 2 Vision Latest",
+		API:           "openai-completions",
+		Provider:      "xai",
+		BaseURL:       "https://api.x.ai/v1",
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 2, Output: 10, CacheRead: 2, CacheWrite: 0},
+		ContextWindow: 8192,
+		MaxTokens:     4096,
+	})
+	RegisterModel(Model{
 		ID:            "grok-3",
 		Name:          "Grok 3",
 		API:           "openai-completions",
@@ -10664,7 +10839,7 @@ func registerPiGeneratedModels() {
 		Provider:      "xai",
 		BaseURL:       "https://api.x.ai/v1",
 		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 1.25, Output: 2.5, CacheRead: 0.2, CacheWrite: 0},
+		Cost:          ModelCost{Input: 2, Output: 6, CacheRead: 0.2, CacheWrite: 0},
 		ContextWindow: 2000000,
 		MaxTokens:     30000,
 	})
@@ -10676,7 +10851,7 @@ func registerPiGeneratedModels() {
 		BaseURL:       "https://api.x.ai/v1",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 1.25, Output: 2.5, CacheRead: 0.2, CacheWrite: 0},
+		Cost:          ModelCost{Input: 2, Output: 6, CacheRead: 0.2, CacheWrite: 0},
 		ContextWindow: 2000000,
 		MaxTokens:     30000,
 	})
@@ -10693,16 +10868,15 @@ func registerPiGeneratedModels() {
 		MaxTokens:     30000,
 	})
 	RegisterModel(Model{
-		ID:            "grok-build-0.1",
-		Name:          "Grok Build 0.1",
+		ID:            "grok-beta",
+		Name:          "Grok Beta",
 		API:           "openai-completions",
 		Provider:      "xai",
 		BaseURL:       "https://api.x.ai/v1",
-		Reasoning:     true,
-		Input:         []string{"text", "image"},
-		Cost:          ModelCost{Input: 1, Output: 2, CacheRead: 0.2, CacheWrite: 0},
-		ContextWindow: 256000,
-		MaxTokens:     256000,
+		Input:         []string{"text"},
+		Cost:          ModelCost{Input: 5, Output: 15, CacheRead: 5, CacheWrite: 0},
+		ContextWindow: 131072,
+		MaxTokens:     4096,
 	})
 	RegisterModel(Model{
 		ID:            "grok-code-fast-1",
@@ -10716,12 +10890,22 @@ func registerPiGeneratedModels() {
 		MaxTokens:     8192,
 	})
 	RegisterModel(Model{
+		ID:            "grok-vision-beta",
+		Name:          "Grok Vision Beta",
+		API:           "openai-completions",
+		Provider:      "xai",
+		BaseURL:       "https://api.x.ai/v1",
+		Input:         []string{"text", "image"},
+		Cost:          ModelCost{Input: 5, Output: 15, CacheRead: 5, CacheWrite: 0},
+		ContextWindow: 8192,
+		MaxTokens:     4096,
+	})
+	RegisterModel(Model{
 		ID:            "mimo-v2-flash",
 		Name:          "MiMo-V2-Flash",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi",
-		BaseURL:       "https://api.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://api.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 0.1, Output: 0.3, CacheRead: 0.01, CacheWrite: 0},
@@ -10731,10 +10915,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2-omni",
 		Name:          "MiMo-V2-Omni",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi",
-		BaseURL:       "https://api.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://api.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.4, Output: 2, CacheRead: 0.08, CacheWrite: 0},
@@ -10744,10 +10927,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2-pro",
 		Name:          "MiMo-V2-Pro",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi",
-		BaseURL:       "https://api.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://api.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 1, Output: 3, CacheRead: 0.2, CacheWrite: 0},
@@ -10757,10 +10939,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2.5",
 		Name:          "MiMo-V2.5",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi",
-		BaseURL:       "https://api.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://api.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.4, Output: 2, CacheRead: 0.08, CacheWrite: 0},
@@ -10770,10 +10951,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2.5-pro",
 		Name:          "MiMo-V2.5-Pro",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi",
-		BaseURL:       "https://api.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://api.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 1, Output: 3, CacheRead: 0.2, CacheWrite: 0},
@@ -10783,10 +10963,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2-flash",
 		Name:          "MiMo-V2-Flash",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-ams",
-		BaseURL:       "https://token-plan-ams.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-ams.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 0.1, Output: 0.3, CacheRead: 0.01, CacheWrite: 0},
@@ -10796,10 +10975,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2-omni",
 		Name:          "MiMo-V2-Omni",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-ams",
-		BaseURL:       "https://token-plan-ams.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-ams.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.4, Output: 2, CacheRead: 0.08, CacheWrite: 0},
@@ -10809,10 +10987,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2-pro",
 		Name:          "MiMo-V2-Pro",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-ams",
-		BaseURL:       "https://token-plan-ams.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-ams.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 1, Output: 3, CacheRead: 0.2, CacheWrite: 0},
@@ -10822,10 +10999,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2.5",
 		Name:          "MiMo-V2.5",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-ams",
-		BaseURL:       "https://token-plan-ams.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-ams.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.4, Output: 2, CacheRead: 0.08, CacheWrite: 0},
@@ -10835,10 +11011,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2.5-pro",
 		Name:          "MiMo-V2.5-Pro",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-ams",
-		BaseURL:       "https://token-plan-ams.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-ams.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 1, Output: 3, CacheRead: 0.2, CacheWrite: 0},
@@ -10848,10 +11023,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2-flash",
 		Name:          "MiMo-V2-Flash",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-cn",
-		BaseURL:       "https://token-plan-cn.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-cn.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 0.1, Output: 0.3, CacheRead: 0.01, CacheWrite: 0},
@@ -10861,10 +11035,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2-omni",
 		Name:          "MiMo-V2-Omni",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-cn",
-		BaseURL:       "https://token-plan-cn.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-cn.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.4, Output: 2, CacheRead: 0.08, CacheWrite: 0},
@@ -10874,10 +11047,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2-pro",
 		Name:          "MiMo-V2-Pro",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-cn",
-		BaseURL:       "https://token-plan-cn.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-cn.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 1, Output: 3, CacheRead: 0.2, CacheWrite: 0},
@@ -10887,10 +11059,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2.5",
 		Name:          "MiMo-V2.5",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-cn",
-		BaseURL:       "https://token-plan-cn.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-cn.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.4, Output: 2, CacheRead: 0.08, CacheWrite: 0},
@@ -10900,10 +11071,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2.5-pro",
 		Name:          "MiMo-V2.5-Pro",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-cn",
-		BaseURL:       "https://token-plan-cn.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-cn.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 1, Output: 3, CacheRead: 0.2, CacheWrite: 0},
@@ -10913,10 +11083,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2-flash",
 		Name:          "MiMo-V2-Flash",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-sgp",
-		BaseURL:       "https://token-plan-sgp.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-sgp.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 0.1, Output: 0.3, CacheRead: 0.01, CacheWrite: 0},
@@ -10926,10 +11095,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2-omni",
 		Name:          "MiMo-V2-Omni",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-sgp",
-		BaseURL:       "https://token-plan-sgp.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-sgp.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.4, Output: 2, CacheRead: 0.08, CacheWrite: 0},
@@ -10939,10 +11107,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2-pro",
 		Name:          "MiMo-V2-Pro",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-sgp",
-		BaseURL:       "https://token-plan-sgp.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-sgp.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 1, Output: 3, CacheRead: 0.2, CacheWrite: 0},
@@ -10952,10 +11119,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2.5",
 		Name:          "MiMo-V2.5",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-sgp",
-		BaseURL:       "https://token-plan-sgp.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-sgp.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text", "image"},
 		Cost:          ModelCost{Input: 0.4, Output: 2, CacheRead: 0.08, CacheWrite: 0},
@@ -10965,10 +11131,9 @@ func registerPiGeneratedModels() {
 	RegisterModel(Model{
 		ID:            "mimo-v2.5-pro",
 		Name:          "MiMo-V2.5-Pro",
-		API:           "openai-completions",
+		API:           "anthropic-messages",
 		Provider:      "xiaomi-token-plan-sgp",
-		BaseURL:       "https://token-plan-sgp.xiaomimimo.com/v1",
-		Compat:        ModelCompat{RequiresReasoningContentOnAssistantTurns: ptrBool(true), ThinkingFormat: "deepseek"},
+		BaseURL:       "https://token-plan-sgp.xiaomimimo.com/anthropic",
 		Reasoning:     true,
 		Input:         []string{"text"},
 		Cost:          ModelCost{Input: 1, Output: 3, CacheRead: 0.2, CacheWrite: 0},

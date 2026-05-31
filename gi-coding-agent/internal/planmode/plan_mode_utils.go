@@ -1,4 +1,4 @@
-package gicodingagent
+package planmode
 
 import (
 	"regexp"
@@ -43,6 +43,15 @@ func IsSafePlanCommand(command string) bool {
 	default:
 		return false
 	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func CleanPlanStepText(text string) string {

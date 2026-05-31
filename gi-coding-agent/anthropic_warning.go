@@ -1,8 +1,8 @@
 package gicodingagent
 
-import "strings"
+import authwarning "github.com/nowa/gi/gi-coding-agent/internal/authwarning"
 
-const AnthropicSubscriptionAuthWarning = "Anthropic subscription auth is active. Third-party harness usage draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage."
+const AnthropicSubscriptionAuthWarning = authwarning.AnthropicSubscriptionAuthWarning
 
 type AnthropicWarningSettings struct {
 	AnthropicExtraUsage *bool
@@ -16,29 +16,24 @@ type AnthropicSubscriptionWarningChecker struct {
 }
 
 func (c *AnthropicSubscriptionWarningChecker) MaybeWarn(modelProvider string) bool {
-	if c.Settings.AnthropicExtraUsage != nil && !*c.Settings.AnthropicExtraUsage {
-		return false
+	if authwarning.ShouldWarn(modelProvider, authwarning.Options{
+		Shown:               c.Shown,
+		AnthropicExtraUsage: c.Settings.AnthropicExtraUsage,
+		HasOAuthCredential: func(provider string) bool {
+			if c.AuthStorage == nil {
+				return false
+			}
+			credential, ok := c.AuthStorage.Get(provider)
+			return ok && credential.Type == "oauth"
+		},
+		GetAPIKeyForProvider: c.GetAPIKeyForProvider,
+	}) {
+		c.Shown = true
+		return true
 	}
-	if c.Shown || modelProvider != "anthropic" {
-		return false
-	}
-	if c.AuthStorage != nil {
-		if credential, ok := c.AuthStorage.Get("anthropic"); ok && credential.Type == "oauth" {
-			c.Shown = true
-			return true
-		}
-	}
-	if c.GetAPIKeyForProvider == nil {
-		return false
-	}
-	apiKey, ok := c.GetAPIKeyForProvider("anthropic")
-	if !ok || !IsAnthropicSubscriptionAuthKey(apiKey) {
-		return false
-	}
-	c.Shown = true
-	return true
+	return false
 }
 
 func IsAnthropicSubscriptionAuthKey(apiKey string) bool {
-	return strings.HasPrefix(apiKey, "sk-ant-oat")
+	return authwarning.IsAnthropicSubscriptionAuthKey(apiKey)
 }

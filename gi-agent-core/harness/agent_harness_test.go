@@ -569,7 +569,7 @@ func TestAgentHarnessCompactAppendsCompactionEntry(t *testing.T) {
 	if !strings.Contains(result.Summary, "history summary") || !strings.Contains(result.Summary, "prefix summary") {
 		t.Fatalf("summary = %q", result.Summary)
 	}
-	if len(summaryPrompts) != 2 || !strings.Contains(summaryPrompts[0], "Additional focus: focus") || !strings.Contains(summaryPrompts[1], "prefix of a turn") {
+	if len(summaryPrompts) != 2 || !strings.Contains(summaryPrompts[0], "Additional focus: focus") || !strings.Contains(summaryPrompts[1], "PREFIX of a turn") {
 		t.Fatalf("summary prompts = %#v", summaryPrompts)
 	}
 	entries := session.Entries()

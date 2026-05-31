@@ -2,6 +2,7 @@ package gicodingagent
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -131,6 +133,276 @@ func TestCLIInteractiveTUIHostRendersLiveSessionEventsPiStyle(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("interactive TUI host did not stop")
 	}
+}
+
+func TestCLIInteractiveTUIHostReplacesHiddenThinkingPartialPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	sessionHost.settingsManager.SetHideThinkingBlock(true)
+
+	host := &CLIInteractiveTUIHost{
+		runtimeHost: runtimeHost,
+		chat:        gitui.NewContainer(),
+	}
+	start := llm.Message{Role: llm.RoleAssistant}
+	host.handleLiveMessageStart(AgentSessionEvent{Type: "message_start", Message: &start})
+
+	thinkingPartial := llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Thinking("private plan")}}
+	host.handleLiveMessageUpdate(AgentSessionEvent{
+		Type: "message_update",
+		AssistantMessageEvent: &llm.AssistantMessageEvent{
+			Type:    "thinking_delta",
+			Partial: thinkingPartial,
+		},
+	})
+	rendered := StripAnsi(strings.Join(host.chat.Render(120), "\n"))
+	if !strings.Contains(rendered, "Thinking...") || strings.Contains(rendered, "private plan") {
+		t.Fatalf("hidden thinking partial render mismatch:\n%s", rendered)
+	}
+
+	final := llm.Message{
+		Role:       llm.RoleAssistant,
+		Content:    []llm.ContentPart{llm.Text("visible final")},
+		StopReason: llm.StopReasonStop,
+	}
+	host.handleLiveMessageUpdate(AgentSessionEvent{
+		Type: "message_update",
+		AssistantMessageEvent: &llm.AssistantMessageEvent{
+			Type:    "done",
+			Message: final,
+		},
+	})
+	host.handleLiveMessageEnd(AgentSessionEvent{Type: "message_end", Message: &final})
+
+	rendered = StripAnsi(strings.Join(host.chat.Render(120), "\n"))
+	if strings.Contains(rendered, "Thinking...") || strings.Contains(rendered, "private plan") {
+		t.Fatalf("final assistant render should replace hidden thinking partial in place:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "visible final") {
+		t.Fatalf("final assistant text missing:\n%s", rendered)
+	}
+	if host.chat.ChildCount() != 1 {
+		t.Fatalf("streaming update should stay in one assistant component, children=%d", host.chat.ChildCount())
+	}
+}
+
+func TestCLIInteractiveTUIHostReplacesHiddenThinkingPartialFromSessionEventsPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	sessionHost.settingsManager.SetHideThinkingBlock(true)
+
+	terminal := gitui.NewVirtualTerminal(110, 28)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	start := llm.Message{Role: llm.RoleAssistant}
+	sessionHost.session.emit(AgentSessionEvent{Type: "message_start", Message: &start})
+	thinkingPartial := llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Thinking("private plan")}}
+	sessionHost.session.emit(AgentSessionEvent{
+		Type: "message_update",
+		AssistantMessageEvent: &llm.AssistantMessageEvent{
+			Type:    "thinking_delta",
+			Partial: thinkingPartial,
+		},
+	})
+	waitForViewport(t, terminal, "Thinking...")
+
+	final := llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("visible final")}, StopReason: llm.StopReasonStop}
+	sessionHost.session.emit(AgentSessionEvent{
+		Type: "message_update",
+		AssistantMessageEvent: &llm.AssistantMessageEvent{
+			Type:    "done",
+			Message: final,
+		},
+	})
+	sessionHost.session.emit(AgentSessionEvent{Type: "message_end", Message: &final})
+	waitForViewport(t, terminal, "visible final")
+
+	terminal.WaitForRender()
+	viewport := strings.Join(terminal.GetViewport(), "\n")
+	if strings.Contains(viewport, "Thinking...") || strings.Contains(viewport, "private plan") {
+		t.Fatalf("hidden thinking partial should be replaced after final assistant message:\n%s", viewport)
+	}
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostHiddenThinkingFinalMessageStaysInAssistantFlowPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	sessionHost.settingsManager.SetHideThinkingBlock(true)
+
+	host := &CLIInteractiveTUIHost{
+		runtimeHost: runtimeHost,
+		chat:        gitui.NewContainer(),
+	}
+	host.addMessage(llm.Message{Role: llm.RoleUser, Content: []llm.ContentPart{llm.Text("hi")}})
+	host.addMessage(llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("Hi! How can I help you today?")}})
+	host.addMessage(llm.Message{Role: llm.RoleUser, Content: []llm.ContentPart{llm.Text("what model are you")}})
+	host.addMessage(llm.Message{
+		Role: llm.RoleAssistant,
+		Content: []llm.ContentPart{
+			llm.Thinking("private reasoning"),
+			llm.Text("I am Claude, running in a Pi coding agent environment."),
+		},
+	})
+
+	rendered := StripAnsi(strings.Join(host.chat.Render(160), "\n"))
+	if strings.Contains(rendered, "private reasoning") {
+		t.Fatalf("hidden thinking leaked raw reasoning:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "Thinking...") {
+		t.Fatalf("hidden thinking label missing:\n%s", rendered)
+	}
+	if !textAppearsInOrder(rendered,
+		"hi",
+		"Hi! How can I help you today?",
+		"what model are you",
+		"Thinking...",
+		"I am Claude, running in a Pi coding agent environment.",
+	) {
+		t.Fatalf("conversation order does not match Pi assistant flow:\n%s", rendered)
+	}
+
+	last, ok := host.chat.Children()[host.chat.ChildCount()-1].(*cliAssistantMessageComponent)
+	if !ok {
+		t.Fatalf("last child = %T, want assistant component", host.chat.Children()[host.chat.ChildCount()-1])
+	}
+	if got := normalizedAssistantRenderLines(last.Render(120)); !reflect.DeepEqual(got, []string{
+		"",
+		" Thinking...",
+		"",
+		" I am Claude, running in a Pi coding agent environment.",
+	}) {
+		t.Fatalf("hidden thinking assistant lines = %#v", got)
+	}
+}
+
+func TestCLIInteractiveTUIHostDefaultThinkingVisibilityMatchesPi(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	if sessionHost.settingsManager.GetHideThinkingBlock() {
+		t.Fatal("hideThinkingBlock default should be false like Pi")
+	}
+
+	host := &CLIInteractiveTUIHost{
+		runtimeHost: runtimeHost,
+		chat:        gitui.NewContainer(),
+	}
+	host.addMessage(llm.Message{
+		Role: llm.RoleAssistant,
+		Content: []llm.ContentPart{
+			llm.Thinking("visible reasoning"),
+			llm.Text("final answer"),
+		},
+	})
+
+	rendered := StripAnsi(strings.Join(host.chat.Render(120), "\n"))
+	if strings.Contains(rendered, "Thinking...") {
+		t.Fatalf("default Pi/Gi settings should not render hidden-thinking label:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "visible reasoning") || !strings.Contains(rendered, "final answer") {
+		t.Fatalf("default Pi/Gi settings should show thinking content and final text:\n%s", rendered)
+	}
+}
+
+func TestCLIInteractiveTUIHostDoesNotShowThinkingLabelWithoutThinkingBlockPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	sessionHost.settingsManager.SetHideThinkingBlock(true)
+
+	host := &CLIInteractiveTUIHost{
+		runtimeHost: runtimeHost,
+		chat:        gitui.NewContainer(),
+	}
+	host.addMessage(llm.Message{Role: llm.RoleUser, Content: []llm.ContentPart{llm.Text("hi")}})
+	host.addMessage(llm.Message{
+		Role:    llm.RoleAssistant,
+		Content: []llm.ContentPart{llm.Text("Hi! How can I help you today?")},
+	})
+
+	rendered := StripAnsi(strings.Join(host.chat.Render(160), "\n"))
+	if strings.Contains(rendered, "Thinking...") {
+		t.Fatalf("hidden thinking label should require an actual thinking block:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "Hi! How can I help you today?") {
+		t.Fatalf("assistant text missing:\n%s", rendered)
+	}
+}
+
+func TestCLIInteractiveTUIHostThinkingLevelEventUpdatesEditorBorderPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	host := &CLIInteractiveTUIHost{
+		runtimeHost: runtimeHost,
+		editor:      gitui.NewEditor(tuiThemeEditor()),
+	}
+	host.watchAgentSessionQueue()
+	if host.unwatchSession != nil {
+		t.Cleanup(host.unwatchSession)
+	}
+
+	sessionHost.session.Agent.State.ThinkingLevel = "off"
+	host.updateEditorBorderColor()
+	if rendered := strings.Join(host.editor.Render(40), "\n"); strings.Contains(rendered, tuiThemeFG("thinkingHigh", "─")) {
+		t.Fatalf("editor border should not start high:\n%q", rendered)
+	}
+
+	sessionHost.session.Agent.State.ThinkingLevel = "high"
+	sessionHost.session.emit(AgentSessionEvent{Type: "thinking_level_changed"})
+	rendered := strings.Join(host.editor.Render(40), "\n")
+	if !strings.Contains(rendered, tuiThemeFG("thinkingHigh", "─")) {
+		t.Fatalf("thinking_level_changed should update editor border like Pi:\n%q", rendered)
+	}
+}
+
+func textAppearsInOrder(text string, parts ...string) bool {
+	offset := 0
+	for _, part := range parts {
+		index := strings.Index(text[offset:], part)
+		if index < 0 {
+			return false
+		}
+		offset += index + len(part)
+	}
+	return true
 }
 
 func TestCLIInteractiveTUIHostRendersExtensionErrorsPiStyle(t *testing.T) {
@@ -327,6 +599,98 @@ func TestCLIInteractiveTUIHostMirrorsPiTerminalProgressEvents(t *testing.T) {
 	waitForProgressSequence(t, terminal, []bool{true, false, true})
 	sessionHost.session.emit(AgentSessionEvent{Type: "compaction_end"})
 	waitForProgressSequence(t, terminal, []bool{true, false, true, false})
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostAgentStartShowsWorkingLoaderPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	terminal := gitui.NewVirtualTerminal(100, 20)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	sessionHost.session.emit(AgentSessionEvent{Type: "agent_start"})
+	waitForViewport(t, terminal, "Working...")
+	sessionHost.session.emit(AgentSessionEvent{Type: "agent_end"})
+	waitForCondition(t, func() bool {
+		terminal.WaitForRender()
+		return !strings.Contains(strings.Join(terminal.GetViewport(), "\n"), "Working...")
+	}, "agent_end should remove working loader")
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostKeepsLiveUserPromptAboveWorkingStatusPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	terminal := gitui.NewVirtualTerminal(100, 24)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	sessionHost.session.emit(AgentSessionEvent{Type: "agent_start"})
+	user := llm.Message{Role: llm.RoleUser, Content: []llm.ContentPart{llm.Text("live user prompt")}}
+	sessionHost.session.emit(AgentSessionEvent{Type: "message_start", Message: &user})
+	waitForViewport(t, terminal, "live user prompt")
+	waitForViewport(t, terminal, "Working...")
+
+	terminal.WaitForRender()
+	viewport := StripAnsi(strings.Join(terminal.GetViewport(), "\n"))
+	userIndex := strings.Index(viewport, "live user prompt")
+	workingIndex := strings.Index(viewport, "Working...")
+	if userIndex < 0 || workingIndex < 0 {
+		t.Fatalf("viewport missing user prompt or working status:\n%s", viewport)
+	}
+	if userIndex > workingIndex {
+		t.Fatalf("user prompt should render in chat above working status like Pi:\n%s", viewport)
+	}
+	if strings.Contains(StripAnsi(strings.Join(host.chat.Render(100), "\n")), "Working...") {
+		t.Fatalf("working status should live in statusContainer, not chat")
+	}
 
 	host.Stop()
 	select {
@@ -1219,14 +1583,14 @@ func TestCLIInteractiveTUIHostUsesPiStyleFlowLayout(t *testing.T) {
 	}()
 	t.Cleanup(func() { host.Stop() })
 	waitForHostEditor(t, host)
-	waitForViewport(t, terminal, "gi v0.0.0")
+	waitForViewport(t, terminal, "gi v"+DefaultCodingAgentVersion)
 
 	viewport := terminal.GetViewport()
 	viewportText := strings.Join(viewport, "\n")
-	if !strings.Contains(viewportText, "gi v0.0.0") {
+	if !strings.Contains(viewportText, "gi v"+DefaultCodingAgentVersion) {
 		t.Fatalf("viewport missing title:\n%s", strings.Join(viewport, "\n"))
 	}
-	if countExactViewportLine(viewport, "gi v0.0.0") != 1 {
+	if countExactViewportLine(viewport, "gi v"+DefaultCodingAgentVersion) != 1 {
 		t.Fatalf("startup should render one Gi header, viewport:\n%s", viewportText)
 	}
 	host.Stop()
@@ -1237,6 +1601,28 @@ func TestCLIInteractiveTUIHostUsesPiStyleFlowLayout(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostSeparatesAssistantAndNextUserMessagePiStyle(t *testing.T) {
+	host := &CLIInteractiveTUIHost{chat: gitui.NewContainer()}
+	host.addMessage(llm.Message{Role: llm.RoleUser, Content: []llm.ContentPart{llm.Text("first user")}})
+	host.addMessage(llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("assistant reply")}})
+	host.addMessage(llm.Message{Role: llm.RoleUser, Content: []llm.ContentPart{llm.Text("second user")}})
+
+	lines := host.chat.Render(80)
+	assistantIndex := -1
+	for index, line := range lines {
+		if strings.Contains(StripAnsi(line), "assistant reply") {
+			assistantIndex = index
+			break
+		}
+	}
+	if assistantIndex == -1 {
+		t.Fatalf("assistant message missing:\n%s", strings.Join(lines, "\n"))
+	}
+	if assistantIndex+1 >= len(lines) || lines[assistantIndex+1] != "" {
+		t.Fatalf("assistant and next user message should be separated by a blank spacer, lines=%#v", lines)
 	}
 }
 
@@ -1306,7 +1692,7 @@ func TestCLIInteractiveTUIHostRendersEditorAfterStartupContentPiStyle(t *testing
 			break
 		}
 	}
-	headerRow := viewportLineIndex(viewport, "gi v0.0.0")
+	headerRow := viewportLineIndex(viewport, "gi v"+DefaultCodingAgentVersion)
 	footerRow := viewportLineIndex(viewport, "0.0%/")
 	if headerRow < 0 || footerRow < 0 {
 		t.Fatalf("viewport missing startup header or footer:\n%s", strings.Join(viewport, "\n"))
@@ -1457,7 +1843,7 @@ func TestCLIInteractiveTUIHostCanClearScreenBeforeStartup(t *testing.T) {
 		t.Fatalf("startup output should force a full redraw after terminal start, output=%q", output)
 	}
 	output := terminal.Output()
-	firstFrame := strings.Index(output, "gi v0.0.0")
+	firstFrame := strings.Index(output, "gi v"+DefaultCodingAgentVersion)
 	forcedClear := strings.LastIndex(output, clearSequence)
 	if firstFrame >= 0 && forcedClear >= 0 && firstFrame < forcedClear {
 		t.Fatalf("startup should not draw a partial frame before the forced clear, output=%q", output)
@@ -1495,7 +1881,7 @@ func TestCLIInteractiveTUIHostKeepsStartupInputAndSlashAutocompleteInPiFlow(t *t
 	}()
 	t.Cleanup(func() { host.Stop() })
 	waitForHostEditor(t, host)
-	waitForViewport(t, terminal, "gi v0.0.0")
+	waitForViewport(t, terminal, "gi v"+DefaultCodingAgentVersion)
 
 	input := "here is what I just input into."
 	terminal.SendInput(input)
@@ -1507,7 +1893,7 @@ func TestCLIInteractiveTUIHostKeepsStartupInputAndSlashAutocompleteInPiFlow(t *t
 	if inputRow < 0 {
 		t.Fatalf("startup editor viewport missing input:\n%s", strings.Join(viewport, "\n"))
 	}
-	headerRow := viewportLineIndex(viewport, "gi v0.0.0")
+	headerRow := viewportLineIndex(viewport, "gi v"+DefaultCodingAgentVersion)
 	footerRow := viewportLineIndex(viewport, "0.0%/")
 	if headerRow < 0 || footerRow < 0 {
 		t.Fatalf("viewport missing startup header or footer:\n%s", strings.Join(viewport, "\n"))
@@ -2710,7 +3096,7 @@ func TestCLIInteractiveTUIHostCtrlZSuspendsAndRestoresPiStyle(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("ctrl+z did not register SIGCONT restore handler")
 	}
-	waitForViewport(t, terminal, "gi v0.0.0")
+	waitForViewport(t, terminal, "gi v"+DefaultCodingAgentVersion)
 
 	host.Stop()
 	select {
@@ -2757,7 +3143,22 @@ func TestCLIInteractiveTUIHostQueuesStreamingEditorMessagesPiStyle(t *testing.T)
 	host.editor.SetText("first")
 	terminal.SendInput("\r")
 	waitForPrompt(t, prompts, "first")
-	waitForViewport(t, terminal, "Thinking...")
+	waitForViewport(t, terminal, "first")
+	waitForViewport(t, terminal, "Working...")
+	viewport := strings.Join(terminal.GetViewport(), "\n")
+	firstIndex := strings.Index(viewport, "first")
+	workingIndex := strings.Index(viewport, "Working...")
+	if firstIndex < 0 || workingIndex < 0 || firstIndex > workingIndex {
+		t.Fatalf("working loader should render below current user message like Pi:\n%s", viewport)
+	}
+	if host.statusContainer == nil || host.statusContainer.ChildCount() == 0 {
+		t.Fatalf("working loader should render in status container")
+	}
+	for _, child := range host.chat.Children() {
+		if _, ok := child.(*gitui.Loader); ok {
+			t.Fatalf("working loader should not render in chat message flow")
+		}
+	}
 
 	rpcHost := &RPCSessionHost{TUIWorking: host}
 	response := rpcHost.HandleHostAction(HostActionRequest{
@@ -2797,6 +3198,26 @@ func TestCLIInteractiveTUIHostQueuesStreamingEditorMessagesPiStyle(t *testing.T)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostWorkingLoaderDefaultsPiStyle(t *testing.T) {
+	host := &CLIInteractiveTUIHost{}
+	if got := host.workingMessageLocked(); got != "Working..." {
+		t.Fatalf("working message = %q, want Pi default Working...", got)
+	}
+	if got := host.hiddenThinkingLabelValue(); got != "Thinking..." {
+		t.Fatalf("hidden thinking label = %q, want Thinking...", got)
+	}
+	options := host.workingIndicatorOptionsLocked()
+	if options.SpinnerColor == nil || options.MessageColor == nil {
+		t.Fatalf("loader colors should be themed: %#v", options)
+	}
+	if got, want := options.SpinnerColor("x"), tuiThemeAccent("x"); got != want {
+		t.Fatalf("spinner color = %q, want %q", got, want)
+	}
+	if got, want := options.MessageColor("x"), tuiThemeMuted("x"); got != want {
+		t.Fatalf("message color = %q, want %q", got, want)
 	}
 }
 
@@ -2845,13 +3266,19 @@ func TestCLIInteractiveTUIHostRendersBashInPendingAreaWhileStreamingPiStyle(t *t
 	host.editor.SetText("first")
 	terminal.SendInput("\r")
 	waitForPrompt(t, prompts, "first")
-	waitForViewport(t, terminal, "Thinking...")
+	waitForViewport(t, terminal, "Working...")
 
 	host.editor.SetText("!printf pending-bash")
 	terminal.SendInput("\r")
 	waitForBashCommand(t, commands, "printf pending-bash")
 	waitForViewport(t, terminal, "$ printf pending-bash")
 	waitForViewport(t, terminal, "pending-bash")
+	viewport := strings.Join(terminal.GetViewport(), "\n")
+	bashIndex := strings.Index(viewport, "$ printf pending-bash")
+	workingIndex := strings.Index(viewport, "Working...")
+	if bashIndex < 0 || workingIndex < 0 || bashIndex > workingIndex {
+		t.Fatalf("pending messages should render above the working loader like Pi:\n%s", viewport)
+	}
 	if host.pendingMessages.ChildCount() == 0 {
 		t.Fatalf("bash component should render in pending area while streaming")
 	}
@@ -3172,6 +3599,12 @@ func TestCLIInteractiveTUIHostCancelsCompactionPiStyle(t *testing.T) {
 		t.Fatal("compaction did not start")
 	}
 	waitForViewport(t, terminal, "Compacting context")
+	if host.statusContainer == nil || host.statusContainer.ChildCount() == 0 {
+		t.Fatalf("compaction loader should render in status container like Pi")
+	}
+	if strings.Contains(StripAnsi(strings.Join(host.chat.Render(120), "\n")), "Compacting context") {
+		t.Fatalf("compaction loader should not render in chat transcript like Pi")
+	}
 	terminal.SendInput("\x1b")
 	close(releaseCompaction)
 	waitUntil(t, func() bool { return !sessionHost.session.IsCompacting() })
@@ -3250,7 +3683,7 @@ func TestCLIInteractiveTUIHostDequeuesCompactionMessagesToEditorPiStyle(t *testi
 	waitForViewport(t, terminal, "Restored 1 queued message to editor")
 
 	close(releaseCompaction)
-	waitForViewport(t, terminal, "Compacted:")
+	waitForViewport(t, terminal, "Compacted from")
 
 	host.Stop()
 	select {
@@ -3498,6 +3931,12 @@ func TestCLIInteractiveTUIHostShowsAndCancelsAutoRetryPiStyle(t *testing.T) {
 	}
 	sessionHost.session.emit(AgentSessionEvent{Type: "auto_retry_start", Attempt: 1, MaxAttempts: 3, DelayMs: 2100})
 	waitForViewport(t, terminal, "Retrying (1/3) in 3s... (Esc to cancel)")
+	if host.statusContainer == nil || host.statusContainer.ChildCount() == 0 {
+		t.Fatalf("retry loader should render in status container like Pi")
+	}
+	if strings.Contains(StripAnsi(strings.Join(host.chat.Render(120), "\n")), "Retrying (1/3)") {
+		t.Fatalf("retry loader should not render in chat transcript like Pi")
+	}
 
 	terminal.SendInput("\x1b")
 	select {
@@ -3907,6 +4346,76 @@ func TestCLIInteractiveTUIHostCtrlTTogglesThinkingBlocksPiStyle(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostHiddenThinkingLabelUpdatesExistingComponentsPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	sessionHost.settingsManager.SetHideThinkingBlock(true)
+	host := &CLIInteractiveTUIHost{
+		runtimeHost: runtimeHost,
+		chat:        gitui.NewContainer(),
+	}
+	host.addMessage(llm.Message{
+		Role: llm.RoleAssistant,
+		Content: []llm.ContentPart{
+			llm.Thinking("secret plan"),
+			llm.Text("final answer"),
+		},
+	})
+	rendered := StripAnsi(strings.Join(host.chat.Render(120), "\n"))
+	if !strings.Contains(rendered, "Thinking...") || strings.Contains(rendered, "secret plan") {
+		t.Fatalf("initial hidden thinking render mismatch:\n%s", rendered)
+	}
+
+	if err := host.SetHiddenThinkingLabel("Reasoning hidden"); err != nil {
+		t.Fatal(err)
+	}
+	rendered = StripAnsi(strings.Join(host.chat.Render(120), "\n"))
+	if !strings.Contains(rendered, "Reasoning hidden") || strings.Contains(rendered, "Thinking...") || strings.Contains(rendered, "secret plan") {
+		t.Fatalf("hidden thinking label was not updated in place like Pi:\n%s", rendered)
+	}
+}
+
+func TestCLIInteractiveTUIHostThinkingTogglePreservesStreamingComponentPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	sessionHost.settingsManager.SetHideThinkingBlock(false)
+	message := llm.Message{
+		Role: llm.RoleAssistant,
+		Content: []llm.ContentPart{
+			llm.Thinking("streaming secret"),
+			llm.Text("streaming final"),
+		},
+	}
+	component := newCLIAssistantMessageComponent(message, false, "Thinking...")
+	host := &CLIInteractiveTUIHost{
+		runtimeHost:         runtimeHost,
+		chat:                gitui.NewContainer(),
+		streamingMessage:    &message,
+		streamingComponent:  component,
+		hiddenThinkingLabel: "Thinking...",
+	}
+	host.chat.AddChild(component)
+
+	host.toggleThinkingBlockVisibility()
+
+	if host.streamingComponent != component {
+		t.Fatal("streaming component should be preserved while toggling hidden thinking")
+	}
+	rendered := StripAnsi(strings.Join(host.chat.Render(120), "\n"))
+	if !strings.Contains(rendered, "Thinking...") || !strings.Contains(rendered, "streaming final") || strings.Contains(rendered, "streaming secret") {
+		t.Fatalf("streaming component did not update hidden thinking in place:\n%s", rendered)
+	}
+	if !sessionHost.settingsManager.GetHideThinkingBlock() {
+		t.Fatal("hideThinkingBlock setting was not saved")
 	}
 }
 
@@ -4377,6 +4886,48 @@ func TestCLIInteractiveTUIHostHandlesHiddenPiSlashCommands(t *testing.T) {
 	waitForViewport(t, terminal, cliEarendilBlogURL)
 	if prompts != 0 {
 		t.Fatalf("hidden slash commands reached responder %d times", prompts)
+	}
+}
+
+func TestCLIInteractiveTUIHostModelSelectionShowsDaxnutsEasterEggPiStyle(t *testing.T) {
+	tempDir := t.TempDir()
+	registry := NewModelRegistry(NewInMemoryAuthStorage(AuthStorageData{
+		"openai":   {Type: "api_key", Key: "test-openai-key"},
+		"opencode": {Type: "api_key", Key: "test-opencode-key"},
+	}), "")
+	runtimeHost, err := newDefaultCLIPrintModeHost(Args{
+		Offline:   true,
+		NoSession: true,
+		Model:     "openai/gpt-4o-mini",
+	}, CLIOptions{
+		CWD:           tempDir,
+		AgentDir:      filepath.Join(tempDir, "agent"),
+		ModelRegistry: registry,
+		Responder:     DefaultAgentSessionResponder,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal := gitui.NewVirtualTerminal(140, 48)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+		Messages: []string{
+			"/model opencode/kimi-k2.5",
+		},
+		ExitAfterInitial: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := host.RunContext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	waitForTerminalOutput(t, terminal, "Model: kimi-k2.5")
+	waitForTerminalOutput(t, terminal, "▓")
+	if output := terminal.Output(); !strings.Contains(output, "\x1b[38;2;100;200;255m") {
+		t.Fatalf("daxnuts component should render Pi-style truecolor scanline output:\n%s", output)
 	}
 }
 
@@ -5139,6 +5690,7 @@ func TestCLIInteractiveTUIHostSettingsSelectorCtrlCCancelsLikePi(t *testing.T) {
 }
 
 func TestCLIInteractiveTUIHostAppliesThemeThroughHost(t *testing.T) {
+	setTUIThemeForTest(t, "dark", nil)
 	previousTheme := tuiActiveThemeSnapshot()
 	t.Cleanup(func() { tuiSetActiveThemePalette(previousTheme) })
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
@@ -5237,6 +5789,7 @@ func TestCLIInteractiveTUIHostDispatchesThemeChangeToViewTreeSubscribers(t *test
 }
 
 func TestCLISettingsListComponentUsesPiBorderTheme(t *testing.T) {
+	setTUIThemeForTest(t, "dark", nil)
 	list := gitui.NewSettingsList([]gitui.SettingItem{{
 		ID:           "autocompact",
 		Label:        "Auto-compact",
@@ -5903,6 +6456,30 @@ func TestCLIInteractiveTUIHostLoginBedrockUsesPiInfoDialog(t *testing.T) {
 }
 
 func TestCLIInteractiveTUIHostLoginSubscriptionShowsOAuthDialogPiStyle(t *testing.T) {
+	previousRuntime := defaultAnthropicOAuthRuntime
+	defaultAnthropicOAuthRuntime = anthropicOAuthRuntime{
+		NewFlow: func() (anthropicOAuthFlow, error) {
+			return anthropicOAuthFlow{
+				Verifier:    "verifier-ok",
+				State:       "verifier-ok",
+				RedirectURI: anthropicOAuthRedirect,
+				URL:         "https://claude.ai/oauth/authorize?code=true&client_id=test-client",
+			}, nil
+		},
+		StartCallbackServer: func(string) (openAICodexOAuthCallbackServer, error) {
+			return &fakeOpenAICodexCallbackServer{result: make(chan openAICodexOAuthCallbackResult)}, nil
+		},
+		ExchangeCode: func(context.Context, string, string, string) (AuthCredential, error) {
+			t.Fatal("OAuth exchange should not run in dialog rendering test")
+			return AuthCredential{}, nil
+		},
+		OpenBrowser: func(string) error {
+			t.Fatal("virtual terminal tests should not auto-open a browser")
+			return nil
+		},
+	}
+	t.Cleanup(func() { defaultAnthropicOAuthRuntime = previousRuntime })
+
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	terminal := gitui.NewVirtualTerminal(120, 32)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
@@ -5948,6 +6525,285 @@ func TestCLIInteractiveTUIHostLoginSubscriptionShowsOAuthDialogPiStyle(t *testin
 		t.Fatal("interactive TUI host did not stop")
 	}
 }
+
+func TestCLIInteractiveTUIHostLoginAnthropicSubscriptionStoresCredential(t *testing.T) {
+	previousRuntime := defaultAnthropicOAuthRuntime
+	defaultAnthropicOAuthRuntime = anthropicOAuthRuntime{
+		NewFlow: func() (anthropicOAuthFlow, error) {
+			return anthropicOAuthFlow{
+				Verifier:    "verifier-ok",
+				State:       "verifier-ok",
+				RedirectURI: anthropicOAuthRedirect,
+				URL:         "https://claude.ai/oauth/authorize?code=true&client_id=test-client",
+			}, nil
+		},
+		StartCallbackServer: func(state string) (openAICodexOAuthCallbackServer, error) {
+			if state != "verifier-ok" {
+				t.Fatalf("callback state = %q", state)
+			}
+			return &fakeOpenAICodexCallbackServer{result: make(chan openAICodexOAuthCallbackResult)}, nil
+		},
+		ExchangeCode: func(_ context.Context, code, verifier, redirectURI string) (AuthCredential, error) {
+			if code != "manual-code" || verifier != "verifier-ok" || redirectURI != anthropicOAuthRedirect {
+				t.Fatalf("exchange code=%q verifier=%q redirectURI=%q", code, verifier, redirectURI)
+			}
+			return AuthCredential{
+				Type:    "oauth",
+				Access:  "anthropic-access",
+				Refresh: "anthropic-refresh",
+				Expires: nowUnixMilli() + 3600_000,
+			}, nil
+		},
+		OpenBrowser: func(string) error {
+			t.Fatal("virtual terminal tests should not auto-open a browser")
+			return nil
+		},
+	}
+	t.Cleanup(func() { defaultAnthropicOAuthRuntime = previousRuntime })
+
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	terminal := gitui.NewVirtualTerminal(120, 32)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	host.editor.SetText("/login")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select authentication method:")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select provider to configure:")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Login to Anthropic (Claude Pro/Max)")
+	terminal.SendInput("http://localhost:53692/callback?code=manual-code&state=verifier-ok")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Logged in to Anthropic (Claude Pro/Max)")
+
+	credential, ok := sessionHost.modelRegistry.authStorage.Get("anthropic")
+	if !ok || credential.Type != "oauth" || credential.Access != "anthropic-access" || credential.Refresh != "anthropic-refresh" {
+		t.Fatalf("stored credential = %#v, ok=%v", credential, ok)
+	}
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostLoginOpenAICodexSubscriptionStoresCredential(t *testing.T) {
+	previousRuntime := defaultOpenAICodexOAuthRuntime
+	fakeServer := &fakeOpenAICodexCallbackServer{result: make(chan openAICodexOAuthCallbackResult)}
+	defaultOpenAICodexOAuthRuntime = openAICodexOAuthRuntime{
+		NewFlow: func() (openAICodexOAuthFlow, error) {
+			return openAICodexOAuthFlow{
+				Verifier: "verifier-ok",
+				State:    "state-ok",
+				URL:      "https://auth.openai.com/oauth/authorize?state=state-ok",
+			}, nil
+		},
+		StartCallbackServer: func(state string) (openAICodexOAuthCallbackServer, error) {
+			if state != "state-ok" {
+				t.Fatalf("callback state = %q", state)
+			}
+			return fakeServer, nil
+		},
+		ExchangeCode: func(_ context.Context, code, verifier string) (AuthCredential, error) {
+			if code != "manual-code" || verifier != "verifier-ok" {
+				t.Fatalf("exchange code=%q verifier=%q", code, verifier)
+			}
+			return AuthCredential{
+				Type:    "oauth",
+				Access:  testOpenAICodexAccessToken(t, "acc_test"),
+				Refresh: "refresh-token",
+				Expires: nowUnixMilli() + 3600_000,
+			}, nil
+		},
+		OpenBrowser: func(string) error {
+			t.Fatal("virtual terminal tests should not auto-open a browser")
+			return nil
+		},
+	}
+	t.Cleanup(func() { defaultOpenAICodexOAuthRuntime = previousRuntime })
+
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	terminal := gitui.NewVirtualTerminal(120, 32)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	host.editor.SetText("/login")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select authentication method:")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select provider to configure:")
+	terminal.SendInput("j")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Login to ChatGPT Plus/Pro (Codex Subscription)")
+	waitForViewport(t, terminal, "Paste redirect URL below, or complete login in browser:")
+	terminal.SendInput("http://localhost:1455/auth/callback?code=manual-code&state=state-ok")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Logged in to ChatGPT Plus/Pro (Codex Subscription)")
+
+	credential, ok := sessionHost.modelRegistry.authStorage.Get("openai-codex")
+	if !ok || credential.Type != "oauth" || credential.Refresh != "refresh-token" {
+		t.Fatalf("stored credential = %#v, ok=%v", credential, ok)
+	}
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostLoginGitHubCopilotSubscriptionStoresCredential(t *testing.T) {
+	previousRuntime := defaultGitHubCopilotOAuthRuntime
+	var enabled bool
+	releasePoll := make(chan struct{})
+	defaultGitHubCopilotOAuthRuntime = githubCopilotOAuthRuntime{
+		StartDeviceFlow: func(_ context.Context, domain string) (githubCopilotDeviceCode, error) {
+			if domain != githubCopilotDefaultDomain {
+				t.Fatalf("domain = %q", domain)
+			}
+			return githubCopilotDeviceCode{
+				DeviceCode:      "device-code",
+				UserCode:        "USER-CODE",
+				VerificationURI: "https://github.com/login/device",
+				Interval:        1,
+				ExpiresIn:       600,
+			}, nil
+		},
+		PollAccessToken: func(_ context.Context, domain string, device githubCopilotDeviceCode) (string, error) {
+			if domain != githubCopilotDefaultDomain || device.DeviceCode != "device-code" {
+				t.Fatalf("poll domain=%q device=%#v", domain, device)
+			}
+			<-releasePoll
+			return "github-access-token", nil
+		},
+		RefreshToken: func(_ context.Context, refreshToken, enterpriseDomain string) (AuthCredential, error) {
+			if refreshToken != "github-access-token" || enterpriseDomain != "" {
+				t.Fatalf("refresh token=%q enterprise=%q", refreshToken, enterpriseDomain)
+			}
+			return AuthCredential{
+				Type:    "oauth",
+				Access:  "tid=1;proxy-ep=proxy.individual.githubcopilot.com;",
+				Refresh: refreshToken,
+				Expires: nowUnixMilli() + 3600_000,
+			}, nil
+		},
+		EnableModels: func(_ context.Context, credential AuthCredential) error {
+			if credential.Refresh != "github-access-token" {
+				t.Fatalf("enable credential = %#v", credential)
+			}
+			enabled = true
+			return nil
+		},
+		OpenBrowser: func(string) error {
+			t.Fatal("virtual terminal tests should not auto-open a browser")
+			return nil
+		},
+	}
+	t.Cleanup(func() { defaultGitHubCopilotOAuthRuntime = previousRuntime })
+
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	terminal := gitui.NewVirtualTerminal(120, 32)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	host.editor.SetText("/login")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select authentication method:")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select provider to configure:")
+	terminal.SendInput("j")
+	terminal.SendInput("j")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "GitHub Enterprise URL/domain")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Enter code: USER-CODE")
+	close(releasePoll)
+	waitForViewport(t, terminal, "Logged in to GitHub Copilot")
+
+	credential, ok := sessionHost.modelRegistry.authStorage.Get("github-copilot")
+	if !ok || credential.Type != "oauth" || credential.Refresh != "github-access-token" || !enabled {
+		t.Fatalf("stored credential = %#v, ok=%v enabled=%v", credential, ok, enabled)
+	}
+	model, ok := sessionHost.modelRegistry.Find("github-copilot", "claude-sonnet-4.6")
+	if !ok || model.BaseURL != "https://api.individual.githubcopilot.com" {
+		t.Fatalf("github copilot model = %#v, ok=%v", model, ok)
+	}
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+type fakeOpenAICodexCallbackServer struct {
+	result chan openAICodexOAuthCallbackResult
+}
+
+func (s *fakeOpenAICodexCallbackServer) Result() <-chan openAICodexOAuthCallbackResult {
+	return s.result
+}
+
+func (s *fakeOpenAICodexCallbackServer) Close() {}
 
 func TestCLIInteractiveTUIHostLogoutSlashUsesProviderSelectorPiStyle(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
@@ -6039,6 +6895,7 @@ func TestCLIInteractiveTUIHostLogoutSlashWithoutCredentialsMatchesPiText(t *test
 }
 
 func TestCLIInteractiveTUIHostHandlesHotkeysCommand(t *testing.T) {
+	setTUIThemeForTest(t, "dark", nil)
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	terminal := gitui.NewVirtualTerminal(120, 40)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
@@ -6201,8 +7058,17 @@ func TestCLIInteractiveTUIHostHandlesShareCommand(t *testing.T) {
 
 	waitForViewport(t, terminal, "Share URL: https://share.gi.test/session/#abc123")
 	waitForViewport(t, terminal, "Gist: https://gist.github.com/nowa/abc123")
-	if !strings.Contains(exportedHTML, "share this session") || !strings.Contains(exportedHTML, "Response to: share this session") {
-		t.Fatalf("exported HTML missing session content:\n%s", exportedHTML)
+	match := regexp.MustCompile(`<script id="session-data" type="application/json">([^<]+)</script>`).FindStringSubmatch(exportedHTML)
+	if match == nil {
+		t.Fatalf("exported HTML missing Pi-style session data bootstrap:\n%s", exportedHTML)
+	}
+	payload, err := base64.StdEncoding.DecodeString(match[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodedSession := string(payload)
+	if !strings.Contains(decodedSession, "share this session") || !strings.Contains(decodedSession, "Response to: share this session") {
+		t.Fatalf("exported HTML session data missing content:\n%s", decodedSession)
 	}
 }
 
@@ -7515,8 +8381,9 @@ func TestCLIInteractiveTUIHostLoadsPackageProcessDiscoveredResources(t *testing.
 	t.Cleanup(func() { host.Stop() })
 
 	waitForCondition(t, func() bool {
-		return resourceFindSkill(sessionHost.session.ResourceLoader.GetSkills().Skills, "dynamic-skill") != nil
-	}, "process-discovered skill to load")
+		return resourceFindSkill(sessionHost.session.ResourceLoader.GetSkills().Skills, "dynamic-skill") != nil &&
+			strings.Contains(sessionHost.session.SystemPrompt, "dynamic-skill")
+	}, "process-discovered skill to load and refresh system prompt")
 	if resourceFindPrompt(sessionHost.session.ResourceLoader.(AgentSessionPromptResourceLoader).GetPrompts().Prompts, "dynamic") == nil {
 		t.Fatalf("prompts = %#v", sessionHost.session.ResourceLoader.(AgentSessionPromptResourceLoader).GetPrompts().Prompts)
 	}
@@ -8247,6 +9114,7 @@ func TestCLIInteractiveTUIHostRefreshesPackageProcessSlashCommands(t *testing.T)
 	t.Cleanup(func() { host.Stop() })
 	waitForHostEditor(t, host)
 	waitForProtocolCommand(t, sessionHost.session.ExtensionRuntime, "plan")
+	waitForHostSlashSuggestion(t, host, "/pl", "plan")
 
 	changed := make(chan struct{}, 4)
 	host.editor.OnAutocompleteChange = func() {
@@ -8311,6 +9179,7 @@ func TestCLIInteractiveTUIHostUsesPackageProcessAutocompleteProvider(t *testing.
 	t.Cleanup(func() { host.Stop() })
 	waitForHostEditor(t, host)
 	waitForAutocompleteProvider(t, sessionHost.session.ExtensionRuntime, "issues")
+	waitForHostAutocompleteSuggestion(t, host, "Fix #12", "#123")
 
 	host.editor.SetText("Fix #12")
 	terminal.SendInput("\t")
@@ -10703,6 +11572,52 @@ func waitForHostAutocompleteChange(t *testing.T, ch <-chan struct{}) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for autocomplete update")
 	}
+}
+
+func waitForHostSlashSuggestion(t *testing.T, host *CLIInteractiveTUIHost, text, wantValue string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if host != nil {
+			if provider, ok := host.autocompleteProvider.(*gitui.CombinedAutocompleteProvider); ok {
+				suggestions, err := provider.GetSuggestionsContext(context.Background(), []string{text}, 0, len([]rune(text)), false)
+				if err == nil && autocompleteSuggestionsContainValue(suggestions, wantValue) {
+					return
+				}
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("autocomplete suggestion %q for %q was not ready", wantValue, text)
+}
+
+func waitForHostAutocompleteSuggestion(t *testing.T, host *CLIInteractiveTUIHost, text, wantValue string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if host != nil {
+			if provider, ok := host.autocompleteProvider.(*gitui.CombinedAutocompleteProvider); ok {
+				suggestions, err := provider.GetSuggestionsContext(context.Background(), []string{text}, 0, len([]rune(text)), true)
+				if err == nil && autocompleteSuggestionsContainValue(suggestions, wantValue) {
+					return
+				}
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("autocomplete suggestion %q for %q was not ready", wantValue, text)
+}
+
+func autocompleteSuggestionsContainValue(suggestions *gitui.AutocompleteSuggestions, value string) bool {
+	if suggestions == nil {
+		return false
+	}
+	for _, item := range suggestions.Items {
+		if item.Value == value {
+			return true
+		}
+	}
+	return false
 }
 
 func waitForPrompt(t *testing.T, ch <-chan string, want string) {

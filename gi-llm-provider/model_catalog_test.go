@@ -26,9 +26,17 @@ func TestFireworksModelCatalog(t *testing.T) {
 		t.Fatalf("compat = %#v", model.Compat)
 	}
 
-	router := MustGetModel("fireworks", "accounts/fireworks/routers/kimi-k2p6-turbo")
-	if router.API != "anthropic-messages" || router.BaseURL != "https://api.fireworks.ai/inference" || !stringSlicesEqual(router.Input, []string{"text", "image"}) {
+	router := MustGetModel("fireworks", "accounts/fireworks/routers/kimi-k2p5-turbo")
+	if router.API != "anthropic-messages" || router.BaseURL != "https://api.fireworks.ai/inference" || !stringSlicesEqual(router.Input, []string{"text", "image"}) || router.ContextWindow != 256000 || router.MaxTokens != 256000 {
 		t.Fatalf("router = %#v", router)
+	}
+	if _, ok := GetModel("fireworks", "accounts/fireworks/routers/kimi-k2p6-turbo"); ok {
+		t.Fatalf("stale Fireworks Kimi K2.6 Turbo router should not be registered")
+	}
+
+	minimax := MustGetModel("fireworks", "accounts/fireworks/models/minimax-m2p1")
+	if minimax.API != "anthropic-messages" || minimax.ContextWindow != 200000 || minimax.MaxTokens != 200000 {
+		t.Fatalf("minimax = %#v", minimax)
 	}
 }
 
@@ -217,6 +225,139 @@ func TestFireworksAndTogetherEnvKeys(t *testing.T) {
 	if got := FindEnvKeys("together"); len(got) != 1 || got[0] != "TOGETHER_API_KEY" || GetEnvAPIKey("together") != "test-together-key" {
 		t.Fatalf("together env keys = %#v key=%q", got, GetEnvAPIKey("together"))
 	}
+}
+
+func TestFireworksModelCatalogPiCaseNames(t *testing.T) {
+	t.Run("registers the default Kimi K2.6 model via Anthropic-compatible Messages API", func(t *testing.T) {
+		model := MustGetModel("fireworks", "accounts/fireworks/models/kimi-k2p6")
+		if model.API != "anthropic-messages" || model.Provider != "fireworks" || model.BaseURL != "https://api.fireworks.ai/inference" {
+			t.Fatalf("model = %#v", model)
+		}
+		if !model.Reasoning || !stringSlicesEqual(model.Input, []string{"text", "image"}) || model.ContextWindow != 262000 || model.MaxTokens != 262000 {
+			t.Fatalf("model = %#v", model)
+		}
+	})
+
+	t.Run("registers the Fire Pass turbo router model", func(t *testing.T) {
+		model := MustGetModel("fireworks", "accounts/fireworks/routers/kimi-k2p5-turbo")
+		if model.API != "anthropic-messages" || model.BaseURL != "https://api.fireworks.ai/inference" || !stringSlicesEqual(model.Input, []string{"text", "image"}) {
+			t.Fatalf("model = %#v", model)
+		}
+	})
+
+	t.Run("resolves FIREWORKS_API_KEY from the environment", func(t *testing.T) {
+		t.Setenv("FIREWORKS_API_KEY", "test-fireworks-key")
+		if got := FindEnvKeys("fireworks"); len(got) != 1 || got[0] != "FIREWORKS_API_KEY" || GetEnvAPIKey("fireworks") != "test-fireworks-key" {
+			t.Fatalf("fireworks env keys = %#v key=%q", got, GetEnvAPIKey("fireworks"))
+		}
+	})
+
+	t.Run("sets Fireworks-specific compat for session affinity and unsupported tool fields", func(t *testing.T) {
+		model := MustGetModel("fireworks", "accounts/fireworks/models/kimi-k2p6")
+		if model.Compat.SendSessionAffinityHeaders == nil || !*model.Compat.SendSessionAffinityHeaders ||
+			model.Compat.SupportsEagerToolInputStreaming == nil || *model.Compat.SupportsEagerToolInputStreaming ||
+			model.Compat.SupportsCacheControlOnTools == nil || *model.Compat.SupportsCacheControlOnTools ||
+			model.Compat.SupportsLongCacheRetention == nil || *model.Compat.SupportsLongCacheRetention {
+			t.Fatalf("compat = %#v", model.Compat)
+		}
+	})
+}
+
+func TestFireworksAnthropicToolCompatPiCaseNames(t *testing.T) {
+	context := Context{
+		Messages: []Message{UserMessageText("Use tool")},
+		Tools: []Tool{{
+			Name:        "lookup",
+			Description: "Lookup",
+			Parameters:  Object(map[string]Schema{"value": String()}, "value"),
+		}},
+	}
+
+	t.Run("sends x-session-affinity header for Fireworks models", func(t *testing.T) {
+		model := MustGetModel("fireworks", "accounts/fireworks/models/kimi-k2p6")
+		headers := BuildAnthropicHeaders(model, context, AnthropicPayloadOptions{SessionID: "fireworks-session-1"})
+		if headers["x-session-affinity"] != "fireworks-session-1" {
+			t.Fatalf("headers = %#v", headers)
+		}
+	})
+
+	t.Run("omits x-session-affinity header for native Anthropic models", func(t *testing.T) {
+		model := MustGetModel("anthropic", "claude-opus-4-7")
+		headers := BuildAnthropicHeaders(model, context, AnthropicPayloadOptions{SessionID: "anthropic-session-1"})
+		if _, ok := headers["x-session-affinity"]; ok {
+			t.Fatalf("headers = %#v", headers)
+		}
+	})
+
+	t.Run("omits x-session-affinity header when cacheRetention is none", func(t *testing.T) {
+		model := MustGetModel("fireworks", "accounts/fireworks/models/kimi-k2p6")
+		headers := BuildAnthropicHeaders(model, context, AnthropicPayloadOptions{SessionID: "fireworks-session-2", CacheRetention: "none"})
+		if _, ok := headers["x-session-affinity"]; ok {
+			t.Fatalf("headers = %#v", headers)
+		}
+	})
+
+	t.Run("omits cache_control on tools for Fireworks models", func(t *testing.T) {
+		model := MustGetModel("fireworks", "accounts/fireworks/models/kimi-k2p6")
+		payload := BuildAnthropicPayload(model, context, AnthropicPayloadOptions{})
+		if payload.Tools[0].CacheControl != nil {
+			t.Fatalf("tools = %#v", payload.Tools)
+		}
+	})
+
+	t.Run("omits eager_input_streaming on tools for Fireworks models", func(t *testing.T) {
+		model := MustGetModel("fireworks", "accounts/fireworks/models/kimi-k2p6")
+		payload := BuildAnthropicPayload(model, context, AnthropicPayloadOptions{})
+		if payload.Tools[0].EagerInputStreaming != nil {
+			t.Fatalf("tools = %#v", payload.Tools)
+		}
+	})
+
+	t.Run("sends cache_control on tools for native Anthropic models", func(t *testing.T) {
+		model := MustGetModel("anthropic", "claude-opus-4-7")
+		payload := BuildAnthropicPayload(model, context, AnthropicPayloadOptions{})
+		if payload.Tools[0].CacheControl == nil {
+			t.Fatalf("tools = %#v", payload.Tools)
+		}
+	})
+
+	t.Run("sends eager_input_streaming on tools for native Anthropic models", func(t *testing.T) {
+		model := MustGetModel("anthropic", "claude-opus-4-7")
+		payload := BuildAnthropicPayload(model, context, AnthropicPayloadOptions{})
+		if payload.Tools[0].EagerInputStreaming == nil || !*payload.Tools[0].EagerInputStreaming {
+			t.Fatalf("tools = %#v", payload.Tools)
+		}
+	})
+}
+
+func TestTogetherModelCatalogPiCaseNames(t *testing.T) {
+	t.Run("registers the default Kimi K2.6 model via OpenAI-compatible Chat Completions API", func(t *testing.T) {
+		model := MustGetModel("together", "moonshotai/Kimi-K2.6")
+		if model.API != "openai-completions" || model.Provider != "together" || model.BaseURL != "https://api.together.ai/v1" {
+			t.Fatalf("model = %#v", model)
+		}
+		if !model.Reasoning || !thinkingMapHasNil(model.ThinkingLevelMap, "minimal", "low", "medium") || !stringSlicesEqual(model.Input, []string{"text", "image"}) {
+			t.Fatalf("model = %#v", model)
+		}
+	})
+
+	t.Run("models Together reasoning controls from the Together API surface", func(t *testing.T) {
+		gptOSS := MustGetModel("together", "openai/gpt-oss-120b")
+		deepSeek := MustGetModel("together", "deepseek-ai/DeepSeek-V4-Pro")
+		minimax := MustGetModel("together", "MiniMaxAI/MiniMax-M2.7")
+		if !thinkingMapHasNil(gptOSS.ThinkingLevelMap, "off", "minimal") ||
+			!thinkingMapHasNil(deepSeek.ThinkingLevelMap, "minimal", "low", "medium", "xhigh") ||
+			!thinkingMapHasNil(minimax.ThinkingLevelMap, "off", "minimal", "low", "medium") {
+			t.Fatalf("maps = %#v %#v %#v", gptOSS.ThinkingLevelMap, deepSeek.ThinkingLevelMap, minimax.ThinkingLevelMap)
+		}
+	})
+
+	t.Run("resolves TOGETHER_API_KEY from the environment", func(t *testing.T) {
+		t.Setenv("TOGETHER_API_KEY", "test-together-key")
+		if got := FindEnvKeys("together"); len(got) != 1 || got[0] != "TOGETHER_API_KEY" || GetEnvAPIKey("together") != "test-together-key" {
+			t.Fatalf("together env keys = %#v key=%q", got, GetEnvAPIKey("together"))
+		}
+	})
 }
 
 func TestBedrockModelCatalog(t *testing.T) {

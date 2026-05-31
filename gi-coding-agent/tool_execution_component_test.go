@@ -390,6 +390,41 @@ func TestToolExecutionComponentPiBuiltinDisplayParity(t *testing.T) {
 		}
 	})
 
+	t.Run("syntax-highlights write previews with Pi-style incremental cache", func(t *testing.T) {
+		component := NewToolExecutionComponent(
+			"write",
+			"tool-write-highlight",
+			map[string]any{"path": "src/example.ts", "content": "const value = 1\n"},
+			CreateWriteToolDefinition(t.TempDir()),
+			t.TempDir(),
+		)
+		raw := strings.Join(component.Render(120), "\n")
+		if !strings.Contains(raw, tuiThemeFG("syntaxKeyword", "const")) ||
+			!strings.Contains(raw, tuiThemeFG("syntaxNumber", "1")) {
+			t.Fatalf("write preview should include syntax highlighting:\n%s", raw)
+		}
+		firstCache := getWriteHighlightCache(component.rendererState)
+		if firstCache == nil || firstCache.rawContent != "const value = 1\n" {
+			t.Fatalf("initial write highlight cache = %#v", firstCache)
+		}
+
+		component.UpdateArgs(map[string]any{"path": "src/example.ts", "content": "const value = 1\nconst next = 2\n"})
+		raw = strings.Join(component.Render(120), "\n")
+		if getWriteHighlightCache(component.rendererState) != firstCache {
+			t.Fatal("append-only partial write preview should reuse highlight cache")
+		}
+		if !strings.Contains(raw, tuiThemeFG("syntaxNumber", "2")) {
+			t.Fatalf("incremental write preview missing highlighted appended line:\n%s", raw)
+		}
+
+		component.SetArgsComplete()
+		raw = strings.Join(component.Render(120), "\n")
+		if !strings.Contains(raw, tuiThemeFG("syntaxKeyword", "const")) ||
+			!strings.Contains(raw, tuiThemeFG("syntaxNumber", "2")) {
+			t.Fatalf("completed write preview should rebuild full highlighted content:\n%s", raw)
+		}
+	})
+
 	for _, scenario := range []struct {
 		title   string
 		path    func(string) string

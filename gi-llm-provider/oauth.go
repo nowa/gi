@@ -111,7 +111,7 @@ func GitHubCopilotBaseURL(token, enterpriseDomain string) string {
 	if enterpriseDomain != "" {
 		return "https://copilot-api." + enterpriseDomain
 	}
-	return "https://api.githubcopilot.com"
+	return "https://api.individual.githubcopilot.com"
 }
 
 func OpenAICodexRefreshError(status int, statusText, body string) error {

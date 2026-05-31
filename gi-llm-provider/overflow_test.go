@@ -66,3 +66,12 @@ func TestIsContextOverflowLengthStopSignals(t *testing.T) {
 		t.Fatal("short length stop should not be overflow")
 	}
 }
+
+func TestOverflowPiCaseNames(t *testing.T) {
+	t.Run("detects explicit Ollama prompt-too-long errors", func(t *testing.T) {
+		message := errorMessage("400 `prompt too long; exceeded max context length by 100918 tokens`")
+		if !IsContextOverflow(message, 200000) {
+			t.Fatalf("expected explicit Ollama prompt-too-long error to be overflow")
+		}
+	})
+}

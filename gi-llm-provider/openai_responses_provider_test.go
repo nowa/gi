@@ -250,6 +250,16 @@ func TestDecodeOpenAIResponsesSSEEvent(t *testing.T) {
 	if event.Type != "response.output_item.added" || event.Item == nil || event.Item.ID != "fc_1" || event.Item.CallID != "call_1" || event.Item.Name != "lookup" {
 		t.Fatalf("event = %#v", event)
 	}
+
+	reasoning, err := DecodeOpenAIResponsesSSEEvent([]byte(`{"type":"response.output_item.done","item":{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"Need answer"}],"encrypted_content":"opaque"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reasoning.Item == nil || reasoning.Item.Type != "reasoning" || reasoning.Item.ID != "rs_1" ||
+		len(reasoning.Item.Summary) != 1 || reasoning.Item.Summary[0].Text != "Need answer" ||
+		reasoning.Item.EncryptedContent != "opaque" {
+		t.Fatalf("reasoning event = %#v", reasoning)
+	}
 }
 
 func writeSSE(t *testing.T, w http.ResponseWriter, data string) {

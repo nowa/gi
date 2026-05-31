@@ -2,9 +2,11 @@ package gicodingagent
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -129,8 +131,22 @@ func TestRunCLIExportSessionFileMatchesPiStandaloneExport(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := string(content)
-	if !strings.Contains(html, `data-role="user">hello`) || !strings.Contains(html, `data-role="assistant">done`) {
+	if !strings.Contains(html, `id="session-data"`) || !strings.Contains(html, `decodeSessionData`) {
 		t.Fatalf("html = %q", html)
+	}
+	match := regexp.MustCompile(`<script id="session-data" type="application/json">([^<]+)</script>`).FindStringSubmatch(html)
+	if match == nil {
+		t.Fatalf("session data script missing in html = %q", html)
+	}
+	payload, err := base64.StdEncoding.DecodeString(match[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(payload), `"role":"user"`) ||
+		!strings.Contains(string(payload), `"hello"`) ||
+		!strings.Contains(string(payload), `"role":"assistant"`) ||
+		!strings.Contains(string(payload), `"done"`) {
+		t.Fatalf("decoded session data = %s", payload)
 	}
 }
 

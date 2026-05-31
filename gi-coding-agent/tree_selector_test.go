@@ -94,6 +94,47 @@ func TestTreeSelectorBashEntriesRenderLikePi(t *testing.T) {
 	}
 }
 
+func TestTreeSelectorMessageRowsRenderPiRoleLabels(t *testing.T) {
+	setTUIThemeForTest(t, "dark", nil)
+	tree := buildTreeSelectorTree([]FileEntry{
+		treeUser("user-1", nil, "hello\nthere"),
+		treeAssistant("asst-1", ptrString("user-1"), "hi\tthere"),
+		{
+			Type:     "message",
+			ID:       "asst-err",
+			ParentID: ptrString("asst-1"),
+			Message: llm.Message{
+				Role:         llm.RoleAssistant,
+				StopReason:   llm.StopReasonError,
+				ErrorMessage: "quota\nfailed",
+			},
+			Timestamp: "asst-err",
+		},
+	})
+	selector := NewTreeSelectorComponent(tree, "asst-err")
+	rendered := strings.Join(selector.GetTreeList().Render(160), "\n")
+	plain := StripAnsi(rendered)
+
+	for _, want := range []string{
+		"  • user: hello there",
+		"  • assistant: hi there",
+		"› • assistant: quota failed",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("render missing %q:\n%s", want, plain)
+		}
+	}
+	for _, want := range []string{
+		tuiThemeAccent("user: "),
+		tuiThemeSuccess("assistant: "),
+		tuiThemeError("quota failed"),
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("render missing styled token %q:\n%q", want, rendered)
+		}
+	}
+}
+
 func TestTreeSelectorEmptyFilterPreservesSelection(t *testing.T) {
 	tree := buildTreeSelectorTree([]FileEntry{
 		treeUser("user-1", nil, "hello"),
@@ -285,12 +326,12 @@ func TestTreeSelectorUsesEffectiveKeybindingsPiStyle(t *testing.T) {
 
 	selector.HandleInput("q")
 	render = strings.Join(list.Render(200), "\n")
-	if !strings.Contains(render, "tool-asst-1") {
-		t.Fatalf("all filter render = %q, want tool-only assistant", render)
+	if !strings.Contains(StripAnsi(render), "assistant: (no content)") {
+		t.Fatalf("all filter render = %q, want Pi-style tool-only assistant placeholder", render)
 	}
 	selector.HandleInput("n")
 	render = strings.Join(list.Render(200), "\n")
-	if strings.Contains(render, "tool-asst-1") {
+	if strings.Contains(StripAnsi(render), "assistant: (no content)") {
 		t.Fatalf("no-tools filter render = %q, want tool-only assistant hidden", render)
 	}
 	selector.HandleInput("r")
@@ -310,7 +351,7 @@ func TestTreeSelectorUsesEffectiveKeybindingsPiStyle(t *testing.T) {
 	}
 	selector.HandleInput("o")
 	render = strings.Join(list.Render(200), "\n")
-	if !strings.Contains(render, "tool-asst-1") {
+	if !strings.Contains(StripAnsi(render), "assistant: (no content)") {
 		t.Fatalf("cycle forward render = %q, want all filter", render)
 	}
 	selector.HandleInput("p")

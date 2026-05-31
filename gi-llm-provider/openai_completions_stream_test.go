@@ -41,6 +41,84 @@ func TestProcessOpenAICompletionsChunksPreservesReasoningFieldSignature(t *testi
 	}
 }
 
+func TestOpenAICompletionsStreamProcessorEmitsPiLifecycleEvents(t *testing.T) {
+	toolCalls := "tool_calls"
+	index := 0
+	model := Model{ID: "deepseek-v4-pro", Provider: "deepseek", API: "openai-completions", Reasoning: true}
+	output := AssistantMessage(nil, StopReasonStop, model)
+	processor := NewOpenAICompletionsStreamProcessor(model, &output)
+
+	var events []AssistantMessageEvent
+	events = append(events, processor.Process(&OpenAIChatCompletionChunk{
+		ID: "chatcmpl-pi-lifecycle",
+		Choices: []OpenAIChatCompletionChoice{{
+			Delta: OpenAIChatDelta{
+				Content:          "answer ",
+				ReasoningContent: "think ",
+				ToolCalls: []OpenAIChatToolCallDelta{{
+					Index: &index,
+					ID:    "call_read",
+					Type:  "function",
+					Function: OpenAIChatToolCallFunctionDelta{
+						Name:      "read",
+						Arguments: `{"path":"README`,
+					},
+				}},
+			},
+		}},
+	})...)
+	events = append(events, processor.Process(&OpenAIChatCompletionChunk{
+		ID: "chatcmpl-pi-lifecycle",
+		Choices: []OpenAIChatCompletionChoice{{
+			Delta: OpenAIChatDelta{
+				Content:          "done",
+				ReasoningContent: "again",
+				ToolCalls: []OpenAIChatToolCallDelta{{
+					Index: &index,
+					Function: OpenAIChatToolCallFunctionDelta{
+						Arguments: `.md"}`,
+					},
+				}},
+			},
+			FinishReason: &toolCalls,
+		}},
+	})...)
+
+	wantTypes := []string{
+		"text_start", "text_delta",
+		"thinking_start", "thinking_delta",
+		"toolcall_start", "toolcall_delta",
+		"text_delta", "thinking_delta", "toolcall_delta",
+		"text_end", "thinking_end", "toolcall_end",
+	}
+	if got := assistantEventTypes(events); !stringSlicesEqual(got, wantTypes) {
+		t.Fatalf("event types = %#v, want %#v", got, wantTypes)
+	}
+	if events[0].ContentIndex != 0 || events[1].ContentIndex != 0 || events[1].Delta != "answer " {
+		t.Fatalf("text lifecycle events = %#v %#v", events[0], events[1])
+	}
+	if events[2].ContentIndex != 1 || events[3].ContentIndex != 1 || events[3].Delta != "think " {
+		t.Fatalf("thinking lifecycle events = %#v %#v", events[2], events[3])
+	}
+	if events[4].ContentIndex != 2 || events[5].ContentIndex != 2 || events[5].Delta != `{"path":"README` {
+		t.Fatalf("tool lifecycle events = %#v %#v", events[4], events[5])
+	}
+	if events[9].Content != "answer done" || events[10].Content != "think again" {
+		t.Fatalf("end content = %q / %q", events[9].Content, events[10].Content)
+	}
+	if events[11].ToolCall.ID != "call_read" || events[11].ToolCall.Name != "read" || events[11].ToolCall.Arguments["path"] != "README.md" {
+		t.Fatalf("toolcall_end = %#v", events[11].ToolCall)
+	}
+}
+
+func assistantEventTypes(events []AssistantMessageEvent) []string {
+	types := make([]string, 0, len(events))
+	for _, event := range events {
+		types = append(types, event.Type)
+	}
+	return types
+}
+
 func TestProcessOpenAICompletionsChunksMapsErrorsAndMissingFinishReason(t *testing.T) {
 	networkError := "network_error"
 	model := Model{ID: "glm-5.1", Provider: "zai", API: "openai-completions"}
@@ -191,16 +269,18 @@ func TestProcessOpenAICompletionsChunksMixedContentThinkingToolsAndUsage(t *test
 }
 
 func TestParseOpenAIChatUsagePreservesCacheReadWrite(t *testing.T) {
-	usage := ParseOpenAIChatUsage(OpenAIChatUsage{
-		PromptTokens:     100,
-		CompletionTokens: 5,
-		PromptTokensDetails: OpenAIChatPromptTokenDetails{
-			CachedTokens:     50,
-			CacheWriteTokens: 30,
-		},
-	}, Model{})
+	t.Run("regression: preserves cache_write_tokens on openai-completions stream path", func(t *testing.T) {
+		usage := ParseOpenAIChatUsage(OpenAIChatUsage{
+			PromptTokens:     100,
+			CompletionTokens: 5,
+			PromptTokensDetails: OpenAIChatPromptTokenDetails{
+				CachedTokens:     50,
+				CacheWriteTokens: 30,
+			},
+		}, Model{})
 
-	if usage.Input != 20 || usage.CacheRead != 50 || usage.CacheWrite != 30 || usage.TotalTokens != 105 {
-		t.Fatalf("usage = %#v", usage)
-	}
+		if usage.Input != 20 || usage.CacheRead != 50 || usage.CacheWrite != 30 || usage.TotalTokens != 105 {
+			t.Fatalf("usage = %#v", usage)
+		}
+	})
 }

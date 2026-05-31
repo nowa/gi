@@ -173,10 +173,21 @@ func TestOpenAICodexResponsesProviderCompletesWhenSSEBodyStaysOpen(t *testing.T)
 	}
 }
 
-func TestOpenAICodexResponsesProviderRejectsExplicitWebSocketTransport(t *testing.T) {
-	model := Model{ID: "gpt-5.1-codex", Provider: "openai-codex", API: "openai-codex-responses", Input: []string{"text"}}
-	stream, err := NewOpenAICodexResponsesProvider(nil).StreamSimple(model, Context{Messages: []Message{UserMessageText("hi")}}, SimpleStreamOptions{
-		APIKey:    mockOpenAICodexToken(t, "acc_test"),
+func TestOpenAICodexResponsesProviderFallsBackFromExplicitWebSocketTransport(t *testing.T) {
+	token := mockOpenAICodexToken(t, "acc_test")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		writeSSE(t, w, `{"type":"response.output_item.added","item":{"type":"message","id":"msg_1","status":"in_progress"}}`)
+		writeSSE(t, w, `{"type":"response.content_part.added","part":{"type":"output_text","text":""}}`)
+		writeSSE(t, w, `{"type":"response.output_text.delta","delta":"Hello"}`)
+		writeSSE(t, w, `{"type":"response.output_item.done","item":{"type":"message","id":"msg_1","status":"completed","content":[{"type":"output_text","text":"Hello"}]}}`)
+		writeSSE(t, w, `{"type":"response.completed","response":{"id":"resp_fallback","status":"completed"}}`)
+	}))
+	defer server.Close()
+
+	model := Model{ID: "gpt-5.1-codex", Provider: "openai-codex", API: "openai-codex-responses", BaseURL: server.URL, Input: []string{"text"}}
+	stream, err := NewOpenAICodexResponsesProvider(server.Client()).StreamSimple(model, Context{Messages: []Message{UserMessageText("hi")}}, SimpleStreamOptions{
+		APIKey:    token,
 		Transport: "websocket",
 	})
 	if err != nil {
@@ -186,7 +197,13 @@ func TestOpenAICodexResponsesProviderRejectsExplicitWebSocketTransport(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.StopReason != StopReasonError || result.ErrorMessage == "" {
+	if result.StopReason != StopReasonStop || result.Content[0].Text != "Hello" {
 		t.Fatalf("result = %#v", result)
+	}
+	if len(result.Diagnostics) != 1 ||
+		result.Diagnostics[0].Type != "provider_transport_failure" ||
+		result.Diagnostics[0].Details["configuredTransport"] != "websocket" ||
+		result.Diagnostics[0].Details["fallbackTransport"] != "sse" {
+		t.Fatalf("diagnostics = %#v", result.Diagnostics)
 	}
 }

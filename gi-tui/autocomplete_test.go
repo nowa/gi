@@ -38,6 +38,41 @@ func TestFuzzyMatchPiSemantics(t *testing.T) {
 	}
 }
 
+func TestFuzzyMatchPiCaseParity(t *testing.T) {
+	t.Run("characters must appear in order", func(t *testing.T) {
+		if !FuzzyMatchText("abc", "aXbXc").Matches {
+			t.Fatal("ordered characters should match")
+		}
+		if FuzzyMatchText("abc", "cba").Matches {
+			t.Fatal("out-of-order characters should not match")
+		}
+	})
+	t.Run("case insensitive matching", func(t *testing.T) {
+		if !FuzzyMatchText("ABC", "abc").Matches || !FuzzyMatchText("abc", "ABC").Matches {
+			t.Fatal("fuzzy matching should ignore case")
+		}
+	})
+	t.Run("consecutive matches score better than scattered matches", func(t *testing.T) {
+		consecutive := FuzzyMatchText("foo", "foobar")
+		scattered := FuzzyMatchText("foo", "f_o_o_bar")
+		if !(consecutive.Matches && scattered.Matches && consecutive.Score < scattered.Score) {
+			t.Fatalf("consecutive score = %#v scattered = %#v", consecutive, scattered)
+		}
+	})
+	t.Run("word boundary matches score better", func(t *testing.T) {
+		boundary := FuzzyMatchText("fb", "foo-bar")
+		notBoundary := FuzzyMatchText("fb", "afbx")
+		if !(boundary.Matches && notBoundary.Matches && boundary.Score < notBoundary.Score) {
+			t.Fatalf("boundary score = %#v non-boundary = %#v", boundary, notBoundary)
+		}
+	})
+	t.Run("matches swapped alpha numeric tokens", func(t *testing.T) {
+		if !FuzzyMatchText("codex52", "gpt-5.2-codex").Matches {
+			t.Fatal("expected swapped alpha numeric tokens to match")
+		}
+	})
+}
+
 func TestFuzzyFilterPiSemantics(t *testing.T) {
 	items := []string{"apple", "banana", "cherry"}
 	if got := FuzzyFilter(items, "", func(s string) string { return s }); !reflect.DeepEqual(got, items) {
@@ -52,6 +87,14 @@ func TestFuzzyFilterPiSemantics(t *testing.T) {
 	if got := FuzzyFilterStrings([]string{"clone", "cl"}, "cl"); !reflect.DeepEqual(got, []string{"cl", "clone"}) {
 		t.Fatalf("exact before prefix = %#v", got)
 	}
+}
+
+func TestFuzzyFilterPiCaseParity(t *testing.T) {
+	t.Run("prioritizes exact matches over longer prefix matches", func(t *testing.T) {
+		if got := FuzzyFilterStrings([]string{"clone", "cl"}, "cl"); !reflect.DeepEqual(got, []string{"cl", "clone"}) {
+			t.Fatalf("exact before prefix = %#v", got)
+		}
+	})
 }
 
 func TestCombinedAutocompleteProviderReturnsFirstNonEmptyProvider(t *testing.T) {
@@ -222,6 +265,74 @@ func TestCombinedAutocompleteFileSuggestions(t *testing.T) {
 	}
 }
 
+func TestCombinedAutocompleteFileSuggestionPiCaseParity(t *testing.T) {
+	t.Run("filters are case insensitive", func(t *testing.T) {
+		base := t.TempDir()
+		mustWrite(t, filepath.Join(base, "README.md"), "readme")
+		mustWrite(t, filepath.Join(base, "src", "index.ts"), "export {}")
+		provider := NewCombinedAutocompleteProviderWithCommands(base, nil)
+
+		result, err := provider.GetSuggestions([]string{"@re"}, 0, len("@re"), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := suggestionValues(result); !reflect.DeepEqual(got, []string{"@README.md"}) {
+			t.Fatalf("case-insensitive values = %#v", got)
+		}
+	})
+	t.Run("ranks directories before files", func(t *testing.T) {
+		base := t.TempDir()
+		mustWrite(t, filepath.Join(base, "src", "index.ts"), "export {}")
+		mustWrite(t, filepath.Join(base, "src.txt"), "text")
+		provider := NewCombinedAutocompleteProviderWithCommands(base, nil)
+
+		result, err := provider.GetSuggestions([]string{"@src"}, 0, len("@src"), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		values := suggestionValuesInOrder(result)
+		if len(values) < 2 || values[0] != "@src/" || !contains(values, "@src.txt") {
+			t.Fatalf("directory should rank before file: %#v", values)
+		}
+	})
+	t.Run("matches deeply nested paths", func(t *testing.T) {
+		base := t.TempDir()
+		mustWrite(t, filepath.Join(base, "packages", "tui", "src", "autocomplete.ts"), "export {};")
+		mustWrite(t, filepath.Join(base, "packages", "ai", "src", "autocomplete.ts"), "export {};")
+		provider := NewCombinedAutocompleteProviderWithCommands(base, nil)
+
+		result, err := provider.GetSuggestions([]string{"@tui/src/auto"}, 0, len("@tui/src/auto"), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		values := suggestionValues(result)
+		if !contains(values, "@packages/tui/src/autocomplete.ts") || contains(values, "@packages/ai/src/autocomplete.ts") {
+			t.Fatalf("deep fuzzy path values = %#v", values)
+		}
+	})
+	t.Run("includes hidden paths but excludes .git", func(t *testing.T) {
+		base := t.TempDir()
+		mustWrite(t, filepath.Join(base, ".pi", "config.json"), "{}")
+		mustWrite(t, filepath.Join(base, ".github", "workflows", "ci.yml"), "name: ci")
+		mustWrite(t, filepath.Join(base, ".git", "config"), "[core]")
+		provider := NewCombinedAutocompleteProviderWithCommands(base, nil)
+
+		result, err := provider.GetSuggestions([]string{"@"}, 0, len("@"), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		values := suggestionValues(result)
+		if !contains(values, "@.pi/") || !contains(values, "@.github/") {
+			t.Fatalf("hidden path values = %#v", values)
+		}
+		for _, value := range values {
+			if value == "@.git/" || strings.HasPrefix(value, "@.git/") {
+				t.Fatalf(".git should be excluded: %#v", values)
+			}
+		}
+	})
+}
+
 func TestCombinedAutocompleteQuotedAndDotSlashCompletion(t *testing.T) {
 	base := t.TempDir()
 	mustWrite(t, filepath.Join(base, "my folder", "test.txt"), "content")
@@ -295,6 +406,36 @@ func TestCombinedAutocompleteQuotedAndDotSlashCompletion(t *testing.T) {
 	if applied.Lines[0] != "@\"my folder/test.txt\" " {
 		t.Fatalf("quoted @ apply = %#v", applied)
 	}
+}
+
+func TestCombinedAutocompleteDotSlashPiCaseParity(t *testing.T) {
+	t.Run("preserves ./ prefix when completing paths", func(t *testing.T) {
+		base := t.TempDir()
+		mustWrite(t, filepath.Join(base, "update.sh"), "#!/bin/sh")
+		mustWrite(t, filepath.Join(base, "utils.ts"), "export {};")
+		provider := NewCombinedAutocompleteProviderWithCommands(base, nil)
+
+		result, err := provider.GetSuggestions([]string{"./up"}, 0, len("./up"), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !contains(suggestionValues(result), "./update.sh") {
+			t.Fatalf("dot-slash file suggestions = %#v", suggestionValues(result))
+		}
+	})
+	t.Run("preserves ./ prefix for directory completions", func(t *testing.T) {
+		base := t.TempDir()
+		mustWrite(t, filepath.Join(base, "src", "index.ts"), "export {};")
+		provider := NewCombinedAutocompleteProviderWithCommands(base, nil)
+
+		result, err := provider.GetSuggestions([]string{"./sr"}, 0, len("./sr"), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !contains(suggestionValues(result), "./src/") {
+			t.Fatalf("dot-slash directory suggestions = %#v", suggestionValues(result))
+		}
+	})
 }
 
 func TestCombinedAutocompleteForcedPathExtractionPiMatrix(t *testing.T) {

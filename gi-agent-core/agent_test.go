@@ -177,6 +177,28 @@ func TestAgentQueuesAndAbort(t *testing.T) {
 	agent.Abort()
 }
 
+func TestAgentQueueModesCanChangeAfterConstruction(t *testing.T) {
+	agent := NewAgent(AgentOptions{
+		SteeringMode: QueueAll,
+		FollowUpMode: "invalid",
+	})
+	if got := agent.SteeringMode(); got != QueueAll {
+		t.Fatalf("SteeringMode() = %q, want %q", got, QueueAll)
+	}
+	if got := agent.FollowUpMode(); got != QueueOneAtTime {
+		t.Fatalf("FollowUpMode() = %q, want %q", got, QueueOneAtTime)
+	}
+
+	agent.SetSteeringMode(QueueOneAtTime)
+	agent.SetFollowUpMode(QueueAll)
+	if got := agent.SteeringMode(); got != QueueOneAtTime {
+		t.Fatalf("SteeringMode() after set = %q, want %q", got, QueueOneAtTime)
+	}
+	if got := agent.FollowUpMode(); got != QueueAll {
+		t.Fatalf("FollowUpMode() after set = %q, want %q", got, QueueAll)
+	}
+}
+
 func TestAgentForwardsSessionIDToStreamFnOptions(t *testing.T) {
 	var sessionID string
 	agent := New(WithSession("session-1"), WithStreamFn(func(_ llm.Model, _ llm.Context, options llm.SimpleStreamOptions) (*llm.AssistantMessageEventStream, error) {

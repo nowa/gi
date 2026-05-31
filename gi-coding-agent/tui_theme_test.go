@@ -1,9 +1,14 @@
 package gicodingagent
 
 import (
+	"encoding/json"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
+
+	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
 func TestTUIThemeForegroundTokensMatchPiDarkTheme(t *testing.T) {
@@ -191,6 +196,73 @@ func TestTUIThemeLoadsCustomThemeTokens(t *testing.T) {
 	}
 }
 
+func TestTUIThemeSchemaMatchesPiThemeContract(t *testing.T) {
+	var schema map[string]any
+	if err := json.Unmarshal(TUIThemeSchemaJSON(), &schema); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := schema["title"], "Gi Coding Agent Theme"; got != want {
+		t.Fatalf("title = %v, want %q", got, want)
+	}
+	if got, want := schemaStringSlice(t, schema["required"], "required"), []string{"name", "colors"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("required = %#v, want %#v", got, want)
+	}
+	if got := schema["additionalProperties"]; got != false {
+		t.Fatalf("additionalProperties = %v, want false", got)
+	}
+
+	properties := schemaObject(t, schema["properties"], "properties")
+	colors := schemaObject(t, properties["colors"], "properties.colors")
+	if got := colors["additionalProperties"]; got != false {
+		t.Fatalf("colors.additionalProperties = %v, want false", got)
+	}
+	gotTokens := schemaStringSlice(t, colors["required"], "properties.colors.required")
+	sort.Strings(gotTokens)
+	wantTokens := tuiThemeSchemaColorTokens()
+	if !reflect.DeepEqual(gotTokens, wantTokens) {
+		t.Fatalf("schema color tokens = %#v, want %#v", gotTokens, wantTokens)
+	}
+	colorProperties := schemaObject(t, colors["properties"], "properties.colors.properties")
+	if len(colorProperties) != len(wantTokens) {
+		t.Fatalf("colors.properties has %d tokens, want %d", len(colorProperties), len(wantTokens))
+	}
+	for _, token := range wantTokens {
+		if _, ok := colorProperties[token]; !ok {
+			t.Fatalf("colors.properties missing token %q", token)
+		}
+	}
+
+	export := schemaObject(t, properties["export"], "properties.export")
+	if got := export["additionalProperties"]; got != false {
+		t.Fatalf("export.additionalProperties = %v, want false", got)
+	}
+	exportProperties := schemaObject(t, export["properties"], "properties.export.properties")
+	if got, want := sortedThemeSchemaMapKeys(exportProperties), []string{"cardBg", "infoBg", "pageBg"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("export.properties = %#v, want %#v", got, want)
+	}
+
+	defs := schemaObject(t, schema["$defs"], "$defs")
+	colorValue := schemaObject(t, defs["colorValue"], "$defs.colorValue")
+	oneOf := schemaArray(t, colorValue["oneOf"], "$defs.colorValue.oneOf")
+	if len(oneOf) != 2 {
+		t.Fatalf("colorValue.oneOf has %d entries, want 2", len(oneOf))
+	}
+	stringColor := schemaObject(t, oneOf[0], "$defs.colorValue.oneOf[0]")
+	if got, want := stringColor["type"], "string"; got != want {
+		t.Fatalf("colorValue string type = %v, want %q", got, want)
+	}
+	indexColor := schemaObject(t, oneOf[1], "$defs.colorValue.oneOf[1]")
+	if got, want := indexColor["type"], "integer"; got != want {
+		t.Fatalf("colorValue integer type = %v, want %q", got, want)
+	}
+	if got, want := indexColor["minimum"], float64(0); got != want {
+		t.Fatalf("colorValue minimum = %v, want %v", got, want)
+	}
+	if got, want := indexColor["maximum"], float64(255); got != want {
+		t.Fatalf("colorValue maximum = %v, want %v", got, want)
+	}
+}
+
 func TestTUIThemeUsesPi256ColorFallbackForScreenTerm(t *testing.T) {
 	t.Setenv("COLORTERM", "")
 	t.Setenv("WT_SESSION", "")
@@ -254,6 +326,18 @@ func TestTUIThemeUserMessageKeepsPiBackground(t *testing.T) {
 	}
 }
 
+func TestTUIThemeThinkingTextUsesPiThinkingColor(t *testing.T) {
+	setTUIThemeForTest(t, "dark", nil)
+	lines := renderCLIAssistantMessage(llm.Message{
+		Role:    llm.RoleAssistant,
+		Content: []llm.ContentPart{llm.Thinking("secret plan")},
+	}, 40, true, "Thinking...")
+	rendered := strings.Join(lines, "\n")
+	if !strings.Contains(rendered, tuiThemeFG("thinkingText", "Thinking...")) {
+		t.Fatalf("hidden thinking label should use Pi thinkingText color:\n%q", rendered)
+	}
+}
+
 func setTUIThemeForTest(t *testing.T, name string, themes []TUIThemeInfo) {
 	t.Helper()
 	t.Setenv("COLORTERM", "truecolor")
@@ -288,4 +372,57 @@ func completeTUIThemeFixture(name string, overrides map[string]any) map[string]a
 		"name":   name,
 		"colors": colors,
 	}
+}
+
+func tuiThemeSchemaColorTokens() []string {
+	tokens := make([]string, 0, len(tuiDarkThemeFG)+len(tuiDarkThemeBG))
+	for token := range tuiDarkThemeFG {
+		tokens = append(tokens, token)
+	}
+	for token := range tuiDarkThemeBG {
+		tokens = append(tokens, token)
+	}
+	sort.Strings(tokens)
+	return tokens
+}
+
+func schemaObject(t *testing.T, value any, path string) map[string]any {
+	t.Helper()
+	object, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("%s is %T, want object", path, value)
+	}
+	return object
+}
+
+func schemaArray(t *testing.T, value any, path string) []any {
+	t.Helper()
+	array, ok := value.([]any)
+	if !ok {
+		t.Fatalf("%s is %T, want array", path, value)
+	}
+	return array
+}
+
+func schemaStringSlice(t *testing.T, value any, path string) []string {
+	t.Helper()
+	array := schemaArray(t, value, path)
+	values := make([]string, 0, len(array))
+	for index, item := range array {
+		text, ok := item.(string)
+		if !ok {
+			t.Fatalf("%s[%d] is %T, want string", path, index, item)
+		}
+		values = append(values, text)
+	}
+	return values
+}
+
+func sortedThemeSchemaMapKeys(input map[string]any) []string {
+	keys := make([]string, 0, len(input))
+	for key := range input {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

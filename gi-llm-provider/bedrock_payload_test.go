@@ -1,6 +1,9 @@
 package gillmprovider
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestBuildBedrockAdditionalModelRequestFieldsThinking(t *testing.T) {
 	base := MustGetModel("amazon-bedrock", "global.anthropic.claude-opus-4-6-v1")
@@ -133,5 +136,75 @@ func TestBuildBedrockPayloadFallsBackToFixedBudgetByModelName(t *testing.T) {
 	}
 	if _, ok := payload.AdditionalModelRequestFields["anthropic_beta"]; !ok {
 		t.Fatalf("anthropic beta missing: %#v", payload.AdditionalModelRequestFields)
+	}
+}
+
+func TestBuildBedrockPayloadConvertsToolConfigPiStyle(t *testing.T) {
+	model := Model{ID: "bedrock-test", Provider: "amazon-bedrock", API: "bedrock-converse-stream"}
+	context := Context{
+		Messages: []Message{UserMessageText("Use the tool.")},
+		Tools: []Tool{{
+			Name:        "read_file",
+			Description: "Read a file",
+			Parameters: Schema{
+				Type: "object",
+				Properties: map[string]Schema{
+					"path": {Type: "string"},
+				},
+				Required: []string{"path"},
+			},
+		}},
+	}
+
+	payload := BuildBedrockPayload(model, context, BedrockPayloadOptions{})
+	if payload.ToolConfig == nil || len(payload.ToolConfig.Tools) != 1 {
+		t.Fatalf("tool config = %#v", payload.ToolConfig)
+	}
+	spec := payload.ToolConfig.Tools[0].ToolSpec
+	if spec.Name != "read_file" || spec.Description != "Read a file" {
+		t.Fatalf("tool spec = %#v", spec)
+	}
+	wantSchema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path": map[string]any{"type": "string"},
+		},
+		"required": []any{"path"},
+	}
+	if !reflect.DeepEqual(spec.InputSchema.JSON, wantSchema) {
+		t.Fatalf("input schema = %#v, want %#v", spec.InputSchema.JSON, wantSchema)
+	}
+	if payload.ToolConfig.ToolChoice != nil {
+		t.Fatalf("default tool choice = %#v", payload.ToolConfig.ToolChoice)
+	}
+
+	tests := []struct {
+		name       string
+		choice     any
+		wantConfig bool
+		wantChoice any
+	}{
+		{name: "auto", choice: "auto", wantConfig: true, wantChoice: map[string]any{"auto": map[string]any{}}},
+		{name: "any", choice: "any", wantConfig: true, wantChoice: map[string]any{"any": map[string]any{}}},
+		{name: "none", choice: "none"},
+		{name: "named tool object", choice: BedrockNamedToolChoice{Type: "tool", Name: "read_file"}, wantConfig: true, wantChoice: map[string]any{"tool": map[string]any{"name": "read_file"}}},
+		{name: "named tool map", choice: map[string]any{"type": "tool", "name": "read_file"}, wantConfig: true, wantChoice: map[string]any{"tool": map[string]any{"name": "read_file"}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := BuildBedrockPayload(model, context, BedrockPayloadOptions{ToolChoice: tc.choice})
+			if !tc.wantConfig {
+				if payload.ToolConfig != nil {
+					t.Fatalf("tool config = %#v, want nil", payload.ToolConfig)
+				}
+				return
+			}
+			if payload.ToolConfig == nil {
+				t.Fatal("tool config missing")
+			}
+			if !reflect.DeepEqual(payload.ToolConfig.ToolChoice, tc.wantChoice) {
+				t.Fatalf("tool choice = %#v, want %#v", payload.ToolConfig.ToolChoice, tc.wantChoice)
+			}
+		})
 	}
 }

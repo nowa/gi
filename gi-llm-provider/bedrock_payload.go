@@ -10,11 +10,13 @@ type BedrockPayloadOptions struct {
 	InterleavedThinking *bool
 	CacheRetention      string
 	ForcePromptCache    bool
+	ToolChoice          any
 }
 
 type BedrockPayload struct {
 	System                       []BedrockContentBlock
 	Messages                     []BedrockMessage
+	ToolConfig                   *BedrockToolConfig
 	AdditionalModelRequestFields map[string]any
 }
 
@@ -59,11 +61,36 @@ type BedrockCachePoint struct {
 	TTL  string
 }
 
+type BedrockToolConfig struct {
+	Tools      []BedrockTool
+	ToolChoice any
+}
+
+type BedrockTool struct {
+	ToolSpec BedrockToolSpec
+}
+
+type BedrockToolSpec struct {
+	Name        string
+	Description string
+	InputSchema BedrockToolInputSchema
+}
+
+type BedrockToolInputSchema struct {
+	JSON map[string]any
+}
+
+type BedrockNamedToolChoice struct {
+	Type string
+	Name string
+}
+
 func BuildBedrockPayload(model Model, context Context, options BedrockPayloadOptions) BedrockPayload {
 	cacheRetention := resolveCacheRetention(options.CacheRetention)
 	return BedrockPayload{
 		System:                       buildBedrockSystemPrompt(context.SystemPrompt, model, cacheRetention, options.ForcePromptCache),
 		Messages:                     ConvertBedrockMessages(model, context, cacheRetention, options.ForcePromptCache),
+		ToolConfig:                   ConvertBedrockToolConfig(context.Tools, options.ToolChoice),
 		AdditionalModelRequestFields: BuildBedrockAdditionalModelRequestFields(model, options),
 	}
 }
@@ -152,6 +179,67 @@ func ConvertBedrockMessages(model Model, context Context, cacheRetention string,
 		}
 	}
 	return result
+}
+
+func ConvertBedrockToolConfig(tools []Tool, toolChoice any) *BedrockToolConfig {
+	if len(tools) == 0 || isBedrockNoToolChoice(toolChoice) {
+		return nil
+	}
+	bedrockTools := make([]BedrockTool, 0, len(tools))
+	for _, tool := range tools {
+		bedrockTools = append(bedrockTools, BedrockTool{
+			ToolSpec: BedrockToolSpec{
+				Name:        tool.Name,
+				Description: tool.Description,
+				InputSchema: BedrockToolInputSchema{JSON: SchemaToMap(tool.Parameters)},
+			},
+		})
+	}
+	return &BedrockToolConfig{
+		Tools:      bedrockTools,
+		ToolChoice: convertBedrockToolChoice(toolChoice),
+	}
+}
+
+func isBedrockNoToolChoice(toolChoice any) bool {
+	choice, ok := toolChoice.(string)
+	return ok && choice == "none"
+}
+
+func convertBedrockToolChoice(toolChoice any) any {
+	switch choice := toolChoice.(type) {
+	case nil:
+		return nil
+	case string:
+		switch choice {
+		case "auto":
+			return map[string]any{"auto": map[string]any{}}
+		case "any":
+			return map[string]any{"any": map[string]any{}}
+		default:
+			return nil
+		}
+	case BedrockNamedToolChoice:
+		if choice.Type == "tool" && choice.Name != "" {
+			return map[string]any{"tool": map[string]any{"name": choice.Name}}
+		}
+	case map[string]string:
+		if choice["type"] == "tool" && choice["name"] != "" {
+			return map[string]any{"tool": map[string]any{"name": choice["name"]}}
+		}
+	case map[string]any:
+		if tool, ok := choice["tool"].(map[string]any); ok {
+			if name, ok := tool["name"].(string); ok && name != "" {
+				return map[string]any{"tool": map[string]any{"name": name}}
+			}
+		}
+		if choice["type"] == "tool" {
+			if name, ok := choice["name"].(string); ok && name != "" {
+				return map[string]any{"tool": map[string]any{"name": name}}
+			}
+		}
+	}
+	return nil
 }
 
 func IsAnthropicClaudeBedrockModel(model Model) bool {

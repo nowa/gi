@@ -20,6 +20,24 @@ port.
 | `github.com/nowa/gi/gi-tui` | Terminal UI library with components, editor/input behavior, overlays, key parsing, image fallbacks, and differential rendering. |
 | `github.com/nowa/gi/gi-coding-agent` | Coding-agent migration surface: CLI/config/settings, resources, session JSONL, tool helpers, protocol-backed packages/extensions, and interactive runtime pieces as they are ported. |
 
+Internal subpackages mirror Pi boundaries where the Go dependency graph allows
+it without changing public APIs. Current examples include
+`gi-llm-provider/internal/envkeys`, `gi-llm-provider/internal/oauthpage`,
+`gi-llm-provider/internal/eventstream`, `gi-llm-provider/internal/httpproxy`,
+`gi-agent-core/harness/env`, `gi-agent-core/harness/utils`,
+`gi-agent-core/harness/sessionid`, `gi-tui/internal/history`,
+`gi-coding-agent/internal/cli`, `gi-coding-agent/internal/planmode`,
+`gi-coding-agent/internal/modelresolver`,
+`gi-coding-agent/internal/rpcwire`, `gi-coding-agent/internal/imageresize`,
+`gi-coding-agent/internal/syntaxhighlight`,
+`gi-coding-agent/internal/fswatch`, `gi-coding-agent/internal/gitsource`,
+`gi-coding-agent/internal/diffrender`, `gi-coding-agent/internal/toolqueue`,
+`gi-coding-agent/internal/tooloutput`, `gi-coding-agent/internal/changelog`,
+`gi-coding-agent/internal/versioncheck`, `gi-coding-agent/internal/frontmatter`,
+`gi-coding-agent/internal/pathutil`, and `gi-coding-agent/internal/ansiutil`;
+the parent packages keep
+compatibility facades for existing callers and tests.
+
 Pi's `pi-web-ui` package is not ported here. The `pi-coding-agent` migration is
 active and scoped by the per-case parity table.
 
@@ -27,11 +45,11 @@ active and scoped by the per-case parity table.
 
 | Pi package | Gi package | Status |
 | --- | --- | --- |
-| `@earendil-works/pi-ai` | `gi-llm-provider` | Pi test-compatible for core provider contracts, model catalogs, message conversion, streaming, and registered transports. |
-| `@earendil-works/pi-agent-core` | `gi-agent-core` | Pi test-compatible for the agent loop, tools, stateful agent behavior, queues, and lifecycle events. |
-| `pi-agent-core` harness/session | `gi-agent-core/harness` | Pi test-compatible for sessions, prompt formatting, compaction, local env, skills, and storage helpers. |
-| `@earendil-works/pi-tui` | `gi-tui` | TUI milestone complete. Pi TUI test files and case-level behavior are mapped and covered in Go. |
-| `@earendil-works/pi-coding-agent` | `gi-coding-agent` | Coding-agent parity complete for the current Pi checkout. Case-level parity is tracked in `PI_CODING_AGENT_TEST_CASE_PARITY.md`; source-level disposition is tracked in `PI_CODING_AGENT_SOURCE_AUDIT.md`. |
+| `@earendil-works/pi-ai` | `gi-llm-provider` | Pi-compatible for the audited provider contracts, model catalogs, message conversion, streaming, and registered transports; open source-level risks are tracked under `docs/pi-parity/`. |
+| `@earendil-works/pi-agent-core` | `gi-agent-core` | Pi-compatible for the audited agent loop, tools, stateful agent behavior, queues, lifecycle events, and proxy stream helper. |
+| `pi-agent-core` harness/session | `gi-agent-core/harness` | Pi-compatible for audited sessions, prompt formatting, compaction, local env, skills, and storage helpers. |
+| `@earendil-works/pi-tui` | `gi-tui` | Pi-compatible for the audited public TUI surface and case-level behavior; Markdown and headless terminal behavior remain fixture-level parity risks. |
+| `@earendil-works/pi-coding-agent` | `gi-coding-agent` | Active migration surface. Case-level mapping exists, but source-level parity must be evaluated against `docs/pi-parity/module-audit.md` and the current Pi checkout before claiming completion. |
 
 Detailed coverage is tracked in [PI_COMPATIBILITY.md](PI_COMPATIBILITY.md).
 Per-case provider/agent mapping is tracked in
@@ -203,7 +221,7 @@ func main() {
 
 ## Supported Provider Transports
 
-`gi-llm-provider` includes registered transports for:
+`gi-llm-provider` includes registered transports/provider boundaries for:
 
 - Anthropic Messages
 - OpenAI Responses and Chat Completions
@@ -211,7 +229,7 @@ func main() {
 - Azure OpenAI Responses
 - Google Generative AI and Vertex AI
 - Mistral Conversations
-- Amazon Bedrock Converse Stream
+- Amazon Bedrock Converse Stream event parsing with an injectable AWS transport boundary
 - OpenRouter Images
 - OpenAI-compatible providers including xAI/Grok, DeepSeek, Groq, Together, Z.ai, Fireworks, OpenCode Zen, and GitHub Copilot-compatible endpoints
 

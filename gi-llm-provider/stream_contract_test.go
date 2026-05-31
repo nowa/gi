@@ -117,6 +117,30 @@ func TestStreamContractsWithFauxProvider(t *testing.T) {
 			t.Fatalf("final text = %q", text)
 		}
 	})
+
+	t.Run("should handle image input", func(t *testing.T) {
+		registration := RegisterFauxProvider()
+		defer registration.Unregister()
+		registration.SetResponses([]FauxResponseStep{{Factory: func(contextValue Context, _ StreamOptions, _ FauxState, model Model) (Message, error) {
+			if !stringSlicesEqual(model.Input, []string{"text", "image"}) {
+				t.Fatalf("faux default model input = %#v", model.Input)
+			}
+			if len(contextValue.Messages) != 1 || len(contextValue.Messages[0].Content) != 2 || contextValue.Messages[0].Content[1].Type != ContentImage {
+				t.Fatalf("context = %#v", contextValue)
+			}
+			return FauxAssistantText("saw image"), nil
+		}}})
+		response, err := Complete(context.Background(), registration.MustModel(), Context{Messages: []Message{{
+			Role:    RoleUser,
+			Content: []ContentPart{Text("describe"), Image("ZmFrZQ==", "image/png")},
+		}}}, StreamOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.Content[0].Text != "saw image" {
+			t.Fatalf("response = %#v", response)
+		}
+	})
 }
 
 func assertEventTypes(t *testing.T, events []AssistantMessageEvent, wants []string) {

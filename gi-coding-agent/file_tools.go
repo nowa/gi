@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
@@ -64,10 +65,16 @@ type EditDiffResult struct {
 }
 
 type ReadToolTruncation struct {
-	Truncated   bool   `json:"truncated"`
-	TruncatedBy string `json:"truncatedBy"`
-	TotalLines  int    `json:"totalLines"`
-	OutputLines int    `json:"outputLines"`
+	Truncated             bool   `json:"truncated"`
+	TruncatedBy           string `json:"truncatedBy"`
+	TotalLines            int    `json:"totalLines"`
+	TotalBytes            int    `json:"totalBytes"`
+	OutputLines           int    `json:"outputLines"`
+	OutputBytes           int    `json:"outputBytes"`
+	LastLinePartial       bool   `json:"lastLinePartial"`
+	FirstLineExceedsLimit bool   `json:"firstLineExceedsLimit"`
+	MaxLines              int    `json:"maxLines"`
+	MaxBytes              int    `json:"maxBytes"`
 }
 
 type EditTool struct {
@@ -229,7 +236,7 @@ func (t ReadTool) Execute(_ string, input ReadToolInput) (FileToolResult, error)
 			},
 		}, nil
 	}
-	text, details, err := formatReadToolTextContent(string(content), input.Offset, input.Limit)
+	text, details, err := formatReadToolTextContent(string(content), input.Path, input.Offset, input.Limit)
 	if err != nil {
 		return FileToolResult{}, err
 	}
@@ -731,7 +738,7 @@ func formatEditAccessError(path string, err error) error {
 	return fmt.Errorf("Could not edit file: %s. Error: %s.", path, err.Error())
 }
 
-func formatReadToolTextContent(content string, offset, limit int) (string, *FileToolDetails, error) {
+func formatReadToolTextContent(content, path string, offset, limit int) (string, *FileToolDetails, error) {
 	lines := strings.Split(content, "\n")
 	totalLines := len(lines)
 	start := 0
@@ -741,65 +748,69 @@ func formatReadToolTextContent(content string, offset, limit int) (string, *File
 	if start >= totalLines {
 		return "", nil, fmt.Errorf("Offset %d is beyond end of file (%d lines total)", offset, totalLines)
 	}
-	lineLimit := defaultReadToolLineLimit
-	explicitLimit := false
+
+	selectedEnd := totalLines
+	userLimitedLines := 0
 	if limit > 0 {
-		lineLimit = limit
-		explicitLimit = true
+		selectedEnd = min(start+limit, totalLines)
+		userLimitedLines = selectedEnd - start
+	}
+	selectedContent := strings.Join(lines[start:selectedEnd], "\n")
+	truncation := agentharness.TruncateHead(selectedContent, agentharness.TruncationOptions{
+		MaxLines: defaultReadToolLineLimit,
+		MaxBytes: defaultReadToolByteLimit,
+	})
+
+	if truncation.FirstLineExceedsLimit {
+		firstLineSize := formatBashOutputSize(len([]byte(lines[start])))
+		output := fmt.Sprintf("[Line %d is %s, exceeds %s limit. Use bash: sed -n '%dp' %s | head -c %d]",
+			start+1,
+			firstLineSize,
+			formatBashOutputSize(defaultReadToolByteLimit),
+			start+1,
+			path,
+			defaultReadToolByteLimit,
+		)
+		return output, &FileToolDetails{Truncation: readToolTruncationFromHarness(truncation)}, nil
 	}
 
-	capacity := lineLimit
-	if remaining := totalLines - start; remaining < capacity {
-		capacity = remaining
-	}
-	outputLines := make([]string, 0, capacity)
-	outputBytes := 0
-	truncatedBy := ""
-	nextOffset := 0
-	for index := start; index < totalLines; index++ {
-		if len(outputLines) >= lineLimit {
-			truncatedBy = "lines"
-			if explicitLimit {
-				truncatedBy = "limit"
-			}
-			nextOffset = index + 1
-			break
+	if truncation.Truncated {
+		displayStart := start + 1
+		displayEnd := displayStart + truncation.OutputLines - 1
+		nextOffset := displayEnd + 1
+		output := truncation.Content
+		if truncation.TruncatedBy == agentharness.TruncatedByBytes {
+			output += fmt.Sprintf("\n\n[Showing lines %d-%d of %d (%s limit). Use offset=%d to continue.]",
+				displayStart, displayEnd, totalLines, formatBashOutputSize(defaultReadToolByteLimit), nextOffset)
+		} else {
+			output += fmt.Sprintf("\n\n[Showing lines %d-%d of %d. Use offset=%d to continue.]",
+				displayStart, displayEnd, totalLines, nextOffset)
 		}
-		line := lines[index]
-		addedBytes := len(line)
-		if len(outputLines) > 0 {
-			addedBytes++
-		}
-		if outputBytes+addedBytes > defaultReadToolByteLimit && len(outputLines) > 0 {
-			truncatedBy = "bytes"
-			nextOffset = index + 1
-			break
-		}
-		outputLines = append(outputLines, line)
-		outputBytes += addedBytes
+		return output, &FileToolDetails{Truncation: readToolTruncationFromHarness(truncation)}, nil
 	}
 
-	output := strings.Join(outputLines, "\n")
-	if truncatedBy == "" {
-		return output, nil, nil
+	if userLimitedLines > 0 && start+userLimitedLines < totalLines {
+		remaining := totalLines - (start + userLimitedLines)
+		nextOffset := start + userLimitedLines + 1
+		return fmt.Sprintf("%s\n\n[%d more lines in file. Use offset=%d to continue.]", truncation.Content, remaining, nextOffset), nil, nil
 	}
 
-	displayStart := start + 1
-	displayEnd := start + len(outputLines)
-	remaining := totalLines - displayEnd
-	if explicitLimit {
-		output += fmt.Sprintf("\n[%d more lines in file. Use offset=%d to continue.]", remaining, nextOffset)
-	} else if truncatedBy == "bytes" {
-		output += fmt.Sprintf("\n[Showing lines %d-%d of %d (byte limit). Use offset=%d to continue.]", displayStart, displayEnd, totalLines, nextOffset)
-	} else {
-		output += fmt.Sprintf("\n[Showing lines %d-%d of %d. Use offset=%d to continue.]", displayStart, displayEnd, totalLines, nextOffset)
+	return truncation.Content, nil, nil
+}
+
+func readToolTruncationFromHarness(result agentharness.TruncationResult) *ReadToolTruncation {
+	return &ReadToolTruncation{
+		Truncated:             result.Truncated,
+		TruncatedBy:           result.TruncatedBy,
+		TotalLines:            result.TotalLines,
+		TotalBytes:            result.TotalBytes,
+		OutputLines:           result.OutputLines,
+		OutputBytes:           result.OutputBytes,
+		LastLinePartial:       result.LastLinePartial,
+		FirstLineExceedsLimit: result.FirstLineExceedsLimit,
+		MaxLines:              result.MaxLines,
+		MaxBytes:              result.MaxBytes,
 	}
-	return output, &FileToolDetails{Truncation: &ReadToolTruncation{
-		Truncated:   true,
-		TruncatedBy: truncatedBy,
-		TotalLines:  totalLines,
-		OutputLines: len(outputLines),
-	}}, nil
 }
 
 func detectSupportedImageMIMEType(content []byte) string {

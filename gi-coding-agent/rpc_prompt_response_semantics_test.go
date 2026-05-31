@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
@@ -79,6 +80,7 @@ func TestRPCPromptResponseSemanticsQueuedDuringStreamingSuccessOnce(t *testing.T
 		t.Fatalf("queued response = %#v", responses[0])
 	}
 	close(release)
+	waitForRPCSessionIdle(t, host.Session)
 }
 
 func TestRPCLineProcessorParseErrorMatchesPiRPC(t *testing.T) {
@@ -210,4 +212,16 @@ func promptResponsesByID(t *testing.T, lines []string, id string) []RPCResponse 
 		}
 	}
 	return responses
+}
+
+func waitForRPCSessionIdle(t *testing.T, session *AgentSession) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if session == nil || !session.IsStreaming() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for RPC session to become idle")
 }

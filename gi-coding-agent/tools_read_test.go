@@ -62,8 +62,23 @@ func TestReadToolPiLimitsAndOffsets(t *testing.T) {
 		t.Fatal(err)
 	}
 	output = readToolText(result)
-	if !strings.Contains(output, "Line 1:") || !regexp.MustCompile(`\[Showing lines 1-\d+ of 500 \(byte limit\)\. Use offset=\d+ to continue\.\]`).MatchString(output) {
+	if !strings.Contains(output, "Line 1:") || !regexp.MustCompile(`\[Showing lines 1-\d+ of 500 \(50\.0KB limit\)\. Use offset=\d+ to continue\.\]`).MatchString(output) {
 		t.Fatalf("byte-limit output = %q", output)
+	}
+
+	firstLineTooLarge := filepath.Join(dir, "first-line-too-large.txt")
+	writeReadToolFile(t, firstLineTooLarge, strings.Repeat("x", 60*1024)+"\nsecond")
+	result, err = tool.Execute("test-call-4b", ReadToolInput{Path: firstLineTooLarge})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output = readToolText(result)
+	if strings.Contains(output, strings.Repeat("x", 1024)) ||
+		!strings.Contains(output, "[Line 1 is 60.0KB, exceeds 50.0KB limit. Use bash: sed -n '1p' "+firstLineTooLarge+" | head -c 51200]") {
+		t.Fatalf("first-line byte-limit output = %q", output)
+	}
+	if result.Details == nil || result.Details.Truncation == nil || !result.Details.Truncation.FirstLineExceedsLimit {
+		t.Fatalf("first-line truncation details = %#v", result.Details)
 	}
 
 	offsetFile := filepath.Join(dir, "offset-test.txt")

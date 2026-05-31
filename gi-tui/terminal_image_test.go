@@ -78,6 +78,15 @@ func TestIsImageLinePiCoverageMatrix(t *testing.T) {
 	}
 }
 
+func TestIsImageLineBugRegressionPiCaseNames(t *testing.T) {
+	t.Run("old implementation would return false, causing crash", func(t *testing.T) {
+		line := "Read image file [image/jpeg]\x1b]1337;File=size=800,600;inline=1:base64data...\x07"
+		if !IsImageLine(line) {
+			t.Fatalf("IsImageLine() = false, want true for image sequence embedded after text")
+		}
+	})
+}
+
 func TestDetectCapabilitiesFromEnvironment(t *testing.T) {
 	t.Setenv("TERM", "")
 	t.Setenv("TERM_PROGRAM", "ghostty")
@@ -157,6 +166,63 @@ func TestDetectCapabilitiesFromEnvironment(t *testing.T) {
 	if !caps.Images || caps.Protocol != ImageProtocolKitty || !caps.Hyperlinks {
 		t.Fatalf("cmux should not disable Ghostty images: %#v", caps)
 	}
+}
+
+func TestDetectCapabilitiesPiCaseNames(t *testing.T) {
+	t.Run("defaults to hyperlinks: false for unknown terminals", func(t *testing.T) {
+		clearTerminalCapabilityEnv(t)
+		caps := DetectCapabilities()
+		if caps.Images || caps.Protocol != ImageProtocolNone || caps.Hyperlinks {
+			t.Fatalf("unknown terminal caps = %#v, want no image protocol or hyperlinks", caps)
+		}
+	})
+
+	t.Run("enables hyperlinks for Ghostty", func(t *testing.T) {
+		clearTerminalCapabilityEnv(t)
+		t.Setenv("TERM_PROGRAM", "ghostty")
+		caps := DetectCapabilities()
+		if !caps.Images || caps.Protocol != ImageProtocolKitty || !caps.Hyperlinks {
+			t.Fatalf("ghostty caps = %#v, want kitty images and hyperlinks", caps)
+		}
+	})
+
+	t.Run("does not disable Ghostty images solely because cmux is present", func(t *testing.T) {
+		clearTerminalCapabilityEnv(t)
+		t.Setenv("TERM_PROGRAM", "ghostty")
+		t.Setenv("CMUX_WORKSPACE_ID", "workspace")
+		caps := DetectCapabilities()
+		if !caps.Images || caps.Protocol != ImageProtocolKitty || !caps.Hyperlinks {
+			t.Fatalf("cmux ghostty caps = %#v, want kitty images and hyperlinks", caps)
+		}
+	})
+
+	t.Run("enables hyperlinks for VSCode", func(t *testing.T) {
+		clearTerminalCapabilityEnv(t)
+		t.Setenv("TERM_PROGRAM", "vscode")
+		caps := DetectCapabilities()
+		if caps.Images || caps.Protocol != ImageProtocolNone || !caps.Hyperlinks {
+			t.Fatalf("vscode caps = %#v, want hyperlinks without image protocol", caps)
+		}
+	})
+}
+
+func clearTerminalCapabilityEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"TERM",
+		"TERM_PROGRAM",
+		"COLORTERM",
+		"TMUX",
+		"KITTY_WINDOW_ID",
+		"GHOSTTY_RESOURCES_DIR",
+		"WEZTERM_PANE",
+		"ITERM_SESSION_ID",
+		"CMUX_WORKSPACE_ID",
+	} {
+		t.Setenv(key, "")
+	}
+	ResetCapabilitiesCache()
+	t.Cleanup(ResetCapabilitiesCache)
 }
 
 func TestTerminalImageGlobalStateConcurrentAccess(t *testing.T) {
@@ -279,6 +345,31 @@ func TestImageRenderOptionsPiAliases(t *testing.T) {
 	}
 }
 
+func TestRenderImagePiCaseNames(t *testing.T) {
+	t.Run("honors maxHeightCells by reducing rendered width", func(t *testing.T) {
+		SetCapabilities(TerminalCapabilities{Images: true, Protocol: ImageProtocolKitty, TrueColor: true, Hyperlinks: true})
+		SetCellDimensions(CellDimensions{WidthPx: 10, HeightPx: 10})
+		t.Cleanup(func() {
+			ResetCapabilitiesCache()
+			SetCellDimensions(defaultCellDimensions)
+		})
+
+		result := RenderImageWithDimensions([]byte("AAAA"), ImageDimensions{WidthPx: 10, HeightPx: 100}, ImageRenderOptions{
+			MaxWidthCells:  10,
+			MaxHeightCells: 5,
+		})
+		if result == nil {
+			t.Fatalf("RenderImageWithDimensions() = nil, want kitty render result")
+		}
+		if result.Rows != 5 {
+			t.Fatalf("rows = %d, want 5", result.Rows)
+		}
+		if !strings.Contains(result.Sequence, ",c=1,r=5") {
+			t.Fatalf("sequence missing reduced width/height cells: %q", result.Sequence)
+		}
+	})
+}
+
 func TestRenderImageReturnsEmptyWithoutImageProtocol(t *testing.T) {
 	SetCapabilities(TerminalCapabilities{Images: false, Protocol: ImageProtocolNone})
 	defer ResetCapabilitiesCache()
@@ -308,9 +399,11 @@ func TestHyperlinkPiOSC8ExactRendering(t *testing.T) {
 	if got := Hyperlink("empty href", ""); got != "\x1b]8;;\x1b\\empty href\x1b]8;;\x1b\\" {
 		t.Fatalf("empty-url hyperlink should still emit OSC 8 wrapper like Pi: %q", got)
 	}
-	if got := Hyperlink("README.md", "file:///home/user/README.md"); !strings.Contains(got, "file:///home/user/README.md") || !strings.Contains(got, "README.md") {
-		t.Fatalf("file URI hyperlink missing content: %q", got)
-	}
+	t.Run("works with file:// URIs", func(t *testing.T) {
+		if got := Hyperlink("README.md", "file:///home/user/README.md"); !strings.Contains(got, "file:///home/user/README.md") || !strings.Contains(got, "README.md") {
+			t.Fatalf("file URI hyperlink missing content: %q", got)
+		}
+	})
 }
 
 func TestEncodeITerm2Options(t *testing.T) {

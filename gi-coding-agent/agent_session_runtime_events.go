@@ -23,6 +23,7 @@ const (
 	ProtocolEventToolResult            = "tool_result"
 	ProtocolEventToolExecutionUpdate   = "tool_execution_update"
 	ProtocolEventMessageStart          = "message_start"
+	ProtocolEventMessageUpdate         = "message_update"
 	ProtocolEventMessageEnd            = "message_end"
 	ProtocolEventUserBash              = "user_bash"
 	ProtocolEventResourcesDiscover     = "resources_discover"
@@ -333,6 +334,7 @@ func cloneAgentSessionWithManager(source *AgentSession, manager *SessionManager)
 		AutoCompactionRunner: source.AutoCompactionRunner,
 		AgentContinue:        source.AgentContinue,
 		Responder:            source.Responder,
+		StreamResponder:      source.StreamResponder,
 		ScopedModels:         source.ScopedModels,
 		Tools:                source.Tools,
 		ToolsSet:             source.ToolsSet,

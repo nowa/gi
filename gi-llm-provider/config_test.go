@@ -9,37 +9,37 @@ func TestNormalizeAzureOpenAIBaseURL(t *testing.T) {
 		want  string
 	}{
 		{
-			name:  "cognitive services root",
+			name:  "normalizes Cognitive Services root endpoints to openai v1",
 			input: "https://marc-quicktests-resource.cognitiveservices.azure.com",
 			want:  "https://marc-quicktests-resource.cognitiveservices.azure.com/openai/v1",
 		},
 		{
-			name:  "azure openai root",
+			name:  "normalizes Azure OpenAI root endpoints to openai v1",
 			input: "https://my-resource.openai.azure.com",
 			want:  "https://my-resource.openai.azure.com/openai/v1",
 		},
 		{
-			name:  "openai path",
+			name:  "normalizes openai to openai v1",
 			input: "https://my-resource.cognitiveservices.azure.com/openai",
 			want:  "https://my-resource.cognitiveservices.azure.com/openai/v1",
 		},
 		{
-			name:  "openai v1 path",
+			name:  "preserves openai v1 endpoints",
 			input: "https://my-resource.cognitiveservices.azure.com/openai/v1",
 			want:  "https://my-resource.cognitiveservices.azure.com/openai/v1",
 		},
 		{
-			name:  "non azure proxy path",
+			name:  "preserves explicit non-Azure proxy paths",
 			input: "https://my-proxy.example.com/v1",
 			want:  "https://my-proxy.example.com/v1",
 		},
 		{
-			name:  "azure query stripped",
+			name:  "strips query params when normalizing Azure host URLs",
 			input: "https://my-resource.openai.azure.com/openai?api-version=2024-12-01",
 			want:  "https://my-resource.openai.azure.com/openai/v1",
 		},
 		{
-			name:  "proxy query preserved",
+			name:  "preserves query params on non-Azure proxy URLs",
 			input: "https://my-proxy.example.com/v1?custom=true",
 			want:  "https://my-proxy.example.com/v1?custom=true",
 		},
@@ -55,9 +55,11 @@ func TestNormalizeAzureOpenAIBaseURL(t *testing.T) {
 			}
 		})
 	}
-	if _, err := NormalizeAzureOpenAIBaseURL("not-a-url"); err == nil {
-		t.Fatal("expected invalid URL error")
-	}
+	t.Run("throws on invalid URLs", func(t *testing.T) {
+		if _, err := NormalizeAzureOpenAIBaseURL("not-a-url"); err == nil {
+			t.Fatal("expected invalid URL error")
+		}
+	})
 }
 
 func TestResolveAzureOpenAIConfigBuildsDefaultFromResourceName(t *testing.T) {
@@ -73,20 +75,20 @@ func TestResolveAzureOpenAIConfigBuildsDefaultFromResourceName(t *testing.T) {
 }
 
 func TestResolveBedrockClientConfig(t *testing.T) {
-	t.Run("built in EU inference profile has EU endpoint", func(t *testing.T) {
+	t.Run("assigns eu-central-1 runtime URLs to built-in EU inference profiles", func(t *testing.T) {
 		model := MustGetModel("amazon-bedrock", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0")
 		if model.BaseURL != "https://bedrock-runtime.eu-central-1.amazonaws.com" {
 			t.Fatalf("base URL = %q", model.BaseURL)
 		}
 	})
-	t.Run("does not pin standard endpoint when region configured", func(t *testing.T) {
+	t.Run("does not pin standard AWS endpoints when AWS_REGION is configured", func(t *testing.T) {
 		t.Setenv("AWS_REGION", "us-east-2")
 		config := ResolveBedrockClientConfig(MustGetModel("amazon-bedrock", "us.anthropic.claude-opus-4-7"), BedrockClientOptions{})
 		if config.Region != "us-east-2" || config.Endpoint != "" {
 			t.Fatalf("config = %#v", config)
 		}
 	})
-	t.Run("derives region from built in EU endpoint", func(t *testing.T) {
+	t.Run("derives region from a built-in EU endpoint when no region or profile is configured", func(t *testing.T) {
 		config := ResolveBedrockClientConfig(MustGetModel("amazon-bedrock", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"), BedrockClientOptions{})
 		if config.Region != "eu-central-1" || config.Endpoint != "https://bedrock-runtime.eu-central-1.amazonaws.com" {
 			t.Fatalf("config = %#v", config)
@@ -112,10 +114,10 @@ func TestResolveGoogleVertexClientConfig(t *testing.T) {
 		wantAPIKey string
 		wantADC    bool
 	}{
-		{name: "placeholder option uses ADC", options: GoogleVertexOptions{APIKey: "<authenticated>", Project: "test-project", Location: "us-central1"}, wantADC: true},
-		{name: "credentials marker option uses ADC", options: GoogleVertexOptions{APIKey: GCPVertexCredentialsMarker, Project: "test-project", Location: "us-central1"}, wantADC: true},
-		{name: "placeholder env uses ADC", envAPIKey: "<authenticated>", options: GoogleVertexOptions{Project: "test-project", Location: "us-central1"}, wantADC: true},
-		{name: "real key uses API key client", options: GoogleVertexOptions{APIKey: "AIzaSyExampleRealisticLookingApiKey123456"}, wantAPIKey: "AIzaSyExampleRealisticLookingApiKey123456"},
+		{name: "falls back to ADC when options.apiKey is a placeholder marker", options: GoogleVertexOptions{APIKey: "<authenticated>", Project: "test-project", Location: "us-central1"}, wantADC: true},
+		{name: "falls back to ADC when options.apiKey is the gcp-vertex-credentials marker", options: GoogleVertexOptions{APIKey: GCPVertexCredentialsMarker, Project: "test-project", Location: "us-central1"}, wantADC: true},
+		{name: "falls back to ADC when GOOGLE_CLOUD_API_KEY is a placeholder marker", envAPIKey: "<authenticated>", options: GoogleVertexOptions{Project: "test-project", Location: "us-central1"}, wantADC: true},
+		{name: "still uses the API key client for real API keys", options: GoogleVertexOptions{APIKey: "AIzaSyExampleRealisticLookingApiKey123456"}, wantAPIKey: "AIzaSyExampleRealisticLookingApiKey123456"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -135,23 +137,43 @@ func TestResolveGoogleVertexClientConfig(t *testing.T) {
 }
 
 func TestResolveGoogleVertexCustomBaseURL(t *testing.T) {
-	model := MustGetModel("google-vertex", "gemini-3-flash-preview")
-	config := ResolveGoogleVertexClientConfig(model, GoogleVertexOptions{Project: "test-project", Location: "us-central1"})
-	if config.HTTPOptions != nil {
-		t.Fatalf("generated placeholder base URL should be omitted: %#v", config.HTTPOptions)
-	}
+	t.Run("does not forward generated Vertex base URL placeholders", func(t *testing.T) {
+		model := MustGetModel("google-vertex", "gemini-3-flash-preview")
+		config := ResolveGoogleVertexClientConfig(model, GoogleVertexOptions{Project: "test-project", Location: "us-central1"})
+		if config.HTTPOptions != nil {
+			t.Fatalf("generated placeholder base URL should be omitted: %#v", config.HTTPOptions)
+		}
+	})
 
-	model.BaseURL = "https://proxy.example.com"
-	config = ResolveGoogleVertexClientConfig(model, GoogleVertexOptions{Project: "test-project", Location: "us-central1"})
-	if config.HTTPOptions == nil || config.HTTPOptions.BaseURL != "https://proxy.example.com" || config.HTTPOptions.BaseURLResourceScope != "COLLECTION" {
-		t.Fatalf("http options = %#v", config.HTTPOptions)
-	}
+	t.Run("forwards custom baseUrl to the ADC client", func(t *testing.T) {
+		model := MustGetModel("google-vertex", "gemini-3-flash-preview")
+		model.BaseURL = "https://proxy.example.com"
+		config := ResolveGoogleVertexClientConfig(model, GoogleVertexOptions{Project: "test-project", Location: "us-central1"})
+		if config.HTTPOptions == nil || config.HTTPOptions.BaseURL != "https://proxy.example.com" || config.HTTPOptions.BaseURLResourceScope != "COLLECTION" {
+			t.Fatalf("http options = %#v", config.HTTPOptions)
+		}
+	})
 
-	model.BaseURL = "https://proxy.example.com/v1/projects/test-project/locations/global"
-	config = ResolveGoogleVertexClientConfig(model, GoogleVertexOptions{Project: "test-project", Location: "us-central1"})
-	if config.HTTPOptions == nil || config.HTTPOptions.APIVersion != "" {
-		t.Fatalf("http options = %#v", config.HTTPOptions)
-	}
+	t.Run("forwards custom baseUrl to the API key client", func(t *testing.T) {
+		model := MustGetModel("google-vertex", "gemini-3-flash-preview")
+		model.BaseURL = "https://proxy.example.com"
+		config := ResolveGoogleVertexClientConfig(model, GoogleVertexOptions{APIKey: "AIzaSyExampleRealisticLookingApiKey123456"})
+		if config.HTTPOptions == nil || config.HTTPOptions.BaseURL != "https://proxy.example.com" || config.HTTPOptions.BaseURLResourceScope != "COLLECTION" {
+			t.Fatalf("http options = %#v", config.HTTPOptions)
+		}
+		if config.APIKey != "AIzaSyExampleRealisticLookingApiKey123456" || config.Project != "" || config.Location != "" {
+			t.Fatalf("config = %#v", config)
+		}
+	})
+
+	t.Run("does not append apiVersion when custom baseUrl already includes one", func(t *testing.T) {
+		model := MustGetModel("google-vertex", "gemini-3-flash-preview")
+		model.BaseURL = "https://proxy.example.com/v1/projects/test-project/locations/global"
+		config := ResolveGoogleVertexClientConfig(model, GoogleVertexOptions{Project: "test-project", Location: "us-central1"})
+		if config.HTTPOptions == nil || config.HTTPOptions.APIVersion != "" {
+			t.Fatalf("http options = %#v", config.HTTPOptions)
+		}
+	})
 }
 
 func TestResolveHTTPProxyURLForTarget(t *testing.T) {

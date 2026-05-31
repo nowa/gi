@@ -17,7 +17,7 @@ func NewOpenAICompletionsProvider(client HTTPDoer) OpenAICompletionsProvider {
 }
 
 func init() {
-	RegisterAPIProvider("openai-completions", NewOpenAICompletionsProvider(nil))
+	RegisterBuiltInAPIProvider("openai-completions", NewOpenAICompletionsProvider(nil))
 }
 
 func (p OpenAICompletionsProvider) Stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {
@@ -64,7 +64,15 @@ func (p OpenAICompletionsProvider) StreamSimple(model Model, llmContext Context,
 		Headers:        options.Headers,
 	})
 	headers["Authorization"] = "Bearer " + apiKey
-	response, err := postSSE(ctx, httpClientOrDefault(p.Client), chatCompletionsEndpoint(model.BaseURL), headers, payloadAny)
+	baseURL := model.BaseURL
+	if IsCloudflareProvider(model.Provider) {
+		var err error
+		baseURL, err = ResolveCloudflareBaseURL(model)
+		if err != nil {
+			return streamError(model, "%s", err.Error()), nil
+		}
+	}
+	response, err := postSSE(ctx, httpClientOrDefault(p.Client), chatCompletionsEndpoint(baseURL), headers, payloadAny)
 	if err != nil {
 		return streamError(model, "request failed: %v", err), nil
 	}

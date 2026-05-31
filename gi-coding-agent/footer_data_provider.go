@@ -12,7 +12,7 @@ import (
 const (
 	defaultFooterWatchDebounce   = 500 * time.Millisecond
 	defaultFooterWatchPoll       = 250 * time.Millisecond
-	defaultFooterWatchRetryDelay = 5 * time.Second
+	defaultFooterWatchRetryDelay = FSWatchRetryDelay
 )
 
 type FooterGitBranchResolver func(repoDir string) (branch string, ok bool)
@@ -43,7 +43,7 @@ type FooterDataProvider struct {
 	refreshTimer           *time.Timer
 	refreshInFlight        bool
 	refreshPending         bool
-	gitWatcherStop         chan struct{}
+	gitWatcher             FSWatcher
 	gitWatcherActive       bool
 	gitWatcherRetryTimer   *time.Timer
 	disposed               bool
@@ -53,13 +53,6 @@ type footerGitPaths struct {
 	repoDir      string
 	commonGitDir string
 	headPath     string
-}
-
-type footerPathSnapshot struct {
-	exists  bool
-	modTime time.Time
-	size    int64
-	isDir   bool
 }
 
 func NewFooterDataProvider(cwd string, options ...FooterDataProviderOptions) *FooterDataProvider {
@@ -227,43 +220,36 @@ func (p *FooterDataProvider) resolveGitBranch() string {
 
 func (p *FooterDataProvider) setupGitWatcher() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.clearGitWatchersLocked()
 	if p.disposed || p.disableWatchers || p.gitPaths == nil {
+		p.mu.Unlock()
 		return
 	}
+	gitPaths := p.gitPaths
 	paths := p.watchPathsLocked()
-	snapshots := make(map[string]footerPathSnapshot, len(paths))
-	for _, path := range paths {
-		snapshots[path] = snapshotFooterPath(path)
-	}
-	stop := make(chan struct{})
-	p.gitWatcherStop = stop
-	p.gitWatcherActive = true
 	interval := p.watchPollInterval
-	go p.pollGitWatchPaths(stop, interval, snapshots)
-}
+	p.mu.Unlock()
 
-func (p *FooterDataProvider) pollGitWatchPaths(stop <-chan struct{}, interval time.Duration, snapshots map[string]footerPathSnapshot) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ticker.C:
-			changed := false
-			for path, previous := range snapshots {
-				current := snapshotFooterPath(path)
-				if current != previous {
-					snapshots[path] = current
-					changed = true
-				}
-			}
-			if changed {
-				p.scheduleRefresh()
-			}
-		}
+	watcher := WatchPathsWithErrorHandler(paths, func(string) {
+		p.scheduleRefresh()
+	}, func() {
+		p.handleGitWatcherError()
+	}, FSWatchOptions{PollInterval: interval})
+	if watcher == nil {
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.disposed || p.disableWatchers || p.gitPaths != gitPaths {
+		CloseWatcher(watcher)
+		return
+	}
+	p.gitWatcher = watcher
+	p.gitWatcherActive = true
+	if p.gitWatcherRetryTimer != nil {
+		p.gitWatcherRetryTimer.Stop()
+		p.gitWatcherRetryTimer = nil
 	}
 }
 
@@ -392,27 +378,14 @@ func (p *FooterDataProvider) stopRefreshTimerLocked() {
 }
 
 func (p *FooterDataProvider) clearGitWatchersLocked() {
-	if p.gitWatcherStop != nil {
-		close(p.gitWatcherStop)
-		p.gitWatcherStop = nil
+	if p.gitWatcher != nil {
+		CloseWatcher(p.gitWatcher)
+		p.gitWatcher = nil
 	}
 	p.gitWatcherActive = false
 	if p.gitWatcherRetryTimer != nil {
 		p.gitWatcherRetryTimer.Stop()
 		p.gitWatcherRetryTimer = nil
-	}
-}
-
-func snapshotFooterPath(path string) footerPathSnapshot {
-	stat, err := os.Stat(path)
-	if err != nil {
-		return footerPathSnapshot{}
-	}
-	return footerPathSnapshot{
-		exists:  true,
-		modTime: stat.ModTime(),
-		size:    stat.Size(),
-		isDir:   stat.IsDir(),
 	}
 }
 

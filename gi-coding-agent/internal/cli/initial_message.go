@@ -1,4 +1,4 @@
-package gicodingagent
+package cli
 
 import llm "github.com/nowa/gi/gi-llm-provider"
 

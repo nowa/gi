@@ -44,15 +44,27 @@ func TestPackageManagerProgressPiParity(t *testing.T) {
 
 	t.Run("install recognizes github HTTPS URL without git prefix", func(t *testing.T) {
 		var events []PackageProgressEvent
+		var cloneTarget string
 		manager := NewDefaultPackageManager(PackageManagerOptions{
 			CWD:             t.TempDir(),
 			AgentDir:        t.TempDir(),
 			SettingsManager: NewInMemorySettingsManager(nil),
 			Progress:        func(event PackageProgressEvent) { events = append(events, event) },
+			Operations: PackageManagerOperations{
+				RunCommand: func(command string, args []string, _ PackageCommandOptions) error {
+					if command == "git" && len(args) == 3 && args[0] == "clone" {
+						cloneTarget = args[2]
+					}
+					return nil
+				},
+			},
 		})
 
 		if err := manager.Install("https://github.com/nonexistent/repo", false); err != nil {
 			t.Fatal(err)
+		}
+		if cloneTarget == "" {
+			t.Fatal("git clone was not invoked for HTTPS source")
 		}
 		parsed := manager.ParseSource("https://github.com/nonexistent/repo")
 		if parsed.Type != "git" || parsed.Host != "github.com" || parsed.Path != "nonexistent/repo" {

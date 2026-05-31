@@ -341,6 +341,27 @@ func TestDefaultModelSelectionCompatibilityCases(t *testing.T) {
 	assertResolvedModel(t, result.Model, "vercel-ai-gateway", "anthropic/claude-opus-4-6")
 }
 
+func TestFindInitialModelUsesFirstScopedModelBeforeSettingsDefaultPiParity(t *testing.T) {
+	result := FindInitialModel(FindInitialModelOptions{
+		ScopedModels: []ScopedModel{
+			{Model: resolverMockModels[0], ThinkingLevel: ThinkingHigh},
+			{Model: resolverMockModels[1], ThinkingLevel: ThinkingOff},
+		},
+		DefaultProvider:      resolverMockModels[1].Provider,
+		DefaultModelID:       resolverMockModels[1].ID,
+		DefaultThinkingLevel: ThinkingLow,
+		ModelRegistry: resolverTestRegistry{
+			all:       resolverAllModels,
+			available: resolverAllModels,
+		},
+	})
+
+	assertResolvedModel(t, result.Model, resolverMockModels[0].Provider, resolverMockModels[0].ID)
+	if result.ThinkingLevel != ThinkingHigh {
+		t.Fatalf("thinking level = %q, want first scoped model level %q", result.ThinkingLevel, ThinkingHigh)
+	}
+}
+
 func assertResolvedModel(t *testing.T, model *llm.Model, provider, id string) {
 	t.Helper()
 	if model == nil {

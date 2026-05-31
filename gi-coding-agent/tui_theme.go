@@ -502,6 +502,13 @@ func tuiThemeBold(text string) string {
 	return "\x1b[1m" + text + tuiResetAll
 }
 
+func tuiThemeItalic(text string) string {
+	if text == "" {
+		return text
+	}
+	return "\x1b[3m" + text + "\x1b[23m"
+}
+
 func tuiThemeBoldAccent(text string) string {
 	if text == "" {
 		return text
@@ -638,7 +645,7 @@ func tuiThemeMarkdown() gitui.MarkdownTheme {
 		HR:              func(text string) string { return tuiThemeFG("mdHr", text) },
 		ListBullet:      func(text string) string { return tuiThemeFG("mdListBullet", text) },
 		Bold:            tuiThemeBold,
-		Italic:          func(text string) string { return "\x1b[3m" + text + "\x1b[23m" },
+		Italic:          tuiThemeItalic,
 		Underline:       func(text string) string { return "\x1b[4m" + text + "\x1b[24m" },
 		Strikethrough:   func(text string) string { return "\x1b[9m" + text + "\x1b[29m" },
 	}

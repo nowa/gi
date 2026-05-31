@@ -44,8 +44,12 @@ func TestEditToolExecutionLargeDiffSettlesWithoutFullRedraw(t *testing.T) {
 	component.SetArgsComplete()
 	ui.RequestRender()
 	callOnlyRender := strings.Join(component.Render(80), "\n")
-	if !strings.Contains(callOnlyRender, "edit") || !strings.Contains(callOnlyRender, "line 50 changed") || !strings.Contains(callOnlyRender, "line 950 changed") {
+	callOnlyPlain := StripAnsi(callOnlyRender)
+	if !strings.Contains(callOnlyPlain, "edit") || !strings.Contains(callOnlyPlain, "line 50 changed") || !strings.Contains(callOnlyPlain, "line 950 changed") {
 		t.Fatalf("call preview render = %q", callOnlyRender)
+	}
+	if !strings.Contains(callOnlyRender, "\x1b[7mchanged\x1b[27m") {
+		t.Fatalf("call preview should use Pi-style inline diff highlighting: %q", callOnlyRender)
 	}
 
 	redrawsBeforeResult := ui.FullRedraws()
@@ -63,7 +67,8 @@ func TestEditToolExecutionLargeDiffSettlesWithoutFullRedraw(t *testing.T) {
 		t.Fatalf("full clears = %d, want %d", got, clearsBeforeResult)
 	}
 	settledRender := strings.Join(component.Render(80), "\n")
-	if !strings.Contains(settledRender, "line 50 changed") || !strings.Contains(settledRender, "line 950 changed") {
+	settledPlain := StripAnsi(settledRender)
+	if !strings.Contains(settledPlain, "line 50 changed") || !strings.Contains(settledPlain, "line 950 changed") {
 		t.Fatalf("settled render = %q", settledRender)
 	}
 	if strings.Contains(settledRender, "Successfully replaced") {
@@ -100,7 +105,8 @@ func TestEditToolExecutionReconstructsPreviewFromSettledResult(t *testing.T) {
 	}, false)
 
 	rendered := strings.Join(component.Render(80), "\n")
-	if !strings.Contains(rendered, "line 50 changed") || !strings.Contains(rendered, "line 150 changed") {
+	renderedPlain := StripAnsi(rendered)
+	if !strings.Contains(renderedPlain, "line 50 changed") || !strings.Contains(renderedPlain, "line 150 changed") {
 		t.Fatalf("rendered replay = %q", rendered)
 	}
 	if strings.Contains(rendered, "Successfully replaced") {

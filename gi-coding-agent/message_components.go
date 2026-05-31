@@ -1,5 +1,9 @@
 package gicodingagent
 
+import (
+	llm "github.com/nowa/gi/gi-llm-provider"
+)
+
 const (
 	OSC133ZoneStart = "\x1b]133;A\x07"
 	OSC133ZoneEnd   = "\x1b]133;B\x07"
@@ -17,7 +21,9 @@ type AssistantContentBlock struct {
 }
 
 type AssistantMessageComponent struct {
-	Content []AssistantContentBlock
+	Content             []AssistantContentBlock
+	HideThinkingBlock   bool
+	HiddenThinkingLabel string
 }
 
 func NewAssistantMessageComponent(content []AssistantContentBlock) AssistantMessageComponent {
@@ -25,44 +31,31 @@ func NewAssistantMessageComponent(content []AssistantContentBlock) AssistantMess
 }
 
 func (c AssistantMessageComponent) Render(width int) []string {
-	lines := c.renderContent(width)
-	if c.hasToolCalls() || len(lines) == 0 {
+	message := c.message()
+	lines := renderCLIAssistantMessage(message, width, c.HideThinkingBlock, c.HiddenThinkingLabel)
+	if assistantMessageHasToolCalls(message) || len(lines) == 0 {
 		return lines
 	}
-	lines[0] = OSC133ZoneStart + lines[0]
-	lines[len(lines)-1] = OSC133ZoneEnd + OSC133ZoneFinal + lines[len(lines)-1]
-	return lines
+	return cliOSC133WrappedLines(lines)
 }
 
-func (c AssistantMessageComponent) renderContent(_ int) []string {
-	lines := []string{}
+func (c AssistantMessageComponent) message() llm.Message {
+	message := llm.Message{Role: llm.RoleAssistant, StopReason: llm.StopReasonStop}
 	for _, block := range c.Content {
 		switch block.Type {
 		case "text":
 			if block.Text != "" {
-				lines = append(lines, block.Text)
+				message.Content = append(message.Content, llm.Text(block.Text))
 			}
 		case "thinking":
 			if block.Thinking != "" {
-				lines = append(lines, block.Thinking)
+				message.Content = append(message.Content, llm.Thinking(block.Thinking))
 			}
 		case "toolCall":
-			lines = append(lines, block.Name)
+			message.Content = append(message.Content, llm.ToolCall(block.ID, block.Name, block.Arguments))
 		}
 	}
-	if len(lines) == 0 {
-		return nil
-	}
-	return append([]string{""}, lines...)
-}
-
-func (c AssistantMessageComponent) hasToolCalls() bool {
-	for _, block := range c.Content {
-		if block.Type == "toolCall" {
-			return true
-		}
-	}
-	return false
+	return message
 }
 
 type UserMessageComponent struct {
@@ -73,10 +66,6 @@ func NewUserMessageComponent(text string) UserMessageComponent {
 	return UserMessageComponent{Text: text}
 }
 
-func (c UserMessageComponent) Render(_ int) []string {
-	return []string{
-		OSC133ZoneStart + TerminalBGReset,
-		c.Text,
-		OSC133ZoneEnd + OSC133ZoneFinal + TerminalBGReset,
-	}
+func (c UserMessageComponent) Render(width int) []string {
+	return newCLIUserMessageComponent(c.Text).Render(width)
 }

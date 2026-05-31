@@ -16,6 +16,12 @@ func TestSanitizeSurrogatesKeepsValidUTF8AndDropsInvalidSequences(t *testing.T) 
 	if got != "before  after" {
 		t.Fatalf("invalid surrogate sanitized = %q", got)
 	}
+	t.Run("should handle real-world LinkedIn comment data with emoji", func(t *testing.T) {
+		comment := "Great post! 🚀 Thanks for sharing 🙌"
+		if got := SanitizeSurrogates(comment); got != comment {
+			t.Fatalf("comment sanitized = %q, want %q", got, comment)
+		}
+	})
 }
 
 func TestTransformMessagesDowngradesImagesForTextOnlyModels(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -43,6 +44,34 @@ type OpenAICodexResponsesPayload struct {
 
 type OpenAICodexProcessOptions struct {
 	ServiceTier string
+}
+
+type OpenAICodexWebSocketDebugStats struct {
+	Requests                int    `json:"requests"`
+	ConnectionsCreated      int    `json:"connectionsCreated"`
+	ConnectionsReused       int    `json:"connectionsReused"`
+	CachedContextRequests   int    `json:"cachedContextRequests"`
+	StoreTrueRequests       int    `json:"storeTrueRequests"`
+	FullContextRequests     int    `json:"fullContextRequests"`
+	DeltaRequests           int    `json:"deltaRequests"`
+	LastInputItems          int    `json:"lastInputItems"`
+	LastDeltaInputItems     *int   `json:"lastDeltaInputItems,omitempty"`
+	LastPreviousResponseID  string `json:"lastPreviousResponseId,omitempty"`
+	WebSocketFailures       int    `json:"websocketFailures"`
+	SSEFallbacks            int    `json:"sseFallbacks"`
+	WebSocketFallbackActive bool   `json:"websocketFallbackActive,omitempty"`
+	LastWebSocketError      string `json:"lastWebSocketError,omitempty"`
+}
+
+var openAICodexWebSocketState = struct {
+	sync.Mutex
+	stats            map[string]OpenAICodexWebSocketDebugStats
+	sseFallbacks     map[string]bool
+	cachedSessionIDs map[string]bool
+}{
+	stats:            map[string]OpenAICodexWebSocketDebugStats{},
+	sseFallbacks:     map[string]bool{},
+	cachedSessionIDs: map[string]bool{},
 }
 
 func BuildOpenAICodexResponsesPayload(model Model, context Context, options OpenAICodexResponsesPayloadOptions) OpenAICodexResponsesPayload {
@@ -89,6 +118,76 @@ func BuildOpenAICodexResponsesPayload(model Model, context Context, options Open
 		}
 	}
 	return payload
+}
+
+func GetOpenAICodexWebSocketDebugStats(sessionID string) (OpenAICodexWebSocketDebugStats, bool) {
+	openAICodexWebSocketState.Lock()
+	defer openAICodexWebSocketState.Unlock()
+	stats, ok := openAICodexWebSocketState.stats[sessionID]
+	return stats, ok
+}
+
+func ResetOpenAICodexWebSocketDebugStats(sessionIDs ...string) {
+	openAICodexWebSocketState.Lock()
+	defer openAICodexWebSocketState.Unlock()
+	if len(sessionIDs) > 0 && strings.TrimSpace(sessionIDs[0]) != "" {
+		sessionID := strings.TrimSpace(sessionIDs[0])
+		delete(openAICodexWebSocketState.stats, sessionID)
+		delete(openAICodexWebSocketState.sseFallbacks, sessionID)
+		return
+	}
+	openAICodexWebSocketState.stats = map[string]OpenAICodexWebSocketDebugStats{}
+	openAICodexWebSocketState.sseFallbacks = map[string]bool{}
+}
+
+func CloseOpenAICodexWebSocketSessions(sessionIDs ...string) {
+	openAICodexWebSocketState.Lock()
+	defer openAICodexWebSocketState.Unlock()
+	if len(sessionIDs) > 0 && strings.TrimSpace(sessionIDs[0]) != "" {
+		delete(openAICodexWebSocketState.cachedSessionIDs, strings.TrimSpace(sessionIDs[0]))
+		return
+	}
+	openAICodexWebSocketState.cachedSessionIDs = map[string]bool{}
+}
+
+func isOpenAICodexWebSocketSSEFallbackActive(sessionID string) bool {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return false
+	}
+	openAICodexWebSocketState.Lock()
+	defer openAICodexWebSocketState.Unlock()
+	return openAICodexWebSocketState.sseFallbacks[sessionID]
+}
+
+func recordOpenAICodexWebSocketSSEFallback(sessionID string) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return
+	}
+	openAICodexWebSocketState.Lock()
+	defer openAICodexWebSocketState.Unlock()
+	stats := openAICodexWebSocketState.stats[sessionID]
+	stats.SSEFallbacks++
+	stats.WebSocketFallbackActive = openAICodexWebSocketState.sseFallbacks[sessionID]
+	openAICodexWebSocketState.stats[sessionID] = stats
+}
+
+func recordOpenAICodexWebSocketFailure(sessionID string, err error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return
+	}
+	openAICodexWebSocketState.Lock()
+	defer openAICodexWebSocketState.Unlock()
+	openAICodexWebSocketState.sseFallbacks[sessionID] = true
+	stats := openAICodexWebSocketState.stats[sessionID]
+	stats.WebSocketFailures++
+	stats.WebSocketFallbackActive = true
+	if err != nil {
+		stats.LastWebSocketError = err.Error()
+	}
+	openAICodexWebSocketState.stats[sessionID] = stats
 }
 
 func BuildOpenAICodexSSEHeaders(modelHeaders, optionHeaders map[string]string, token, sessionID string) (map[string]string, error) {

@@ -1,31 +1,21 @@
 package gicodingagent
 
-import (
-	"strings"
-)
+import authguide "github.com/nowa/gi/gi-coding-agent/internal/authguide"
 
-const unknownProvider = "unknown"
+const unknownProvider = authguide.UnknownProvider
 
 func providerLoginHelp() string {
-	return strings.Join([]string{
-		"Use /login to log into a provider via OAuth or API key. See:",
-		"  " + giDocumentationFilePath("", "providers.md"),
-		"  " + giDocumentationFilePath("", "models.md"),
-	}, "\n")
+	return authguide.ProviderLoginHelp(giDocumentationFilePath)
 }
 
 func formatNoModelsAvailableMessage() string {
-	return "No models available. " + providerLoginHelp()
+	return authguide.FormatNoModelsAvailableMessage(giDocumentationFilePath)
 }
 
 func formatNoModelSelectedMessage() string {
-	return "No model selected.\n\n" + providerLoginHelp() + "\n\nThen use /model to select a model."
+	return authguide.FormatNoModelSelectedMessage(giDocumentationFilePath)
 }
 
 func formatNoAPIKeyFoundMessage(provider string) string {
-	providerDisplay := provider
-	if providerDisplay == "" || providerDisplay == unknownProvider {
-		providerDisplay = "the selected model"
-	}
-	return "No API key found for " + providerDisplay + ".\n\n" + providerLoginHelp()
+	return authguide.FormatNoAPIKeyFoundMessage(provider, giDocumentationFilePath)
 }

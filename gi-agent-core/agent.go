@@ -126,10 +126,12 @@ func NewAgent(options AgentOptions) *Agent {
 	if steeringMode == "" {
 		steeringMode = QueueOneAtTime
 	}
+	steeringMode = normalizeQueueMode(steeringMode)
 	followUpMode := options.FollowUpMode
 	if followUpMode == "" {
 		followUpMode = QueueOneAtTime
 	}
+	followUpMode = normalizeQueueMode(followUpMode)
 	transport := options.Transport
 	if transport == "" {
 		transport = "auto"
@@ -276,6 +278,30 @@ func (a *Agent) Steer(message llm.Message) {
 
 func (a *Agent) FollowUp(message llm.Message) {
 	a.followUpQueue.enqueue(message)
+}
+
+func (a *Agent) SteeringMode() string {
+	a.steeringQueue.mu.Lock()
+	defer a.steeringQueue.mu.Unlock()
+	return a.steeringQueue.mode
+}
+
+func (a *Agent) SetSteeringMode(mode string) {
+	a.steeringQueue.mu.Lock()
+	defer a.steeringQueue.mu.Unlock()
+	a.steeringQueue.mode = normalizeQueueMode(mode)
+}
+
+func (a *Agent) FollowUpMode() string {
+	a.followUpQueue.mu.Lock()
+	defer a.followUpQueue.mu.Unlock()
+	return a.followUpQueue.mode
+}
+
+func (a *Agent) SetFollowUpMode(mode string) {
+	a.followUpQueue.mu.Lock()
+	defer a.followUpQueue.mu.Unlock()
+	a.followUpQueue.mode = normalizeQueueMode(mode)
 }
 
 func (a *Agent) ClearSteeringQueue() { a.steeringQueue.clear() }
@@ -498,6 +524,13 @@ type pendingMessageQueue struct {
 	mu       sync.Mutex
 	mode     string
 	messages []llm.Message
+}
+
+func normalizeQueueMode(mode string) string {
+	if mode == QueueAll {
+		return QueueAll
+	}
+	return QueueOneAtTime
 }
 
 func (q *pendingMessageQueue) enqueue(message llm.Message) {

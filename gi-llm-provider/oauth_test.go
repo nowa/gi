@@ -8,21 +8,25 @@ import (
 )
 
 func TestAnthropicOAuthTokenRequests(t *testing.T) {
-	exchange := BuildAnthropicAuthorizationCodeTokenRequest("manual-code", "http://localhost:53692/callback")
-	if exchange.URL != AnthropicOAuthTokenURL {
-		t.Fatalf("url = %q", exchange.URL)
-	}
-	if exchange.Body["grant_type"] != "authorization_code" || exchange.Body["code"] != "manual-code" || exchange.Body["redirect_uri"] != "http://localhost:53692/callback" {
-		t.Fatalf("exchange body = %#v", exchange.Body)
-	}
+	t.Run("keeps localhost redirect URI for manual callback login", func(t *testing.T) {
+		exchange := BuildAnthropicAuthorizationCodeTokenRequest("manual-code", "http://localhost:53692/callback")
+		if exchange.URL != AnthropicOAuthTokenURL {
+			t.Fatalf("url = %q", exchange.URL)
+		}
+		if exchange.Body["grant_type"] != "authorization_code" || exchange.Body["code"] != "manual-code" || exchange.Body["redirect_uri"] != "http://localhost:53692/callback" {
+			t.Fatalf("exchange body = %#v", exchange.Body)
+		}
+	})
 
-	refresh := BuildAnthropicRefreshTokenRequest("refresh-token")
-	if refresh.Body["grant_type"] != "refresh_token" || refresh.Body["refresh_token"] != "refresh-token" || refresh.Body["client_id"] == "" {
-		t.Fatalf("refresh body = %#v", refresh.Body)
-	}
-	if _, ok := refresh.Body["scope"]; ok {
-		t.Fatalf("refresh request must omit scope: %#v", refresh.Body)
-	}
+	t.Run("omits scope from refresh token requests", func(t *testing.T) {
+		refresh := BuildAnthropicRefreshTokenRequest("refresh-token")
+		if refresh.Body["grant_type"] != "refresh_token" || refresh.Body["refresh_token"] != "refresh-token" || refresh.Body["client_id"] == "" {
+			t.Fatalf("refresh body = %#v", refresh.Body)
+		}
+		if _, ok := refresh.Body["scope"]; ok {
+			t.Fatalf("refresh request must omit scope: %#v", refresh.Body)
+		}
+	})
 }
 
 func TestGitHubCopilotPollScheduleSlowDown(t *testing.T) {
@@ -67,9 +71,12 @@ func TestGitHubCopilotBaseURLFromToken(t *testing.T) {
 	if got := GitHubCopilotBaseURL("", "example.com"); got != "https://copilot-api.example.com" {
 		t.Fatalf("enterprise base URL = %q", got)
 	}
+	if got := GitHubCopilotBaseURL("", ""); got != "https://api.individual.githubcopilot.com" {
+		t.Fatalf("default base URL = %q", got)
+	}
 }
 
-func TestOpenAICodexRefreshErrorMessage(t *testing.T) {
+func TestOpenAICodexOAuthDoesNotWriteTokenRefreshFailuresToStderr(t *testing.T) {
 	err := OpenAICodexRefreshError(401, "Unauthorized", `{"error":{"message":"Could not validate your token. Please try signing in again.","type":"invalid_request_error"}}`)
 	if err == nil || !strings.Contains(err.Error(), "OpenAI Codex token refresh failed (401)") || !strings.Contains(err.Error(), "Could not validate your token") {
 		t.Fatalf("err = %v", err)

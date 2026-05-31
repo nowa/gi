@@ -369,6 +369,100 @@ func TestAgentSessionRetryEventsPiParityMessageUpdateStreamingDeltas(t *testing.
 	}
 }
 
+func TestAgentSessionStreamResponderPiParityUsesProviderStreamingEvents(t *testing.T) {
+	manager, err := InMemorySessionManager(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := llm.MustGetModel("anthropic", "claude-sonnet-4-5")
+	session, err := CreateAgentSession(AgentSessionOptions{
+		CWD:            manager.GetCWD(),
+		AgentDir:       t.TempDir(),
+		Model:          model,
+		SessionManager: manager,
+		StreamResponder: func(_ string, _ []llm.Message, model llm.Model) (*llm.AssistantMessageEventStream, error) {
+			stream := llm.NewAssistantMessageEventStream()
+			go func() {
+				final := llm.Message{
+					Role:       llm.RoleAssistant,
+					Content:    []llm.ContentPart{llm.Text("hello")},
+					Provider:   model.Provider,
+					Model:      model.ID,
+					API:        model.API,
+					StopReason: llm.StopReasonStop,
+				}
+				partial := final
+				partial.Content = nil
+				stream.Push(llm.AssistantMessageEvent{Type: "start", Partial: partial})
+				partial.Content = []llm.ContentPart{llm.Text("")}
+				stream.Push(llm.AssistantMessageEvent{Type: "text_start", ContentIndex: 0, Partial: partial})
+				partial.Content[0].Text = "he"
+				stream.Push(llm.AssistantMessageEvent{Type: "text_delta", ContentIndex: 0, Delta: "he", Partial: partial})
+				partial.Content[0].Text = "hello"
+				stream.Push(llm.AssistantMessageEvent{Type: "text_delta", ContentIndex: 0, Delta: "llo", Partial: partial})
+				stream.Push(llm.AssistantMessageEvent{Type: "text_end", ContentIndex: 0, Content: "hello", Partial: partial})
+				stream.Push(llm.AssistantMessageEvent{Type: "done", Reason: llm.StopReasonStop, Message: final})
+			}()
+			return stream, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Dispose()
+
+	var events []AgentSessionEvent
+	session.Subscribe(func(event AgentSessionEvent) {
+		events = append(events, event)
+	})
+
+	if err := session.Prompt("hi"); err != nil {
+		t.Fatal(err)
+	}
+	if got := codingHarnessDeltas(eventsOfType(events, "message_update"), "text_delta"); got != "hello" {
+		t.Fatalf("text deltas = %q", got)
+	}
+	updateTypes := []string{}
+	for _, event := range eventsOfType(events, "message_update") {
+		updateTypes = append(updateTypes, event.AssistantMessageEvent.Type)
+		if event.Message == nil || event.Message.Role != llm.RoleAssistant {
+			t.Fatalf("message_update message = %#v", event.Message)
+		}
+	}
+	if !reflect.DeepEqual(updateTypes, []string{"text_start", "text_delta", "text_delta", "text_end"}) {
+		t.Fatalf("update types = %#v", updateTypes)
+	}
+	if got := session.Messages(); len(got) != 2 || got[1].Role != llm.RoleAssistant || got[1].Content[0].Text != "hello" {
+		t.Fatalf("messages = %#v", got)
+	}
+}
+
+func TestAgentSessionMessageUpdateExtensionEventPiParity(t *testing.T) {
+	var sawUpdate bool
+	session, _, _ := createRetryEventsSession(t, AgentSessionRetrySettings{}, []llm.Message{
+		retryAssistantText("hello"),
+	}, nil, func(ctx *ProtocolExtensionContext) error {
+		return ctx.On(ProtocolEventMessageUpdate, func(event ProtocolSessionEvent) (ProtocolEventResult, error) {
+			sawUpdate = true
+			if event.Message == nil || event.Message.Role != llm.RoleAssistant {
+				t.Fatalf("message_update message = %#v", event.Message)
+			}
+			if event.AssistantMessageEvent == nil || event.AssistantMessageEvent.Type == "" {
+				t.Fatalf("assistantMessageEvent = %#v", event.AssistantMessageEvent)
+			}
+			return ProtocolEventResult{}, nil
+		})
+	})
+	defer session.Dispose()
+
+	if err := session.Prompt("hi"); err != nil {
+		t.Fatal(err)
+	}
+	if !sawUpdate {
+		t.Fatal("extension did not receive message_update")
+	}
+}
+
 func TestAgentSessionRetryEventsPiParityAgentEndForErrorResponses(t *testing.T) {
 	session, _, events := createRetryEventsSession(t, AgentSessionRetrySettings{}, []llm.Message{
 		retryAssistantError("broken"),

@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -15,7 +16,7 @@ type CompactionSettings struct {
 	KeepRecentTokens int  `json:"keepRecentTokens"`
 }
 
-var DefaultCompactionSettings = CompactionSettings{Enabled: true, ReserveTokens: 10_000, KeepRecentTokens: 20_000}
+var DefaultCompactionSettings = CompactionSettings{Enabled: true, ReserveTokens: 16_384, KeepRecentTokens: 20_000}
 
 type ContextTokenEstimate struct {
 	Tokens         int  `json:"tokens"`
@@ -60,9 +61,101 @@ type CompactOptions struct {
 	CustomInstructions string
 }
 
-const summarizationSystemPrompt = "You are a context summarization assistant. Read the conversation and produce a concise structured summary. Do not continue the conversation."
+const summarizationSystemPrompt = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI coding assistant, then produce a structured summary following the exact format specified.
+
+Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.`
+
+const summarizationPrompt = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+
+Use this EXACT format:
+
+## Goal
+[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+
+## Constraints & Preferences
+- [Any constraints, preferences, or requirements mentioned by user]
+- [Or "(none)" if none were mentioned]
+
+## Progress
+### Done
+- [x] [Completed tasks/changes]
+
+### In Progress
+- [ ] [Current work]
+
+### Blocked
+- [Issues preventing progress, if any]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale]
+
+## Next Steps
+1. [Ordered list of what should happen next]
+
+## Critical Context
+- [Any data, examples, or references needed to continue]
+- [Or "(none)" if not applicable]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`
+
+const updateSummarizationPrompt = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
+
+Update the existing structured summary with new information. RULES:
+- PRESERVE all existing information from the previous summary
+- ADD new progress, decisions, and context from the new messages
+- UPDATE the Progress section: move items from "In Progress" to "Done" when completed
+- UPDATE "Next Steps" based on what was accomplished
+- PRESERVE exact file paths, function names, and error messages
+- If something is no longer relevant, you may remove it
+
+Use this EXACT format:
+
+## Goal
+[Preserve existing goals, add new ones if the task expanded]
+
+## Constraints & Preferences
+- [Preserve existing, add new ones discovered]
+
+## Progress
+### Done
+- [x] [Include previously done items AND newly completed items]
+
+### In Progress
+- [ ] [Current work - update based on progress]
+
+### Blocked
+- [Current blockers - remove if resolved]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale] (preserve all previous, add new)
+
+## Next Steps
+1. [Update based on current state]
+
+## Critical Context
+- [Preserve important context, add new if needed]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`
+
+const turnPrefixSummarizationPrompt = `This is the PREFIX of a turn that was too large to keep. The SUFFIX (recent work) is retained.
+
+Summarize the prefix to provide context for the retained suffix:
+
+## Original Request
+[What did the user ask for in this turn?]
+
+## Early Progress
+- [Key decisions and work done in the prefix]
+
+## Context for Suffix
+- [Information needed to understand the retained recent work]
+
+Be concise. Focus on what's needed to understand the kept suffix.`
 
 func CalculateContextTokens(usage llm.Usage) int {
+	if usage.TotalTokens != 0 {
+		return usage.TotalTokens
+	}
 	return usage.Input + usage.Output + usage.CacheRead + usage.CacheWrite
 }
 
@@ -70,7 +163,7 @@ func ShouldCompact(contextTokens, contextWindow int, settings CompactionSettings
 	if !settings.Enabled {
 		return false
 	}
-	return contextTokens >= contextWindow-settings.ReserveTokens
+	return contextTokens > contextWindow-settings.ReserveTokens
 }
 
 func EstimateTokens(message llm.Message) int {
@@ -229,7 +322,7 @@ func PrepareCompaction(pathEntries []Entry, settings CompactionSettings) (*Compa
 	}
 	firstKept := pathEntries[cut.FirstKeptEntryIndex]
 	if firstKept.ID == "" {
-		return nil, newSessionError("invalid_session", "first kept entry has no ID")
+		return nil, newCompactionError(CompactionErrorInvalidSession, "first kept entry has no ID")
 	}
 	historyEnd := cut.FirstKeptEntryIndex
 	if cut.IsSplitTurn {
@@ -294,31 +387,38 @@ func SerializeConversation(messages []llm.Message) string {
 }
 
 func GenerateSummary(ctx context.Context, messages []llm.Message, model llm.Model, maxTokens int, apiKey string, previousSummary, focus, thinkingLevel string) (string, error) {
-	prompt := "Summarize the following conversation.\n"
+	basePrompt := summarizationPrompt
 	if previousSummary != "" {
-		prompt += "<previous-summary>\n" + previousSummary + "\n</previous-summary>\n"
+		basePrompt = updateSummarizationPrompt
 	}
 	if focus != "" {
-		prompt += "Additional focus: " + focus + "\n"
+		basePrompt += "\n\nAdditional focus: " + focus
 	}
-	prompt += SerializeConversation(messages)
-	options := llm.SimpleStreamOptions{APIKey: apiKey, MaxTokens: min(maxTokens, model.MaxTokens)}
+	prompt := "<conversation>\n" + SerializeConversation(messages) + "\n</conversation>\n\n"
+	if previousSummary != "" {
+		prompt += "<previous-summary>\n" + previousSummary + "\n</previous-summary>\n\n"
+	}
+	prompt += basePrompt
+	options := llm.SimpleStreamOptions{APIKey: apiKey, MaxTokens: compactionSummaryMaxTokens(maxTokens, 8, 10, model.MaxTokens)}
 	if model.Reasoning && thinkingLevel != "" && thinkingLevel != "off" {
 		options.Reasoning = thinkingLevel
 	}
 	stream, err := llm.StreamSimple(model, llm.Context{SystemPrompt: summarizationSystemPrompt, Messages: []llm.Message{llm.UserMessageText(prompt)}}, options)
 	if err != nil {
-		return "", err
+		return "", newCompactionError(CompactionErrorSummarizationFailed, "summarization failed: %v", err)
 	}
 	message, err := stream.Result(ctx)
 	if err != nil {
-		return "", err
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return "", newCompactionError(CompactionErrorAborted, "summarization aborted: %v", err)
+		}
+		return "", newCompactionError(CompactionErrorSummarizationFailed, "summarization failed: %v", err)
 	}
 	if message.StopReason == llm.StopReasonAborted {
-		return "", fmt.Errorf("aborted: %s", message.ErrorMessage)
+		return "", newCompactionError(CompactionErrorAborted, "summarization aborted: %s", message.ErrorMessage)
 	}
 	if message.StopReason == llm.StopReasonError {
-		return "", fmt.Errorf("summarization failed: %s", message.ErrorMessage)
+		return "", newCompactionError(CompactionErrorSummarizationFailed, "summarization failed: %s", message.ErrorMessage)
 	}
 	for _, part := range message.Content {
 		if part.Type == llm.ContentText {
@@ -328,13 +428,55 @@ func GenerateSummary(ctx context.Context, messages []llm.Message, model llm.Mode
 	return "", nil
 }
 
+func GenerateTurnPrefixSummary(ctx context.Context, messages []llm.Message, model llm.Model, reserveTokens int, apiKey string, thinkingLevel string) (string, error) {
+	prompt := "<conversation>\n" + SerializeConversation(messages) + "\n</conversation>\n\n" + turnPrefixSummarizationPrompt
+	options := llm.SimpleStreamOptions{APIKey: apiKey, MaxTokens: compactionSummaryMaxTokens(reserveTokens, 5, 10, model.MaxTokens)}
+	if model.Reasoning && thinkingLevel != "" && thinkingLevel != "off" {
+		options.Reasoning = thinkingLevel
+	}
+	stream, err := llm.StreamSimple(model, llm.Context{SystemPrompt: summarizationSystemPrompt, Messages: []llm.Message{llm.UserMessageText(prompt)}}, options)
+	if err != nil {
+		return "", newCompactionError(CompactionErrorSummarizationFailed, "turn prefix summarization failed: %v", err)
+	}
+	message, err := stream.Result(ctx)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return "", newCompactionError(CompactionErrorAborted, "turn prefix summarization aborted: %v", err)
+		}
+		return "", newCompactionError(CompactionErrorSummarizationFailed, "turn prefix summarization failed: %v", err)
+	}
+	if message.StopReason == llm.StopReasonAborted {
+		return "", newCompactionError(CompactionErrorAborted, "turn prefix summarization aborted: %s", message.ErrorMessage)
+	}
+	if message.StopReason == llm.StopReasonError {
+		return "", newCompactionError(CompactionErrorSummarizationFailed, "turn prefix summarization failed: %s", message.ErrorMessage)
+	}
+	for _, part := range message.Content {
+		if part.Type == llm.ContentText {
+			return part.Text, nil
+		}
+	}
+	return "", nil
+}
+
+func compactionSummaryMaxTokens(reserveTokens, numerator, denominator, modelMaxTokens int) int {
+	maxTokens := reserveTokens
+	if denominator > 0 {
+		maxTokens = reserveTokens * numerator / denominator
+	}
+	if modelMaxTokens > 0 && maxTokens > modelMaxTokens {
+		return modelMaxTokens
+	}
+	return maxTokens
+}
+
 func Compact(ctx context.Context, prep CompactionPreparation, model llm.Model, apiKey string, thinkingLevel string) (CompactionResult, error) {
 	return CompactWithOptions(ctx, prep, model, CompactOptions{APIKey: apiKey, ThinkingLevel: thinkingLevel})
 }
 
 func CompactWithOptions(ctx context.Context, prep CompactionPreparation, model llm.Model, options CompactOptions) (CompactionResult, error) {
 	if prep.FirstKeptEntryID == "" {
-		return CompactionResult{}, newSessionError("invalid_session", "invalid compaction preparation")
+		return CompactionResult{}, newCompactionError(CompactionErrorInvalidSession, "invalid compaction preparation")
 	}
 	var summary string
 	var err error
@@ -347,7 +489,7 @@ func CompactWithOptions(ctx context.Context, prep CompactionPreparation, model l
 		summary = "No prior history."
 	}
 	if len(prep.TurnPrefixMessages) > 0 {
-		prefix, err := GenerateSummary(ctx, prep.TurnPrefixMessages, model, prep.Settings.ReserveTokens, options.APIKey, "", "Summarize this prefix of a turn; the suffix remains in context.", options.ThinkingLevel)
+		prefix, err := GenerateTurnPrefixSummary(ctx, prep.TurnPrefixMessages, model, prep.Settings.ReserveTokens, options.APIKey, options.ThinkingLevel)
 		if err != nil {
 			return CompactionResult{}, err
 		}
@@ -356,29 +498,17 @@ func CompactWithOptions(ctx context.Context, prep CompactionPreparation, model l
 		}
 		summary += "**Turn Context (split turn):**\n\n" + prefix
 	}
+	readFiles, modifiedFiles := fileListsFromOps(prep.FileOps)
+	summary += formatFileOperations(readFiles, modifiedFiles)
 	return CompactionResult{
 		Summary:          summary,
 		FirstKeptEntryID: prep.FirstKeptEntryID,
 		TokensBefore:     prep.TokensBefore,
 		Details: map[string]any{
-			"readFiles":     keys(prep.FileOps.Read),
-			"writtenFiles":  keys(prep.FileOps.Written),
-			"modifiedFiles": keys(prep.FileOps.Edited),
+			"readFiles":     readFiles,
+			"modifiedFiles": modifiedFiles,
 		},
 	}, nil
-}
-
-func entryMessage(entry Entry) llm.Message {
-	switch entry.Type {
-	case "message":
-		return entry.Message
-	case "custom_message":
-		return llm.Message{Role: entry.CustomType, Content: []llm.ContentPart{llm.Text(fmt.Sprint(entry.Content))}}
-	case "branch_summary":
-		return llm.Message{Role: "branchSummary", Content: []llm.ContentPart{llm.Text(entry.Summary)}}
-	default:
-		return llm.Message{Role: "unknown"}
-	}
 }
 
 func findValidCutPoints(entries []Entry, start, end int) []int {
@@ -412,7 +542,7 @@ func entriesToMessages(entries []Entry) []llm.Message {
 func collectFileOps(entries []Entry) FileOps {
 	ops := FileOps{Read: map[string]bool{}, Written: map[string]bool{}, Edited: map[string]bool{}}
 	for _, entry := range entries {
-		if entry.Type == "compaction" {
+		if entry.Type == "compaction" && !entry.FromHook {
 			if details, ok := entry.Details.(map[string]any); ok {
 				addStringSlice(ops.Read, details["readFiles"])
 				addStringSlice(ops.Written, details["writtenFiles"])
@@ -436,6 +566,27 @@ func collectFileOps(entries []Entry) FileOps {
 		}
 	}
 	return ops
+}
+
+func fileListsFromOps(ops FileOps) ([]string, []string) {
+	modified := map[string]bool{}
+	for path, ok := range ops.Edited {
+		if ok && path != "" {
+			modified[path] = true
+		}
+	}
+	for path, ok := range ops.Written {
+		if ok && path != "" {
+			modified[path] = true
+		}
+	}
+	readOnly := map[string]bool{}
+	for path, ok := range ops.Read {
+		if ok && path != "" && !modified[path] {
+			readOnly[path] = true
+		}
+	}
+	return keys(readOnly), keys(modified)
 }
 
 func addStringSlice(target map[string]bool, value any) {

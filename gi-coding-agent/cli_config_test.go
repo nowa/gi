@@ -25,7 +25,8 @@ func TestPackageResourceConfigHostTogglesPackageResource(t *testing.T) {
 	}()
 
 	waitForConfigViewport(t, terminal, "Resource Configuration")
-	waitForConfigViewport(t, terminal, "Skill skill-a")
+	waitForConfigViewport(t, terminal, "Skills")
+	waitForConfigViewport(t, terminal, "skill-a")
 	terminal.SendInput("\r")
 	terminal.SendInput("\x1b")
 
@@ -64,7 +65,9 @@ func TestPackageResourceConfigHostTogglesTopLevelResource(t *testing.T) {
 	}()
 
 	waitForConfigViewport(t, terminal, "Resource Configuration")
-	waitForConfigViewport(t, terminal, "Skill skill-a")
+	waitForConfigViewport(t, terminal, "Project (.gi/)")
+	waitForConfigViewport(t, terminal, "Skills")
+	waitForConfigViewport(t, terminal, "skill-a")
 	terminal.SendInput("\r")
 	terminal.SendInput("\x1b")
 
@@ -79,6 +82,51 @@ func TestPackageResourceConfigHostTogglesTopLevelResource(t *testing.T) {
 	reloaded := NewSettingsManager(cwd, agentDir)
 	if got := settingsStringSlice(reloaded.project, "skills"); len(got) != 1 || got[0] != "-skills/skill-a/SKILL.md" {
 		t.Fatalf("project skill filters = %#v", got)
+	}
+}
+
+func TestPackageResourceConfigComponentFiltersLikePiSelector(t *testing.T) {
+	resources := []PackageResourceToggleItem{
+		{
+			Source:       "official:guard",
+			Scope:        "user",
+			ResourceType: "skills",
+			Pattern:      "skills/review/SKILL.md",
+			Path:         "/tmp/pkg/skills/review/SKILL.md",
+			DisplayName:  "review",
+			Enabled:      true,
+			Metadata:     ProtocolSourceInfo{Origin: "package", Source: "official:guard", Scope: "user"},
+		},
+		{
+			Source:       "auto",
+			Scope:        "project",
+			ResourceType: "prompts",
+			Pattern:      "prompts/ship.md",
+			Path:         "/tmp/project/.gi/prompts/ship.md",
+			DisplayName:  "ship.md",
+			Enabled:      true,
+			Metadata:     ProtocolSourceInfo{Origin: "top-level", Source: "auto", Scope: "project"},
+		},
+	}
+	component := newPackageResourceConfigComponent(nil, resources, make(chan struct{}, 1), nil)
+
+	rendered := strings.Join(component.Render(100), "\n")
+	for _, want := range []string{"Resource Configuration", "official:guard (user)", "Skills", "review", "Project (.gi/)", "Prompts", "ship.md", "Type to filter resources"} {
+		if !strings.Contains(StripAnsi(rendered), want) {
+			t.Fatalf("render missing %q:\n%s", want, StripAnsi(rendered))
+		}
+	}
+
+	component.HandleInput("s")
+	component.HandleInput("h")
+	component.HandleInput("i")
+	component.HandleInput("p")
+	filtered := StripAnsi(strings.Join(component.Render(100), "\n"))
+	if !strings.Contains(filtered, "Project (.gi/)") || !strings.Contains(filtered, "Prompts") || !strings.Contains(filtered, "ship.md") {
+		t.Fatalf("filter should keep matching group/subgroup/item:\n%s", filtered)
+	}
+	if strings.Contains(filtered, "official:guard") || strings.Contains(filtered, "review") {
+		t.Fatalf("filter should remove non-matching resources:\n%s", filtered)
 	}
 }
 

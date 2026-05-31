@@ -57,7 +57,7 @@ func NewMistralProvider(client HTTPDoer) MistralProvider {
 }
 
 func init() {
-	RegisterAPIProvider("mistral-conversations", NewMistralProvider(nil))
+	RegisterBuiltInAPIProvider("mistral-conversations", NewMistralProvider(nil))
 }
 
 func (p MistralProvider) Stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {

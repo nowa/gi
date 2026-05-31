@@ -15,7 +15,7 @@ func NewAnthropicMessagesProvider(client HTTPDoer) AnthropicMessagesProvider {
 }
 
 func init() {
-	RegisterAPIProvider("anthropic-messages", NewAnthropicMessagesProvider(nil))
+	RegisterBuiltInAPIProvider("anthropic-messages", NewAnthropicMessagesProvider(nil))
 }
 
 func (p AnthropicMessagesProvider) Stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {
@@ -66,7 +66,11 @@ func (p AnthropicMessagesProvider) StreamSimple(model Model, llmContext Context,
 		headers["anthropic-version"] = "2023-06-01"
 	}
 
-	response, err := postSSE(ctx, httpClientOrDefault(p.Client), anthropicMessagesEndpoint(model.BaseURL), headers, payloadAny)
+	baseURL, err := ResolveCloudflareBaseURL(model)
+	if err != nil {
+		return streamError(model, "%s", err.Error()), nil
+	}
+	response, err := postSSE(ctx, httpClientOrDefault(p.Client), anthropicMessagesEndpoint(baseURL), headers, payloadAny)
 	if err != nil {
 		return streamError(model, "request failed: %v", err), nil
 	}

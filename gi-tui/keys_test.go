@@ -154,6 +154,9 @@ func assertKeySpec(t *testing.T, event KeyEvent, spec string) {
 
 func TestKeysLegacySequencesAndKittyAltGate(t *testing.T) {
 	SetKittyProtocolActive(false)
+	t.Run("should parse double bracket pageUp", func(t *testing.T) {
+		assertKeySpec(t, ParseKey("\x1b[[5~"), "pageUp")
+	})
 	for _, tc := range []struct {
 		data string
 		spec string

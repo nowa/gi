@@ -3,9 +3,9 @@ package gicodingagent
 import (
 	"context"
 	"errors"
-	"strconv"
 	"strings"
 
+	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
@@ -138,30 +138,15 @@ func bashExecutionMessageValue(command string, result BashResult, excludeFromCon
 }
 
 func bashExecutionText(command string, result BashResult) string {
-	var builder strings.Builder
-	builder.WriteString("Ran `")
-	builder.WriteString(command)
-	builder.WriteString("`\n")
-	if result.Output != "" {
-		builder.WriteString("```\n")
-		builder.WriteString(result.Output)
-		if !strings.HasSuffix(result.Output, "\n") {
-			builder.WriteByte('\n')
-		}
-		builder.WriteString("```")
-	} else {
-		builder.WriteString("(no output)")
+	var exitCode *int
+	if !result.Cancelled {
+		exitCode = &result.ExitCode
 	}
-	if result.Cancelled {
-		builder.WriteString("\n\n(command cancelled)")
-	} else if result.ExitCode != 0 {
-		builder.WriteString("\n\nCommand exited with code ")
-		builder.WriteString(strconv.Itoa(result.ExitCode))
-	}
-	if result.Truncated && result.FullOutputPath != "" {
-		builder.WriteString("\n\n[Output truncated. Full output: ")
-		builder.WriteString(result.FullOutputPath)
-		builder.WriteByte(']')
-	}
-	return builder.String()
+	return agentharness.BashExecutionText(command, agentharness.BashExecutionTextOptions{
+		Output:         result.Output,
+		ExitCode:       exitCode,
+		Cancelled:      result.Cancelled,
+		Truncated:      result.Truncated,
+		FullOutputPath: result.FullOutputPath,
+	})
 }

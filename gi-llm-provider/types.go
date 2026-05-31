@@ -42,6 +42,20 @@ func EmptyUsage() Usage {
 	return Usage{Cost: UsageCost{}}
 }
 
+type DiagnosticErrorInfo struct {
+	Name    string `json:"name,omitempty"`
+	Message string `json:"message"`
+	Stack   string `json:"stack,omitempty"`
+	Code    any    `json:"code,omitempty"`
+}
+
+type AssistantMessageDiagnostic struct {
+	Type      string               `json:"type"`
+	Timestamp int64                `json:"timestamp"`
+	Error     *DiagnosticErrorInfo `json:"error,omitempty"`
+	Details   map[string]any       `json:"details,omitempty"`
+}
+
 type ContentPart struct {
 	Type              string         `json:"type"`
 	Text              string         `json:"text,omitempty"`
@@ -77,22 +91,23 @@ func ToolCall(id, name string, args map[string]any) ContentPart {
 }
 
 type Message struct {
-	Role         string        `json:"role"`
-	Content      []ContentPart `json:"content,omitempty"`
-	Timestamp    int64         `json:"timestamp,omitempty"`
-	API          string        `json:"api,omitempty"`
-	Provider     string        `json:"provider,omitempty"`
-	Model        string        `json:"model,omitempty"`
-	Usage        Usage         `json:"usage,omitempty"`
-	StopReason   string        `json:"stopReason,omitempty"`
-	ErrorMessage string        `json:"errorMessage,omitempty"`
-	ResponseID   string        `json:"responseId,omitempty"`
-	ToolCallID   string        `json:"toolCallID,omitempty"`
-	ToolName     string        `json:"toolName,omitempty"`
-	CustomType   string        `json:"customType,omitempty"`
-	Display      *bool         `json:"display,omitempty"`
-	Details      any           `json:"details,omitempty"`
-	IsError      bool          `json:"isError,omitempty"`
+	Role         string                       `json:"role"`
+	Content      []ContentPart                `json:"content,omitempty"`
+	Timestamp    int64                        `json:"timestamp,omitempty"`
+	API          string                       `json:"api,omitempty"`
+	Provider     string                       `json:"provider,omitempty"`
+	Model        string                       `json:"model,omitempty"`
+	Diagnostics  []AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+	Usage        Usage                        `json:"usage,omitempty"`
+	StopReason   string                       `json:"stopReason,omitempty"`
+	ErrorMessage string                       `json:"errorMessage,omitempty"`
+	ResponseID   string                       `json:"responseId,omitempty"`
+	ToolCallID   string                       `json:"toolCallID,omitempty"`
+	ToolName     string                       `json:"toolName,omitempty"`
+	CustomType   string                       `json:"customType,omitempty"`
+	Display      *bool                        `json:"display,omitempty"`
+	Details      any                          `json:"details,omitempty"`
+	IsError      bool                         `json:"isError,omitempty"`
 }
 
 func NowMillis() int64 {
@@ -235,11 +250,18 @@ type Tool struct {
 }
 
 type Schema struct {
-	Type       any               `json:"type,omitempty"`
-	Properties map[string]Schema `json:"properties,omitempty"`
-	Required   []string          `json:"required,omitempty"`
-	Items      *Schema           `json:"items,omitempty"`
-	Enum       []any             `json:"enum,omitempty"`
+	Type        any               `json:"type,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Default     any               `json:"default,omitempty"`
+	Properties  map[string]Schema `json:"properties,omitempty"`
+	Required    []string          `json:"required,omitempty"`
+	Items       *Schema           `json:"items,omitempty"`
+	Enum        []any             `json:"enum,omitempty"`
+}
+
+type StringEnumOptions struct {
+	Description string
+	Default     string
 }
 
 func Object(properties map[string]Schema, required ...string) Schema {
@@ -251,6 +273,25 @@ func Number() Schema  { return Schema{Type: "number"} }
 func Integer() Schema { return Schema{Type: "integer"} }
 func Boolean() Schema { return Schema{Type: "boolean"} }
 func Null() Schema    { return Schema{Type: "null"} }
+
+func StringEnum(values ...string) Schema {
+	return StringEnumWithOptions(values, StringEnumOptions{})
+}
+
+func StringEnumWithOptions(values []string, options StringEnumOptions) Schema {
+	enum := make([]any, len(values))
+	for i, value := range values {
+		enum[i] = value
+	}
+	schema := Schema{Type: "string", Enum: enum}
+	if options.Description != "" {
+		schema.Description = options.Description
+	}
+	if options.Default != "" {
+		schema.Default = options.Default
+	}
+	return schema
+}
 
 func TypeUnion(types ...string) Schema {
 	values := make([]any, len(types))

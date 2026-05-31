@@ -54,6 +54,40 @@ func TestValidateToolArgumentsCoercesPlainJSONSchemaPrimitiveRules(t *testing.T)
 	}
 }
 
+func TestValidateToolCallFindsToolByNameLikePi(t *testing.T) {
+	tool, toolCall := toolCallWithPlainSchema(Number(), "42")
+	got, err := ValidateToolCall([]Tool{tool}, toolCall)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["value"] != float64(42) {
+		t.Fatalf("validated args = %#v", got)
+	}
+	_, err = ValidateToolCall([]Tool{}, toolCall)
+	if err == nil || !strings.Contains(err.Error(), `Tool "echo" not found`) {
+		t.Fatalf("missing tool error = %v", err)
+	}
+}
+
+func TestValidateToolArgumentsChecksStringEnumLikePi(t *testing.T) {
+	tool, toolCall := toolCallWithPlainSchema(StringEnumWithOptions([]string{"add", "subtract"}, StringEnumOptions{
+		Description: "Operation",
+		Default:     "add",
+	}), "subtract")
+	got, err := ValidateToolArguments(tool, toolCall)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["value"] != "subtract" || tool.Parameters.Properties["value"].Description != "Operation" || tool.Parameters.Properties["value"].Default != "add" {
+		t.Fatalf("enum args/schema = %#v %#v", got, tool.Parameters.Properties["value"])
+	}
+	toolCall.Arguments["value"] = "multiply"
+	_, err = ValidateToolArguments(tool, toolCall)
+	if err == nil || !strings.Contains(err.Error(), "not in enum") {
+		t.Fatalf("enum validation error = %v", err)
+	}
+}
+
 func TestValidateToolArgumentsRejectsInvalidCoercions(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -78,4 +112,17 @@ func TestValidateToolArgumentsRejectsInvalidCoercions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidationPiCaseNames(t *testing.T) {
+	t.Run("still validates when Function constructor is unavailable", func(t *testing.T) {
+		tool, toolCall := toolCallWithPlainSchema(Number(), "42")
+		got, err := ValidateToolArguments(tool, toolCall)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got["value"] != float64(42) {
+			t.Fatalf("validated args = %#v", got)
+		}
+	})
 }

@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -25,8 +26,11 @@ func TestCompactionTokenCalculations(t *testing.T) {
 	if got := CalculateContextTokens(mockUsage(1000, 500, 200, 100)); got != 1800 {
 		t.Fatalf("CalculateContextTokens = %d", got)
 	}
+	if got := CalculateContextTokens(llm.Usage{Input: 10, Output: 5, TotalTokens: 99}); got != 99 {
+		t.Fatalf("CalculateContextTokens total = %d", got)
+	}
 	settings := CompactionSettings{Enabled: true, ReserveTokens: 10000, KeepRecentTokens: 20000}
-	if !ShouldCompact(95000, 100000, settings) || ShouldCompact(89000, 100000, settings) || ShouldCompact(95000, 100000, CompactionSettings{Enabled: false}) {
+	if !ShouldCompact(95000, 100000, settings) || ShouldCompact(90000, 100000, settings) || ShouldCompact(89000, 100000, settings) || ShouldCompact(95000, 100000, CompactionSettings{Enabled: false}) {
 		t.Fatal("ShouldCompact threshold mismatch")
 	}
 
@@ -193,8 +197,12 @@ func TestSerializeConversationPiCompactionSerialization(t *testing.T) {
 func TestGenerateSummaryAndCompact(t *testing.T) {
 	model := llm.Model{ID: "summary", Name: "summary", Provider: "faux-summary", API: "faux-summary", Reasoning: true, MaxTokens: 128000}
 	var seenOptions []llm.SimpleStreamOptions
-	llm.RegisterAPIProvider("faux-summary", llm.APIProviderFuncs{StreamSimpleFunc: func(_ llm.Model, _ llm.Context, options llm.SimpleStreamOptions) (*llm.AssistantMessageEventStream, error) {
+	var seenPrompts []string
+	llm.RegisterAPIProvider("faux-summary", llm.APIProviderFuncs{StreamSimpleFunc: func(_ llm.Model, context llm.Context, options llm.SimpleStreamOptions) (*llm.AssistantMessageEventStream, error) {
 		seenOptions = append(seenOptions, options)
+		if len(context.Messages) > 0 && len(context.Messages[0].Content) > 0 {
+			seenPrompts = append(seenPrompts, context.Messages[0].Content[0].Text)
+		}
 		return llm.CompletedAssistantStream(llm.AssistantMessage([]llm.ContentPart{llm.Text("## Goal\nTest summary")}, llm.StopReasonStop, model)), nil
 	}})
 	defer llm.UnregisterAPIProvider("faux-summary")
@@ -206,6 +214,13 @@ func TestGenerateSummaryAndCompact(t *testing.T) {
 	if !strings.Contains(summary, "Test summary") || len(seenOptions) != 1 || seenOptions[0].Reasoning != "medium" || seenOptions[0].APIKey != "test-key" || seenOptions[0].MaxTokens != 128000 {
 		t.Fatalf("summary/options = %q %#v", summary, seenOptions)
 	}
+	if len(seenPrompts) != 1 ||
+		!strings.Contains(seenPrompts[0], "<conversation>\n[User]: Summarize this.\n</conversation>") ||
+		!strings.Contains(seenPrompts[0], "<previous-summary>\nold summary\n</previous-summary>") ||
+		!strings.Contains(seenPrompts[0], "NEW conversation messages to incorporate") ||
+		!strings.Contains(seenPrompts[0], "Additional focus: focus") {
+		t.Fatalf("summary prompt = %#v", seenPrompts)
+	}
 
 	prep := CompactionPreparation{
 		FirstKeptEntryID:    "entry-keep",
@@ -213,14 +228,42 @@ func TestGenerateSummaryAndCompact(t *testing.T) {
 		TurnPrefixMessages:  []llm.Message{llm.UserMessageText("prefix")},
 		IsSplitTurn:         true,
 		TokensBefore:        600000,
-		FileOps:             FileOps{Read: map[string]bool{"read.ts": true}, Written: map[string]bool{"write.ts": true}, Edited: map[string]bool{}},
+		FileOps:             FileOps{Read: map[string]bool{"read.ts": true, "write.ts": true}, Written: map[string]bool{"write.ts": true}, Edited: map[string]bool{}},
 		Settings:            CompactionSettings{Enabled: true, ReserveTokens: 500000, KeepRecentTokens: 20000},
 	}
 	result, err := Compact(context.Background(), prep, model, "test-key", "high")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FirstKeptEntryID != "entry-keep" || result.Summary == "" || !reflect.DeepEqual(result.Details["readFiles"], []string{"read.ts"}) {
+	if result.FirstKeptEntryID != "entry-keep" || result.Summary == "" || !reflect.DeepEqual(result.Details["readFiles"], []string{"read.ts"}) || !reflect.DeepEqual(result.Details["modifiedFiles"], []string{"write.ts"}) {
 		t.Fatalf("compact result = %#v", result)
+	}
+	if !strings.Contains(result.Summary, "<read-files>\nread.ts\n</read-files>") || !strings.Contains(result.Summary, "<modified-files>\nwrite.ts\n</modified-files>") {
+		t.Fatalf("compact summary should include Pi XML file operations:\n%s", result.Summary)
+	}
+	if _, ok := result.Details["writtenFiles"]; ok {
+		t.Fatalf("compact details should use Pi readFiles/modifiedFiles shape: %#v", result.Details)
+	}
+}
+
+func TestCompactionErrorsCarryPiStyleCodes(t *testing.T) {
+	model := llm.Model{ID: "summary", Name: "summary", Provider: "faux-compaction-abort", API: "faux-compaction-abort", MaxTokens: 128000}
+	llm.RegisterAPIProvider("faux-compaction-abort", llm.APIProviderFuncs{StreamSimpleFunc: func(llm.Model, llm.Context, llm.SimpleStreamOptions) (*llm.AssistantMessageEventStream, error) {
+		message := llm.AssistantMessage([]llm.ContentPart{llm.Text("partial")}, llm.StopReasonAborted, model)
+		message.ErrorMessage = "cancelled"
+		return llm.ErrorAssistantStream(message), nil
+	}})
+	defer llm.UnregisterAPIProvider("faux-compaction-abort")
+
+	_, err := GenerateSummary(context.Background(), []llm.Message{llm.UserMessageText("Summarize this.")}, model, 200000, "test-key", "", "", "")
+	var compactionErr *CompactionError
+	if !errors.As(err, &compactionErr) || compactionErr.Code != CompactionErrorAborted {
+		t.Fatalf("GenerateSummary err = %#v, want CompactionError aborted", err)
+	}
+
+	_, err = CompactWithOptions(context.Background(), CompactionPreparation{}, model, CompactOptions{})
+	compactionErr = nil
+	if !errors.As(err, &compactionErr) || compactionErr.Code != CompactionErrorInvalidSession {
+		t.Fatalf("CompactWithOptions err = %#v, want CompactionError invalid_session", err)
 	}
 }

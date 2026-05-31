@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"html"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -848,17 +847,29 @@ func (h *RPCSessionHost) followUpMode() string {
 }
 
 func (h *RPCSessionHost) renderHTML() string {
-	var builder strings.Builder
-	builder.WriteString("<!doctype html><html><body>\n")
-	for _, message := range h.Session.Messages() {
-		builder.WriteString(`<section data-role="`)
-		builder.WriteString(html.EscapeString(message.Role))
-		builder.WriteString(`">`)
-		builder.WriteString(html.EscapeString(rpcMessageText(message)))
-		builder.WriteString("</section>\n")
+	options := ExportHTMLOptions{}
+	if h != nil && h.Settings != nil {
+		options.ThemeName = h.Settings.GetTheme()
+		options.AgentDir = h.Settings.agentDir
 	}
-	builder.WriteString("</body></html>\n")
-	return builder.String()
+	if h != nil && h.Session != nil && h.Session.ExtensionRuntime != nil {
+		runtime := h.Session.ExtensionRuntime
+		options.ToolRenderer = CreateToolHTMLRenderer(ExportHTMLToolRendererDeps{
+			CWD: h.Session.SessionManager.GetCWD(),
+			GetToolDefinition: func(name string) (ToolDefinition, bool) {
+				renderer := runtime.GetToolRenderer(name)
+				if renderer == nil {
+					return ToolDefinition{}, false
+				}
+				return ToolDefinition{
+					Name:         name,
+					RenderCall:   renderer.RenderCall,
+					RenderResult: renderer.RenderResult,
+				}, true
+			},
+		})
+	}
+	return RenderSessionManagerHTMLWithOptions(h.Session.SessionManager, options)
 }
 
 func rpcMessageText(message llm.Message) string {

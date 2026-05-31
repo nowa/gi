@@ -565,17 +565,172 @@ func treeSelectorNodeText(node *SessionTreeNode) string {
 	if node == nil {
 		return ""
 	}
-	if node.Entry.Type == "branch_summary" {
-		return node.Entry.Summary
+	entry := node.Entry
+	switch entry.Type {
+	case "message":
+		return treeSelectorMessageDisplayText(entry.Message)
+	case "custom_message":
+		return tuiThemeFG("customMessageLabel", "["+entry.CustomType+"]: ") + treeSelectorNormalizeText(treeSelectorContentText(entry.Content, 200))
+	case "compaction":
+		tokens := (entry.TokensBefore + 500) / 1000
+		return tuiThemeFG("borderAccent", fmt.Sprintf("[compaction: %dk tokens]", tokens))
+	case "branch_summary":
+		return tuiThemeWarning("[branch summary]: ") + treeSelectorNormalizeText(entry.Summary)
+	case "model_change":
+		return tuiThemeDim("[model: " + entry.ModelID + "]")
+	case "thinking_level_change":
+		return tuiThemeDim("[thinking: " + entry.ThinkingLevel + "]")
+	case "custom":
+		return tuiThemeDim("[custom: " + entry.CustomType + "]")
+	case "label":
+		return tuiThemeDim("[label: " + firstNonEmptyString(entry.Label, "(cleared)") + "]")
+	case "session_info":
+		if strings.TrimSpace(entry.Name) == "" {
+			return tuiThemeDim("[title: ") + tuiThemeItalic(tuiThemeDim("empty")) + tuiThemeDim("]")
+		}
+		return tuiThemeDim("[title: ") + tuiThemeDim(entry.Name) + tuiThemeDim("]")
+	default:
+		return ""
 	}
-	if node.Entry.Type == "message" && sessionMessageRole(node.Entry.Message) == "bashExecution" {
-		return tuiThemeDim("[bash]: " + treeSelectorBashCommand(node.Entry.Message))
+}
+
+func treeSelectorMessageDisplayText(message any) string {
+	role := sessionMessageRole(message)
+	switch role {
+	case llm.RoleUser:
+		return tuiThemeAccent("user: ") + treeSelectorNormalizeText(treeSelectorMessageContent(message, 200))
+	case llm.RoleAssistant:
+		prefix := tuiThemeSuccess("assistant: ")
+		text := treeSelectorNormalizeText(treeSelectorMessageContent(message, 200))
+		if text != "" {
+			return prefix + text
+		}
+		if treeSelectorMessageStopReason(message) == llm.StopReasonAborted {
+			return prefix + tuiThemeMuted("(aborted)")
+		}
+		if errMsg := treeSelectorNormalizeText(treeSelectorMessageError(message)); errMsg != "" {
+			return prefix + tuiThemeError(treeSelectorTruncateText(errMsg, 80))
+		}
+		return prefix + tuiThemeMuted("(no content)")
+	case llm.RoleToolResult:
+		return tuiThemeMuted("[" + firstNonEmptyString(treeSelectorMessageToolName(message), "tool") + "]")
+	case "bashExecution":
+		return tuiThemeDim("[bash]: " + treeSelectorNormalizeText(treeSelectorBashCommand(message)))
+	case "":
+		return ""
+	default:
+		return tuiThemeDim("[" + role + "]")
 	}
-	text := sessionMessageText(node.Entry.Message)
-	if text == "" {
-		text = node.Entry.ID
+}
+
+func treeSelectorMessageContent(message any, maxLen int) string {
+	switch typed := message.(type) {
+	case llm.Message:
+		return treeSelectorContentText(typed.Content, maxLen)
+	case map[string]any:
+		return treeSelectorContentText(typed["content"], maxLen)
+	default:
+		return ""
 	}
-	return text
+}
+
+func treeSelectorContentText(content any, maxLen int) string {
+	switch typed := content.(type) {
+	case string:
+		return treeSelectorTruncateText(typed, maxLen)
+	case []llm.ContentPart:
+		var builder strings.Builder
+		for _, part := range typed {
+			if part.Type != llm.ContentText {
+				continue
+			}
+			builder.WriteString(part.Text)
+			if treeSelectorTextLen(builder.String()) >= maxLen {
+				return treeSelectorTruncateText(builder.String(), maxLen)
+			}
+		}
+		return builder.String()
+	case []any:
+		var builder strings.Builder
+		for _, item := range typed {
+			block, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			blockType, _ := block["type"].(string)
+			if blockType != llm.ContentText {
+				continue
+			}
+			text, _ := block["text"].(string)
+			builder.WriteString(text)
+			if treeSelectorTextLen(builder.String()) >= maxLen {
+				return treeSelectorTruncateText(builder.String(), maxLen)
+			}
+		}
+		return builder.String()
+	default:
+		return ""
+	}
+}
+
+func treeSelectorNormalizeText(text string) string {
+	text = strings.ReplaceAll(text, "\n", " ")
+	text = strings.ReplaceAll(text, "\t", " ")
+	return strings.TrimSpace(text)
+}
+
+func treeSelectorTruncateText(text string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	if treeSelectorTextLen(text) <= maxLen {
+		return text
+	}
+	runes := []rune(text)
+	if len(runes) <= maxLen {
+		return text
+	}
+	return string(runes[:maxLen])
+}
+
+func treeSelectorTextLen(text string) int {
+	return len([]rune(text))
+}
+
+func treeSelectorMessageStopReason(message any) string {
+	switch typed := message.(type) {
+	case llm.Message:
+		return typed.StopReason
+	case map[string]any:
+		stopReason, _ := typed["stopReason"].(string)
+		return stopReason
+	default:
+		return ""
+	}
+}
+
+func treeSelectorMessageError(message any) string {
+	switch typed := message.(type) {
+	case llm.Message:
+		return typed.ErrorMessage
+	case map[string]any:
+		errorMessage, _ := typed["errorMessage"].(string)
+		return errorMessage
+	default:
+		return ""
+	}
+}
+
+func treeSelectorMessageToolName(message any) string {
+	switch typed := message.(type) {
+	case llm.Message:
+		return typed.ToolName
+	case map[string]any:
+		toolName, _ := typed["toolName"].(string)
+		return toolName
+	default:
+		return ""
+	}
 }
 
 func treeSelectorBashCommand(message any) string {

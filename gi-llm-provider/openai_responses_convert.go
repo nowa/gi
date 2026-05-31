@@ -7,21 +7,24 @@ import (
 )
 
 type OpenAIResponsesInputItem struct {
-	Type      string `json:"type,omitempty"`
-	Role      string `json:"role,omitempty"`
-	Content   any    `json:"content,omitempty"`
-	ID        string `json:"id,omitempty"`
-	CallID    string `json:"call_id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Arguments string `json:"arguments,omitempty"`
-	Output    any    `json:"output,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Phase     string `json:"phase,omitempty"`
+	Type             string                       `json:"type,omitempty"`
+	Role             string                       `json:"role,omitempty"`
+	Content          any                          `json:"content,omitempty"`
+	Summary          []OpenAIResponsesContentPart `json:"summary,omitempty"`
+	ID               string                       `json:"id,omitempty"`
+	CallID           string                       `json:"call_id,omitempty"`
+	Name             string                       `json:"name,omitempty"`
+	Arguments        string                       `json:"arguments,omitempty"`
+	Output           any                          `json:"output,omitempty"`
+	Status           string                       `json:"status,omitempty"`
+	Phase            string                       `json:"phase,omitempty"`
+	EncryptedContent string                       `json:"encrypted_content,omitempty"`
 }
 
 type OpenAIResponsesContentPart struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
+	Refusal  string `json:"refusal,omitempty"`
 	Detail   string `json:"detail,omitempty"`
 	ImageURL string `json:"image_url,omitempty"`
 }
@@ -68,12 +71,19 @@ func ConvertOpenAIResponsesMessages(model Model, context Context, options Conver
 			for _, part := range message.Content {
 				switch part.Type {
 				case ContentText:
+					msgID := fmt.Sprintf("msg_%d", messageIndex)
+					phase := ""
+					if parsedID, parsedPhase := parseOpenAIResponsesTextSignature(part.TextSignature); parsedID != "" {
+						msgID = parsedID
+						phase = parsedPhase
+					}
 					items = append(items, OpenAIResponsesInputItem{
 						Type:    "message",
 						Role:    "assistant",
 						Content: []OpenAIResponsesContentPart{{Type: "output_text", Text: SanitizeSurrogates(part.Text)}},
 						Status:  "completed",
-						ID:      fmt.Sprintf("msg_%d", messageIndex),
+						ID:      msgID,
+						Phase:   phase,
 					})
 					messageIndex++
 				case ContentThinking:
@@ -157,5 +167,68 @@ func mapToOpenAIResponsesInputItem(value map[string]any) OpenAIResponsesInputIte
 	if text, ok := value["id"].(string); ok {
 		item.ID = text
 	}
+	if text, ok := value["status"].(string); ok {
+		item.Status = text
+	}
+	if text, ok := value["phase"].(string); ok {
+		item.Phase = text
+	}
+	if text, ok := value["encrypted_content"].(string); ok {
+		item.EncryptedContent = text
+	}
+	if content, ok := openAIResponsesPartsFromAny(value["content"]); ok {
+		item.Content = content
+	}
+	if summary, ok := openAIResponsesPartsFromAny(value["summary"]); ok {
+		item.Summary = summary
+	}
 	return item
+}
+
+func parseOpenAIResponsesTextSignature(signature string) (string, string) {
+	signature = strings.TrimSpace(signature)
+	if signature == "" {
+		return "", ""
+	}
+	if strings.HasPrefix(signature, "{") {
+		var value map[string]any
+		if json.Unmarshal([]byte(signature), &value) == nil {
+			version, _ := value["v"].(float64)
+			id, _ := value["id"].(string)
+			if version == 1 && id != "" {
+				phase, _ := value["phase"].(string)
+				if phase != "commentary" && phase != "final_answer" {
+					phase = ""
+				}
+				return id, phase
+			}
+		}
+	}
+	return signature, ""
+}
+
+func openAIResponsesPartsFromAny(value any) ([]OpenAIResponsesContentPart, bool) {
+	raw, ok := value.([]any)
+	if !ok {
+		return nil, false
+	}
+	parts := make([]OpenAIResponsesContentPart, 0, len(raw))
+	for _, entry := range raw {
+		item, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		part := OpenAIResponsesContentPart{}
+		if text, ok := item["type"].(string); ok {
+			part.Type = text
+		}
+		if text, ok := item["text"].(string); ok {
+			part.Text = text
+		}
+		if text, ok := item["refusal"].(string); ok {
+			part.Refusal = text
+		}
+		parts = append(parts, part)
+	}
+	return parts, true
 }

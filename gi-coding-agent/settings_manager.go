@@ -35,6 +35,15 @@ type WarningSettings struct {
 }
 
 const defaultHTTPIdleTimeoutMS = 300_000
+const defaultAgentSessionMaxRetries = 3
+const defaultAgentSessionBaseDelayMS = 2_000
+const defaultProviderMaxRetryDelayMS = 60_000
+
+type ProviderRetrySettings struct {
+	TimeoutMS       int
+	MaxRetries      int
+	MaxRetryDelayMS int
+}
 
 func NewSettingsManager(cwd, agentDir string) *SettingsManager {
 	manager := &SettingsManager{
@@ -103,6 +112,33 @@ func migrateSettings(settings map[string]any) map[string]any {
 			}
 		}
 		delete(settings, "websockets")
+	}
+	if skillsSettings, ok := settings["skills"].(map[string]any); ok {
+		if value, exists := skillsSettings["enableSkillCommands"]; exists {
+			if _, topLevelExists := settings["enableSkillCommands"]; !topLevelExists {
+				settings["enableSkillCommands"] = cloneSettingsValue(value)
+			}
+		}
+		if customDirectories, ok := skillsSettings["customDirectories"].([]any); ok && len(customDirectories) > 0 {
+			settings["skills"] = cloneSettingsValue(customDirectories)
+		} else {
+			delete(settings, "skills")
+		}
+	}
+	if retrySettings, ok := settings["retry"].(map[string]any); ok {
+		if maxDelayMS := retrySettings["maxDelayMs"]; settingsValueIsNumber(maxDelayMS) {
+			providerSettings, _ := retrySettings["provider"].(map[string]any)
+			if providerSettings == nil {
+				providerSettings = map[string]any{}
+			} else {
+				providerSettings = cloneSettingsMap(providerSettings)
+			}
+			if providerSettings["maxRetryDelayMs"] == nil {
+				providerSettings["maxRetryDelayMs"] = cloneSettingsValue(maxDelayMS)
+				retrySettings["provider"] = providerSettings
+			}
+		}
+		delete(retrySettings, "maxDelayMs")
 	}
 	return settings
 }
@@ -381,6 +417,32 @@ func (s *SettingsManager) SetBranchSummarySkipPrompt(skip bool) {
 	s.setGlobalNested("branchSummary", "skipPrompt", skip)
 }
 
+func (s *SettingsManager) GetRetryEnabled() bool {
+	return settingsNestedBool(s.merged, "retry", "enabled", true)
+}
+
+func (s *SettingsManager) SetRetryEnabled(enabled bool) {
+	s.setGlobalNested("retry", "enabled", enabled)
+}
+
+func (s *SettingsManager) GetRetrySettings() AgentSessionRetrySettings {
+	return AgentSessionRetrySettings{
+		Enabled:     s.GetRetryEnabled(),
+		MaxRetries:  settingsNestedInt(s.merged, "retry", "maxRetries", defaultAgentSessionMaxRetries),
+		BaseDelayMs: settingsNestedInt(s.merged, "retry", "baseDelayMs", defaultAgentSessionBaseDelayMS),
+	}
+}
+
+func (s *SettingsManager) GetProviderRetrySettings() ProviderRetrySettings {
+	retrySettings, _ := s.merged["retry"].(map[string]any)
+	providerSettings, _ := retrySettings["provider"].(map[string]any)
+	return ProviderRetrySettings{
+		TimeoutMS:       settingsValueInt(providerSettings["timeoutMs"], 0),
+		MaxRetries:      settingsValueInt(providerSettings["maxRetries"], 0),
+		MaxRetryDelayMS: settingsValueInt(providerSettings["maxRetryDelayMs"], defaultProviderMaxRetryDelayMS),
+	}
+}
+
 func (s *SettingsManager) GetEditorPaddingX() int {
 	padding := settingsInt(s.merged, "editorPaddingX", 0)
 	if padding < 0 {
@@ -611,6 +673,15 @@ func settingsValueInt(value any, defaultValue int) int {
 		}
 	}
 	return defaultValue
+}
+
+func settingsValueIsNumber(value any) bool {
+	switch value.(type) {
+	case int, int64, float64, json.Number:
+		return true
+	default:
+		return false
+	}
 }
 
 func settingsSlice(settings map[string]any, key string) []any {

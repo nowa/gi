@@ -531,9 +531,9 @@ func (p *CombinedAutocompleteProvider) fuzzyFileSuggestions(rawPrefix string, is
 	if err != nil {
 		return nil, nil
 	}
-	filtered := FuzzyFilter(candidates, scope.query, func(c fileCandidate) string { return c.displayPath })
-	items := make([]AutocompleteItem, 0, len(filtered))
-	for _, candidate := range filtered {
+	scored := scoreFileCandidates(candidates, scope.query)
+	items := make([]AutocompleteItem, 0, len(scored))
+	for _, candidate := range scored {
 		displayPath := scope.displayPath(candidate.relativePath)
 		value := buildCompletionValue(displayPath, candidate.isDir, isAt, quoted)
 		label := filepath.Base(strings.TrimSuffix(candidate.relativePath, "/"))
@@ -551,6 +551,56 @@ func (p *CombinedAutocompleteProvider) fuzzyFileSuggestions(rawPrefix string, is
 		return items[i].Value < items[j].Value
 	})
 	return items, nil
+}
+
+func scoreFileCandidates(candidates []fileCandidate, query string) []fileCandidate {
+	query = strings.ToLower(filepath.ToSlash(query))
+	if strings.TrimSpace(query) == "" {
+		return candidates
+	}
+	type scoredFileCandidate struct {
+		candidate fileCandidate
+		score     int
+		index     int
+	}
+	scored := make([]scoredFileCandidate, 0, len(candidates))
+	for index, candidate := range candidates {
+		score := scoreFileCandidate(candidate, query)
+		if score > 0 {
+			scored = append(scored, scoredFileCandidate{candidate: candidate, score: score, index: index})
+		}
+	}
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].score == scored[j].score {
+			return scored[i].index < scored[j].index
+		}
+		return scored[i].score > scored[j].score
+	})
+	result := make([]fileCandidate, len(scored))
+	for index, entry := range scored {
+		result[index] = entry.candidate
+	}
+	return result
+}
+
+func scoreFileCandidate(candidate fileCandidate, query string) int {
+	path := strings.ToLower(filepath.ToSlash(candidate.relativePath))
+	fileName := strings.ToLower(filepath.Base(strings.TrimSuffix(candidate.relativePath, "/")))
+	score := 0
+	switch {
+	case fileName == query:
+		score = 100
+	case strings.HasPrefix(fileName, query):
+		score = 80
+	case strings.Contains(fileName, query):
+		score = 50
+	case strings.Contains(path, query):
+		score = 30
+	}
+	if candidate.isDir && score > 0 {
+		score += 10
+	}
+	return score
 }
 
 type fuzzyScope struct {

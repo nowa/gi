@@ -212,6 +212,30 @@ func TestCLIPrintModePassesResourceFlagsToLoaderPiStyle(t *testing.T) {
 	}
 }
 
+func TestCLIPrintModeUsesSettingsRetryForSessionPiStyle(t *testing.T) {
+	cwd := t.TempDir()
+	agentDir := filepath.Join(t.TempDir(), "agent")
+	writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{
+		"retry": map[string]any{
+			"enabled":     false,
+			"maxRetries":  7,
+			"baseDelayMs": 1500,
+		},
+	})
+
+	host, err := newDefaultCLIPrintModeHost(Args{
+		Offline: true,
+		Model:   "openai/gpt-4o-mini",
+	}, CLIOptions{CWD: cwd, AgentDir: agentDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := host.(*agentSessionPrintModeHost).session
+	if retry := session.RetrySettings; retry.Enabled || retry.MaxRetries != 7 || retry.BaseDelayMs != 1500 {
+		t.Fatalf("session retry settings = %#v", retry)
+	}
+}
+
 func TestCLIPrintModeSelectedSessionMissingCwdErrorsPiStyle(t *testing.T) {
 	startupCwd := t.TempDir()
 	missingCwd := filepath.Join(t.TempDir(), "missing-project")
@@ -840,6 +864,138 @@ func TestAgentSessionPrintModeProviderResponderEmitsProviderLifecycleHooks(t *te
 	}
 }
 
+func TestAgentSessionPrintModeProviderResponderUsesSettingsTransportPiStyle(t *testing.T) {
+	tempDir := t.TempDir()
+	var captured llm.SimpleStreamOptions
+
+	registry := NewModelRegistry(NewInMemoryAuthStorage(nil), "")
+	if err := registry.RegisterProvider("transport-provider", ProviderConfigInput{
+		BaseURL: "https://example.invalid/v1",
+		APIKey:  "test-key",
+		API:     "test-settings-transport",
+		StreamSimple: func(_ llm.Model, _ llm.Context, options llm.SimpleStreamOptions) (*llm.AssistantMessageEventStream, error) {
+			captured = options
+			return llm.CompletedAssistantStream(llm.Message{
+				Role:       llm.RoleAssistant,
+				Content:    []llm.ContentPart{llm.Text("ok")},
+				StopReason: llm.StopReasonStop,
+			}), nil
+		},
+		Models: []ProviderModelDefinition{{
+			ID:            "transport-model",
+			Name:          "Transport Model",
+			ContextWindow: 1000,
+			MaxTokens:     100,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		registry.UnregisterProvider("transport-provider")
+	})
+	model, ok := registry.Find("transport-provider", "transport-model")
+	if !ok {
+		t.Fatal("registered model not found")
+	}
+
+	manager, err := InMemorySessionManager(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := CreateAgentSession(AgentSessionOptions{
+		CWD:            tempDir,
+		AgentDir:       filepath.Join(tempDir, "agent"),
+		Model:          model,
+		SessionManager: manager,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := NewInMemorySettingsManager(map[string]any{"transport": "websocket-cached"})
+	host := &agentSessionPrintModeHost{session: session, modelRegistry: registry, settingsManager: settings}
+
+	if _, err := host.providerResponder(registry, Args{}, false)("hello", []llm.Message{llm.UserMessageText("hi")}, model); err != nil {
+		t.Fatal(err)
+	}
+	if captured.Transport != "websocket-cached" {
+		t.Fatalf("transport = %q, want websocket-cached", captured.Transport)
+	}
+
+	settings.SetTransport("sse")
+	if _, err := host.providerResponder(registry, Args{}, false)("again", nil, model); err != nil {
+		t.Fatal(err)
+	}
+	if captured.Transport != "sse" {
+		t.Fatalf("transport after settings change = %q, want sse", captured.Transport)
+	}
+}
+
+func TestAgentSessionPrintModeProviderResponderUsesProviderRetrySettingsPiStyle(t *testing.T) {
+	tempDir := t.TempDir()
+	var captured llm.SimpleStreamOptions
+
+	registry := NewModelRegistry(NewInMemoryAuthStorage(nil), "")
+	if err := registry.RegisterProvider("retry-provider", ProviderConfigInput{
+		BaseURL: "https://example.invalid/v1",
+		APIKey:  "test-key",
+		API:     "test-settings-provider-retry",
+		StreamSimple: func(_ llm.Model, _ llm.Context, options llm.SimpleStreamOptions) (*llm.AssistantMessageEventStream, error) {
+			captured = options
+			return llm.CompletedAssistantStream(llm.Message{
+				Role:       llm.RoleAssistant,
+				Content:    []llm.ContentPart{llm.Text("ok")},
+				StopReason: llm.StopReasonStop,
+			}), nil
+		},
+		Models: []ProviderModelDefinition{{
+			ID:            "retry-model",
+			Name:          "Retry Model",
+			ContextWindow: 1000,
+			MaxTokens:     100,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		registry.UnregisterProvider("retry-provider")
+	})
+	model, ok := registry.Find("retry-provider", "retry-model")
+	if !ok {
+		t.Fatal("registered model not found")
+	}
+
+	manager, err := InMemorySessionManager(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := CreateAgentSession(AgentSessionOptions{
+		CWD:            tempDir,
+		AgentDir:       filepath.Join(tempDir, "agent"),
+		Model:          model,
+		SessionManager: manager,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := NewInMemorySettingsManager(map[string]any{
+		"retry": map[string]any{
+			"provider": map[string]any{
+				"timeoutMs":       9000,
+				"maxRetries":      4,
+				"maxRetryDelayMs": 30000,
+			},
+		},
+	})
+	host := &agentSessionPrintModeHost{session: session, modelRegistry: registry, settingsManager: settings}
+
+	if _, err := host.providerResponder(registry, Args{}, false)("hello", []llm.Message{llm.UserMessageText("hi")}, model); err != nil {
+		t.Fatal(err)
+	}
+	if captured.TimeoutMillis != 9000 || captured.MaxRetries != 4 || captured.MaxRetryDelayMs != 30000 {
+		t.Fatalf("provider retry options = %#v", captured)
+	}
+}
+
 func TestResolveCLIPrintModeModelClampsThinkingToModelCapabilities(t *testing.T) {
 	registry := resolverTestRegistry{
 		all:       resolverMockModels,
@@ -1006,7 +1162,7 @@ func TestResolveCLIPrintModeModelUsesSettingsDefaults(t *testing.T) {
 	}
 }
 
-func TestResolveCLIPrintModeModelUsesModelsScope(t *testing.T) {
+func TestResolveCLIPrintModeModelUsesSettingsDefaultWhenItIsInModelScopePiParity(t *testing.T) {
 	registry := resolverTestRegistry{
 		all:       resolverMockModels,
 		available: resolverMockModels,
@@ -1023,7 +1179,7 @@ func TestResolveCLIPrintModeModelUsesModelsScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	if model == nil || model.Provider != "anthropic" || model.ID != "claude-sonnet-4-5" || level != ThinkingHigh {
-		t.Fatalf("model=%#v level=%q, want scoped settings default anthropic high", model, level)
+		t.Fatalf("model=%#v level=%q, want settings default from scoped models", model, level)
 	}
 
 	model, level, err = resolveCLIPrintModeModel(Args{
@@ -1033,6 +1189,6 @@ func TestResolveCLIPrintModeModelUsesModelsScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	if model == nil || model.Provider != "openai" || model.ID != "gpt-4o" || level != ThinkingOff {
-		t.Fatalf("model=%#v level=%q, want first scoped openai off", model, level)
+		t.Fatalf("model=%#v level=%q, want first scoped openai when settings default is outside scope", model, level)
 	}
 }

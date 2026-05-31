@@ -1,0 +1,361 @@
+package gicodingagent
+
+import (
+	"context"
+	"strings"
+
+	llm "github.com/nowa/gi/gi-llm-provider"
+	gitui "github.com/nowa/gi/gi-tui"
+)
+
+func (h *CLIInteractiveTUIHost) refreshEditorAutocompleteProvider() {
+	if h == nil || h.editor == nil || h.runtimeHost == nil {
+		return
+	}
+	commands := h.autocompleteSlashCommands()
+	var providers []gitui.AutocompleteProvider
+	providerHost, ok := h.runtimeHost.(protocolExtensionRuntimeProvider)
+	if ok {
+		runtime := providerHost.ProtocolExtensionRuntime()
+		if runtime != nil && len(runtime.AutocompleteProviders()) > 0 {
+			providers = append(providers, protocolAutocompleteTUIProvider{runtime: runtime})
+		}
+	}
+	provider := gitui.NewCombinedAutocompleteProviderWithCommands(h.interactiveCWD(), commands, providers...)
+	h.autocompleteProvider = provider
+	h.editor.SetAutocompleteProvider(provider)
+	if active, ok := h.activeEditorComponent(); ok && active != h.editor {
+		if editor, ok := active.(gitui.EditorAutocompleteComponent); ok {
+			editor.SetAutocompleteProvider(provider)
+		}
+	}
+}
+
+func (h *CLIInteractiveTUIHost) autocompleteSlashCommands() []gitui.SlashCommand {
+	seen := map[string]bool{}
+	var commands []gitui.SlashCommand
+	add := func(command gitui.SlashCommand) {
+		if command.Name == "" || seen[command.Name] {
+			return
+		}
+		seen[command.Name] = true
+		commands = append(commands, command)
+	}
+	for _, command := range builtinInteractiveSlashCommands() {
+		slash := gitui.SlashCommand{Name: command.Name, Description: command.Description, ArgumentHint: command.ArgumentHint}
+		if command.Name == "model" {
+			slash.GetArgumentCompletions = h.modelArgumentCompletions
+		}
+		add(slash)
+	}
+	if host, err := h.newRPCSessionHost(); err == nil && host != nil {
+		for _, command := range host.GetCommands().Commands {
+			add(gitui.SlashCommand{
+				Name:         command.Name,
+				Description:  autocompleteDescriptionWithSource(command.Description, command.SourceInfo),
+				ArgumentHint: command.ArgumentHint,
+			})
+		}
+	}
+	return commands
+}
+
+func (h *CLIInteractiveTUIHost) modelArgumentCompletions(prefix string) []gitui.AutocompleteItem {
+	host, err := h.newRPCSessionHost()
+	if err != nil || host == nil {
+		return nil
+	}
+	models := host.getAvailableModels()
+	if len(host.ScopedModels) > 0 {
+		models = models[:0]
+		for _, scopedModel := range host.ScopedModels {
+			models = append(models, scopedModel.Model)
+		}
+	}
+	filter := strings.TrimSpace(prefix)
+	if filter != "" {
+		models = gitui.FuzzyFilter(models, filter, func(model llm.Model) string {
+			return strings.Join([]string{model.ID, model.Provider}, " ")
+		})
+	}
+	items := make([]gitui.AutocompleteItem, 0, len(models))
+	for _, model := range models {
+		value := scopedModelFullID(model)
+		description := strings.TrimSpace(model.Provider)
+		items = append(items, gitui.AutocompleteItem{
+			Value:       value,
+			Label:       model.ID,
+			Description: description,
+		})
+	}
+	return items
+}
+
+func autocompleteDescriptionWithSource(description string, sourceInfo any) string {
+	tag := autocompleteSourceTag(sourceInfo)
+	if tag == "" {
+		return description
+	}
+	if description == "" {
+		return "[" + tag + "]"
+	}
+	return "[" + tag + "] " + description
+}
+
+func autocompleteSourceTag(sourceInfo any) string {
+	source, scope := sourceInfoFields(sourceInfo)
+	if source == "" && scope == "" {
+		return ""
+	}
+	scopePrefix := "t"
+	switch scope {
+	case "user":
+		scopePrefix = "u"
+	case "project":
+		scopePrefix = "p"
+	}
+	switch {
+	case source == "", source == "auto", source == "local", source == "cli", source == "inline":
+		return scopePrefix
+	case strings.HasPrefix(source, "git:"):
+		if gitSource, ok := ParseGitURL(source); ok {
+			ref := ""
+			if gitSource.Ref != "" {
+				ref = "@" + gitSource.Ref
+			}
+			return scopePrefix + ":git:" + gitSource.Host + "/" + gitSource.Path + ref
+		}
+		return scopePrefix + ":" + source
+	case strings.HasPrefix(source, "official:"):
+		return scopePrefix + ":" + source
+	default:
+		return scopePrefix
+	}
+}
+
+func sourceInfoFields(sourceInfo any) (source, scope string) {
+	switch info := sourceInfo.(type) {
+	case SourceInfo:
+		return strings.TrimSpace(info.Source), strings.TrimSpace(info.Scope)
+	case *SourceInfo:
+		if info == nil {
+			return "", ""
+		}
+		return strings.TrimSpace(info.Source), strings.TrimSpace(info.Scope)
+	case ProtocolSourceInfo:
+		return strings.TrimSpace(info.Source), strings.TrimSpace(info.Scope)
+	case *ProtocolSourceInfo:
+		if info == nil {
+			return "", ""
+		}
+		return strings.TrimSpace(info.Source), strings.TrimSpace(info.Scope)
+	case map[string]any:
+		source, _ := info["source"].(string)
+		scope, _ := info["scope"].(string)
+		return strings.TrimSpace(source), strings.TrimSpace(scope)
+	default:
+		return "", ""
+	}
+}
+
+type interactiveSlashCommand struct {
+	Name         string
+	Description  string
+	ArgumentHint string
+}
+
+func builtinInteractiveSlashCommands() []interactiveSlashCommand {
+	return []interactiveSlashCommand{
+		{Name: "settings", Description: "Open settings menu"},
+		{Name: "model", Description: "Select model (opens selector UI)"},
+		{Name: "scoped-models", Description: "Enable/disable models for Ctrl+P cycling"},
+		{Name: "export", Description: "Export session (HTML default, or specify path: .html/.jsonl)"},
+		{Name: "import", Description: "Import and resume a session from a JSONL file"},
+		{Name: "share", Description: "Share session as a secret GitHub gist"},
+		{Name: "copy", Description: "Copy last agent message to clipboard"},
+		{Name: "name", Description: "Set session display name"},
+		{Name: "session", Description: "Show session info and stats"},
+		{Name: "changelog", Description: "Show changelog entries"},
+		{Name: "hotkeys", Description: "Show all keyboard shortcuts"},
+		{Name: "fork", Description: "Create a new fork from a previous user message"},
+		{Name: "clone", Description: "Duplicate the current session at the current position"},
+		{Name: "tree", Description: "Navigate session tree (switch branches)"},
+		{Name: "login", Description: "Configure provider authentication"},
+		{Name: "logout", Description: "Remove provider authentication"},
+		{Name: "new", Description: "Start a new session"},
+		{Name: "compact", Description: "Manually compact the session context"},
+		{Name: "resume", Description: "Resume a different session"},
+		{Name: "reload", Description: "Reload keybindings, extensions, skills, prompts, and themes"},
+		{Name: "quit", Description: "Quit Gi"},
+	}
+}
+
+func (h *CLIInteractiveTUIHost) watchEditorAutocompleteProviders() {
+	if h == nil || h.runtimeHost == nil {
+		return
+	}
+	providerHost, ok := h.runtimeHost.(protocolExtensionRuntimeProvider)
+	if !ok {
+		return
+	}
+	runtime := providerHost.ProtocolExtensionRuntime()
+	if runtime == nil {
+		return
+	}
+	h.unwatchCommands = runtime.OnCommandsChanged(func() {
+		h.refreshEditorAutocompleteProvider()
+		h.requestRender(false)
+	})
+	h.unwatchRenderers = runtime.OnMessageRenderersChanged(func() {
+		go h.rerenderSessionMessages()
+	})
+	h.unwatchAutocomplete = runtime.OnAutocompleteProvidersChanged(func() {
+		h.refreshEditorAutocompleteProvider()
+		h.requestRender(false)
+	})
+}
+
+type protocolAutocompleteTUIProvider struct {
+	runtime *ProtocolExtensionRuntime
+}
+
+func (p protocolAutocompleteTUIProvider) Suggestions(text string, cursor int) gitui.AutocompleteSuggestions {
+	lines, cursorLine, cursorCol := protocolAutocompleteTextCursor(text, cursor)
+	result, err := p.suggest(context.Background(), lines, cursorLine, cursorCol, false)
+	if err != nil || len(result.Items) == 0 {
+		return gitui.AutocompleteSuggestions{Start: cursor, End: cursor}
+	}
+	return protocolAutocompleteToTUI(result)
+}
+
+func (p protocolAutocompleteTUIProvider) GetSuggestionsContext(ctx context.Context, lines []string, cursorLine, cursorCol int, force bool) (*gitui.AutocompleteSuggestions, error) {
+	result, err := p.suggest(ctx, lines, cursorLine, cursorCol, force)
+	if err != nil || len(result.Items) == 0 {
+		return nil, err
+	}
+	converted := protocolAutocompleteToTUI(result)
+	return &converted, nil
+}
+
+func (p protocolAutocompleteTUIProvider) ApplyCompletion(lines []string, cursorLine, cursorCol int, item gitui.AutocompleteItem, prefix string) gitui.CompletionResult {
+	return protocolAutocompleteApplyCompletion(lines, cursorLine, cursorCol, item, prefix)
+}
+
+func (p protocolAutocompleteTUIProvider) suggest(ctx context.Context, lines []string, cursorLine, cursorCol int, force bool) (ProtocolAutocompleteResult, error) {
+	if p.runtime == nil {
+		return ProtocolAutocompleteResult{}, nil
+	}
+	lineCopy := append([]string(nil), lines...)
+	slashCommand, argumentIndex := protocolAutocompleteSlashArgumentContext(lineCopy, cursorLine, cursorCol)
+	return p.runtime.SuggestAutocomplete(ctx, ProtocolAutocompleteRequest{
+		Text:          strings.Join(lineCopy, "\n"),
+		Lines:         lineCopy,
+		CursorLine:    cursorLine,
+		CursorCol:     cursorCol,
+		Force:         force,
+		SlashCommand:  slashCommand,
+		ArgumentIndex: argumentIndex,
+	})
+}
+
+func protocolAutocompleteSlashArgumentContext(lines []string, cursorLine, cursorCol int) (string, int) {
+	if cursorLine < 0 || cursorLine >= len(lines) {
+		return "", 0
+	}
+	line := lines[cursorLine]
+	if cursorCol < 0 {
+		cursorCol = 0
+	}
+	lineRunes := []rune(line)
+	if cursorCol > len(lineRunes) {
+		cursorCol = len(lineRunes)
+	}
+	beforeCursor := string(lineRunes[:cursorCol])
+	if !strings.HasPrefix(beforeCursor, "/") {
+		return "", 0
+	}
+	space := strings.IndexAny(beforeCursor, " \t")
+	if space <= 1 {
+		return "", 0
+	}
+	commandName := strings.TrimSpace(beforeCursor[1:space])
+	if commandName == "" {
+		return "", 0
+	}
+	argumentText := beforeCursor[space+1:]
+	fields := strings.Fields(argumentText)
+	argumentIndex := len(fields) - 1
+	if strings.TrimSpace(argumentText) == "" {
+		argumentIndex = 0
+	} else if strings.HasSuffix(argumentText, " ") || strings.HasSuffix(argumentText, "\t") {
+		argumentIndex = len(fields)
+	}
+	if argumentIndex < 0 {
+		argumentIndex = 0
+	}
+	return commandName, argumentIndex
+}
+
+func protocolAutocompleteToTUI(result ProtocolAutocompleteResult) gitui.AutocompleteSuggestions {
+	items := make([]gitui.AutocompleteItem, 0, len(result.Items))
+	for _, item := range result.Items {
+		value := firstNonEmptyString(item.Value, item.Label, item.ID)
+		if value == "" {
+			continue
+		}
+		items = append(items, gitui.AutocompleteItem{
+			Value:       value,
+			Label:       firstNonEmptyString(item.Label, value),
+			Description: item.Description,
+		})
+	}
+	return gitui.AutocompleteSuggestions{
+		Items:  items,
+		Prefix: result.Prefix,
+		Start:  result.Start,
+		End:    result.End,
+	}
+}
+
+func protocolAutocompleteTextCursor(text string, cursor int) ([]string, int, int) {
+	runes := []rune(text)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+	beforeLines := strings.Split(string(runes[:cursor]), "\n")
+	cursorLine := len(beforeLines) - 1
+	cursorCol := len([]rune(beforeLines[cursorLine]))
+	return strings.Split(text, "\n"), cursorLine, cursorCol
+}
+
+func protocolAutocompleteApplyCompletion(lines []string, cursorLine, cursorCol int, item gitui.AutocompleteItem, prefix string) gitui.CompletionResult {
+	nextLines := append([]string(nil), lines...)
+	if cursorLine < 0 || cursorLine >= len(nextLines) {
+		return gitui.CompletionResult{Lines: nextLines, CursorLine: cursorLine, CursorCol: cursorCol}
+	}
+	lineRunes := []rune(nextLines[cursorLine])
+	if cursorCol < 0 {
+		cursorCol = 0
+	}
+	if cursorCol > len(lineRunes) {
+		cursorCol = len(lineRunes)
+	}
+	start := cursorCol - len([]rune(prefix))
+	if start < 0 {
+		start = cursorCol
+	}
+	replacement := []rune(item.Value)
+	updated := make([]rune, 0, len(lineRunes)-cursorCol+start+len(replacement))
+	updated = append(updated, lineRunes[:start]...)
+	updated = append(updated, replacement...)
+	updated = append(updated, lineRunes[cursorCol:]...)
+	nextLines[cursorLine] = string(updated)
+	return gitui.CompletionResult{
+		Lines:      nextLines,
+		CursorLine: cursorLine,
+		CursorCol:  start + len(replacement),
+	}
+}

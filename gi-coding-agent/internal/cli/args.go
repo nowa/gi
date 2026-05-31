@@ -1,4 +1,4 @@
-package gicodingagent
+package cli
 
 import "strings"
 

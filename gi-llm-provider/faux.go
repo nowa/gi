@@ -1,10 +1,13 @@
 package gillmprovider
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -40,18 +43,28 @@ type FauxProviderRegistration struct {
 	Models   []Model
 	State    FauxState
 
-	mu          sync.Mutex
-	responses   []FauxResponseStep
-	promptCache map[string]string
+	minTokenSize    int
+	maxTokenSize    int
+	tokensPerSecond float64
+	mu              sync.Mutex
+	responses       []FauxResponseStep
+	promptCache     map[string]string
 }
 
 type FauxOptions struct {
-	API      string
-	Provider string
-	Models   []FauxModelDefinition
+	API             string
+	Provider        string
+	Models          []FauxModelDefinition
+	TokensPerSecond float64
+	TokenSize       FauxTokenSize
 }
 
 type FauxOption func(*FauxOptions)
+
+type FauxTokenSize struct {
+	Min int
+	Max int
+}
 
 func WithFauxAPI(api string) FauxOption {
 	return func(options *FauxOptions) { options.API = api }
@@ -63,6 +76,14 @@ func WithFauxProvider(provider string) FauxOption {
 
 func WithFauxModels(models ...FauxModelDefinition) FauxOption {
 	return func(options *FauxOptions) { options.Models = models }
+}
+
+func WithFauxTokensPerSecond(tokensPerSecond float64) FauxOption {
+	return func(options *FauxOptions) { options.TokensPerSecond = tokensPerSecond }
+}
+
+func WithFauxTokenSize(min, max int) FauxOption {
+	return func(options *FauxOptions) { options.TokenSize = FauxTokenSize{Min: min, Max: max} }
 }
 
 func FauxText(text string) ContentPart {
@@ -106,12 +127,26 @@ func RegisterFauxProvider(options ...FauxOption) *FauxProviderRegistration {
 		option(&opts)
 	}
 	if len(opts.Models) == 0 {
-		opts.Models = []FauxModelDefinition{{ID: defaultFauxModelID, Name: "Faux Model", Input: []string{"text"}, ContextWindow: 128000, MaxTokens: 8192}}
+		opts.Models = []FauxModelDefinition{{ID: defaultFauxModelID, Name: "Faux Model", Input: []string{"text", "image"}, ContextWindow: 128000, MaxTokens: 16384}}
+	}
+	minTokenSize := opts.TokenSize.Min
+	if minTokenSize <= 0 {
+		minTokenSize = 1
+	}
+	maxTokenSize := opts.TokenSize.Max
+	if maxTokenSize <= 0 {
+		maxTokenSize = minTokenSize
+	}
+	if maxTokenSize < minTokenSize {
+		maxTokenSize = minTokenSize
 	}
 	registration := &FauxProviderRegistration{
-		API:         opts.API,
-		Provider:    opts.Provider,
-		promptCache: map[string]string{},
+		API:             opts.API,
+		Provider:        opts.Provider,
+		minTokenSize:    minTokenSize,
+		maxTokenSize:    maxTokenSize,
+		tokensPerSecond: opts.TokensPerSecond,
+		promptCache:     map[string]string{},
 	}
 	for _, definition := range opts.Models {
 		name := definition.Name
@@ -120,7 +155,7 @@ func RegisterFauxProvider(options ...FauxOption) *FauxProviderRegistration {
 		}
 		input := definition.Input
 		if input == nil {
-			input = []string{"text"}
+			input = []string{"text", "image"}
 		}
 		contextWindow := definition.ContextWindow
 		if contextWindow == 0 {
@@ -128,7 +163,7 @@ func RegisterFauxProvider(options ...FauxOption) *FauxProviderRegistration {
 		}
 		maxTokens := definition.MaxTokens
 		if maxTokens == 0 {
-			maxTokens = 8192
+			maxTokens = 16384
 		}
 		registration.Models = append(registration.Models, Model{
 			ID:            definition.ID,
@@ -205,7 +240,7 @@ func (r *FauxProviderRegistration) StreamSimple(model Model, llmContext Context,
 	if message.StopReason == StopReasonError || message.StopReason == StopReasonAborted {
 		return ErrorAssistantStream(message), nil
 	}
-	return streamFauxMessage(message), nil
+	return streamFauxMessage(message, options, r.minTokenSize, r.maxTokenSize, r.tokensPerSecond), nil
 }
 
 func (r *FauxProviderRegistration) nextResponse(llmContext Context, options StreamOptions, model Model) (Message, error) {
@@ -223,29 +258,62 @@ func (r *FauxProviderRegistration) nextResponse(llmContext Context, options Stre
 	return step.Message, nil
 }
 
-func streamFauxMessage(message Message) *AssistantMessageEventStream {
+func streamFauxMessage(message Message, options StreamOptions, minTokenSize, maxTokenSize int, tokensPerSecond float64) *AssistantMessageEventStream {
 	stream := NewAssistantMessageEventStream()
 	go func() {
+		ctx := options.Context
+		if ctx == nil {
+			ctx = context.Background()
+		}
 		partial := message
 		partial.Content = nil
+		if ctx.Err() != nil {
+			pushFauxAbort(stream, partial, ctx.Err())
+			return
+		}
 		stream.Push(AssistantMessageEvent{Type: "start", Partial: partial})
-		for _, part := range message.Content {
+		for index, part := range message.Content {
+			if ctx.Err() != nil {
+				pushFauxAbort(stream, partial, ctx.Err())
+				return
+			}
 			switch part.Type {
 			case ContentThinking:
-				stream.Push(AssistantMessageEvent{Type: "thinking_start", Partial: partial})
-				partial.Content = append(partial.Content, part)
-				stream.Push(AssistantMessageEvent{Type: "thinking_delta", Partial: partial})
-				stream.Push(AssistantMessageEvent{Type: "thinking_end", Partial: partial})
+				partial.Content = append(partial.Content, Thinking(""))
+				stream.Push(AssistantMessageEvent{Type: "thinking_start", ContentIndex: index, Partial: partial})
+				for _, chunk := range splitFauxByTokenSize(part.Thinking, minTokenSize, maxTokenSize) {
+					if !waitFauxChunk(ctx, chunk, tokensPerSecond) {
+						pushFauxAbort(stream, partial, ctx.Err())
+						return
+					}
+					partial.Content[index].Thinking += chunk
+					stream.Push(AssistantMessageEvent{Type: "thinking_delta", ContentIndex: index, Delta: chunk, Partial: partial})
+				}
+				stream.Push(AssistantMessageEvent{Type: "thinking_end", ContentIndex: index, Content: part.Thinking, Partial: partial})
 			case ContentText:
-				stream.Push(AssistantMessageEvent{Type: "text_start", Partial: partial})
-				partial.Content = append(partial.Content, part)
-				stream.Push(AssistantMessageEvent{Type: "text_delta", Partial: partial})
-				stream.Push(AssistantMessageEvent{Type: "text_end", Partial: partial})
+				partial.Content = append(partial.Content, Text(""))
+				stream.Push(AssistantMessageEvent{Type: "text_start", ContentIndex: index, Partial: partial})
+				for _, chunk := range splitFauxByTokenSize(part.Text, minTokenSize, maxTokenSize) {
+					if !waitFauxChunk(ctx, chunk, tokensPerSecond) {
+						pushFauxAbort(stream, partial, ctx.Err())
+						return
+					}
+					partial.Content[index].Text += chunk
+					stream.Push(AssistantMessageEvent{Type: "text_delta", ContentIndex: index, Delta: chunk, Partial: partial})
+				}
+				stream.Push(AssistantMessageEvent{Type: "text_end", ContentIndex: index, Content: part.Text, Partial: partial})
 			case ContentToolCall:
-				stream.Push(AssistantMessageEvent{Type: "toolcall_start", Partial: partial})
-				partial.Content = append(partial.Content, part)
-				stream.Push(AssistantMessageEvent{Type: "toolcall_delta", Partial: partial})
-				stream.Push(AssistantMessageEvent{Type: "toolcall_end", Partial: partial})
+				partial.Content = append(partial.Content, ToolCall(part.ID, part.Name, map[string]any{}))
+				stream.Push(AssistantMessageEvent{Type: "toolcall_start", ContentIndex: index, Partial: partial})
+				for _, chunk := range splitFauxByTokenSize(fauxJSONString(part.Arguments), minTokenSize, maxTokenSize) {
+					if !waitFauxChunk(ctx, chunk, tokensPerSecond) {
+						pushFauxAbort(stream, partial, ctx.Err())
+						return
+					}
+					stream.Push(AssistantMessageEvent{Type: "toolcall_delta", ContentIndex: index, Delta: chunk, Partial: partial})
+				}
+				partial.Content[index].Arguments = part.Arguments
+				stream.Push(AssistantMessageEvent{Type: "toolcall_end", ContentIndex: index, ToolCall: part, Partial: partial})
 			}
 		}
 		if message.StopReason == StopReasonError || message.StopReason == StopReasonAborted {
@@ -255,6 +323,71 @@ func streamFauxMessage(message Message) *AssistantMessageEventStream {
 		}
 	}()
 	return stream
+}
+
+func splitFauxByTokenSize(text string, minTokenSize, maxTokenSize int) []string {
+	if minTokenSize <= 0 {
+		minTokenSize = 1
+	}
+	if maxTokenSize < minTokenSize {
+		maxTokenSize = minTokenSize
+	}
+	charSize := max(1, minTokenSize*4)
+	var chunks []string
+	for len(text) > 0 {
+		if len(text) <= charSize {
+			chunks = append(chunks, text)
+			break
+		}
+		chunks = append(chunks, text[:charSize])
+		text = text[charSize:]
+	}
+	if len(chunks) == 0 {
+		return []string{""}
+	}
+	return chunks
+}
+
+func waitFauxChunk(ctx context.Context, chunk string, tokensPerSecond float64) bool {
+	if tokensPerSecond <= 0 {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+			return true
+		}
+	}
+	delay := time.Duration(float64(estimateFauxTokens(chunk)) / tokensPerSecond * float64(time.Second))
+	if delay <= 0 {
+		delay = time.Nanosecond
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return ctx.Err() == nil
+	}
+}
+
+func pushFauxAbort(stream *AssistantMessageEventStream, partial Message, err error) {
+	if err == nil {
+		err = context.Canceled
+	}
+	aborted := partial
+	aborted.StopReason = StopReasonAborted
+	aborted.ErrorMessage = err.Error()
+	aborted.Timestamp = NowMillis()
+	stream.Push(AssistantMessageEvent{Type: "error", Reason: StopReasonAborted, Error: aborted})
+}
+
+func fauxJSONString(value any) string {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
 }
 
 func estimateFauxUsage(message Message, llmContext Context, options StreamOptions, promptCache map[string]string) Usage {
@@ -293,7 +426,7 @@ func serializeFauxContext(llmContext Context) string {
 		parts = append(parts, message.Role+":"+messageToText(message))
 	}
 	if len(llmContext.Tools) > 0 {
-		parts = append(parts, "tools:"+fmt.Sprint(llmContext.Tools))
+		parts = append(parts, "tools:"+fauxJSONString(llmContext.Tools))
 	}
 	return strings.Join(parts, "\n\n")
 }
@@ -326,7 +459,7 @@ func assistantContentToText(content []ContentPart) string {
 		case ContentThinking:
 			parts = append(parts, part.Thinking)
 		case ContentToolCall:
-			parts = append(parts, fmt.Sprintf("%s:%v", part.Name, part.Arguments))
+			parts = append(parts, part.Name+":"+fauxJSONString(part.Arguments))
 		}
 	}
 	return strings.Join(parts, "\n")

@@ -146,14 +146,47 @@ func (m *DefaultPackageManager) GetPackageIdentity(source string) string {
 }
 
 func (m *DefaultPackageManager) Install(source string, project bool) error {
-	m.emitProgress(PackageProgressEvent{Type: "start", Action: "install", Source: strings.TrimSpace(source)})
-	_, err := m.addSourceToSettings(source, project)
-	if err != nil {
-		m.emitProgress(PackageProgressEvent{Type: "error", Action: "install", Source: strings.TrimSpace(source), Error: err.Error()})
+	source = strings.TrimSpace(source)
+	m.emitProgress(PackageProgressEvent{Type: "start", Action: "install", Source: source})
+	if err := m.installPackageArtifact(source, project); err != nil {
+		m.emitProgress(PackageProgressEvent{Type: "error", Action: "install", Source: source, Error: err.Error()})
 		return err
 	}
-	m.emitProgress(PackageProgressEvent{Type: "done", Action: "install", Source: strings.TrimSpace(source)})
+	_, err := m.addSourceToSettings(source, project)
+	if err != nil {
+		m.emitProgress(PackageProgressEvent{Type: "error", Action: "install", Source: source, Error: err.Error()})
+		return err
+	}
+	m.emitProgress(PackageProgressEvent{Type: "done", Action: "install", Source: source})
 	return err
+}
+
+func (m *DefaultPackageManager) installPackageArtifact(source string, project bool) error {
+	if source == "" {
+		return fmt.Errorf("missing install source")
+	}
+	if unsupportedPackageSource(source) {
+		return unsupportedPackageSourceError(source)
+	}
+	parsed := ParsePackageSource(source)
+	switch parsed.Type {
+	case "official":
+		_, err := m.materializeOfficialPackage(parsed.Path)
+		return err
+	case "git":
+		return m.installGitPackage(GitSource{Repo: parsed.Repo, Host: parsed.Host, Path: parsed.Path, Ref: parsed.Ref, Pinned: parsed.Pinned}, project)
+	case "local":
+		resolved := ResolveToCwd(parsed.Path, m.cwd)
+		if _, err := os.Stat(resolved); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("path does not exist: %s", resolved)
+			}
+			return err
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported install source: %s", source)
+	}
 }
 
 func (m *DefaultPackageManager) addSourceToSettings(source string, project bool) (bool, error) {
@@ -189,12 +222,42 @@ func (m *DefaultPackageManager) addSourceToSettings(source string, project bool)
 }
 
 func (m *DefaultPackageManager) Remove(source string, project bool) error {
-	_, err := m.RemoveAndPersist(source, project)
-	return err
+	source = strings.TrimSpace(source)
+	m.emitProgress(PackageProgressEvent{Type: "start", Action: "remove", Source: source})
+	if err := m.removePackageArtifact(source, project); err != nil {
+		m.emitProgress(PackageProgressEvent{Type: "error", Action: "remove", Source: source, Error: err.Error()})
+		return err
+	}
+	m.emitProgress(PackageProgressEvent{Type: "done", Action: "remove", Source: source})
+	return nil
 }
 
 func (m *DefaultPackageManager) RemoveAndPersist(source string, project bool) (bool, error) {
+	if err := m.Remove(source, project); err != nil {
+		return false, err
+	}
 	return m.removeSourceFromSettings(source, project)
+}
+
+func (m *DefaultPackageManager) removePackageArtifact(source string, project bool) error {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return fmt.Errorf("missing remove source")
+	}
+	if unsupportedPackageSource(source) {
+		return unsupportedPackageSourceError(source)
+	}
+	parsed := ParsePackageSource(source)
+	switch parsed.Type {
+	case "git":
+		return os.RemoveAll(m.gitPackageInstallPath(GitSource{Host: parsed.Host, Path: parsed.Path}, project))
+	case "official":
+		return os.RemoveAll(filepath.Join(officialPackageStoreDir(m.agentDir, m.cwd), parsed.Path))
+	case "local":
+		return nil
+	default:
+		return fmt.Errorf("unsupported remove source: %s", source)
+	}
 }
 
 func (m *DefaultPackageManager) removeSourceFromSettings(source string, project bool) (bool, error) {
@@ -477,7 +540,7 @@ func (m *DefaultPackageManager) GetInstalledPath(source, scope string) string {
 	parsed := ParsePackageSource(source)
 	switch parsed.Type {
 	case "git":
-		return gitPackageInstallPath(m.agentDir, GitSource{Host: parsed.Host, Path: parsed.Path})
+		return m.gitPackageInstallPath(GitSource{Host: parsed.Host, Path: parsed.Path}, scope == "project")
 	case "official":
 		return filepath.Join(officialPackageStoreDir(m.agentDir, m.cwd), parsed.Path)
 	case "local":
@@ -673,33 +736,57 @@ func PackageSourceIdentity(source PackageSource) string {
 
 func (m *DefaultPackageManager) Update(sources ...string) error {
 	m.emitProgress(PackageProgressEvent{Type: "start", Action: "update"})
+	configured := m.ListConfiguredPackages()
+	type updateTarget struct {
+		source string
+		scope  string
+	}
+	var targets []updateTarget
 	if len(sources) == 0 {
-		sources = settingsPackagesToStrings(m.settingsManager.GetPackages())
+		for _, pkg := range configured {
+			targets = append(targets, updateTarget{source: pkg.Source, scope: pkg.Scope})
+		}
 	} else {
 		for _, sourceText := range sources {
+			if unsupportedPackageSource(sourceText) {
+				err := unsupportedPackageSourceError(sourceText)
+				m.emitProgress(PackageProgressEvent{Type: "error", Action: "update", Source: strings.TrimSpace(sourceText), Error: err.Error()})
+				return err
+			}
 			if suggestion := m.packageUpdateSuggestion(sourceText); suggestion != "" {
 				err := PackageUpdateSuggestionError{Input: sourceText, Suggestion: suggestion}
 				m.emitProgress(PackageProgressEvent{Type: "error", Action: "update", Source: strings.TrimSpace(sourceText), Error: err.Error()})
 				return err
 			}
+			identity := PackageSourceIdentity(ParsePackageSource(sourceText))
+			for _, pkg := range configured {
+				if PackageSourceIdentity(ParsePackageSource(pkg.Source)) == identity {
+					targets = append(targets, updateTarget{source: pkg.Source, scope: pkg.Scope})
+				}
+			}
 		}
 	}
-	for _, sourceText := range sources {
+	for _, target := range targets {
+		sourceText := target.source
 		if unsupportedPackageSource(sourceText) {
 			err := unsupportedPackageSourceError(sourceText)
 			m.emitProgress(PackageProgressEvent{Type: "error", Action: "update", Source: strings.TrimSpace(sourceText), Error: err.Error()})
 			return err
 		}
 	}
-	for _, sourceText := range sources {
-		sourceText = strings.TrimSpace(sourceText)
+	for _, target := range targets {
+		sourceText := strings.TrimSpace(target.source)
 		source, ok := ParseGitURL(sourceText)
 		if !ok || source.Pinned {
 			continue
 		}
-		installedDir := gitPackageInstallPath(m.agentDir, source)
+		installedDir := m.gitPackageInstallPath(source, target.scope == "project")
 		if _, err := os.Stat(installedDir); err != nil {
 			if os.IsNotExist(err) {
+				if err := m.installGitPackage(source, target.scope == "project"); err != nil {
+					m.emitProgress(PackageProgressEvent{Type: "error", Action: "update", Source: sourceText, Error: err.Error()})
+					return err
+				}
 				continue
 			}
 			m.emitProgress(PackageProgressEvent{Type: "error", Action: "update", Source: sourceText, Error: err.Error()})
@@ -840,6 +927,30 @@ func (m *DefaultPackageManager) ResolveExtensionSources(sources []string, option
 	return resolved, nil
 }
 
+func (m *DefaultPackageManager) installGitPackage(source GitSource, project bool) error {
+	targetDir := m.gitPackageInstallPath(source, project)
+	if _, err := os.Stat(targetDir); err == nil {
+		return nil
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := ensurePackageStoreGitIgnore(m.gitPackageInstallRoot(project)); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(targetDir), 0o755); err != nil {
+		return err
+	}
+	if err := m.operations.RunCommand("git", []string{"clone", source.Repo, targetDir}, PackageCommandOptions{}); err != nil {
+		return err
+	}
+	if source.Ref != "" {
+		if err := m.operations.RunCommand("git", []string{"checkout", source.Ref}, PackageCommandOptions{CWD: targetDir}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func packageManagerOffline() bool {
 	value := strings.TrimSpace(os.Getenv("GI_OFFLINE"))
 	if value == "" {
@@ -927,6 +1038,22 @@ func runPackageCommandCapture(command string, args []string, options PackageComm
 	return strings.TrimSpace(string(output)), nil
 }
 
+func ensurePackageStoreGitIgnore(dir string) error {
+	if dir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, ".gitignore")
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.WriteFile(path, []byte("*\n!.gitignore\n"), 0o644)
+}
+
 func settingsPackagesToStrings(values []any) []string {
 	sources := make([]string, 0, len(values))
 	for _, value := range values {
@@ -993,6 +1120,21 @@ func gitPackageInstallPath(agentDir string, source GitSource) string {
 	elements := []string{agentDir, "git", source.Host}
 	elements = append(elements, strings.Split(source.Path, "/")...)
 	return filepath.Join(elements...)
+}
+
+func (m *DefaultPackageManager) gitPackageInstallPath(source GitSource, project bool) string {
+	return gitPackageInstallPath(m.packageInstallBaseDir(project), source)
+}
+
+func (m *DefaultPackageManager) gitPackageInstallRoot(project bool) string {
+	return filepath.Join(m.packageInstallBaseDir(project), "git")
+}
+
+func (m *DefaultPackageManager) packageInstallBaseDir(project bool) string {
+	if project {
+		return filepath.Join(m.cwd, ConfigDirName)
+	}
+	return m.agentDir
 }
 
 func temporaryGitPackagePath(source GitSource) string {

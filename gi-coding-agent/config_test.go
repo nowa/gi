@@ -92,6 +92,68 @@ func TestDefaultInstallEnvironmentPrefersGiPackageDir(t *testing.T) {
 	}
 }
 
+func TestConfigPathHelpersUseGiNamesPiStyle(t *testing.T) {
+	agentDir := filepath.Join(t.TempDir(), "agent")
+	t.Setenv(EnvCodingAgentDir, agentDir)
+	t.Setenv(LegacyEnvCodingAgentDir, filepath.Join(t.TempDir(), "pi-agent"))
+
+	if got := GetAgentDir(); got != agentDir {
+		t.Fatalf("agent dir = %q, want %q", got, agentDir)
+	}
+	assertPath(t, GetCustomThemesDir(), agentDir, "themes")
+	assertPath(t, GetModelsPath(), agentDir, "models.json")
+	assertPath(t, GetAuthPath(), agentDir, "auth.json")
+	assertPath(t, GetSettingsPath(), agentDir, "settings.json")
+	assertPath(t, GetToolsDir(), agentDir, "tools")
+	assertPath(t, GetBinDir(), agentDir, "bin")
+	assertPath(t, GetPromptsDir(), agentDir, "prompts")
+	assertPath(t, GetSessionsDir(), agentDir, "sessions")
+	assertPath(t, GetDebugLogPath(), agentDir, "gi-debug.log")
+}
+
+func TestConfigPathHelpersKeepLegacyPiFallback(t *testing.T) {
+	agentDir := filepath.Join(t.TempDir(), "legacy-agent")
+	t.Setenv(EnvCodingAgentDir, "")
+	t.Setenv(LegacyEnvCodingAgentDir, agentDir)
+
+	if got := GetAgentDir(); got != agentDir {
+		t.Fatalf("agent dir = %q, want legacy %q", got, agentDir)
+	}
+}
+
+func TestPackageAssetPathHelpersUseGoPackageLayout(t *testing.T) {
+	packageDir := filepath.Join(t.TempDir(), "gi")
+	env := InstallEnvironment{PackageDir: packageDir}
+
+	assertPath(t, GetPackageDir(env), packageDir)
+	assertPath(t, GetThemesDir(env), packageDir, "gi-coding-agent", "themes")
+	assertPath(t, GetExportTemplateDir(env), packageDir, "gi-coding-agent", "export-html")
+	assertPath(t, GetPackageJSONPath(env), packageDir, "go.mod")
+	assertPath(t, GetPackageJsonPath(env), packageDir, "go.mod")
+	assertPath(t, GetReadmePath(env), packageDir, "README.md")
+	assertPath(t, GetDocsPath(env), packageDir, "docs")
+	assertPath(t, GetExamplesPath(env), packageDir, "examples")
+	assertPath(t, GetChangelogPath(env), packageDir, "CHANGELOG.md")
+	assertPath(t, GetInteractiveAssetsDir(env), packageDir, "gi-coding-agent", "assets")
+	assertPath(t, GetBundledInteractiveAssetPath("clankolas.png", env), packageDir, "gi-coding-agent", "assets", "clankolas.png")
+}
+
+func TestPackageDirExpandsTildeWithInstallEnvironmentHome(t *testing.T) {
+	home := t.TempDir()
+	env := InstallEnvironment{PackageDir: "~/pkg", HomeDir: home}
+
+	assertPath(t, GetPackageDir(env), home, "pkg")
+}
+
+func TestShareViewerURLUsesGiEnvPiStyle(t *testing.T) {
+	t.Setenv("GI_SHARE_VIEWER_URL", "https://share.example/session/")
+	t.Setenv("PI_SHARE_VIEWER_URL", "https://pi.example/session/")
+
+	if got := GetShareViewerURL("abc123"); got != "https://share.example/session/#abc123" {
+		t.Fatalf("share url = %q", got)
+	}
+}
+
 func assertNodeSelfUpdateUnsupported(t *testing.T, env InstallEnvironment) {
 	t.Helper()
 	if command := GetSelfUpdateCommand(testPackageName, env, []string{"fake-npm"}, ""); command != nil {
@@ -140,7 +202,7 @@ func createPNPMInstallEnv(t *testing.T) InstallEnvironment {
 	}
 	return InstallEnvironment{
 		PackageDir: packageDir,
-		ExecPath:   filepath.Join(root, ".pnpm", "gi@0.0.0", "node_modules", "gi", "dist", "cli.js"),
+		ExecPath:   filepath.Join(root, ".pnpm", "gi@"+DefaultCodingAgentVersion, "node_modules", "gi", "dist", "cli.js"),
 		HomeDir:    t.TempDir(),
 		CommandOutput: commandOutputStub(map[string]string{
 			commandKey("pnpm", []string{"root", "-g"}): root,
@@ -201,4 +263,12 @@ func commandOutputStub(outputs map[string]string) func(string, []string, bool) (
 
 func commandKey(command string, args []string) string {
 	return command + "\x00" + strings.Join(args, "\x00")
+}
+
+func assertPath(t *testing.T, got string, parts ...string) {
+	t.Helper()
+	want := filepath.Join(parts...)
+	if got != want {
+		t.Fatalf("path = %q, want %q", got, want)
+	}
 }

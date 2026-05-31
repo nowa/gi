@@ -613,6 +613,21 @@ func TestRPCSessionHostExportHTMLCreatesFile(t *testing.T) {
 	if _, err := os.Stat(result.Path); err != nil {
 		t.Fatalf("exported html missing: %v", err)
 	}
+	content, err := os.ReadFile(result.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`<title>Gi Session Export</title>`,
+		`id="session-data"`,
+		`id="tree-container"`,
+		`id="messages"`,
+		`decodeSessionData`,
+	} {
+		if !strings.Contains(string(content), expected) {
+			t.Fatalf("RPC export HTML missing Pi-style viewer marker %q:\n%s", expected, string(content))
+		}
+	}
 }
 
 func TestRPCSessionHostExportHTMLEmptySessionMatchesPiError(t *testing.T) {

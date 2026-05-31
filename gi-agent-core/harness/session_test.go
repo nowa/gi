@@ -11,7 +11,7 @@ import (
 )
 
 func runSessionSuite(t *testing.T, name string, createStorage func(t *testing.T) SessionStorage, inspect func(t *testing.T)) {
-	t.Run(name+"/appends messages and builds context", func(t *testing.T) {
+	t.Run(name+"/appends messages and builds context in order", func(t *testing.T) {
 		session := NewSession(createStorage(t))
 		if _, err := session.AppendMessage(harnessUserMessage("one")); err != nil {
 			t.Fatal(err)
@@ -39,7 +39,7 @@ func runSessionSuite(t *testing.T, name string, createStorage func(t *testing.T)
 		}
 	})
 
-	t.Run(name+"/supports branching", func(t *testing.T) {
+	t.Run(name+"/supports branching by moving the leaf and appending a new branch", func(t *testing.T) {
 		session := NewSession(createStorage(t))
 		user1, _ := session.AppendMessage(harnessUserMessage("one"))
 		assistant1, _ := session.AppendMessage(harnessAssistantMessage("two"))
@@ -60,7 +60,7 @@ func runSessionSuite(t *testing.T, name string, createStorage func(t *testing.T)
 		}
 	})
 
-	t.Run(name+"/supports moving to root", func(t *testing.T) {
+	t.Run(name+"/supports moving the leaf to root", func(t *testing.T) {
 		session := NewSession(createStorage(t))
 		_, _ = session.AppendMessage(harnessUserMessage("one"))
 		_, err := session.MoveTo(nil, "")
@@ -77,7 +77,7 @@ func runSessionSuite(t *testing.T, name string, createStorage func(t *testing.T)
 		}
 	})
 
-	t.Run(name+"/reconstructs compaction summaries", func(t *testing.T) {
+	t.Run(name+"/reconstructs compaction summaries in context", func(t *testing.T) {
 		session := NewSession(createStorage(t))
 		_, _ = session.AppendMessage(harnessUserMessage("one"))
 		_, _ = session.AppendMessage(harnessAssistantMessage("two"))
@@ -91,7 +91,7 @@ func runSessionSuite(t *testing.T, name string, createStorage func(t *testing.T)
 		}
 	})
 
-	t.Run(name+"/branch summary and custom messages", func(t *testing.T) {
+	t.Run(name+"/supports moving with branch summary entries in context and supports custom message entries in context", func(t *testing.T) {
 		session := NewSession(createStorage(t))
 		user1, _ := session.AppendMessage(harnessUserMessage("one"))
 		summaryID, err := session.MoveTo(&user1, "summary text")
@@ -106,6 +106,19 @@ func runSessionSuite(t *testing.T, name string, createStorage func(t *testing.T)
 		context, _ := session.BuildContext()
 		if got := messageRoles(context.Messages); !reflect.DeepEqual(got, []string{"user", "branchSummary", "custom"}) {
 			t.Fatalf("roles = %#v", got)
+		}
+	})
+
+	t.Run(name+"/custom message role stays synthetic custom", func(t *testing.T) {
+		session := NewSession(createStorage(t))
+		_, _ = session.AppendCustomMessageEntry("note", "hello", true, map[string]bool{"ok": true})
+		context, _ := session.BuildContext()
+		if len(context.Messages) != 1 {
+			t.Fatalf("messages = %#v", context.Messages)
+		}
+		message := context.Messages[0]
+		if message.Role != "custom" || message.CustomType != "note" || message.Display == nil || !*message.Display {
+			t.Fatalf("custom message = %#v", message)
 		}
 	})
 
@@ -176,6 +189,25 @@ func TestSessionSuites(t *testing.T) {
 		lines := strings.Split(strings.TrimSpace(string(content)), "\n")
 		if len(lines) <= 1 || !strings.Contains(lines[0], `"version":3`) || !strings.Contains(string(content), `"type":"leaf"`) {
 			t.Fatalf("jsonl content = %s", string(content))
+		}
+	})
+}
+
+func TestSessionPiCaseNames(t *testing.T) {
+	t.Run("appends messages and builds context in order", func(t *testing.T) {
+		session := NewSession(MustInMemorySessionStorage())
+		if _, err := session.AppendMessage(harnessUserMessage("one")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := session.AppendMessage(harnessAssistantMessage("two")); err != nil {
+			t.Fatal(err)
+		}
+		context, err := session.BuildContext()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := messageRoles(context.Messages); !reflect.DeepEqual(got, []string{"user", "assistant"}) {
+			t.Fatalf("roles = %#v", got)
 		}
 	})
 }

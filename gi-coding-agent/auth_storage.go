@@ -15,11 +15,12 @@ import (
 )
 
 type AuthCredential struct {
-	Type    string `json:"type"`
-	Key     string `json:"key,omitempty"`
-	Access  string `json:"access,omitempty"`
-	Refresh string `json:"refresh,omitempty"`
-	Expires int64  `json:"expires,omitempty"`
+	Type          string `json:"type"`
+	Key           string `json:"key,omitempty"`
+	Access        string `json:"access,omitempty"`
+	Refresh       string `json:"refresh,omitempty"`
+	Expires       int64  `json:"expires,omitempty"`
+	EnterpriseURL string `json:"enterpriseUrl,omitempty"`
 }
 
 type AuthStorageData map[string]AuthCredential
@@ -432,6 +433,9 @@ func resolveCommandConfigValue(commandConfig string) (string, bool) {
 	}
 
 	value, resolved := executeConfigCommand(commandConfig[1:])
+	if !resolved {
+		return "", false
+	}
 	configValueCacheMu.Lock()
 	configValueCache[commandConfig] = configValueCacheEntry{value: value, ok: resolved}
 	configValueCacheMu.Unlock()
@@ -482,17 +486,17 @@ var builtInOAuthProviders = []OAuthProvider{
 	{
 		ID:           "anthropic",
 		Name:         "Anthropic (Claude Pro/Max)",
-		RefreshToken: unsupportedOAuthTokenRefresh,
+		RefreshToken: refreshAnthropicOAuthToken,
 	},
 	{
 		ID:           "github-copilot",
 		Name:         "GitHub Copilot",
-		RefreshToken: unsupportedOAuthTokenRefresh,
+		RefreshToken: refreshGitHubCopilotOAuthToken,
 	},
 	{
 		ID:           "openai-codex",
 		Name:         "ChatGPT Plus/Pro (Codex Subscription)",
-		RefreshToken: unsupportedOAuthTokenRefresh,
+		RefreshToken: refreshOpenAICodexOAuthToken,
 	},
 }
 

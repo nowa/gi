@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -173,6 +174,41 @@ func TestOpenAICodexURLResolution(t *testing.T) {
 	}
 	if got := ResolveOpenAICodexWebSocketURL("https://example.test/base"); got != "wss://example.test/base/codex/responses" {
 		t.Fatalf("ws url = %q", got)
+	}
+}
+
+func TestOpenAICodexWebSocketDebugStatsPiParity(t *testing.T) {
+	ResetOpenAICodexWebSocketDebugStats()
+	defer ResetOpenAICodexWebSocketDebugStats()
+
+	diagnostics := openAICodexTransportDiagnostics("websocket", "session-debug")
+	if len(diagnostics) != 1 || diagnostics[0].Details["websocketFallbackActive"] != false {
+		t.Fatalf("first diagnostics = %#v", diagnostics)
+	}
+	stats, ok := GetOpenAICodexWebSocketDebugStats("session-debug")
+	if !ok {
+		t.Fatal("expected debug stats after websocket fallback")
+	}
+	if stats.WebSocketFailures != 1 || stats.SSEFallbacks != 1 || !stats.WebSocketFallbackActive || !strings.Contains(stats.LastWebSocketError, "not implemented") {
+		t.Fatalf("first stats = %#v", stats)
+	}
+
+	diagnostics = openAICodexTransportDiagnostics("auto", "session-debug")
+	if len(diagnostics) != 1 || diagnostics[0].Details["websocketFallbackActive"] != true {
+		t.Fatalf("second diagnostics = %#v", diagnostics)
+	}
+	stats, ok = GetOpenAICodexWebSocketDebugStats("session-debug")
+	if !ok {
+		t.Fatal("expected debug stats after repeated fallback")
+	}
+	if stats.WebSocketFailures != 1 || stats.SSEFallbacks != 2 || !stats.WebSocketFallbackActive {
+		t.Fatalf("second stats = %#v", stats)
+	}
+
+	CloseOpenAICodexWebSocketSessions("session-debug")
+	ResetOpenAICodexWebSocketDebugStats("session-debug")
+	if _, ok := GetOpenAICodexWebSocketDebugStats("session-debug"); ok {
+		t.Fatal("session stats should be reset")
 	}
 }
 

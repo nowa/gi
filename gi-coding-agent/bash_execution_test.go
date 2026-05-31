@@ -63,6 +63,7 @@ func TestBashExecutionShowsRunningCancelHintPiStyle(t *testing.T) {
 }
 
 func TestBashExecutionUsesPiThemeColors(t *testing.T) {
+	setTUIThemeForTest(t, "dark", nil)
 	component := NewBashExecutionComponent("echo hi")
 	component.AppendOutput("hi\n")
 	component.SetComplete(0, false)

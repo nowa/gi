@@ -55,6 +55,36 @@ func TestOpenAIResponsesReasoningReplaySameProviderDifferentModelHandoff(t *test
 	}
 }
 
+func TestOpenAIResponsesReasoningReplayPreservesReasoningItemPayloadPiStyle(t *testing.T) {
+	model := MustGetModel("openai", "gpt-5-mini")
+	assistant := AssistantMessage([]ContentPart{{
+		Type:              ContentThinking,
+		Thinking:          "Need answer",
+		ThinkingSignature: `{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"Need answer"}],"encrypted_content":"opaque"}`,
+	}}, StopReasonStop, model)
+
+	items := ConvertOpenAIResponsesMessages(model, Context{Messages: []Message{assistant}}, ConvertOpenAIResponsesOptions{})
+
+	item := findResponseItem(items, "reasoning")
+	if item == nil || item.ID != "rs_1" || item.EncryptedContent != "opaque" || len(item.Summary) != 1 || item.Summary[0].Text != "Need answer" {
+		t.Fatalf("reasoning item = %#v in %#v", item, items)
+	}
+}
+
+func TestOpenAIResponsesTextReplayPreservesTextSignaturePiStyle(t *testing.T) {
+	model := MustGetModel("openai", "gpt-5-mini")
+	text := Text("Visible answer")
+	text.TextSignature = `{"v":1,"id":"msg_1","phase":"final_answer"}`
+	assistant := AssistantMessage([]ContentPart{text}, StopReasonStop, model)
+
+	items := ConvertOpenAIResponsesMessages(model, Context{Messages: []Message{assistant}}, ConvertOpenAIResponsesOptions{})
+
+	item := findResponseItem(items, "message")
+	if item == nil || item.ID != "msg_1" || item.Phase != "final_answer" {
+		t.Fatalf("message item = %#v in %#v", item, items)
+	}
+}
+
 func TestOpenAIResponsesReasoningReplayCrossProviderHandoff(t *testing.T) {
 	anthropic := MustGetModel("anthropic", "claude-sonnet-4-5")
 	codex := MustGetModel("openai", "gpt-5.2-codex")

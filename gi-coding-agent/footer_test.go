@@ -55,6 +55,7 @@ func TestFooterComponentKeepsStatsLineWithinWidthForWideModelAndProviderNames(t 
 }
 
 func TestFooterComponentUsesPiDarkThemeDimAnsi(t *testing.T) {
+	setTUIThemeForTest(t, "dark", nil)
 	percent := 0.0
 	footer := NewFooterComponent(FooterState{
 		CWD:                    "/tmp/project",

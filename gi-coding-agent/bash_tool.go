@@ -101,7 +101,7 @@ func (t BashTool) ExecuteWithUpdates(_ string, input BashToolInput, onUpdate fun
 			emitUpdate()
 		},
 	})
-	if onUpdate != nil && updateAccumulator != nil && updateAccumulator.totalRawBytes > 0 {
+	if onUpdate != nil && updateAccumulator != nil && updateAccumulator.TotalRawBytes() > 0 {
 		emitUpdate()
 	}
 	if ctx.Err() == context.DeadlineExceeded {

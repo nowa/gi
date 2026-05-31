@@ -1,0 +1,251 @@
+#!/usr/bin/env node
+
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import process from "node:process";
+
+const modules = [
+	{
+		name: "llm",
+		piSource: "packages/ai/src",
+		giBoundaries: ["gi-llm-provider"],
+	},
+	{
+		name: "agent",
+		piSource: "packages/agent/src",
+		giBoundaries: ["gi-agent-core", "gi-agent-core/harness"],
+	},
+	{
+		name: "tui",
+		piSource: "packages/tui/src",
+		giBoundaries: ["gi-tui"],
+	},
+	{
+		name: "coding",
+		piSource: "packages/coding-agent/src",
+		giBoundaries: ["cmd/gi", "gi-coding-agent", "protocol"],
+	},
+];
+
+function usage() {
+	console.log(`Usage: node docs/pi-parity/verify-module-boundaries.mjs [--pi-root <path>] [--gi-root <path>] [--audit <path>] [--format text|markdown|json] [--out <path>]
+
+Verifies that every Pi source directory containing files in the target modules is
+explicitly named in docs/pi-parity/module-audit.md. This checks audit coverage,
+not a physical one-to-one Gi directory clone. It catches module-boundary gaps
+that source-symbol checks can miss, such as static assets or vendor files.`);
+}
+
+function parseArgs(argv) {
+	const args = {
+		giRoot: process.cwd(),
+		piRoot: process.env.PI_REPO || path.join(os.homedir(), "Projects/agents/pi"),
+		audit: "docs/pi-parity/module-audit.md",
+		format: "text",
+		out: "",
+	};
+	for (let i = 0; i < argv.length; i += 1) {
+		const arg = argv[i];
+		if (arg === "--help" || arg === "-h") {
+			usage();
+			process.exit(0);
+		}
+		if (arg === "--pi-root") {
+			args.piRoot = argv[++i];
+			continue;
+		}
+		if (arg === "--gi-root") {
+			args.giRoot = argv[++i];
+			continue;
+		}
+		if (arg === "--audit") {
+			args.audit = argv[++i];
+			continue;
+		}
+		if (arg === "--format") {
+			args.format = argv[++i];
+			continue;
+		}
+		if (arg === "--out") {
+			args.out = argv[++i];
+			continue;
+		}
+		throw new Error(`unknown argument: ${arg}`);
+	}
+	if (!["text", "markdown", "json"].includes(args.format)) {
+		throw new Error(`unsupported --format value: ${args.format}`);
+	}
+	return args;
+}
+
+function walkFiles(dir) {
+	const out = [];
+	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+		const fullPath = path.join(dir, entry.name);
+		if (entry.isDirectory()) {
+			out.push(...walkFiles(fullPath));
+		} else if (entry.isFile()) {
+			out.push(fullPath);
+		}
+	}
+	return out.sort();
+}
+
+function extensionOf(file) {
+	const base = path.basename(file);
+	if (base.endsWith(".d.ts")) {
+		return ".d.ts";
+	}
+	const ext = path.extname(base);
+	return ext || "(none)";
+}
+
+function relativeSlash(from, to) {
+	return path.relative(from, to).split(path.sep).join("/");
+}
+
+function summarizeDirectory(piRoot, piSource, files, dir) {
+	const directFiles = files.filter((file) => path.dirname(file) === dir);
+	const recursiveFiles = files.filter((file) => file === dir || file.startsWith(`${dir}${path.sep}`));
+	const extensions = [...new Set(directFiles.map(extensionOf))].sort();
+	return {
+		dir: relativeSlash(piRoot, dir),
+		sourceRelativeDir: relativeSlash(path.join(piRoot, piSource), dir) || ".",
+		directFiles: directFiles.length,
+		recursiveFiles: recursiveFiles.length,
+		extensions,
+	};
+}
+
+function verifyModule(args, auditText, module) {
+	const piSourceDir = path.join(args.piRoot, module.piSource);
+	if (!fs.existsSync(piSourceDir)) {
+		throw new Error(`Pi source directory not found: ${piSourceDir}`);
+	}
+	const files = walkFiles(piSourceDir);
+	const dirs = [...new Set(files.map((file) => path.dirname(file)))].sort();
+	const directories = dirs.map((dir) => {
+		const summary = summarizeDirectory(args.piRoot, module.piSource, files, dir);
+		const covered = auditText.includes(`\`${summary.dir}\``);
+		return { ...summary, covered };
+	});
+	const missingDirectories = directories.filter((dir) => !dir.covered).map((dir) => dir.dir);
+	const giBoundaries = module.giBoundaries.map((boundary) => {
+		const fullPath = path.join(args.giRoot, boundary);
+		return {
+			path: boundary,
+			exists: fs.existsSync(fullPath),
+			files: fs.existsSync(fullPath) ? walkFiles(fullPath).length : 0,
+		};
+	});
+	return {
+		name: module.name,
+		piSource: module.piSource,
+		piFiles: files.length,
+		piDirectories: directories.length,
+		missingDirectories,
+		giBoundaries,
+		directories,
+	};
+}
+
+function formatText(results) {
+	const lines = [];
+	for (const result of results) {
+		lines.push(
+			`${result.name}: piFiles=${result.piFiles} piDirectories=${result.piDirectories} missingAuditRows=${result.missingDirectories.length}`,
+		);
+		if (result.missingDirectories.length > 0) {
+			lines.push(`  missing directories:\n    ${result.missingDirectories.join("\n    ")}`);
+		}
+		const missingBoundaries = result.giBoundaries.filter((boundary) => !boundary.exists);
+		if (missingBoundaries.length > 0) {
+			lines.push(`  missing Gi boundaries:\n    ${missingBoundaries.map((boundary) => boundary.path).join("\n    ")}`);
+		}
+	}
+	return `${lines.join("\n")}\n`;
+}
+
+function formatMarkdown(args, results) {
+	const lines = [
+		"# Pi Module Boundary Inventory",
+		"",
+		"Generated by `docs/pi-parity/verify-module-boundaries.mjs`.",
+		"",
+		`- Pi root: \`${args.piRoot}\``,
+		`- Gi root: \`${args.giRoot}\``,
+		`- Audit document: \`${args.audit}\``,
+		"",
+		"| Area | Pi source files | Pi source directories | Missing audit rows | Gi ownership boundaries |",
+		"| --- | ---: | ---: | ---: | --- |",
+	];
+	for (const result of results) {
+		const boundaries = result.giBoundaries
+			.map((boundary) => `${boundary.exists ? "ok" : "missing"} \`${boundary.path}\``)
+			.join("<br>");
+		lines.push(
+			`| ${result.name} | ${result.piFiles} | ${result.piDirectories} | ${result.missingDirectories.length} | ${boundaries} |`,
+		);
+	}
+	lines.push("");
+	for (const result of results) {
+		lines.push(`## ${result.name}`, "");
+		if (result.missingDirectories.length === 0) {
+			lines.push("Every Pi source directory containing files is named in the module audit.", "");
+		} else {
+			lines.push("Missing directory rows:", "");
+			for (const dir of result.missingDirectories) {
+				lines.push(`- \`${dir}\``);
+			}
+			lines.push("");
+		}
+		lines.push("| Pi source directory | Direct files | Recursive files | Direct file extensions | Covered by module audit |");
+		lines.push("| --- | ---: | ---: | --- | --- |");
+		for (const dir of result.directories) {
+			const extensions = dir.extensions.length > 0 ? dir.extensions.map((ext) => `\`${ext}\``).join("<br>") : "_none_";
+			lines.push(`| \`${dir.dir}\` | ${dir.directFiles} | ${dir.recursiveFiles} | ${extensions} | ${dir.covered ? "yes" : "no"} |`);
+		}
+		lines.push("");
+	}
+	return `${lines.join("\n")}\n`;
+}
+
+function formatResults(args, results) {
+	switch (args.format) {
+		case "json":
+			return `${JSON.stringify({ piRoot: args.piRoot, giRoot: args.giRoot, audit: args.audit, results }, null, 2)}\n`;
+		case "markdown":
+			return formatMarkdown(args, results);
+		default:
+			return formatText(results);
+	}
+}
+
+function main() {
+	const args = parseArgs(process.argv.slice(2));
+	if (!fs.existsSync(args.piRoot)) {
+		throw new Error(`Pi root not found: ${args.piRoot}`);
+	}
+	if (!fs.existsSync(args.giRoot)) {
+		throw new Error(`Gi root not found: ${args.giRoot}`);
+	}
+	const auditPath = path.isAbsolute(args.audit) ? args.audit : path.join(args.giRoot, args.audit);
+	if (!fs.existsSync(auditPath)) {
+		throw new Error(`audit file not found: ${auditPath}`);
+	}
+	const auditText = fs.readFileSync(auditPath, "utf8");
+	const results = modules.map((module) => verifyModule(args, auditText, module));
+	const failed = results.some(
+		(result) => result.missingDirectories.length > 0 || result.giBoundaries.some((boundary) => !boundary.exists),
+	);
+	const output = formatResults(args, results);
+	if (args.out) {
+		fs.writeFileSync(args.out, output);
+	} else {
+		process.stdout.write(output);
+	}
+	process.exit(failed ? 1 : 0);
+}
+
+main();

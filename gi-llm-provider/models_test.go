@@ -67,6 +67,70 @@ func TestValidateThinkingLevelSupportedForXHigh(t *testing.T) {
 	}
 }
 
+func TestSupportedThinkingLevelsPiCaseNames(t *testing.T) {
+	t.Run("includes xhigh for Anthropic Opus 4.6 on anthropic-messages API", func(t *testing.T) {
+		model := MustGetModel("anthropic", "claude-opus-4-6")
+		if !contains(GetSupportedThinkingLevels(model), "xhigh") {
+			t.Fatalf("levels = %#v", GetSupportedThinkingLevels(model))
+		}
+	})
+
+	t.Run("includes xhigh for Anthropic Opus 4.7 on anthropic-messages API", func(t *testing.T) {
+		model := MustGetModel("anthropic", "claude-opus-4-7")
+		if !contains(GetSupportedThinkingLevels(model), "xhigh") {
+			t.Fatalf("levels = %#v", GetSupportedThinkingLevels(model))
+		}
+	})
+
+	t.Run("does not include xhigh for non-Opus Anthropic models", func(t *testing.T) {
+		model := MustGetModel("anthropic", "claude-sonnet-4-5")
+		if contains(GetSupportedThinkingLevels(model), "xhigh") {
+			t.Fatalf("levels = %#v", GetSupportedThinkingLevels(model))
+		}
+	})
+
+	t.Run("includes xhigh for %s models", func(t *testing.T) {
+		for _, model := range []Model{
+			MustGetModel("openai-codex", "gpt-5.4"),
+			MustGetModel("openai-codex", "gpt-5.5"),
+		} {
+			if !contains(GetSupportedThinkingLevels(model), "xhigh") {
+				t.Fatalf("%s levels = %#v", model.ID, GetSupportedThinkingLevels(model))
+			}
+		}
+	})
+
+	t.Run("includes xhigh for OpenRouter Opus 4.6 (openai-completions API)", func(t *testing.T) {
+		model := MustGetModel("openrouter", "anthropic/claude-opus-4.6")
+		if model.API != "openai-completions" || !contains(GetSupportedThinkingLevels(model), "xhigh") {
+			t.Fatalf("model = %#v levels=%#v", model, GetSupportedThinkingLevels(model))
+		}
+	})
+}
+
+func TestXHighPiCaseNames(t *testing.T) {
+	t.Run("should work with openai-responses", func(t *testing.T) {
+		model := Model{ID: "gpt-5.1-codex-max", Provider: "openai-codex", API: "openai-codex-responses", Reasoning: true, ThinkingLevelMap: map[string]*string{"xhigh": ptrString("xhigh")}}
+		if _, err := BuildOpenAIResponsesPayloadChecked(model, Context{Messages: []Message{UserMessageText("hi")}}, OpenAIResponsesPayloadOptions{ReasoningEffort: "xhigh"}); err != nil {
+			t.Fatalf("checked responses payload error = %v", err)
+		}
+	})
+
+	t.Run("should error with openai-responses when using xhigh", func(t *testing.T) {
+		model := Model{ID: "gpt-5-mini", Provider: "openai", API: "openai-responses", Reasoning: true, ThinkingLevelMap: map[string]*string{"off": nil}}
+		if _, err := BuildOpenAIResponsesPayloadChecked(model, Context{Messages: []Message{UserMessageText("hi")}}, OpenAIResponsesPayloadOptions{ReasoningEffort: "xhigh"}); err == nil || !strings.Contains(err.Error(), "xhigh") {
+			t.Fatalf("checked responses payload error = %v", err)
+		}
+	})
+
+	t.Run("should error with openai-completions when using xhigh", func(t *testing.T) {
+		model := Model{ID: "gpt-5-mini", Provider: "openai", API: "openai-completions", Reasoning: true, ThinkingLevelMap: map[string]*string{"off": nil}}
+		if _, err := BuildOpenAICompletionsPayloadChecked(model, Context{Messages: []Message{UserMessageText("hi")}}, OpenAICompletionsPayloadOptions{Reasoning: "xhigh"}); err == nil || !strings.Contains(err.Error(), "xhigh") {
+			t.Fatalf("checked completions payload error = %v", err)
+		}
+	})
+}
+
 func contains(values []string, needle string) bool {
 	for _, value := range values {
 		if value == needle {

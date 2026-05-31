@@ -1,0 +1,399 @@
+package gillmprovider
+
+import (
+	"context"
+	"fmt"
+)
+
+type BedrockConverseStreamTransport func(context.Context, BedrockConverseStreamRequest) (<-chan BedrockConverseStreamEvent, error)
+
+type BedrockConverseStreamProvider struct {
+	Transport BedrockConverseStreamTransport
+}
+
+type BedrockConverseStreamRequest struct {
+	Model           Model
+	Payload         BedrockPayload
+	ClientConfig    BedrockClientConfig
+	MaxTokens       int
+	Temperature     *float64
+	CacheRetention  string
+	RequestMetadata map[string]string
+}
+
+type BedrockConverseStreamEvent struct {
+	MessageStart      *BedrockMessageStartEvent
+	ContentBlockStart *BedrockContentBlockStartEvent
+	ContentBlockDelta *BedrockContentBlockDeltaEvent
+	ContentBlockStop  *BedrockContentBlockStopEvent
+	MessageStop       *BedrockMessageStopEvent
+	Metadata          *BedrockMetadataEvent
+	Error             error
+}
+
+type BedrockMessageStartEvent struct {
+	Role string
+}
+
+type BedrockContentBlockStartEvent struct {
+	ContentBlockIndex int
+	ToolUse           *BedrockToolUseBlock
+}
+
+type BedrockContentBlockDeltaEvent struct {
+	ContentBlockIndex int
+	Text              string
+	ToolUseInput      string
+	ReasoningContent  *BedrockReasoningContent
+}
+
+type BedrockContentBlockStopEvent struct {
+	ContentBlockIndex int
+}
+
+type BedrockMessageStopEvent struct {
+	StopReason string
+}
+
+type BedrockMetadataEvent struct {
+	Usage BedrockUsage
+}
+
+type BedrockUsage struct {
+	InputTokens          int
+	OutputTokens         int
+	CacheReadInputTokens int
+	CacheWriteTokens     int
+	TotalTokens          int
+}
+
+type bedrockStreamBlock struct {
+	ContentPart
+	index       int
+	partialJSON string
+}
+
+func init() {
+	RegisterBuiltInAPIProvider("bedrock-converse-stream", NewBedrockConverseStreamProvider(nil))
+}
+
+func NewBedrockConverseStreamProvider(transport BedrockConverseStreamTransport) BedrockConverseStreamProvider {
+	return BedrockConverseStreamProvider{Transport: transport}
+}
+
+func (p BedrockConverseStreamProvider) Stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {
+	return p.StreamSimple(model, llmContext, options)
+}
+
+func (p BedrockConverseStreamProvider) StreamSimple(model Model, llmContext Context, options SimpleStreamOptions) (*AssistantMessageEventStream, error) {
+	transport := p.Transport
+	if transport == nil {
+		return streamError(model, "Bedrock Converse Stream transport is not configured"), nil
+	}
+	ctx := options.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	reasoning := ""
+	if options.Reasoning != "" {
+		reasoning = ClampThinkingLevel(model, options.Reasoning)
+		if reasoning == "off" {
+			reasoning = ""
+		}
+	}
+	payloadOptions := BedrockPayloadOptions{
+		Reasoning:       reasoning,
+		Region:          metadataString(options.Metadata, "region"),
+		ThinkingBudgets: options.ThinkingBudgets,
+		ThinkingDisplay: metadataString(options.Metadata, "thinking_display"),
+		CacheRetention:  firstNonEmpty(options.CacheRetention, metadataString(options.Metadata, "cache_retention")),
+		ToolChoice:      metadataValue(options.Metadata, "tool_choice"),
+	}
+	request := BedrockConverseStreamRequest{
+		Model:           model,
+		Payload:         BuildBedrockPayload(model, llmContext, payloadOptions),
+		ClientConfig:    ResolveBedrockClientConfig(model, BedrockClientOptions{Region: payloadOptions.Region, Profile: metadataString(options.Metadata, "profile")}),
+		MaxTokens:       options.MaxTokens,
+		Temperature:     options.Temperature,
+		CacheRetention:  payloadOptions.CacheRetention,
+		RequestMetadata: metadataStringMap(options.Metadata, "request_metadata"),
+	}
+	if options.OnPayload != nil {
+		next, replace, err := options.OnPayload(request.Payload, model)
+		if err != nil {
+			return streamError(model, "%s", err.Error()), nil
+		}
+		if replace {
+			payload, ok := next.(BedrockPayload)
+			if !ok {
+				return streamError(model, "Bedrock onPayload must return BedrockPayload"), nil
+			}
+			request.Payload = payload
+		}
+	}
+	events, err := transport(ctx, request)
+	if err != nil {
+		return streamError(model, "%s", formatBedrockStreamError(err)), nil
+	}
+	stream := NewAssistantMessageEventStream()
+	go streamBedrockConverseEvents(ctx, model, events, stream)
+	return stream, nil
+}
+
+func streamBedrockConverseEvents(ctx context.Context, model Model, events <-chan BedrockConverseStreamEvent, stream *AssistantMessageEventStream) {
+	output := AssistantMessage(nil, StopReasonStop, model)
+	processor := NewBedrockConverseStreamProcessor(model, &output)
+	terminal := false
+	for {
+		select {
+		case <-ctx.Done():
+			stream.Push(AssistantMessageEvent{Type: "error", Reason: StopReasonAborted, Error: AssistantErrorMessage(ctx.Err().Error(), model, true)})
+			return
+		case event, ok := <-events:
+			if !ok {
+				if !terminal {
+					stream.Push(AssistantMessageEvent{Type: "done", Reason: output.StopReason, Message: output})
+				}
+				return
+			}
+			for _, emitted := range processor.Process(event) {
+				stream.Push(emitted)
+				if emitted.Type == "done" || emitted.Type == "error" {
+					terminal = true
+					return
+				}
+			}
+		}
+	}
+}
+
+type BedrockConverseStreamProcessor struct {
+	model  Model
+	output *Message
+	blocks []bedrockStreamBlock
+}
+
+func NewBedrockConverseStreamProcessor(model Model, output *Message) *BedrockConverseStreamProcessor {
+	if output.API == "" {
+		output.API = model.API
+	}
+	if output.Provider == "" {
+		output.Provider = model.Provider
+	}
+	if output.Model == "" {
+		output.Model = model.ID
+	}
+	if output.StopReason == "" {
+		output.StopReason = StopReasonStop
+	}
+	return &BedrockConverseStreamProcessor{model: model, output: output}
+}
+
+func (p *BedrockConverseStreamProcessor) Process(event BedrockConverseStreamEvent) []AssistantMessageEvent {
+	if event.Error != nil {
+		p.output.StopReason = StopReasonError
+		p.output.ErrorMessage = formatBedrockStreamError(event.Error)
+		return []AssistantMessageEvent{{Type: "error", Reason: StopReasonError, Error: *p.output}}
+	}
+	if event.MessageStart != nil {
+		if event.MessageStart.Role != "" && event.MessageStart.Role != "assistant" {
+			p.output.StopReason = StopReasonError
+			p.output.ErrorMessage = fmt.Sprintf("Unexpected assistant message start but got %s message start instead", event.MessageStart.Role)
+			return []AssistantMessageEvent{{Type: "error", Reason: StopReasonError, Error: *p.output}}
+		}
+		return []AssistantMessageEvent{{Type: "start", Partial: *p.output}}
+	}
+	if event.ContentBlockStart != nil {
+		return p.processContentBlockStart(*event.ContentBlockStart)
+	}
+	if event.ContentBlockDelta != nil {
+		return p.processContentBlockDelta(*event.ContentBlockDelta)
+	}
+	if event.ContentBlockStop != nil {
+		return p.processContentBlockStop(*event.ContentBlockStop)
+	}
+	if event.MessageStop != nil {
+		p.output.StopReason = mapBedrockStopReason(event.MessageStop.StopReason)
+		return nil
+	}
+	if event.Metadata != nil {
+		p.processMetadata(*event.Metadata)
+		return nil
+	}
+	return nil
+}
+
+func (p *BedrockConverseStreamProcessor) processContentBlockStart(event BedrockContentBlockStartEvent) []AssistantMessageEvent {
+	if event.ToolUse == nil {
+		return nil
+	}
+	part := ToolCall(event.ToolUse.ToolUseID, event.ToolUse.Name, event.ToolUse.Input)
+	block := bedrockStreamBlock{ContentPart: part, index: event.ContentBlockIndex}
+	p.blocks = append(p.blocks, block)
+	p.output.Content = append(p.output.Content, part)
+	return []AssistantMessageEvent{{Type: "toolcall_start", ContentIndex: len(p.output.Content) - 1, Partial: *p.output}}
+}
+
+func (p *BedrockConverseStreamProcessor) processContentBlockDelta(event BedrockContentBlockDeltaEvent) []AssistantMessageEvent {
+	index := p.blockIndex(event.ContentBlockIndex)
+	if event.Text != "" {
+		if index < 0 {
+			part := Text("")
+			p.blocks = append(p.blocks, bedrockStreamBlock{ContentPart: part, index: event.ContentBlockIndex})
+			p.output.Content = append(p.output.Content, part)
+			index = len(p.blocks) - 1
+			start := AssistantMessageEvent{Type: "text_start", ContentIndex: index, Partial: *p.output}
+			delta := p.appendTextDelta(index, event.Text)
+			return []AssistantMessageEvent{start, delta}
+		}
+		if p.blocks[index].Type == ContentText {
+			return []AssistantMessageEvent{p.appendTextDelta(index, event.Text)}
+		}
+	}
+	if event.ToolUseInput != "" && index >= 0 && p.blocks[index].Type == ContentToolCall {
+		p.blocks[index].partialJSON += event.ToolUseInput
+		p.blocks[index].Arguments = parseStreamingJSONObject(p.blocks[index].partialJSON)
+		p.output.Content[index].Arguments = p.blocks[index].Arguments
+		return []AssistantMessageEvent{{Type: "toolcall_delta", ContentIndex: index, Delta: event.ToolUseInput, Partial: *p.output}}
+	}
+	if event.ReasoningContent != nil {
+		if index < 0 {
+			part := Thinking("")
+			p.blocks = append(p.blocks, bedrockStreamBlock{ContentPart: part, index: event.ContentBlockIndex})
+			p.output.Content = append(p.output.Content, part)
+			index = len(p.blocks) - 1
+			start := AssistantMessageEvent{Type: "thinking_start", ContentIndex: index, Partial: *p.output}
+			deltas := p.appendThinkingDelta(index, *event.ReasoningContent)
+			return append([]AssistantMessageEvent{start}, deltas...)
+		}
+		if p.blocks[index].Type == ContentThinking {
+			return p.appendThinkingDelta(index, *event.ReasoningContent)
+		}
+	}
+	return nil
+}
+
+func (p *BedrockConverseStreamProcessor) appendTextDelta(index int, delta string) AssistantMessageEvent {
+	p.blocks[index].Text += SanitizeSurrogates(delta)
+	p.output.Content[index].Text = p.blocks[index].Text
+	return AssistantMessageEvent{Type: "text_delta", ContentIndex: index, Delta: delta, Partial: *p.output}
+}
+
+func (p *BedrockConverseStreamProcessor) appendThinkingDelta(index int, delta BedrockReasoningContent) []AssistantMessageEvent {
+	var events []AssistantMessageEvent
+	if delta.Text != "" {
+		p.blocks[index].Thinking += SanitizeSurrogates(delta.Text)
+		p.output.Content[index].Thinking = p.blocks[index].Thinking
+		events = append(events, AssistantMessageEvent{Type: "thinking_delta", ContentIndex: index, Delta: delta.Text, Partial: *p.output})
+	}
+	if delta.Signature != "" {
+		p.blocks[index].ThinkingSignature += delta.Signature
+		p.output.Content[index].ThinkingSignature = p.blocks[index].ThinkingSignature
+	}
+	return events
+}
+
+func (p *BedrockConverseStreamProcessor) processContentBlockStop(event BedrockContentBlockStopEvent) []AssistantMessageEvent {
+	index := p.blockIndex(event.ContentBlockIndex)
+	if index < 0 {
+		return nil
+	}
+	block := p.blocks[index]
+	switch block.Type {
+	case ContentText:
+		return []AssistantMessageEvent{{Type: "text_end", ContentIndex: index, Content: block.Text, Partial: *p.output}}
+	case ContentThinking:
+		return []AssistantMessageEvent{{Type: "thinking_end", ContentIndex: index, Content: block.Thinking, Partial: *p.output}}
+	case ContentToolCall:
+		block.Arguments = parseStreamingJSONObject(block.partialJSON)
+		p.blocks[index].Arguments = block.Arguments
+		p.output.Content[index].Arguments = block.Arguments
+		return []AssistantMessageEvent{{Type: "toolcall_end", ContentIndex: index, ToolCall: p.output.Content[index], Partial: *p.output}}
+	default:
+		return nil
+	}
+}
+
+func (p *BedrockConverseStreamProcessor) processMetadata(event BedrockMetadataEvent) {
+	usage := event.Usage
+	p.output.Usage.Input = usage.InputTokens
+	p.output.Usage.Output = usage.OutputTokens
+	p.output.Usage.CacheRead = usage.CacheReadInputTokens
+	p.output.Usage.CacheWrite = usage.CacheWriteTokens
+	p.output.Usage.TotalTokens = usage.TotalTokens
+	if p.output.Usage.TotalTokens == 0 {
+		p.output.Usage.TotalTokens = p.output.Usage.Input + p.output.Usage.Output
+	}
+	p.output.Usage.Cost = CalculateCost(p.model, p.output.Usage)
+}
+
+func (p *BedrockConverseStreamProcessor) blockIndex(contentBlockIndex int) int {
+	for index, block := range p.blocks {
+		if block.index == contentBlockIndex {
+			return index
+		}
+	}
+	return -1
+}
+
+func ProcessBedrockConverseStreamEvents(model Model, output *Message, events []BedrockConverseStreamEvent) []AssistantMessageEvent {
+	processor := NewBedrockConverseStreamProcessor(model, output)
+	var emitted []AssistantMessageEvent
+	for _, event := range events {
+		emitted = append(emitted, processor.Process(event)...)
+	}
+	return emitted
+}
+
+func mapBedrockStopReason(reason string) string {
+	switch reason {
+	case "end_turn", "stop_sequence":
+		return StopReasonStop
+	case "max_tokens", "model_context_window_exceeded":
+		return StopReasonLength
+	case "tool_use":
+		return StopReasonToolUse
+	default:
+		return StopReasonError
+	}
+}
+
+func formatBedrockStreamError(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func metadataStringMap(metadata map[string]any, key string) map[string]string {
+	value, ok := metadata[key]
+	if !ok {
+		return nil
+	}
+	raw, ok := value.(map[string]string)
+	if ok {
+		copy := make(map[string]string, len(raw))
+		for key, value := range raw {
+			copy[key] = value
+		}
+		return copy
+	}
+	generic, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	result := map[string]string{}
+	for key, value := range generic {
+		if text, ok := value.(string); ok {
+			result[key] = text
+		}
+	}
+	return result
+}
+
+func metadataValue(metadata map[string]any, key string) any {
+	if metadata == nil {
+		return nil
+	}
+	return metadata[key]
+}

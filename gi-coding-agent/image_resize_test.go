@@ -31,6 +31,19 @@ func TestConvertToPNGPiMatrix(t *testing.T) {
 	if len(buffer) < 4 || buffer[0] != 0x89 || buffer[1] != 0x50 || buffer[2] != 0x4e || buffer[3] != 0x47 {
 		t.Fatalf("converted PNG magic = %#v", buffer[:minInt(len(buffer), 4)])
 	}
+
+	orientedJPEG := testJPEGBase64WithEXIFOrientation(t, 2, 1, 6)
+	result = ConvertToPNG(orientedJPEG, "image/jpeg")
+	if result == nil || result.MIMEType != "image/png" {
+		t.Fatalf("EXIF JPEG convert result = %#v", result)
+	}
+	converted, _, err := image.Decode(bytes.NewReader(mustDecodeBase64(t, result.Data)))
+	if err != nil {
+		t.Fatalf("decode converted EXIF PNG: %v", err)
+	}
+	if got := converted.Bounds().Size(); got.X != 1 || got.Y != 2 {
+		t.Fatalf("EXIF orientation 6 converted size = %dx%d, want 1x2", got.X, got.Y)
+	}
 }
 
 func TestResizeImagePiMatrix(t *testing.T) {
@@ -99,6 +112,13 @@ func TestFormatDimensionNotePiMatrix(t *testing.T) {
 		if !strings.Contains(note, want) {
 			t.Fatalf("note = %q, missing %q", note, want)
 		}
+	}
+}
+
+func TestImageEXIFOrientationParsesWebPPiStyle(t *testing.T) {
+	webp := testWebPWithEXIFOrientation(8)
+	if got := imageEXIFOrientation(webp); got != 8 {
+		t.Fatalf("WebP EXIF orientation = %d, want 8", got)
 	}
 }
 
@@ -176,4 +196,52 @@ func testJPEGBase64(t *testing.T, width, height int) string {
 		t.Fatal(err)
 	}
 	return base64.StdEncoding.EncodeToString(buffer.Bytes())
+}
+
+func testJPEGBase64WithEXIFOrientation(t *testing.T, width, height, orientation int) string {
+	t.Helper()
+	jpegBytes := mustDecodeBase64(t, testJPEGBase64(t, width, height))
+	if len(jpegBytes) < 2 || jpegBytes[0] != 0xff || jpegBytes[1] != 0xd8 {
+		t.Fatalf("test JPEG missing SOI marker")
+	}
+	exif := testEXIFPayload(orientation)
+	segmentLength := len(exif) + 2
+	segment := []byte{0xff, 0xe1, byte(segmentLength >> 8), byte(segmentLength)}
+	segment = append(segment, exif...)
+	oriented := append([]byte{}, jpegBytes[:2]...)
+	oriented = append(oriented, segment...)
+	oriented = append(oriented, jpegBytes[2:]...)
+	return base64.StdEncoding.EncodeToString(oriented)
+}
+
+func testWebPWithEXIFOrientation(orientation int) []byte {
+	exif := testEXIFPayload(orientation)
+	chunkSize := len(exif)
+	riffSize := 4 + 8 + chunkSize
+	webp := []byte{
+		'R', 'I', 'F', 'F',
+		byte(riffSize), byte(riffSize >> 8), byte(riffSize >> 16), byte(riffSize >> 24),
+		'W', 'E', 'B', 'P',
+		'E', 'X', 'I', 'F',
+		byte(chunkSize), byte(chunkSize >> 8), byte(chunkSize >> 16), byte(chunkSize >> 24),
+	}
+	webp = append(webp, exif...)
+	if chunkSize%2 == 1 {
+		webp = append(webp, 0)
+	}
+	return webp
+}
+
+func testEXIFPayload(orientation int) []byte {
+	return []byte{
+		'E', 'x', 'i', 'f', 0x00, 0x00,
+		'I', 'I', 0x2a, 0x00,
+		0x08, 0x00, 0x00, 0x00,
+		0x01, 0x00,
+		0x12, 0x01,
+		0x03, 0x00,
+		0x01, 0x00, 0x00, 0x00,
+		byte(orientation), 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
 }

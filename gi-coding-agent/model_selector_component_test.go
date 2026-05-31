@@ -78,6 +78,7 @@ func TestScopedModelsSelectorTogglesAndPersists(t *testing.T) {
 }
 
 func TestScopedModelsSelectorUsesPiDarkThemeAnsi(t *testing.T) {
+	setTUIThemeForTest(t, "dark", nil)
 	selector := NewScopedModelsSelectorComponent(ScopedModelsSelectorConfig{
 		AllModels: []llm.Model{
 			{Provider: "anthropic", ID: "claude-3-5-haiku-20241022", Name: "Claude Haiku 3.5"},

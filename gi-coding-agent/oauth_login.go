@@ -1,11 +1,6 @@
 package gicodingagent
 
-import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"net/url"
-)
+import "github.com/nowa/gi/gi-coding-agent/internal/oauthflow"
 
 const (
 	anthropicOAuthClientID   = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
@@ -66,30 +61,13 @@ func oauthLoginPromptForProvider(providerID string) (oauthLoginPrompt, bool) {
 }
 
 func orderedOAuthURL(base string, params [][2]string) string {
-	query := make([]byte, 0, len(params)*16)
-	for index, param := range params {
-		if index > 0 {
-			query = append(query, '&')
-		}
-		query = append(query, url.QueryEscape(param[0])...)
-		query = append(query, '=')
-		query = append(query, url.QueryEscape(param[1])...)
-	}
-	return base + "?" + string(query)
+	return oauthflow.OrderedURL(base, params)
 }
 
 func oauthPKCEChallenge(verifier string) string {
-	sum := sha256.Sum256([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
+	return oauthflow.PKCEChallenge(verifier)
 }
 
 func oauthRandomToken(size int) string {
-	if size <= 0 {
-		size = 32
-	}
-	buf := make([]byte, size)
-	if _, err := rand.Read(buf); err != nil {
-		return "gi-oauth-token"
-	}
-	return base64.RawURLEncoding.EncodeToString(buf)
+	return oauthflow.RandomToken(size)
 }

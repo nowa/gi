@@ -26,7 +26,11 @@ func NewOpenAICodexResponsesProvider(client HTTPDoer) OpenAICodexResponsesProvid
 }
 
 func init() {
-	RegisterAPIProvider("openai-codex-responses", NewOpenAICodexResponsesProvider(nil))
+	RegisterBuiltInAPIProvider("openai-codex-responses", NewOpenAICodexResponsesProvider(nil))
+	RegisterSessionResourceCleanup(func(sessionID string) error {
+		CloseOpenAICodexWebSocketSessions(sessionID)
+		return nil
+	})
 }
 
 func (p OpenAICodexResponsesProvider) Stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {
@@ -34,9 +38,6 @@ func (p OpenAICodexResponsesProvider) Stream(model Model, llmContext Context, op
 }
 
 func (p OpenAICodexResponsesProvider) StreamSimple(model Model, llmContext Context, options SimpleStreamOptions) (*AssistantMessageEventStream, error) {
-	if strings.EqualFold(options.Transport, "websocket") {
-		return streamError(model, "openai codex websocket transport is not implemented"), nil
-	}
 	apiKey := apiKeyOrEnv(model.Provider, options.APIKey)
 	if apiKey == "" {
 		return streamError(model, "missing API key for provider %s", model.Provider), nil
@@ -59,7 +60,7 @@ func (p OpenAICodexResponsesProvider) StreamSimple(model Model, llmContext Conte
 
 	stream := NewAssistantMessageEventStream()
 	serviceTier := metadataString(options.Metadata, "service_tier")
-	go streamOpenAICodexResponsesBody(model, response.Body, stream, serviceTier)
+	go streamOpenAICodexResponsesBody(model, response.Body, stream, serviceTier, openAICodexTransportDiagnostics(options.Transport, options.SessionID))
 	return stream, nil
 }
 
@@ -166,8 +167,9 @@ func (p OpenAICodexResponsesProvider) wait(ctx context.Context, delay time.Durat
 	return sleepContext(ctx, delay)
 }
 
-func streamOpenAICodexResponsesBody(model Model, body io.ReadCloser, stream *AssistantMessageEventStream, requestServiceTier string) {
+func streamOpenAICodexResponsesBody(model Model, body io.ReadCloser, stream *AssistantMessageEventStream, requestServiceTier string, diagnostics []AssistantMessageDiagnostic) {
 	output := AssistantMessage(nil, StopReasonStop, model)
+	output.Diagnostics = append(output.Diagnostics, diagnostics...)
 	stream.Push(AssistantMessageEvent{Type: "start", Partial: output})
 	processor := NewOpenAIResponsesStreamProcessor(model, &output)
 	terminal := false
@@ -212,6 +214,33 @@ func streamOpenAICodexResponsesBody(model Model, body io.ReadCloser, stream *Ass
 	}
 	if !terminal {
 		stream.Push(AssistantMessageEvent{Type: "done", Reason: output.StopReason, Message: output})
+	}
+}
+
+func openAICodexTransportDiagnostics(transport, sessionID string) []AssistantMessageDiagnostic {
+	configured := strings.TrimSpace(strings.ToLower(transport))
+	if configured == "" {
+		configured = "auto"
+	}
+	if configured == "sse" {
+		return nil
+	}
+	err := fmt.Errorf("openai codex websocket transport is not implemented")
+	fallbackActive := isOpenAICodexWebSocketSSEFallbackActive(sessionID)
+	if fallbackActive {
+		recordOpenAICodexWebSocketSSEFallback(sessionID)
+	} else {
+		recordOpenAICodexWebSocketFailure(sessionID, err)
+		recordOpenAICodexWebSocketSSEFallback(sessionID)
+	}
+	return []AssistantMessageDiagnostic{
+		NewAssistantMessageDiagnostic("provider_transport_failure", err, map[string]any{
+			"configuredTransport":     configured,
+			"fallbackTransport":       "sse",
+			"eventsEmitted":           false,
+			"phase":                   "before_message_stream_start",
+			"websocketFallbackActive": fallbackActive,
+		}),
 	}
 }
 

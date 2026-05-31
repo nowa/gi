@@ -1,28 +1,18 @@
 package gicodingagent
 
-import (
-	"os"
-	"strings"
-)
+import telemetry "github.com/nowa/gi/gi-coding-agent/internal/telemetry"
 
 func IsInstallTelemetryEnabled(settingsManager *SettingsManager) bool {
-	if value, ok := lookupInstallTelemetryEnv(); ok {
-		return isTruthyEnvFlag(value)
-	}
 	if settingsManager == nil {
-		return true
+		return telemetry.InstallEnabled(nil)
 	}
-	return settingsManager.GetEnableInstallTelemetry()
+	return telemetry.InstallEnabled(settingsManager)
 }
 
 func lookupInstallTelemetryEnv() (string, bool) {
-	if value, ok := os.LookupEnv("GI_TELEMETRY"); ok {
-		return value, true
-	}
-	return os.LookupEnv("PI_TELEMETRY")
+	return telemetry.LookupInstallEnv()
 }
 
 func isTruthyEnvFlag(value string) bool {
-	trimmed := strings.TrimSpace(value)
-	return trimmed == "1" || strings.EqualFold(trimmed, "true") || strings.EqualFold(trimmed, "yes")
+	return telemetry.IsTruthyEnvFlag(value)
 }

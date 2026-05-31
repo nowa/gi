@@ -62,6 +62,8 @@ type OpenAICompletionsStreamProcessor struct {
 	textIndex  int
 	thinkIndex int
 	tools      map[string]*openAIChatToolAccumulator
+	textEnded  bool
+	thinkEnded bool
 }
 
 type openAIChatToolAccumulator struct {
@@ -69,6 +71,7 @@ type openAIChatToolAccumulator struct {
 	id           string
 	name         string
 	argsJSON     string
+	ended        bool
 }
 
 func NewOpenAICompletionsStreamProcessor(model Model, output *Message) *OpenAICompletionsStreamProcessor {
@@ -121,11 +124,7 @@ func (p *OpenAICompletionsStreamProcessor) Process(chunk *OpenAIChatCompletionCh
 			stopReason, errorMessage := MapOpenAIChatFinishReason(*choice.FinishReason)
 			p.output.StopReason = stopReason
 			p.output.ErrorMessage = errorMessage
-			for _, tool := range p.tools {
-				if tool.contentIndex >= 0 && tool.contentIndex < len(p.output.Content) {
-					p.output.Content[tool.contentIndex].Arguments = parseStreamingJSONObject(tool.argsJSON)
-				}
-			}
+			events = append(events, p.finishOpenContentBlocks()...)
 		}
 	}
 	return events
@@ -199,12 +198,16 @@ func MapOpenAIChatFinishReason(reason string) (string, string) {
 }
 
 func (p *OpenAICompletionsStreamProcessor) appendText(delta string) []AssistantMessageEvent {
+	var events []AssistantMessageEvent
 	if p.textIndex < 0 {
 		p.output.Content = append(p.output.Content, Text(""))
 		p.textIndex = len(p.output.Content) - 1
+		p.textEnded = false
+		events = append(events, AssistantMessageEvent{Type: "text_start", ContentIndex: p.textIndex, Partial: *p.output})
 	}
 	p.output.Content[p.textIndex].Text += SanitizeSurrogates(delta)
-	return []AssistantMessageEvent{{Type: "text_delta", Partial: *p.output}}
+	events = append(events, AssistantMessageEvent{Type: "text_delta", ContentIndex: p.textIndex, Delta: delta, Partial: *p.output})
+	return events
 }
 
 func openAIChatReasoningDelta(delta OpenAIChatDelta) (string, string) {
@@ -221,19 +224,24 @@ func openAIChatReasoningDelta(delta OpenAIChatDelta) (string, string) {
 }
 
 func (p *OpenAICompletionsStreamProcessor) appendThinking(signature, delta string) []AssistantMessageEvent {
+	var events []AssistantMessageEvent
 	if p.thinkIndex < 0 {
 		part := Thinking("")
 		part.ThinkingSignature = signature
 		p.output.Content = append(p.output.Content, part)
 		p.thinkIndex = len(p.output.Content) - 1
+		p.thinkEnded = false
+		events = append(events, AssistantMessageEvent{Type: "thinking_start", ContentIndex: p.thinkIndex, Partial: *p.output})
 	}
 	p.output.Content[p.thinkIndex].Thinking += SanitizeSurrogates(delta)
-	return []AssistantMessageEvent{{Type: "thinking_delta", Partial: *p.output}}
+	events = append(events, AssistantMessageEvent{Type: "thinking_delta", ContentIndex: p.thinkIndex, Delta: delta, Partial: *p.output})
+	return events
 }
 
 func (p *OpenAICompletionsStreamProcessor) appendToolCall(delta OpenAIChatToolCallDelta) []AssistantMessageEvent {
 	key := openAIToolCallDeltaKey(delta)
 	acc := p.tools[key]
+	var events []AssistantMessageEvent
 	if acc == nil {
 		acc = &openAIChatToolAccumulator{id: delta.ID, name: delta.Function.Name}
 		if acc.id == "" {
@@ -243,6 +251,7 @@ func (p *OpenAICompletionsStreamProcessor) appendToolCall(delta OpenAIChatToolCa
 		p.output.Content = append(p.output.Content, part)
 		acc.contentIndex = len(p.output.Content) - 1
 		p.tools[key] = acc
+		events = append(events, AssistantMessageEvent{Type: "toolcall_start", ContentIndex: acc.contentIndex, Partial: *p.output})
 	} else if p.output.Content[acc.contentIndex].ID == "" && delta.ID != "" {
 		acc.id = delta.ID
 		p.output.Content[acc.contentIndex].ID = delta.ID
@@ -253,7 +262,59 @@ func (p *OpenAICompletionsStreamProcessor) appendToolCall(delta OpenAIChatToolCa
 	}
 	acc.argsJSON += delta.Function.Arguments
 	p.output.Content[acc.contentIndex].Arguments = parseStreamingJSONObject(acc.argsJSON)
-	return []AssistantMessageEvent{{Type: "toolcall_delta", Partial: *p.output}}
+	events = append(events, AssistantMessageEvent{Type: "toolcall_delta", ContentIndex: acc.contentIndex, Delta: delta.Function.Arguments, Partial: *p.output})
+	return events
+}
+
+func (p *OpenAICompletionsStreamProcessor) finishOpenContentBlocks() []AssistantMessageEvent {
+	var events []AssistantMessageEvent
+	for index, part := range p.output.Content {
+		switch part.Type {
+		case ContentText:
+			if index == p.textIndex && !p.textEnded {
+				p.textEnded = true
+				events = append(events, AssistantMessageEvent{
+					Type:         "text_end",
+					ContentIndex: index,
+					Content:      p.output.Content[index].Text,
+					Partial:      *p.output,
+				})
+			}
+		case ContentThinking:
+			if index == p.thinkIndex && !p.thinkEnded {
+				p.thinkEnded = true
+				events = append(events, AssistantMessageEvent{
+					Type:         "thinking_end",
+					ContentIndex: index,
+					Content:      p.output.Content[index].Thinking,
+					Partial:      *p.output,
+				})
+			}
+		case ContentToolCall:
+			tool := p.toolAccumulatorAt(index)
+			if tool == nil || tool.ended {
+				continue
+			}
+			tool.ended = true
+			p.output.Content[index].Arguments = parseStreamingJSONObject(tool.argsJSON)
+			events = append(events, AssistantMessageEvent{
+				Type:         "toolcall_end",
+				ContentIndex: index,
+				ToolCall:     p.output.Content[index],
+				Partial:      *p.output,
+			})
+		}
+	}
+	return events
+}
+
+func (p *OpenAICompletionsStreamProcessor) toolAccumulatorAt(contentIndex int) *openAIChatToolAccumulator {
+	for _, tool := range p.tools {
+		if tool.contentIndex == contentIndex {
+			return tool
+		}
+	}
+	return nil
 }
 
 func openAIToolCallDeltaKey(delta OpenAIChatToolCallDelta) string {

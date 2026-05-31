@@ -1,26 +1,12 @@
 package gicodingagent
 
-import (
-	"fmt"
-	"os"
-)
+import sessioncwd "github.com/nowa/gi/gi-coding-agent/internal/sessioncwd"
 
-type MissingSessionCwdIssue struct {
-	SessionFile string
-	SessionCwd  string
-	FallbackCwd string
-}
-
-type MissingSessionCwdError struct {
-	Issue MissingSessionCwdIssue
-}
-
-func (e MissingSessionCwdError) Error() string {
-	return fmt.Sprintf("session cwd does not exist: %s", e.Issue.SessionCwd)
-}
+type MissingSessionCwdIssue = sessioncwd.MissingIssue
+type MissingSessionCwdError = sessioncwd.MissingError
 
 func formatMissingSessionCwdPrompt(issue MissingSessionCwdIssue) string {
-	return fmt.Sprintf("cwd from session file does not exist\n%s\n\ncontinue in current cwd\n%s", issue.SessionCwd, issue.FallbackCwd)
+	return sessioncwd.FormatPrompt(issue)
 }
 
 type AgentSessionRuntimeOptions struct {
@@ -35,22 +21,7 @@ func GetMissingSessionCwdIssue(sessionManager *SessionManager, fallbackCwd strin
 	if sessionManager == nil {
 		return nil
 	}
-	sessionCwd := sessionManager.GetCwd()
-	if sessionCwd == "" || sessionCwd == fallbackCwd {
-		return nil
-	}
-	info, err := os.Stat(sessionCwd)
-	if err == nil && info.IsDir() {
-		return nil
-	}
-	if err != nil && !os.IsNotExist(err) {
-		return nil
-	}
-	return &MissingSessionCwdIssue{
-		SessionFile: sessionManager.GetSessionFile(),
-		SessionCwd:  sessionCwd,
-		FallbackCwd: fallbackCwd,
-	}
+	return sessioncwd.GetIssue(sessionManager, fallbackCwd)
 }
 
 func CreateAgentSessionRuntime(factory CreateAgentSessionRuntimeFactory, options AgentSessionRuntimeOptions) (any, error) {

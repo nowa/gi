@@ -84,7 +84,7 @@ func (c *LoginDialogComponent) ShowAuth(url, instructions, manualPrompt string) 
 	c.instructions = strings.TrimSpace(instructions)
 	c.manualPrompt = strings.TrimSpace(manualPrompt)
 	c.infoLines = nil
-	c.inputVisible = true
+	c.inputVisible = c.manualPrompt != ""
 	if c.input != nil {
 		c.input.SetText("")
 	}

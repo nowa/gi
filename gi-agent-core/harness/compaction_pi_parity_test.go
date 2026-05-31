@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -35,8 +36,14 @@ func TestPiCompactionGetLastAssistantUsageCases(t *testing.T) {
 }
 
 func TestPiCompactionTokenAndThresholdCases(t *testing.T) {
+	if DefaultCompactionSettings.ReserveTokens != 16384 || DefaultCompactionSettings.KeepRecentTokens != 20000 {
+		t.Fatalf("default compaction settings = %#v", DefaultCompactionSettings)
+	}
 	if got := CalculateContextTokens(mockUsage(1000, 500, 200, 100)); got != 1800 {
 		t.Fatalf("context tokens = %d, want 1800", got)
+	}
+	if got := CalculateContextTokens(llm.Usage{Input: 1000, Output: 500, CacheRead: 200, CacheWrite: 100, TotalTokens: 99}); got != 99 {
+		t.Fatalf("native total tokens = %d, want 99", got)
 	}
 	if got := CalculateContextTokens(mockUsage(0, 0, 0, 0)); got != 0 {
 		t.Fatalf("zero context tokens = %d, want 0", got)
@@ -45,11 +52,48 @@ func TestPiCompactionTokenAndThresholdCases(t *testing.T) {
 	if !ShouldCompact(95000, 100000, settings) {
 		t.Fatal("expected compaction at threshold")
 	}
+	if ShouldCompact(90000, 100000, settings) {
+		t.Fatal("Pi uses strict threshold; equal threshold should not compact")
+	}
 	if ShouldCompact(89000, 100000, settings) {
 		t.Fatal("did not expect compaction below threshold")
 	}
 	if ShouldCompact(95000, 100000, CompactionSettings{Enabled: false, ReserveTokens: 10000, KeepRecentTokens: 20000}) {
 		t.Fatal("disabled compaction should not trigger")
+	}
+}
+
+func TestPiCompactionFileOperationDetailsCases(t *testing.T) {
+	builder := newPiCompactionEntryBuilder()
+	assistant := harnessAssistantMessage("")
+	assistant.Content = []llm.ContentPart{
+		llm.ToolCall("read-1", "read", map[string]any{"path": "read-only.ts"}),
+		llm.ToolCall("read-2", "read", map[string]any{"path": "edited.ts"}),
+		llm.ToolCall("write-1", "write", map[string]any{"path": "written.ts"}),
+		llm.ToolCall("edit-1", "edit", map[string]any{"path": "edited.ts"}),
+	}
+	entry := builder.message(assistant)
+	ops := collectFileOps([]Entry{entry})
+	readFiles, modifiedFiles := fileListsFromOps(ops)
+	if !reflect.DeepEqual(readFiles, []string{"read-only.ts"}) {
+		t.Fatalf("read files = %#v", readFiles)
+	}
+	if !reflect.DeepEqual(modifiedFiles, []string{"edited.ts", "written.ts"}) {
+		t.Fatalf("modified files = %#v", modifiedFiles)
+	}
+
+	previous := builder.compaction("hook summary", entry.ID)
+	previous.FromHook = true
+	previous.Details = map[string]any{"readFiles": []string{"hook-read.ts"}, "modifiedFiles": []string{"hook-edit.ts"}}
+	ops = collectFileOps([]Entry{previous})
+	if len(ops.Read) != 0 || len(ops.Edited) != 0 || len(ops.Written) != 0 {
+		t.Fatalf("fromHook compaction file ops should be ignored: %#v", ops)
+	}
+
+	formatted := formatFileOperations(readFiles, modifiedFiles)
+	want := "\n\n<read-files>\nread-only.ts\n</read-files>\n\n<modified-files>\nedited.ts\nwritten.ts\n</modified-files>"
+	if formatted != want {
+		t.Fatalf("formatted file ops = %q, want %q", formatted, want)
 	}
 }
 

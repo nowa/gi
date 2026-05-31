@@ -16,7 +16,7 @@ func NewOpenAIResponsesProvider(client HTTPDoer) OpenAIResponsesProvider {
 }
 
 func init() {
-	RegisterAPIProvider("openai-responses", NewOpenAIResponsesProvider(nil))
+	RegisterBuiltInAPIProvider("openai-responses", NewOpenAIResponsesProvider(nil))
 }
 
 func (p OpenAIResponsesProvider) Stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {
@@ -67,7 +67,15 @@ func (p OpenAIResponsesProvider) StreamSimple(model Model, llmContext Context, o
 	})
 	headers["Authorization"] = "Bearer " + apiKey
 
-	response, err := postSSE(ctx, httpClientOrDefault(p.Client), responsesEndpoint(model.BaseURL), headers, payloadAny)
+	baseURL := model.BaseURL
+	if IsCloudflareProvider(model.Provider) {
+		var err error
+		baseURL, err = ResolveCloudflareBaseURL(model)
+		if err != nil {
+			return streamError(model, "%s", err.Error()), nil
+		}
+	}
+	response, err := postSSE(ctx, httpClientOrDefault(p.Client), responsesEndpoint(baseURL), headers, payloadAny)
 	if err != nil {
 		return streamError(model, "request failed: %v", err), nil
 	}
@@ -151,16 +159,20 @@ func DecodeOpenAIResponsesSSEEvent(data []byte) (OpenAIResponsesStreamEvent, err
 	}
 	if raw.Item != nil {
 		item := &OpenAIResponsesOutputItem{
-			Type:      raw.Item.Type,
-			ID:        raw.Item.ID,
-			CallID:    raw.Item.CallID,
-			Name:      raw.Item.Name,
-			Arguments: raw.Item.Arguments,
-			Status:    raw.Item.Status,
-			Phase:     raw.Item.Phase,
+			Type:             raw.Item.Type,
+			ID:               raw.Item.ID,
+			CallID:           raw.Item.CallID,
+			Name:             raw.Item.Name,
+			Arguments:        raw.Item.Arguments,
+			Status:           raw.Item.Status,
+			Phase:            raw.Item.Phase,
+			EncryptedContent: raw.Item.EncryptedContent,
 		}
 		for _, part := range raw.Item.Content {
 			item.Content = append(item.Content, OpenAIResponsesOutputContentPart{Type: part.Type, Text: part.Text, Refusal: part.Refusal})
+		}
+		for _, part := range raw.Item.Summary {
+			item.Summary = append(item.Summary, OpenAIResponsesOutputContentPart{Type: part.Type, Text: part.Text, Refusal: part.Refusal})
 		}
 		event.Item = item
 	}
@@ -209,14 +221,16 @@ type openAIResponsesRawIncompleteDetails struct {
 }
 
 type openAIResponsesRawOutputItem struct {
-	Type      string                          `json:"type"`
-	ID        string                          `json:"id"`
-	CallID    string                          `json:"call_id"`
-	Name      string                          `json:"name"`
-	Arguments string                          `json:"arguments"`
-	Status    string                          `json:"status"`
-	Content   []openAIResponsesRawContentPart `json:"content"`
-	Phase     string                          `json:"phase"`
+	Type             string                          `json:"type"`
+	ID               string                          `json:"id"`
+	CallID           string                          `json:"call_id"`
+	Name             string                          `json:"name"`
+	Arguments        string                          `json:"arguments"`
+	Status           string                          `json:"status"`
+	Content          []openAIResponsesRawContentPart `json:"content"`
+	Summary          []openAIResponsesRawContentPart `json:"summary"`
+	Phase            string                          `json:"phase"`
+	EncryptedContent string                          `json:"encrypted_content"`
 }
 
 type openAIResponsesRawContentPart struct {

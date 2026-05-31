@@ -1,11 +1,30 @@
 package gicodingagent
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
+
+func TestDefaultAgentSessionRetrySettingsPiStyle(t *testing.T) {
+	retry := DefaultAgentSessionRetrySettings()
+	if !retry.Enabled || retry.MaxRetries != 3 || retry.BaseDelayMs != 2000 {
+		t.Fatalf("default retry settings = %#v", retry)
+	}
+}
+
+func TestAgentSessionRetryDelayUsesPiExponentialBackoff(t *testing.T) {
+	got := []int{
+		retryDelayMS(2000, 1),
+		retryDelayMS(2000, 2),
+		retryDelayMS(2000, 3),
+	}
+	if !reflect.DeepEqual(got, []int{2000, 4000, 8000}) {
+		t.Fatalf("retry delays = %#v", got)
+	}
+}
 
 func TestAgentSessionRetrySucceedsAfterTransientError(t *testing.T) {
 	session, calls := createRetryTestSession(t, 1, 3)

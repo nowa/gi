@@ -70,7 +70,7 @@ func NewGoogleProvider(client HTTPDoer) GoogleProvider {
 }
 
 func init() {
-	RegisterAPIProvider("google-generative-ai", NewGoogleProvider(nil))
+	RegisterBuiltInAPIProvider("google-generative-ai", NewGoogleProvider(nil))
 }
 
 func (p GoogleProvider) Stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {

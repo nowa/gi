@@ -2,7 +2,7 @@ package harness
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"slices"
 	"strings"
 
@@ -37,24 +37,32 @@ const branchSummaryPreamble = "The user explored a different conversation branch
 
 const branchSummaryPrompt = `Create a structured summary of this conversation branch for context when returning later.
 
-Use this exact shape:
+Use this EXACT format:
 
 ## Goal
 [What was the user trying to accomplish in this branch?]
 
 ## Constraints & Preferences
 - [Any constraints, preferences, or requirements mentioned]
+- [Or "(none)" if none were mentioned]
 
 ## Progress
-- [Completed or in-progress work]
+### Done
+- [x] [Completed tasks/changes]
+
+### In Progress
+- [ ] [Work that was started but not finished]
+
+### Blocked
+- [Issues preventing progress, if any]
 
 ## Key Decisions
-- [Important decisions and rationale]
+- **[Decision]**: [Brief rationale]
 
 ## Next Steps
-1. [What should happen next]
+1. [What should happen next to continue this work]
 
-Keep it concise. Preserve exact file paths, function names, and error messages.`
+Keep each section concise. Preserve exact file paths, function names, and error messages.`
 
 func CollectEntriesForBranchSummary(session *Session, oldLeafID *string, targetID string) (CollectEntriesResult, error) {
 	if oldLeafID == nil {
@@ -138,10 +146,9 @@ func GenerateBranchSummary(ctx context.Context, entries []Entry, model llm.Model
 	}
 	tokenBudget := model.ContextWindow - reserveTokens
 	preparation := PrepareBranchEntries(entries, tokenBudget)
-	readFiles := keys(preparation.FileOps.Read)
-	modifiedFiles := keys(preparation.FileOps.Edited)
+	readFiles, modifiedFiles := fileListsFromOps(preparation.FileOps)
 	if len(preparation.Messages) == 0 {
-		return BranchSummaryResult{Summary: "No content to summarize", ReadFiles: readFiles, ModifiedFiles: modifiedFiles}, nil
+		return BranchSummaryResult{Summary: "No content to summarize"}, nil
 	}
 
 	instructions := branchSummaryPrompt
@@ -153,17 +160,20 @@ func GenerateBranchSummary(ctx context.Context, entries []Entry, model llm.Model
 	prompt := "<conversation>\n" + SerializeConversation(preparation.Messages) + "\n</conversation>\n\n" + instructions
 	stream, err := llm.StreamSimple(model, llm.Context{SystemPrompt: summarizationSystemPrompt, Messages: []llm.Message{llm.UserMessageText(prompt)}}, llm.SimpleStreamOptions{APIKey: options.APIKey, MaxTokens: min(2048, model.MaxTokens)})
 	if err != nil {
-		return BranchSummaryResult{}, err
+		return BranchSummaryResult{}, newBranchSummaryError(BranchSummaryErrorSummarizationFailed, "branch summary failed: %v", err)
 	}
 	message, err := stream.Result(ctx)
 	if err != nil {
-		return BranchSummaryResult{}, err
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return BranchSummaryResult{}, newBranchSummaryError(BranchSummaryErrorAborted, "branch summary aborted: %v", err)
+		}
+		return BranchSummaryResult{}, newBranchSummaryError(BranchSummaryErrorSummarizationFailed, "branch summary failed: %v", err)
 	}
 	if message.StopReason == llm.StopReasonAborted {
-		return BranchSummaryResult{}, fmt.Errorf("aborted: %s", message.ErrorMessage)
+		return BranchSummaryResult{}, newBranchSummaryError(BranchSummaryErrorAborted, "branch summary aborted: %s", message.ErrorMessage)
 	}
 	if message.StopReason == llm.StopReasonError {
-		return BranchSummaryResult{}, fmt.Errorf("branch summary failed: %s", message.ErrorMessage)
+		return BranchSummaryResult{}, newBranchSummaryError(BranchSummaryErrorSummarizationFailed, "branch summary failed: %s", message.ErrorMessage)
 	}
 	var parts []string
 	for _, part := range message.Content {
@@ -210,22 +220,25 @@ func formatFileOperations(readFiles, modifiedFiles []string) string {
 		return ""
 	}
 	var out strings.Builder
-	out.WriteString("\n\n## File Operations")
+	out.WriteString("\n\n")
 	if len(readFiles) > 0 {
-		out.WriteString("\nRead files:\n")
+		out.WriteString("<read-files>\n")
 		for _, file := range readFiles {
-			out.WriteString("- ")
 			out.WriteString(file)
 			out.WriteString("\n")
 		}
+		out.WriteString("</read-files>")
 	}
 	if len(modifiedFiles) > 0 {
-		out.WriteString("\nModified files:\n")
+		if len(readFiles) > 0 {
+			out.WriteString("\n\n")
+		}
+		out.WriteString("<modified-files>\n")
 		for _, file := range modifiedFiles {
-			out.WriteString("- ")
 			out.WriteString(file)
 			out.WriteString("\n")
 		}
+		out.WriteString("</modified-files>")
 	}
 	return out.String()
 }

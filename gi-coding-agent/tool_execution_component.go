@@ -378,7 +378,7 @@ func renderEditToolCall(args any, context ToolRenderContext) []string {
 			return append(lines, context.PreflightDiff.Error)
 		}
 		if context.PreflightDiff.Diff != "" {
-			return append(lines, splitNonEmptyLines(context.PreflightDiff.Diff)...)
+			return append(lines, splitNonEmptyLines(RenderDiff(context.PreflightDiff.Diff))...)
 		}
 	}
 	if context.ArgsComplete && !context.IsError && err == nil {
@@ -389,7 +389,7 @@ func renderEditToolCall(args any, context ToolRenderContext) []string {
 
 func renderEditToolResult(result FileToolResult, _ ToolRenderResultOptions, context ToolRenderContext) []string {
 	if result.Details != nil && result.Details.Diff != "" && !context.IsError {
-		return splitNonEmptyLines(result.Details.Diff)
+		return splitNonEmptyLines(RenderDiff(result.Details.Diff))
 	}
 	if context.IsError {
 		return splitNonEmptyLines(fileToolResultText(result))
@@ -432,11 +432,26 @@ func appendReadTruncationWarning(lines []string, details *FileToolDetails) []str
 		return lines
 	}
 	truncation := details.Truncation
+	if truncation.FirstLineExceedsLimit {
+		maxBytes := truncation.MaxBytes
+		if maxBytes == 0 {
+			maxBytes = defaultReadToolByteLimit
+		}
+		return append(lines, fmt.Sprintf("[First line exceeds %s limit]", formatBashOutputSize(maxBytes)))
+	}
 	switch truncation.TruncatedBy {
 	case "lines":
-		return append(lines, fmt.Sprintf("[Truncated: showing %d of %d lines (%d line limit)]", truncation.OutputLines, truncation.TotalLines, defaultReadToolLineLimit))
+		maxLines := truncation.MaxLines
+		if maxLines == 0 {
+			maxLines = defaultReadToolLineLimit
+		}
+		return append(lines, fmt.Sprintf("[Truncated: showing %d of %d lines (%d line limit)]", truncation.OutputLines, truncation.TotalLines, maxLines))
 	case "bytes":
-		return append(lines, fmt.Sprintf("[Truncated: %d lines shown (%s limit)]", truncation.OutputLines, formatDisplayByteSize(defaultReadToolByteLimit)))
+		maxBytes := truncation.MaxBytes
+		if maxBytes == 0 {
+			maxBytes = defaultReadToolByteLimit
+		}
+		return append(lines, fmt.Sprintf("[Truncated: %d lines shown (%s limit)]", truncation.OutputLines, formatBashOutputSize(maxBytes)))
 	case "limit":
 		return append(lines, fmt.Sprintf("[Truncated: showing %d of %d lines (requested limit)]", truncation.OutputLines, truncation.TotalLines))
 	default:
@@ -451,6 +466,16 @@ func formatDisplayByteSize(size int) string {
 	return fmt.Sprintf("%d bytes", size)
 }
 
+const writePartialFullHighlightLines = 50
+
+type writeHighlightCache struct {
+	rawPath          string
+	lang             string
+	rawContent       string
+	normalizedLines  []string
+	highlightedLines []string
+}
+
 func renderWriteToolCall(args any, context ToolRenderContext) []string {
 	path, content, hasContent := writeRenderArgs(args)
 	if path == "" {
@@ -458,10 +483,7 @@ func renderWriteToolCall(args any, context ToolRenderContext) []string {
 	}
 	lines := []string{strings.TrimSpace("write " + shortenDisplayPath(path))}
 	if hasContent {
-		contentLines := trimTrailingEmptyLines(strings.Split(normalizeDisplayText(content), "\n"))
-		for i := range contentLines {
-			contentLines[i] = replaceDisplayTabs(contentLines[i])
-		}
+		contentLines := trimTrailingEmptyLines(renderWritePreviewLines(path, content, context))
 		if !context.Expanded && len(contentLines) > 10 {
 			remaining := len(contentLines) - 10
 			contentLines = append(contentLines[:10], fmt.Sprintf("... (%d more lines, Ctrl+O to expand)", remaining))
@@ -469,6 +491,159 @@ func renderWriteToolCall(args any, context ToolRenderContext) []string {
 		lines = append(lines, contentLines...)
 	}
 	return lines
+}
+
+func renderWritePreviewLines(path, content string, context ToolRenderContext) []string {
+	if context.ArgsComplete {
+		cache := rebuildWriteHighlightCache(path, content)
+		setWriteHighlightCache(context.State, cache)
+		if cache != nil {
+			return append([]string(nil), cache.highlightedLines...)
+		}
+		return renderPlainWritePreviewLines(content)
+	}
+	cache := updateWriteHighlightCache(context.State, path, content)
+	if cache != nil {
+		return append([]string(nil), cache.highlightedLines...)
+	}
+	return renderPlainWritePreviewLines(content)
+}
+
+func renderPlainWritePreviewLines(content string) []string {
+	contentLines := strings.Split(normalizeDisplayText(content), "\n")
+	for i := range contentLines {
+		contentLines[i] = tuiThemeToolOutput(replaceDisplayTabs(contentLines[i]))
+	}
+	return contentLines
+}
+
+func updateWriteHighlightCache(state map[string]any, rawPath, content string) *writeHighlightCache {
+	lang := writeHighlightLanguage(rawPath)
+	if lang == "" {
+		setWriteHighlightCache(state, nil)
+		return nil
+	}
+	cache := getWriteHighlightCache(state)
+	if cache == nil || cache.lang != lang || cache.rawPath != rawPath || !strings.HasPrefix(content, cache.rawContent) {
+		cache = rebuildWriteHighlightCache(rawPath, content)
+		setWriteHighlightCache(state, cache)
+		return cache
+	}
+	if len(content) == len(cache.rawContent) {
+		return cache
+	}
+
+	delta := replaceDisplayTabs(normalizeDisplayText(content[len(cache.rawContent):]))
+	cache.rawContent = content
+	if len(cache.normalizedLines) == 0 {
+		cache.normalizedLines = append(cache.normalizedLines, "")
+		cache.highlightedLines = append(cache.highlightedLines, "")
+	}
+	segments := strings.Split(delta, "\n")
+	lastIndex := len(cache.normalizedLines) - 1
+	cache.normalizedLines[lastIndex] += segments[0]
+	cache.highlightedLines[lastIndex] = highlightWriteLine(cache.normalizedLines[lastIndex], cache.lang)
+	for _, segment := range segments[1:] {
+		cache.normalizedLines = append(cache.normalizedLines, segment)
+		cache.highlightedLines = append(cache.highlightedLines, highlightWriteLine(segment, cache.lang))
+	}
+	refreshWriteHighlightPrefix(cache)
+	return cache
+}
+
+func rebuildWriteHighlightCache(rawPath, content string) *writeHighlightCache {
+	lang := writeHighlightLanguage(rawPath)
+	if lang == "" {
+		return nil
+	}
+	normalized := replaceDisplayTabs(normalizeDisplayText(content))
+	normalizedLines := strings.Split(normalized, "\n")
+	return &writeHighlightCache{
+		rawPath:          rawPath,
+		lang:             lang,
+		rawContent:       content,
+		normalizedLines:  normalizedLines,
+		highlightedLines: highlightWriteSource(normalized, lang),
+	}
+}
+
+func refreshWriteHighlightPrefix(cache *writeHighlightCache) {
+	if cache == nil {
+		return
+	}
+	prefixCount := min(writePartialFullHighlightLines, len(cache.normalizedLines))
+	if prefixCount <= 0 {
+		return
+	}
+	prefix := strings.Join(cache.normalizedLines[:prefixCount], "\n")
+	highlighted := highlightWriteSource(prefix, cache.lang)
+	for i := 0; i < prefixCount; i++ {
+		if i < len(highlighted) {
+			cache.highlightedLines[i] = highlighted[i]
+			continue
+		}
+		cache.highlightedLines[i] = highlightWriteLine(cache.normalizedLines[i], cache.lang)
+	}
+}
+
+func highlightWriteSource(source, lang string) []string {
+	return strings.Split(RenderHighlightedHTML(Highlight(source, HighlightOptions{
+		Language:       lang,
+		IgnoreIllegals: true,
+		Theme:          writeHighlightTheme(),
+	}), nil), "\n")
+}
+
+func highlightWriteLine(line, lang string) string {
+	highlighted := highlightWriteSource(line, lang)
+	if len(highlighted) == 0 {
+		return ""
+	}
+	return highlighted[0]
+}
+
+func writeHighlightTheme() HighlightTheme {
+	return HighlightTheme{
+		"comment":     func(text string) string { return tuiThemeFG("syntaxComment", text) },
+		"keyword":     func(text string) string { return tuiThemeFG("syntaxKeyword", text) },
+		"function":    func(text string) string { return tuiThemeFG("syntaxFunction", text) },
+		"variable":    func(text string) string { return tuiThemeFG("syntaxVariable", text) },
+		"string":      func(text string) string { return tuiThemeFG("syntaxString", text) },
+		"number":      func(text string) string { return tuiThemeFG("syntaxNumber", text) },
+		"type":        func(text string) string { return tuiThemeFG("syntaxType", text) },
+		"operator":    func(text string) string { return tuiThemeFG("syntaxOperator", text) },
+		"punctuation": func(text string) string { return tuiThemeFG("syntaxPunctuation", text) },
+	}
+}
+
+func writeHighlightLanguage(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".js", ".jsx", ".mjs", ".cjs":
+		return "javascript"
+	case ".ts", ".tsx", ".mts", ".cts":
+		return "typescript"
+	default:
+		return ""
+	}
+}
+
+func getWriteHighlightCache(state map[string]any) *writeHighlightCache {
+	if state == nil {
+		return nil
+	}
+	cache, _ := state["write.highlightCache"].(*writeHighlightCache)
+	return cache
+}
+
+func setWriteHighlightCache(state map[string]any, cache *writeHighlightCache) {
+	if state == nil {
+		return
+	}
+	if cache == nil {
+		delete(state, "write.highlightCache")
+		return
+	}
+	state["write.highlightCache"] = cache
 }
 
 func renderWriteToolResult(result FileToolResult, _ ToolRenderResultOptions, context ToolRenderContext) []string {

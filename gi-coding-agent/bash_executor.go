@@ -1,7 +1,6 @@
 package gicodingagent
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 )
 
 const defaultBashExitStdioGrace = time.Second
-const defaultBashOutputLineLimit = 2000
 
 type BashExecutorOptions struct {
 	Context        context.Context
@@ -235,14 +233,6 @@ type bashOutputTruncation struct {
 	OutputLines     int
 	OutputBytes     int
 	LastLinePartial bool
-}
-
-func sanitizeBashOutputBytes(data []byte) string {
-	text := string(bytes.ToValidUTF8(data, []byte{}))
-	text = StripAnsi(text)
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
-	return text
 }
 
 func formatBashOutput(fullOutput string) (string, bashOutputTruncation) {

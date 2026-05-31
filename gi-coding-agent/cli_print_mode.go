@@ -290,6 +290,7 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 
 	host := &agentSessionPrintModeHost{}
 	preflight := cliProviderPreflight(modelRegistry, args)
+	retrySettings := settingsManager.GetRetrySettings()
 	session, err := CreateAgentSession(AgentSessionOptions{
 		CWD:            cwd,
 		AgentDir:       agentDir,
@@ -299,6 +300,7 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 		ScopedModels:   scopedModels,
 		Preflight:      preflight,
 		ResourceLoader: resourceLoader,
+		RetrySettings:  &retrySettings,
 		Tools:          args.Tools,
 		ToolsSet:       args.Tools != nil,
 		NoTools:        cliNoToolsMode(args),
@@ -310,6 +312,7 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 		session.Responder = options.Responder
 	} else {
 		session.Responder = host.providerResponder(modelRegistry, args, installTelemetryEnabled)
+		session.StreamResponder = host.providerStreamResponder(modelRegistry, args, installTelemetryEnabled)
 	}
 	host.session = session
 	host.modelRegistry = modelRegistry
@@ -439,6 +442,17 @@ func resolveCLIPrintModeModelForSession(args Args, registry CodingModelRegistry,
 	}
 
 	scopedModels := resolveCLIPrintModeModelScope(args, registry, settingsManager)
+	if len(scopedModels) > 0 && !args.Continue && !args.Resume {
+		model, level := selectCLIStartupScopedModel(scopedModels, registry, settingsManager, defaultThinkingLevel)
+		level = clampCLIThinkingLevel(model, level)
+		restoreWarning = startupRestoreFallbackWarning(restoreWarning, model)
+		return cliResolvedModelSelection{
+			Model:         model,
+			ThinkingLevel: level,
+			Warning:       restoreWarning,
+		}, nil
+	}
+
 	resolved := FindInitialModel(FindInitialModelOptions{
 		CLIProvider:          args.Provider,
 		ScopedModels:         scopedModels,
@@ -458,6 +472,32 @@ func resolveCLIPrintModeModelForSession(args Args, registry CodingModelRegistry,
 		ThinkingLevel: resolved.ThinkingLevel,
 		Warning:       combineStartupWarnings(restoreWarning, resolved.FallbackMessage),
 	}, nil
+}
+
+func selectCLIStartupScopedModel(scopedModels []ScopedModel, registry CodingModelRegistry, settingsManager *SettingsManager, defaultThinkingLevel ThinkingLevel) (*llm.Model, ThinkingLevel) {
+	scoped := scopedModels[0]
+	if settingsManager != nil && registry != nil {
+		defaultProvider := settingsManager.GetDefaultProvider()
+		defaultModelID := settingsManager.GetDefaultModel()
+		if defaultProvider != "" && defaultModelID != "" {
+			if found, ok := registry.Find(defaultProvider, defaultModelID); ok {
+				for _, candidate := range scopedModels {
+					if sameModel(candidate.Model, found) {
+						scoped = candidate
+						break
+					}
+				}
+			}
+		}
+	}
+	level := scoped.ThinkingLevel
+	if level == "" {
+		level = defaultThinkingLevel
+	}
+	if level == "" {
+		level = DefaultThinkingLevel
+	}
+	return modelPtr(scoped.Model), level
 }
 
 func firstSettingsManager(settingsManagers []*SettingsManager) *SettingsManager {
@@ -641,36 +681,79 @@ func (h *agentSessionPrintModeHost) PrintModeCWD() string {
 
 func (h *agentSessionPrintModeHost) providerResponder(registry *ModelRegistry, args Args, installTelemetryEnabled bool) AgentSessionResponder {
 	return func(_ string, messages []llm.Message, model llm.Model) (llm.Message, error) {
-		auth := registry.GetAPIKeyAndHeaders(model)
-		if !auth.OK {
-			return llm.Message{}, errors.New(auth.Error)
-		}
-		if args.APIKey == "" && auth.APIKey == "" && providerNeedsExplicitAPIKey(model.Provider) {
-			return llm.Message{}, errors.New(formatNoAPIKeyFoundMessage(model.Provider))
-		}
 		ctx := context.Background()
-		options := llm.SimpleStreamOptions{
-			APIKey:    firstNonEmptyString(args.APIKey, auth.APIKey),
-			Context:   ctx,
-			Headers:   BuildSDKStreamHeaders(model, installTelemetryEnabled, auth.Headers, nil),
-			Reasoning: cliReasoningOption(model, ThinkingLevel(h.session.Agent.State.ThinkingLevel)),
-			OnPayload: func(payload any, model llm.Model) (any, bool, error) {
-				if h.session == nil {
-					return nil, false, nil
-				}
-				return h.session.emitBeforeProviderRequest(ctx, payload, model)
-			},
-			OnResponseStatus: func(status int, headers map[string]string, model llm.Model) error {
-				if h.session == nil {
-					return nil
-				}
-				return h.session.emitAfterProviderResponse(ctx, status, headers, model)
-			},
+		auth, err := h.providerAuth(registry, args, model)
+		if err != nil {
+			return llm.Message{}, err
 		}
+		options := h.providerStreamOptions(ctx, model, auth, args, installTelemetryEnabled)
 		return llm.CompleteSimple(ctx, model, llm.Context{
 			SystemPrompt: h.session.SystemPrompt,
 			Messages:     messages,
 			Tools:        h.session.GetActiveLLMTools(),
 		}, options)
 	}
+}
+
+func (h *agentSessionPrintModeHost) providerStreamResponder(registry *ModelRegistry, args Args, installTelemetryEnabled bool) AgentSessionStreamResponder {
+	return func(_ string, messages []llm.Message, model llm.Model) (*llm.AssistantMessageEventStream, error) {
+		ctx := context.Background()
+		auth, err := h.providerAuth(registry, args, model)
+		if err != nil {
+			return nil, err
+		}
+		options := h.providerStreamOptions(ctx, model, auth, args, installTelemetryEnabled)
+		return llm.StreamSimple(model, llm.Context{
+			SystemPrompt: h.session.SystemPrompt,
+			Messages:     messages,
+			Tools:        h.session.GetActiveLLMTools(),
+		}, options)
+	}
+}
+
+func (h *agentSessionPrintModeHost) providerAuth(registry *ModelRegistry, args Args, model llm.Model) (ResolvedRequestAuth, error) {
+	auth := registry.GetAPIKeyAndHeaders(model)
+	if !auth.OK {
+		return ResolvedRequestAuth{}, errors.New(auth.Error)
+	}
+	if args.APIKey == "" && auth.APIKey == "" && providerNeedsExplicitAPIKey(model.Provider) {
+		return ResolvedRequestAuth{}, errors.New(formatNoAPIKeyFoundMessage(model.Provider))
+	}
+	return auth, nil
+}
+
+func (h *agentSessionPrintModeHost) providerStreamOptions(ctx context.Context, model llm.Model, auth ResolvedRequestAuth, args Args, installTelemetryEnabled bool) llm.SimpleStreamOptions {
+	providerRetrySettings := ProviderRetrySettings{MaxRetryDelayMS: defaultProviderMaxRetryDelayMS}
+	if h.settingsManager != nil {
+		providerRetrySettings = h.settingsManager.GetProviderRetrySettings()
+	}
+	return llm.SimpleStreamOptions{
+		APIKey:          firstNonEmptyString(args.APIKey, auth.APIKey),
+		Context:         ctx,
+		Headers:         BuildSDKStreamHeaders(model, installTelemetryEnabled, auth.Headers, nil),
+		Reasoning:       cliReasoningOption(model, ThinkingLevel(h.session.Agent.State.ThinkingLevel)),
+		Transport:       settingsTransport(h.settingsManager),
+		TimeoutMillis:   providerRetrySettings.TimeoutMS,
+		MaxRetries:      providerRetrySettings.MaxRetries,
+		MaxRetryDelayMs: providerRetrySettings.MaxRetryDelayMS,
+		OnPayload: func(payload any, model llm.Model) (any, bool, error) {
+			if h.session == nil {
+				return nil, false, nil
+			}
+			return h.session.emitBeforeProviderRequest(ctx, payload, model)
+		},
+		OnResponseStatus: func(status int, headers map[string]string, model llm.Model) error {
+			if h.session == nil {
+				return nil
+			}
+			return h.session.emitAfterProviderResponse(ctx, status, headers, model)
+		},
+	}
+}
+
+func settingsTransport(settings *SettingsManager) string {
+	if settings == nil {
+		return ""
+	}
+	return settings.GetTransport()
 }

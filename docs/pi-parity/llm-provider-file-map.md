@@ -1,0 +1,252 @@
+# LLM Provider File Map
+
+This document tracks Pi `packages/ai/src` against Gi `gi-llm-provider`. It is a
+working file/function parity audit, not a completion claim.
+
+## Status Legend
+
+- `direct`: Gi has a same-purpose file/function implementation.
+- `split`: Pi's file is represented by multiple Go files.
+- `consolidated`: Pi's small file is folded into a larger Go file.
+- `go-native`: Pi's Node/TS-specific surface is represented by Go-native code.
+- `partial`: Gi has some equivalent behavior, but the file/function audit is not
+  complete or a Pi feature is missing.
+- `gap`: no current Gi equivalent.
+
+## Root Source Files
+
+| Pi file | Pi exported surface | Gi equivalent | Status | Notes |
+| --- | --- | --- | --- | --- |
+| `api-registry.ts` | `registerApiProvider`, `getApiProvider`, `getApiProviders`, `unregisterApiProviders`, `clearApiProviders` | `registry.go` `RegisterAPIProvider`, `RegisterAPIProviderWithSource`, `GetAPIProvider`, `GetAPIProviders`, `UnregisterAPIProviders`, `ClearAPIProviders` | direct | Gi now preserves Pi's source lifecycle and model/API mismatch guard while keeping existing simple registration calls compatible. |
+| `bedrock-provider.ts` | `bedrockProviderModule` lazy module placeholder | `bedrock_config.go`, `bedrock_payload.go` | go-native | Gi does not need TS dynamic module injection; Bedrock request/config logic is in Go files. |
+| `cli.ts` | standalone OAuth CLI helpers | `oauth.go`, `gi-coding-agent/oauth_*.go`, `cmd/gi` login flows | partial | Credential primitives exist in provider and coding-agent layers; exact standalone `packages/ai` CLI command surface is not mirrored. |
+| `env-api-keys.ts` | `findEnvKeys`, `getEnvApiKey` | `env.go`, `http_provider.go` `apiKeyOrEnv` | direct | Provider env lookup is represented; Gi validates provider-specific env names through tests. |
+| `image-models.generated.ts` | generated image model catalog | `image_models.go` | direct | Generated image model data is represented in Go. |
+| `image-models.ts` | `getImageModel`, `getImageProviders`, `getImageModels` | `image_models.go` | direct | Same model lookup responsibilities. |
+| `images-api-registry.ts` | `registerImagesApiProvider`, `getImagesApiProvider` | `images.go` `RegisterImagesAPIProvider`, `GetImagesAPIProvider` | direct | Pi image registry is smaller than text API registry; Gi matches the exposed lifecycle. |
+| `images.ts` | `generateImages` | `images.go` `GenerateImages`, `AbortedImages` | direct | Includes context-cancel abort mapping. |
+| `index.ts` | public re-exports | Go package exports | consolidated | No barrel file needed; exported Go identifiers are the public surface. |
+| `models.generated.ts` | generated model catalog | `pi_models_generated.go` | direct | Generated Pi model catalog is represented from the current local Pi source snapshot. |
+| `models.ts` | `getModel`, `getProviders`, `getModels`, `calculateCost`, `getSupportedThinkingLevels`, `clampThinkingLevel`, `modelsAreEqual` | `models.go` | direct | Model lookup, cost, thinking-level, and equality helpers are represented. |
+| `oauth.ts` | OAuth provider registry/types | `oauth.go`, `gi-coding-agent/oauth_*.go` | split | Low-level credential request helpers live in provider; interactive login orchestration lives in coding-agent. |
+| `session-resources.ts` | `registerSessionResourceCleanup`, `cleanupSessionResources` | `session_resources.go` `RegisterSessionResourceCleanup`, `CleanupSessionResources` | direct | Gi now has the same session cleanup registry shape with unregister callbacks and aggregate cleanup errors. Websocket-specific Codex debug helpers remain tracked under the Codex provider row. |
+| `stream.ts` | `stream`, `complete`, `streamSimple`, `completeSimple`, env key re-export | `registry.go`, `env.go` | direct | Stream/complete entrypoints are represented. |
+| `types.ts` | API/model/message/tool/schema/image/OAuth option types | `types.go`, `images.go`, `oauth.go`, provider option structs | split | Go separates image and OAuth types into dedicated files while preserving contracts. |
+
+## Provider Files
+
+| Pi file | Pi exported surface / major functions | Gi equivalent | Status | Notes |
+| --- | --- | --- | --- | --- |
+| `providers/amazon-bedrock.ts` | `streamBedrock`, `streamSimpleBedrock`, payload conversion, adaptive thinking, Converse stream parsing | `bedrock_payload.go`, `bedrock_config.go`, `bedrock_stream.go` | partial | Payload/config parity, `toolConfig` conversion, Pi-style Converse stream event processing, and a registered injectable transport provider are implemented. Gi still does not ship a default AWS SDK/SigV4 live transport. |
+| `providers/anthropic.ts` | `streamAnthropic`, `streamSimpleAnthropic`, payload/message/tool conversion, thinking/cache headers, SSE processing | `anthropic_provider.go`, `anthropic_payload.go`, `anthropic_stream.go` | direct | Includes adaptive thinking, Copilot headers, OAuth headers, cache control, tool-name mapping, thinking signatures, and SSE parsing. |
+| `providers/azure-openai-responses.ts` | Azure Responses stream/simple, endpoint/deployment config, reasoning payload | `azure_provider.go`, `azure_config.go` | direct | Includes deployment name maps, endpoint query preservation, reasoning payload, and tool-call provider normalization. |
+| `providers/cloudflare.ts` | Cloudflare provider base URL resolution | `cloudflare.go` | direct | Wired into Anthropic/OpenAI Completions/OpenAI Responses request paths. |
+| `providers/faux.ts` | Faux provider and test helpers | `faux.go` | direct | Gi has queued responses, helper content constructors, provider registration, and token estimates. |
+| `providers/github-copilot-headers.ts` | dynamic Copilot headers | `github_copilot_headers.go` | direct | Agent/vision/Anthropic header selection is represented. |
+| `providers/google-shared.ts` | thought detection/signature retention, message/tool conversion, stop reason mapping | `google_convert.go`, `google_provider.go` | direct | Gi covers Gemini 3 unsigned tool calls, valid thought signature retention, image tool result routing, tools, and stop reasons. |
+| `providers/google-vertex.ts` | Vertex stream/simple and config | `google_provider.go`, `google_vertex_config.go` | split | Vertex config is separated; Google stream processor is shared. |
+| `providers/google.ts` | Google Generative AI stream/simple and payload | `google_provider.go`, `google_convert.go` | direct | Includes thinking/tool-call streaming and usage mapping. |
+| `providers/images/openrouter.ts` | OpenRouter image generation, payload, response/usage parsing | `openrouter_images.go`, `openrouter_images_provider.go` | direct | Payload validation, HTTP provider, usage parsing, and error image messages are represented. |
+| `providers/images/register-builtins.ts` | image provider registration side effect | provider `init()` functions | go-native | Go providers self-register through `init`. |
+| `providers/mistral.ts` | Mistral conversations stream/simple, payload, tools, reasoning mode, tool IDs | `mistral_provider.go`, `mistral_payload.go` | direct | Gi covers prompt-mode reasoning, reasoning effort, tool conversion, streaming deltas, and usage. |
+| `providers/openai-codex-responses.ts` | Codex Responses SSE/websocket stream, retries, request body, service-tier pricing, headers, account ID, websocket cache/debug | `openai_codex.go`, `openai_codex_provider.go`, `diagnostics.go` | partial | SSE path, retry logic, payload, headers, account ID, service-tier pricing, transport fallback diagnostics, and websocket fallback debug/reset/close API are implemented. Real websocket reuse and cached-input delta requests remain a gap. |
+| `providers/openai-completions.ts` | OpenAI-compatible chat completions stream/simple, payload, compatibility modes, reasoning replay | `openai_completions_provider.go`, `openai_completions_convert.go`, `openai_completions_stream.go` | direct | Includes cache control, provider-specific reasoning fields, tool choice, stream parsing, replay, and Pi-style text/thinking/tool-call lifecycle events with `contentIndex` and `delta`. |
+| `providers/openai-responses-shared.ts` | Responses message/tool conversion, reasoning/text signatures, stream processing, stop/usage mapping | `openai_responses_convert.go`, `openai_responses_payload.go`, `openai_responses_stream.go` | direct | Reasoning items emit thinking events, preserve replay signatures, and follow Pi's summary-part guard before accepting summary text deltas; text signatures and Pi-style lifecycle event fields are preserved. |
+| `providers/openai-responses.ts` | OpenAI Responses stream/simple provider | `openai_responses_provider.go` | direct | HTTP/SSE provider plus Cloudflare base URL handling. |
+| `providers/register-builtins.ts` | lazy provider loaders, built-in registration/reset | provider `init()` functions, `registry.go` `RegisterBuiltInAPIProviders`, `ResetAPIProviders` | direct | Go links providers eagerly instead of using TS dynamic imports, but built-ins now register through a built-in source and expose Pi-style explicit register/reset helpers. |
+| `providers/simple-options.ts` | shared simple stream option adapter | `types.go` `SimpleStreamOptions = StreamOptions` | direct | Go uses a type alias instead of an adapter file. |
+| `providers/transform-messages.ts` | image downgrade, reasoning/signature handoff, tool-call ID normalization, synthetic tool results | `message_transform.go` | direct | Cross-provider handoff tests cover same-model/cross-provider thinking, images, and tool result normalization. |
+
+## Utility Files
+
+| Pi file | Pi exported surface / major functions | Gi equivalent | Status | Notes |
+| --- | --- | --- | --- | --- |
+| `utils/diagnostics.ts` | assistant diagnostic shape/helpers | `diagnostics.go`, `types.go` `AssistantMessageDiagnostic` | direct | Used by Codex transport fallback diagnostics. |
+| `utils/event-stream.ts` | assistant stream event queue/result helpers | `internal/eventstream/event_stream.go`, `event_stream.go` facade | direct | Generic terminal event stream mechanics live in a focused utility subpackage; assistant done/error stream constructors stay in the provider package. |
+| `utils/hash.ts` | `shortHash` | `message_transform.go` `shortHash` | direct | Used by tool-call ID normalization. |
+| `utils/headers.ts` | `headersToRecord` | `http_provider.go` `responseHeaders` | direct | Go converts `http.Header` to case-preserving map. |
+| `utils/json-parse.ts` | streaming JSON repair/parse | `anthropic_stream.go` `UnmarshalJSONWithRepair`, `openai_responses_stream.go` `parseStreamingJSONObject` | direct | Partial JSON repair is covered for tool arguments. |
+| `utils/node-http-proxy.ts` | proxy env parsing and agent creation | `internal/httpproxy/http_proxy.go`, `http_proxy.go` facade | go-native | Go resolves proxy URL in a focused utility subpackage; it does not create Node agents. |
+| `utils/oauth/anthropic.ts` | Anthropic auth/refresh request construction and login helpers | `oauth.go`, `gi-coding-agent/oauth_anthropic.go` | split | Provider request builders are in `oauth.go`; browser login orchestration and token exchange are in coding-agent. Authorization, callback, and token request contracts are covered by Gi OAuth tests. |
+| `utils/oauth/github-copilot.ts` | domain normalization, base URL, device flow, refresh/login | `oauth.go`, `gi-coding-agent/oauth_github_copilot.go` | split | Core polling/base URL helpers are provider-level; interactive login is coding-agent. Gi now matches Pi's default `api.individual.githubcopilot.com` fallback. |
+| `utils/oauth/index.ts` | OAuth exports | Go package exports | consolidated | No barrel file needed. |
+| `utils/oauth/oauth-page.ts` | OAuth success/error HTML | `oauth_page.go`, `gi-coding-agent/oauth_*.go` callback pages | direct | Shared OAuth success/error page rendering now lives in `gi-llm-provider`, escapes title/message/details like Pi, preserves Gi branding, and lets callback hosts scrub provider-specific local callback paths. |
+| `utils/oauth/openai-codex.ts` | PKCE login, token refresh, credential construction | `oauth.go`, `gi-coding-agent/oauth_openai_codex.go` | split | Token request/refresh errors are provider-level; callback/login flow is coding-agent. |
+| `utils/oauth/pkce.ts` | `generatePKCE` | `gi-coding-agent/oauth_openai_codex.go` | direct | Used by Codex browser login. |
+| `utils/oauth/types.ts` | OAuth credentials/provider types | `oauth.go`, coding-agent auth storage types | split | Type ownership is split between provider and credential storage. |
+| `utils/overflow.ts` | context overflow detection | `overflow.go` | direct | Pattern and length-stop detection represented. |
+| `utils/sanitize-unicode.ts` | `sanitizeSurrogates` | `message_transform.go` `SanitizeSurrogates` | direct | Invalid UTF-8/surrogate cleanup covered by tests. |
+| `utils/typebox-helpers.ts` | `StringEnum` | `types.go` `StringEnum`, `StringEnumWithOptions` | direct | Enum schema helper and validation are represented. |
+| `utils/validation.ts` | `validateToolCall`, `validateToolArguments`, schema coercion | `validation.go` | direct | Gi validates by tool name and applies Pi-style primitive/schema coercion including enum checks. |
+
+## Function-Level Checkpoints Completed In This Pass
+
+- `api-registry.ts` `registerApiProvider(..., sourceId)` maps to
+  `RegisterAPIProviderWithSource`.
+- `api-registry.ts` `getApiProviders()` maps to `GetAPIProviders()`, returning
+  API/source/provider registrations.
+- `api-registry.ts` `unregisterApiProviders(sourceId)` maps to
+  `UnregisterAPIProviders`.
+- `api-registry.ts` `clearApiProviders()` maps to `ClearAPIProviders`.
+- Pi's registry wrapper mismatch check now maps to `validatingAPIProvider`:
+  calling a retrieved provider with a different `Model.API` returns a
+  `mismatched api` error before invoking the underlying provider.
+- `providers/register-builtins.ts` `registerBuiltInApiProviders()` maps to
+  `RegisterBuiltInAPIProviders`; `resetApiProviders()` maps to
+  `ResetAPIProviders`.
+- OAuth utility parity now has provider-specific evidence:
+  `TestAnthropicOAuthTokenRequests`, `TestGitHubCopilotPollSchedule*`,
+  `TestGitHubCopilotBaseURLFromToken`, `TestOpenAICodexRefreshErrorMessage`,
+  and coding-agent OAuth callback/token/login tests cover the browser-facing
+  orchestration split.
+
+## Exported Symbol Audit
+
+This section tracks Pi exported functions/types/constants by name. It does not
+require Gi to expose the same TypeScript API shape, but every Pi symbol must map
+to a Go public symbol, a named consolidated implementation, or an explicit gap.
+
+### Registry, Stream, Model, Image, And Base Type Symbols
+
+| Pi file | Pi symbols | Gi equivalent | Status | Notes |
+| --- | --- | --- | --- | --- |
+| `index.ts` | `Static`, `TSchema`, `Type` TypeBox re-exports | `types.go` `Schema`, schema helper constructors such as `StringEnum` / `StringEnumWithOptions` | go-native | Go does not re-export TypeBox; schema contracts are represented by Go structs and helper constructors. |
+| `api-registry.ts` | `ApiProvider`, `ApiStreamFunction`, `ApiStreamSimpleFunction` | `registry.go` `APIProvider`, `APIProviderFuncs`, `StreamOptions`, `SimpleStreamOptions` | direct | Go uses an interface plus function adapter instead of TS function types. |
+| `models.generated.ts` | `MODELS` | `pi_models_generated.go` `registerPiGeneratedModels`, `models.go` registry | direct | Generated data is registered into the Go model registry rather than exported as a mutable array; the Go file is regenerated from the current local Pi source snapshot. |
+| `image-models.generated.ts` | `IMAGE_MODELS` | `image_models.go` image model registry | direct | Generated image model data is registered in Go. |
+| `images-api-registry.ts` | `ImagesApiFunction`, `ImagesApiProvider` | `images.go` `ImagesAPIProvider`, `ImagesAPIProviderFuncs` | direct | Go uses provider interfaces and adapters. |
+| `session-resources.ts` | `SessionResourceCleanup` | `session_resources.go` cleanup callback type in registry methods | direct | Cleanup callbacks are represented by Go function values and unregister callbacks. |
+| `types.ts` | `Api`, `KnownApi`, `Provider`, `KnownProvider`, `ImagesApi`, `KnownImagesApi`, `ImagesProvider`, `KnownImagesProvider` | `types.go` string-backed model/API/provider fields | go-native | Go does not need TS literal unions; the values live in model registry and provider constants. |
+| `types.ts` | `Message`, `UserMessage`, `AssistantMessage`, `ToolResultMessage`, `CustomAgentMessages`-style content | `types.go` `Message`, role constants, content constructors | direct | Go uses one `Message` struct with role/content fields. |
+| `types.ts` | `TextContent`, `ThinkingContent`, `ImageContent`, `ToolCall`, `ContentPart`-equivalent blocks | `types.go` `ContentPart`, `Text`, `Thinking`, `Image`, `ToolCall` | direct | Pi discriminated unions map to one Go struct with typed constructors. |
+| `types.ts` | `AssistantMessageEvent` | `types.go` `AssistantMessageEvent` | direct | Stream event shape is represented. |
+| `types.ts` | `Context`, `StreamFunction`, `StreamOptions`, `SimpleStreamOptions`, `ProviderStreamOptions`, `ProviderResponse` | `types.go` `Context`, `registry.go` `Stream`, `StreamOptions`, `SimpleStreamOptions`, `AssistantMessageEventStream` | direct | Go folds provider response/result semantics into the event stream. |
+| `types.ts` | `Model`, `ModelThinkingLevel`, `ThinkingLevel`, `ThinkingLevelMap`, `ThinkingBudgets` | `types.go` `Model`, `models.go` thinking helpers, `StreamOptions.ThinkingBudgets` | direct | Model and thinking-level contracts are represented. |
+| `types.ts` | `Tool`, `ToolCall`, `Usage`, `StopReason`, `CacheRetention`, `Transport` | `types.go` `Tool`, `ContentPart`, `Usage`, stop-reason constants, `StreamOptions.CacheRetention`, `StreamOptions.Transport` | direct | Literal unions are Go strings/consts where needed. |
+| `types.ts` | `AnthropicMessagesCompat`, `OpenAICompletionsCompat`, `OpenAIResponsesCompat`, `OpenRouterRouting`, `VercelGatewayRouting` | `types.go` `ModelCompat`, provider-specific compat structs | split | Common compat fields live on `ModelCompat`; provider-specific conversion structs remain in provider files. |
+| `types.ts` | `AssistantImages`, `ImagesContext`, `ImagesFunction`, `ImagesInputContent`, `ImagesOutputContent`, `ImagesModel`, `ImagesOptions`, `ImagesStopReason`, `ProviderImagesOptions` | `images.go` `AssistantImages`, `ImagesContext`, `ImagesContent`, `ImagesModel`, `ImagesOptions`, image stop constants | direct | Image input/output discriminated unions use `ImagesContent`. |
+| `types.ts` | `TextSignatureV1` | `ContentPart.TextSignature` and OpenAI Responses replay handling | direct | Signature payload is stored on text content rather than a separate exported type. |
+
+### Provider Symbols
+
+| Pi file | Pi symbols | Gi equivalent | Status | Notes |
+| --- | --- | --- | --- | --- |
+| `providers/amazon-bedrock.ts` | `BedrockOptions`, `BedrockThinkingDisplay`, `streamBedrock`, `streamSimpleBedrock` | `bedrock_config.go` `BedrockClientOptions`, `bedrock_payload.go` `BedrockPayloadOptions`, `bedrock_stream.go` `BedrockConverseStreamProvider.Stream` / `StreamSimple` | partial | Payload/config/stream processing and `toolChoice` -> Bedrock `toolConfig` mapping are implemented; default AWS SDK/SigV4 transport remains a gap. |
+| `providers/anthropic.ts` | `AnthropicEffort`, `AnthropicOptions`, `AnthropicThinkingDisplay`, `streamAnthropic`, `streamSimpleAnthropic` | `anthropic_payload.go` `AnthropicPayloadOptions`, `anthropic_provider.go` `AnthropicMessagesProvider.Stream` / `StreamSimple` | direct | Effort/display options are represented through thinking level, payload options, and stream event handling. |
+| `providers/azure-openai-responses.ts` | `AzureOpenAIResponsesOptions`, `streamAzureOpenAIResponses`, `streamSimpleAzureOpenAIResponses` | `azure_config.go` `AzureOpenAIResponsesOptions`, `azure_provider.go` `AzureOpenAIResponsesProvider.Stream` / `StreamSimple` | direct | Deployment/config and stream/simple paths are represented. |
+| `providers/cloudflare.ts` | `CLOUDFLARE_AI_GATEWAY_ANTHROPIC_BASE_URL`, `CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL`, `CLOUDFLARE_AI_GATEWAY_OPENAI_BASE_URL`, `CLOUDFLARE_WORKERS_AI_BASE_URL`, `isCloudflareProvider`, `resolveCloudflareBaseUrl` | `cloudflare.go` `CloudflareAIGatewayAnthropicBaseURL`, `CloudflareAIGatewayCompatBaseURL`, `CloudflareAIGatewayOpenAIBaseURL`, `CloudflareWorkersAIBaseURL`, `IsCloudflareProvider`, `ResolveCloudflareBaseURL` | direct | Environment substitution and provider detection are represented. |
+| `providers/faux.ts` | `FauxContentBlock`, `FauxModelDefinition`, `FauxProviderRegistration`, `FauxResponseFactory`, `FauxResponseStep`, `RegisterFauxProviderOptions`, `fauxAssistantMessage`, `fauxText`, `fauxThinking`, `fauxToolCall`, `registerFauxProvider` | `faux.go` `ContentPart`, `FauxModelDefinition`, `FauxProviderRegistration`, `FauxResponseFactory`, `FauxResponseStep`, `FauxOption`, `FauxAssistantMessage`, `FauxText`, `FauxThinking`, `FauxToolCall`, `RegisterFauxProvider` | direct | Go-style exported helpers cover Pi faux provider test surface. |
+| `providers/github-copilot-headers.ts` | `buildCopilotDynamicHeaders`, `hasCopilotVisionInput`, `inferCopilotInitiator` | `github_copilot_headers.go` `BuildCopilotDynamicHeaders`, `HasCopilotVisionInput`, `InferCopilotInitiator` | direct | Header inference is represented. |
+| `providers/google-shared.ts` | `GoogleThinkingLevel`, `convertMessages`, `convertTools`, `isThinkingPart`, `mapStopReason`, `mapStopReasonString`, `mapToolChoice`, `requiresToolCallId`, `retainThoughtSignature` | `google_convert.go` / `google_provider.go` Google conversion, tool, stop, and signature helpers | direct | Some helpers are unexported Go functions because only provider internals use them; behavior is covered by Google conversion tests. |
+| `providers/google-vertex.ts` | `GoogleVertexOptions`, `streamGoogleVertex`, `streamSimpleGoogleVertex` | `google_vertex_config.go` `GoogleVertexOptions`, `google_provider.go` `GoogleVertexProvider.Stream` / `StreamSimple` | direct | Vertex config and stream/simple paths are represented. |
+| `providers/google.ts` | `GoogleOptions`, `streamGoogle`, `streamSimpleGoogle` | `google_provider.go` `GooglePayloadOptions`, `GoogleProvider.Stream` / `StreamSimple` | direct | Generative AI stream/simple paths are represented. |
+| `providers/images/openrouter.ts` | `generateImagesOpenRouter` | `openrouter_images_provider.go` `OpenRouterImagesProvider.GenerateImages`, `images.go` `GenerateImages` | direct | OpenRouter image generation is represented through the image provider interface. |
+| `providers/images/register-builtins.ts` | `generateImagesOpenRouter`, `registerBuiltInImagesApiProviders` | provider `init()` registration plus `RegisterImagesAPIProvider` | go-native | Go links built-in image providers eagerly; explicit reset is not currently needed. |
+| `providers/mistral.ts` | `MistralOptions`, `streamMistral`, `streamSimpleMistral` | `mistral_payload.go` `MistralPayloadOptions`, `mistral_provider.go` `MistralProvider.Stream` / `StreamSimple` | direct | Mistral conversations stream/simple paths are represented. |
+| `providers/openai-codex-responses.ts` | `OpenAICodexResponsesOptions`, `streamOpenAICodexResponses`, `streamSimpleOpenAICodexResponses` | `openai_codex.go` `OpenAICodexResponsesPayloadOptions`, `openai_codex_provider.go` `OpenAICodexResponsesProvider.Stream` / `StreamSimple` | partial | SSE path is implemented; websocket transport falls back to SSE with diagnostics. |
+| `providers/openai-codex-responses.ts` | `OpenAICodexWebSocketDebugStats`, `closeOpenAICodexWebSocketSessions`, `getOpenAICodexWebSocketDebugStats`, `resetOpenAICodexWebSocketDebugStats` | `openai_codex.go` `OpenAICodexWebSocketDebugStats`, `CloseOpenAICodexWebSocketSessions`, `GetOpenAICodexWebSocketDebugStats`, `ResetOpenAICodexWebSocketDebugStats` | partial | Gi exposes the debug/reset/close surface and records websocket failure/SSE fallback counters. Connection-created/reused and cached-delta counters stay zero until real websocket reuse is implemented. |
+| `providers/openai-completions.ts` | `OpenAICompletionsOptions`, `convertMessages`, `streamOpenAICompletions`, `streamSimpleOpenAICompletions` | `openai_completions_convert.go` `OpenAICompletionsPayloadOptions`, `ConvertOpenAICompletionsMessages`, `openai_completions_provider.go` `OpenAICompletionsProvider.Stream` / `StreamSimple` | direct | Chat-completions conversion and stream/simple paths are represented. |
+| `providers/openai-responses-shared.ts` | `ConvertResponsesMessagesOptions`, `ConvertResponsesToolsOptions`, `OpenAIResponsesStreamOptions`, `convertResponsesMessages`, `convertResponsesTools`, `processResponsesStream` | `openai_responses_convert.go` `ConvertOpenAIResponsesOptions`, `ConvertOpenAIResponsesMessages`, `openai_responses_payload.go` `ConvertOpenAIResponsesTools`, `openai_responses_stream.go` `ProcessOpenAIResponsesStreamEvents` | direct | Options are split by Go file ownership. |
+| `providers/openai-responses.ts` | `OpenAIResponsesOptions`, `streamOpenAIResponses`, `streamSimpleOpenAIResponses` | `openai_responses_payload.go` `OpenAIResponsesPayloadOptions`, `openai_responses_provider.go` `OpenAIResponsesProvider.Stream` / `StreamSimple` | direct | Responses API stream/simple paths are represented. |
+| `providers/register-builtins.ts` | `streamAzureOpenAIResponses`, `streamGoogle`, `streamGoogleVertex`, `streamMistral`, `streamOpenAICodexResponses`, `streamOpenAICompletions`, `streamOpenAIResponses`, `streamSimpleAzureOpenAIResponses`, `streamSimpleGoogle`, `streamSimpleGoogleVertex`, `streamSimpleMistral`, `streamSimpleOpenAICodexResponses`, `streamSimpleOpenAICompletions`, `streamSimpleOpenAIResponses` | provider `init()` functions and `RegisterBuiltInAPIProviders` | go-native | Go registers provider objects instead of exporting lazy stream function bindings. |
+| `providers/register-builtins.ts` | `setBedrockProviderModule` | `bedrock_stream.go` `NewBedrockConverseStreamProvider` with injectable transport | go-native | Go injects Bedrock transport directly instead of mutating a lazy TS module variable. |
+| `providers/simple-options.ts` | `buildBaseOptions`, `clampReasoning`, `adjustMaxTokensForThinking` | provider payload builders, `ClampThinkingLevel`, `ThinkingBudgets`, provider-specific max-token budget logic | consolidated | Go folds simple-option adaptation into each payload builder and model thinking helpers. |
+| `providers/transform-messages.ts` | `transformMessages` | `message_transform.go` `TransformMessages` | direct | Go-style capitalization. |
+
+### Utility And OAuth Symbols
+
+| Pi file | Pi symbols | Gi equivalent | Status | Notes |
+| --- | --- | --- | --- | --- |
+| `utils/diagnostics.ts` | `AssistantMessageDiagnostic`, `DiagnosticErrorInfo`, `formatThrownValue`, `extractDiagnosticError`, `createAssistantMessageDiagnostic`, `appendAssistantMessageDiagnostic` | `types.go` `AssistantMessageDiagnostic`, `DiagnosticErrorInfo`; `diagnostics.go` `FormatThrownValue`, `ExtractDiagnosticError`, `NewAssistantMessageDiagnostic`, `AppendAssistantMessageDiagnostic` | direct | Go names the constructor `New...`; thrown non-error values are marked `ThrownValue`. |
+| `utils/event-stream.ts` | `EventStream`, `AssistantMessageEventStream`, `createAssistantMessageEventStream` | `internal/eventstream/event_stream.go`, `event_stream.go` `EventStream`, `AssistantMessageEventStream`, `NewAssistantMessageEventStream` | direct | Go uses `New...` constructor naming and a root wrapper to keep public provider APIs stable. |
+| `utils/json-parse.ts` | `repairJson`, `parseJsonWithRepair`, `parseStreamingJson` | `anthropic_stream.go` `RepairJSON`, `UnmarshalJSONWithRepair`, `openai_responses_stream.go` streaming object parser | direct | Streaming parser remains internal because only providers need it. |
+| `utils/node-http-proxy.ts` | `NodeHttpProxyAgents`, `UNSUPPORTED_PROXY_PROTOCOL_MESSAGE`, `createHttpProxyAgentsForTarget`, `resolveHttpProxyUrlForTarget` | `internal/httpproxy/http_proxy.go`, `http_proxy.go` `UnsupportedProxyProtocolMessage`, `ResolveHTTPProxyURLForTarget`, provider HTTP client proxy wiring | go-native | Go resolves proxy URLs behind a root facade; it does not return Node HTTP/S agent objects. |
+| `utils/oauth/anthropic.ts` | `anthropicOAuthProvider`, `loginAnthropic`, `refreshAnthropicToken` | `oauth.go` Anthropic token request helpers; `gi-coding-agent/oauth_anthropic.go` login/refresh orchestration | split | Provider metadata and login UI live in coding-agent. |
+| `utils/oauth/github-copilot.ts` | `getGitHubCopilotBaseUrl`, `githubCopilotOAuthProvider`, `loginGitHubCopilot`, `normalizeDomain`, `refreshGitHubCopilotToken` | `oauth.go` `GitHubCopilotBaseURL`, poll helpers; `gi-coding-agent/oauth_github_copilot.go` normalize/login/refresh orchestration | split | Base URL is provider-level; device flow is coding-agent-level. |
+| `utils/oauth/index.ts` | `getOAuthApiKey`, `getOAuthProvider`, `getOAuthProviderInfoList`, `getOAuthProviders`, `refreshOAuthToken`, `registerOAuthProvider`, `resetOAuthProviders`, `unregisterOAuthProvider` | coding-agent OAuth selector/storage/provider registry | split | Gi keeps subscription login provider registry in `gi-coding-agent` rather than `gi-llm-provider`. |
+| `utils/oauth/oauth-page.ts` | `oauthErrorHtml`, `oauthSuccessHtml` | `oauth_page.go` `OAuthErrorHTML`, `OAuthSuccessHTML` | direct | Gi-branded page text is an intentional product difference. |
+| `utils/oauth/openai-codex.ts` | `loginOpenAICodex`, `openaiCodexOAuthProvider`, `refreshOpenAICodexToken` | `oauth.go` `OpenAICodexRefreshError`; `gi-coding-agent/oauth_openai_codex.go` PKCE login/refresh orchestration | split | Browser login belongs to coding-agent. |
+| `utils/oauth/types.ts` | `OAuthAuthInfo`, `OAuthCredentials`, `OAuthLoginCallbacks`, `OAuthPrompt`, `OAuthProvider`, `OAuthProviderId`, `OAuthProviderInfo`, `OAuthProviderInterface`, `OAuthSelectOption`, `OAuthSelectPrompt` | `oauth.go` `OAuthCredentials` plus `gi-coding-agent` auth selector/login structs | split | Type ownership is split by provider-level token primitives and coding-agent UI flows. |
+| `utils/overflow.ts` | `getOverflowPatterns`, `isContextOverflow` | `overflow.go` `GetOverflowPatterns`, `IsContextOverflow` | direct | Pattern getter and overflow classification are represented. |
+
+## Internal Top-Level Implementation Checkpoints
+
+The exported-symbol audit above proves public ownership. This section tracks
+Pi non-exported top-level helpers/classes in `packages/ai/src` so provider
+implementation logic is not skipped.
+
+| Pi file | Pi internal helpers | Gi equivalent | Status | Notes |
+| --- | --- | --- | --- | --- |
+| `api-registry.ts` | `wrapStream`, `wrapStreamSimple` | `registry.go` provider validation wrappers used by `RegisterAPIProvider`, `Stream`, and `Complete` | direct | Gi wraps provider calls through interfaces instead of TS closures. |
+| `cli.ts` | `loadAuth`, `saveAuth` | `gi-coding-agent/auth_storage.go` and OAuth login commands | split | Auth persistence is owned by the coding-agent CLI rather than a standalone provider CLI. |
+| `env-api-keys.ts` | `getProcEnv`, `hasVertexAdcCredentials`, `getApiKeyEnvVars` | `env.go`, `google_vertex_config.go` environment and ADC probes | direct | Go reads `os.Environ` and provider-specific ADC variables directly. |
+| `images-api-registry.ts`, `images.ts` | `wrapGenerateImages`, `resolveImagesApiProvider` | `images.go` image provider registration and `GenerateImages` resolution | direct | Image providers use Go interfaces and registry lookup. |
+| `providers/amazon-bedrock.ts` | `formatBedrockError`, `handleContentBlockStart`, `handleContentBlockDelta`, `handleMetadata`, `handleContentBlockStop`, `getModelMatchCandidates`, `supportsAdaptiveThinking`, `supportsNativeXhighEffort`, `mapThinkingLevelToEffort`, `resolveCacheRetention`, `isAnthropicClaudeModel`, `supportsPromptCaching`, `supportsThinkingSignature`, `buildSystemPrompt`, `normalizeToolCallId`, `convertToolConfig`, `getConfiguredBedrockRegion`, `hasConfiguredBedrockProfile`, `getStandardBedrockEndpointRegion`, `shouldUseExplicitBedrockEndpoint`, `isGovCloudBedrockTarget`, `buildAdditionalModelRequestFields`, `createImageBlock` | `bedrock_stream.go`, `bedrock_payload.go`, `bedrock_config.go` | partial | Converse stream parsing, prompt/tool conversion including Bedrock `toolConfig`, cache/thinking/signature logic, and config resolution are present; default live AWS/SigV4 transport remains a declared gap. |
+| `providers/anthropic.ts` | `resolveCacheRetention`, `getCacheControl`, `toClaudeCodeName`, `fromClaudeCodeName`, `convertContentBlocks`, `getAnthropicCompat`, `mergeHeaders`, `flushSseEvent`, `decodeSseLine`, `nextLineBreakIndex`, `consumeLine`, `supportsAdaptiveThinking`, `mapThinkingLevelToEffort`, `isOAuthToken`, `createClient`, `buildParams`, `normalizeToolCallId`, `shouldUseFineGrainedToolStreamingBeta` | `anthropic_payload.go`, `anthropic_provider.go`, `anthropic_stream.go` | direct | Payload conversion, SSE line parsing, cache-control, OAuth-token handling, thinking effort, and tool ID normalization are represented. |
+| `providers/azure-openai-responses.ts` | `parseDeploymentNameMap`, `resolveDeploymentName`, `normalizeAzureBaseUrl`, `buildDefaultBaseUrl`, `resolveAzureConfig`, `createClient`, `buildParams` | `azure_config.go`, `azure_provider.go`, `openai_responses_payload.go` | direct | Azure deployment and base URL resolution are implemented in Go config helpers. |
+| `providers/faux.ts` | `normalizeFauxAssistantContent`, `estimateTokens`, `randomId`, `contentToText`, `assistantContentToText`, `toolResultToText`, `messageToText`, `serializeContext`, `commonPrefixLength`, `withUsageEstimate`, `splitStringByTokenSize`, `cloneMessage`, `createErrorMessage`, `createAbortedMessage`, `scheduleChunk`, `streamWithDeltas` | `faux.go` | direct | Deterministic faux streaming, usage estimates, context serialization, cloning, abort/error messages, and chunk scheduling are represented. |
+| `providers/google-shared.ts` | `isValidThoughtSignature`, `resolveThoughtSignature`, `getGeminiMajorVersion`, `supportsMultimodalFunctionResponse`, `sanitizeForOpenApi` | `google_convert.go`, `google_provider.go` | direct | Google shared conversion, thought signatures, multimodal function response gating, and schema sanitization are implemented as Go helpers. |
+| `providers/google-vertex.ts` | `createClient`, `createClientWithApiKey`, `buildHttpOptions`, `resolveCustomBaseUrl`, `baseUrlIncludesApiVersion`, `resolveApiKey`, `isPlaceholderApiKey`, `resolveProject`, `resolveLocation`, `buildParams`, `isGemini3ProModel`, `isGemini3FlashModel`, `getDisabledThinkingConfig`, `getGemini3ThinkingLevel`, `getGoogleBudget` | `google_vertex_config.go`, `google_provider.go` | direct | Vertex auth/project/location/base URL and Gemini thinking-budget logic are split across config and provider helpers. |
+| `providers/google.ts` | `createClient`, `buildParams`, `isGemma4Model`, `isGemini3ProModel`, `isGemini3FlashModel`, `getDisabledThinkingConfig`, `getThinkingLevel`, `getGoogleBudget` | `google_provider.go`, `google_convert.go` | direct | Gemini/Gemma model gates and thinking-budget mapping are represented. |
+| `providers/images/openrouter.ts` | `createClient`, `buildParams`, `parseUsage` | `openrouter_images_provider.go`, `openrouter_images.go` | direct | HTTP request construction and usage parsing are implemented by the OpenRouter image provider. |
+| `providers/images/register-builtins.ts` | `createLazyLoadErrorImages`, `loadOpenRouterImagesProviderModule` | provider `init()` registration and registry reset tests | go-native | Go eagerly links built-in image providers; lazy module load errors are not needed. |
+| `providers/mistral.ts` | `createOutput`, `createMistralToolCallIdNormalizer`, `deriveMistralToolCallId`, `formatMistralError`, `truncateErrorText`, `safeJsonStringify`, `buildRequestOptions`, `buildChatPayload`, `consumeChatStream`, `toFunctionTools`, `stripSymbolKeys`, `toChatMessages`, `buildToolResultText`, `usesReasoningEffort`, `usesPromptModeReasoning`, `mapReasoningEffort`, `mapChatStopReason` | `mistral_payload.go`, `mistral_provider.go` | direct | Mistral payloads, stream consumption, error text, tool-call ID derivation, and reasoning/stop mapping are represented. |
+| `providers/openai-codex-responses.ts` | `isRetryableError`, `sleep`, `buildRequestBody`, `getServiceTierCostMultiplier`, `applyServiceTierPricing`, `resolveCodexServiceTier`, `resolveCodexUrl`, `resolveCodexWebSocketUrl`, `processStream`, `CodexApiError`, `CodexProtocolError`, `isCodexNonTransportError`, `normalizeCodexStatus`, `getOrCreateWebSocketDebugStats`, `isWebSocketSseFallbackActive`, `recordWebSocketSseFallback`, `recordWebSocketFailure`, `getWebSocketConstructor`, `WebSocketCloseError`, `getWebSocketReadyState`, `isWebSocketReusable`, `closeWebSocketSilently`, `scheduleSessionWebSocketExpiry`, `connectWebSocket`, `acquireWebSocket`, `extractWebSocketError`, `extractWebSocketCloseError`, `decodeWebSocketData`, `requestBodyWithoutInput`, `responseInputsEqual`, `requestBodiesMatchExceptInput`, `getCachedWebSocketInputDelta`, `buildCachedWebSocketRequestBody`, `processWebSocketStream`, `parseErrorResponse`, `extractAccountId`, `createCodexRequestId`, `buildBaseCodexHeaders`, `buildSSEHeaders`, `buildWebSocketHeaders` | `openai_codex.go`, `openai_codex_provider.go`, `openai_responses_stream.go`, `diagnostics.go` | partial | Payload, service tier, URL/header, SSE stream, account/request IDs, retry classification, fallback debug stats, and error diagnostics are represented; real websocket connect/reuse/cache/delta helpers remain a declared gap. |
+| `providers/openai-completions.ts` | `hasToolHistory`, `isTextContentBlock`, `isThinkingContentBlock`, `isToolCallBlock`, `isImageContentBlock`, `resolveCacheRetention`, `createClient`, `buildParams`, `getCompatCacheControl`, `applyAnthropicCacheControl`, `addCacheControlToSystemPrompt`, `addCacheControlToLastConversationMessage`, `addCacheControlToLastTool`, `addCacheControlToInstructionMessage`, `addCacheControlToMessage`, `addCacheControlToTextContent`, `parseChunkUsage`, `detectCompat`, `getCompat` | `openai_completions_convert.go`, `openai_completions_provider.go`, `openai_completions_stream.go` | direct | Message conversion, cache-control placement, compat detection, payload building, stream usage parsing, and provider client setup are represented. |
+| `providers/openai-responses-shared.ts` | `encodeTextSignatureV1`, `parseTextSignature` | `openai_responses_convert.go`, `openai_responses_stream.go` text signature helpers | direct | Signature payloads are carried on `ContentPart.TextSignature`. |
+| `providers/openai-responses.ts` | `resolveCacheRetention`, `getCompat`, `getPromptCacheRetention`, `createClient`, `buildParams`, `getServiceTierCostMultiplier`, `applyServiceTierPricing` | `openai_responses_payload.go`, `openai_responses_provider.go` | direct | Prompt cache retention, compat, service-tier pricing, payload, and stream/simple paths are represented. |
+| `providers/register-builtins.ts` | `forwardStream`, `createLazyLoadErrorMessage`, `createLazyStream`, `createLazySimpleStream`, `loadAnthropicProviderModule`, `loadAzureOpenAIResponsesProviderModule`, `loadGoogleProviderModule`, `loadGoogleVertexProviderModule`, `loadMistralProviderModule`, `loadOpenAICodexResponsesProviderModule`, `loadOpenAICompletionsProviderModule`, `loadOpenAIResponsesProviderModule`, `loadBedrockProviderModule` | built-in provider `init()` functions, `RegisterBuiltInAPIProviders`, `ResetAPIProviders` | go-native | Go links provider implementations directly instead of lazy dynamic imports. |
+| `providers/transform-messages.ts` | `replaceImagesWithPlaceholder`, `downgradeUnsupportedImages` | `message_transform.go` | direct | Image fallback/downgrade behavior is represented inside `TransformMessages`. |
+| `stream.ts` | `resolveApiProvider` | `registry.go` provider lookup inside `Stream`, `Complete`, `StreamSimple`, and `CompleteSimple` | direct | Resolution is internal to Go registry functions. |
+| `utils/json-parse.ts` | `isControlCharacter`, `escapeControlCharacter` | `anthropic_stream.go` JSON repair helpers | direct | Control-character escaping is folded into JSON repair/unmarshal helpers. |
+| `utils/node-http-proxy.ts` | `getProxyEnv`, `parseProxyTargetUrl`, `shouldProxyHostname`, `getProxyForUrl` | `internal/httpproxy/http_proxy.go` | direct | Proxy environment parsing and no-proxy matching are represented in Go. |
+| `utils/oauth/anthropic.ts` | `decode`, `getNodeApis`, `parseAuthorizationInput`, `formatErrorDetails`, `startCallbackServer`, `postJson`, `exchangeAuthorizationCode` | `oauth.go`, `gi-coding-agent/oauth_anthropic.go` | split | Provider token exchange and coding-agent callback server/browser flow are separate. |
+| `utils/oauth/github-copilot.ts` | `decode`, `getUrls`, `getBaseUrlFromToken`, `fetchJson`, `startDeviceFlow`, `abortableSleep`, `pollForGitHubAccessToken`, `enableGitHubCopilotModel`, `enableAllGitHubCopilotModels` | `oauth.go`, `gi-coding-agent/oauth_github_copilot.go` | split | Device flow polling and provider enablement live in the coding-agent login path. |
+| `utils/oauth/oauth-page.ts` | `escapeHtml`, `renderPage` | `oauth_page.go` | direct | HTML escaping and success/error page rendering are implemented with Gi-branded text. |
+| `utils/oauth/openai-codex.ts` | `createState`, `parseAuthorizationInput`, `decodeJwt`, `exchangeAuthorizationCode`, `refreshAccessToken`, `createAuthorizationFlow`, `startLocalOAuthServer`, `getAccountId` | `oauth.go`, `gi-coding-agent/oauth_openai_codex.go` | split | PKCE state, JWT/account parsing, refresh, and localhost callback flow are represented. |
+| `utils/oauth/pkce.ts` | `base64urlEncode` | `oauth_openai_codex.go` PKCE helpers | direct | Base64URL encoding is folded into the OAuth code-verifier/challenge helpers. |
+| `utils/validation.ts` | `isRecord`, `isJsonSchemaObject`, `hasTypeBoxMetadata`, `getSchemaTypes`, `matchesJsonType`, `isValidatorSchema`, `getSubSchemaValidator`, `coercePrimitiveByType`, `applySchemaObjectCoercion`, `applySchemaArrayCoercion`, `coerceWithUnionSchema`, `coerceWithJsonSchema`, `getValidator`, `formatValidationPath` | `validation.go` | direct | Tool argument validation and schema coercion are implemented in Go. |
+
+## Remaining LLM Provider Gaps
+
+- The real websocket/cache subset of `providers/openai-codex-responses.ts` is
+  still missing in Gi. Gi currently falls back to SSE with diagnostics for
+  unsupported websocket transports and exposes Pi-style fallback debug/reset/
+  close helpers, but it does not create or reuse websocket sessions yet.
+- `providers/amazon-bedrock.ts` still needs a default live transport decision.
+  Gi now has request payload/config parity plus Converse stream parsing and an
+  injectable provider boundary, but this document does not claim full AWS SDK or
+  SigV4 runtime parity.
+- `cli.ts` is not mirrored as a standalone provider package CLI. Gi login flows
+  are implemented in `gi-coding-agent`; this may be an accepted abstraction move,
+  but it still needs an explicit scope decision.
+
+## Internal Member-Level Checkpoints
+
+These entries are tracked by
+`docs/pi-parity/verify-source-map.mjs --scope members` so class and instance
+methods are not skipped by the file/top-level audit.
+
+| Pi file | Pi member symbol | Gi equivalent | Status | Notes |
+| --- | --- | --- | --- | --- |
+| `utils/event-stream.ts` | `EventStream.constructor` | `internal/eventstream/event_stream.go` `NewEventStream`, `event_stream.go` facade | direct | Go uses a constructor function instead of a class constructor. |
+| `utils/event-stream.ts` | `EventStream.push` | `internal/eventstream/event_stream.go` `EventStream.Push` | direct | Same terminal-event detection and result extraction responsibility. |
+| `utils/event-stream.ts` | `EventStream.end` | `internal/eventstream/event_stream.go` `EventStream.End` | direct | Same explicit stream close/final-result responsibility. |
+| `utils/event-stream.ts` | `EventStream.result` | `internal/eventstream/event_stream.go` `EventStream.Result` | direct | Go waits on a context-aware result channel instead of returning a Promise. |
+| `utils/event-stream.ts` | `AssistantMessageEventStream.constructor` | `event_stream.go` `NewAssistantMessageEventStream` | direct | Go uses a typed alias plus constructor function. |
+| `providers/openai-codex-responses.ts` | `CodexApiError.constructor` | `openai_codex_provider.go` request/status errors and diagnostics | partial | Gi preserves message-level provider errors but does not expose a typed `code`/`payload` error object. |
+| `providers/openai-codex-responses.ts` | `CodexProtocolError.constructor` | `openai_codex_provider.go` stream decoding/protocol errors | partial | Gi reports protocol failures through stream error messages rather than a dedicated typed error class. |
+| `providers/openai-codex-responses.ts` | `WebSocketCloseError.constructor` | websocket transport gap tracked above | gap | Real Codex websocket connect/reuse/close handling is still not implemented in Gi. |
+
+## Verification Evidence
+
+- `GOCACHE=/private/tmp/gi-gocache go test -run 'TestAPIRegistry' ./gi-llm-provider`
+  passes after adding registry source/mismatch coverage.
+- `GOCACHE=/private/tmp/gi-gocache go test -run 'TestBuiltInAPIProviderLifecyclePiStyle' ./gi-llm-provider`
+  passes after adding built-in provider register/reset coverage.
+- `GOCACHE=/private/tmp/gi-gocache go test -run 'TestBedrockConverse|TestProcessBedrock' ./gi-llm-provider`
+  passes after adding Bedrock Converse stream processor/provider coverage.
+- `GOCACHE=/private/tmp/gi-gocache go test -timeout 30s ./gi-llm-provider`
+  passes after completing the exported-symbol audit and adding the small
+  diagnostics/overflow helper exports. This command requires localhost binding
+  for `httptest`.

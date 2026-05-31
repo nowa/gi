@@ -183,6 +183,28 @@ func (m *DefaultPackageManager) resolveProtocolPackageSource(sourceText, scope s
 		}
 		return resolveProtocolPackageDir(packageDir, metadata), packageDir, nil
 	}
+	if parsed.Type == "git" {
+		packageDir := m.gitPackageInstallPath(GitSource{Host: parsed.Host, Path: parsed.Path}, scope == "project")
+		info, err := os.Stat(packageDir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return ProtocolPackageResources{}, "", nil
+			}
+			return ProtocolPackageResources{}, "", err
+		}
+		if !info.IsDir() {
+			return ProtocolPackageResources{}, packageDir, nil
+		}
+		metadata := ProtocolSourceInfo{
+			Source: PackageSourceIdentity(parsed),
+			Scope:  firstNonEmptyString(scope, "temporary"),
+			Origin: "package",
+		}
+		return resolveProtocolPackageDir(packageDir, metadata), packageDir, nil
+	}
+	if parsed.Type == "unsupported" {
+		return ProtocolPackageResources{}, "", unsupportedPackageSourceError(sourceText)
+	}
 	sourcePath := ResolveToCwd(sourceText, m.cwd)
 	info, err := os.Stat(sourcePath)
 	if err != nil {

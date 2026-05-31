@@ -184,6 +184,55 @@ func TestPackageManagerListTopLevelResourceToggles(t *testing.T) {
 	}
 }
 
+func TestPackageManagerInstallGitPackageGiProtocolScope(t *testing.T) {
+	agentDir, projectDir := createPackageManagerSettingsDirs(t)
+	source := "git:github.com/example/protocol-package"
+	var cloneTarget string
+	manager := NewDefaultPackageManager(PackageManagerOptions{
+		CWD:      projectDir,
+		AgentDir: agentDir,
+		Operations: PackageManagerOperations{
+			RunCommand: func(command string, args []string, _ PackageCommandOptions) error {
+				if command != "git" || len(args) != 3 || args[0] != "clone" {
+					t.Fatalf("unexpected command: %s %#v", command, args)
+				}
+				cloneTarget = args[2]
+				writeGiProtocolExtensionDescriptor(t, filepath.Join(cloneTarget, "extensions", "index.gi.json"))
+				return nil
+			},
+		},
+	})
+
+	if err := manager.Install(source, true); err != nil {
+		t.Fatal(err)
+	}
+	wantTarget := filepath.Join(projectDir, ConfigDirName, "git", "github.com", "example", "protocol-package")
+	if cloneTarget != wantTarget {
+		t.Fatalf("clone target = %q, want %q", cloneTarget, wantTarget)
+	}
+	if packages := packageManagerSettingsPackages(t, filepath.Join(projectDir, ConfigDirName, "settings.json")); len(packages) != 1 || packages[0] != source {
+		t.Fatalf("project packages = %#v", packages)
+	}
+	resources, err := manager.ResolveConfiguredProtocolPackageResources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !protocolPackageHasSuffix(resources.Extensions, filepath.Join("extensions", "index.gi.json")) {
+		t.Fatalf("extensions = %#v", resources.Extensions)
+	}
+
+	removed, err := manager.RemoveAndPersist(source, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed {
+		t.Fatal("removed = false, want true")
+	}
+	if _, err := os.Stat(wantTarget); !os.IsNotExist(err) {
+		t.Fatalf("installed package still exists or stat failed unexpectedly: %v", err)
+	}
+}
+
 func createPackageManagerSettingsDirs(t *testing.T) (string, string) {
 	t.Helper()
 	root := t.TempDir()

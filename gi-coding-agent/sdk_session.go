@@ -26,6 +26,7 @@ type AgentSessionOptions struct {
 	AutoCompactionRunner AgentSessionAutoCompactionRunner
 	AgentContinue        func() error
 	Responder            AgentSessionResponder
+	StreamResponder      AgentSessionStreamResponder
 	CustomTools          []SDKTool
 	ScopedModels         []ScopedModel
 	Tools                []string
@@ -46,6 +47,7 @@ type AgentSession struct {
 	AutoCompactionRunner AgentSessionAutoCompactionRunner
 	AgentContinue        func() error
 	Responder            AgentSessionResponder
+	StreamResponder      AgentSessionStreamResponder
 	Preflight            AgentSessionPreflight
 	ExtensionRuntime     *ProtocolExtensionRuntime
 	DynamicTools         []SDKTool
@@ -244,6 +246,7 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		AutoCompactionRunner: options.AutoCompactionRunner,
 		AgentContinue:        options.AgentContinue,
 		Responder:            responder,
+		StreamResponder:      options.StreamResponder,
 		Preflight:            options.Preflight,
 		ScopedModels:         append([]ScopedModel(nil), options.ScopedModels...),
 		Tools:                append([]string(nil), options.Tools...),

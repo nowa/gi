@@ -3,8 +3,18 @@ package gillmprovider
 import (
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 )
+
+func ValidateToolCall(tools []Tool, toolCall ContentPart) (map[string]any, error) {
+	for _, tool := range tools {
+		if tool.Name == toolCall.Name {
+			return ValidateToolArguments(tool, toolCall)
+		}
+	}
+	return nil, fmt.Errorf("Tool %q not found", toolCall.Name)
+}
 
 func ValidateToolArguments(tool Tool, toolCall ContentPart) (map[string]any, error) {
 	if toolCall.Type != ContentToolCall {
@@ -38,12 +48,28 @@ func coerceSchema(schema Schema, value any) (any, error) {
 	var lastErr error
 	for _, schemaType := range types {
 		coerced, err := coerceSingleType(schemaType, schema, value)
-		if err == nil {
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if validateEnumValue(schema, coerced) {
 			return coerced, nil
 		}
-		lastErr = err
+		lastErr = fmt.Errorf("value %#v is not in enum", coerced)
 	}
 	return nil, lastErr
+}
+
+func validateEnumValue(schema Schema, value any) bool {
+	if len(schema.Enum) == 0 {
+		return true
+	}
+	for _, allowed := range schema.Enum {
+		if reflect.DeepEqual(allowed, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func actualSchemaType(value any) string {

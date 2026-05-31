@@ -419,6 +419,77 @@ func TestSettingsManagerPiInteractiveSettingsDefaultsAndValidation(t *testing.T)
 	}
 }
 
+func TestSettingsManagerPiStyleLegacyMigrations(t *testing.T) {
+	manager := NewInMemorySettingsManager(map[string]any{
+		"skills": map[string]any{
+			"enableSkillCommands": false,
+			"customDirectories":   []any{"./skills", "/tmp/shared-skills"},
+		},
+		"retry": map[string]any{
+			"enabled":     false,
+			"maxRetries":  5,
+			"baseDelayMs": 750,
+			"maxDelayMs":  12_345,
+			"provider":    map[string]any{"timeoutMs": 9_000},
+		},
+	})
+
+	if manager.GetEnableSkillCommands() {
+		t.Fatal("legacy skills.enableSkillCommands was not migrated")
+	}
+	if got := settingsStringSlice(manager.merged, "skills"); !reflect.DeepEqual(got, []string{"./skills", "/tmp/shared-skills"}) {
+		t.Fatalf("migrated skills = %#v", got)
+	}
+	if retry := manager.GetRetrySettings(); retry.Enabled || retry.MaxRetries != 5 || retry.BaseDelayMs != 750 {
+		t.Fatalf("retry settings = %#v", retry)
+	}
+	providerRetry := manager.GetProviderRetrySettings()
+	if providerRetry.TimeoutMS != 9_000 || providerRetry.MaxRetryDelayMS != 12_345 {
+		t.Fatalf("provider retry settings = %#v", providerRetry)
+	}
+	retryMap, _ := manager.merged["retry"].(map[string]any)
+	if _, exists := retryMap["maxDelayMs"]; exists {
+		t.Fatalf("legacy retry.maxDelayMs was not removed: %#v", retryMap)
+	}
+
+	manager = NewInMemorySettingsManager(map[string]any{
+		"enableSkillCommands": true,
+		"skills":              map[string]any{"enableSkillCommands": false},
+		"retry": map[string]any{
+			"maxDelayMs": 2_000,
+			"provider":   map[string]any{"maxRetryDelayMs": 3_000},
+		},
+	})
+	if !manager.GetEnableSkillCommands() {
+		t.Fatal("top-level enableSkillCommands should win over legacy nested value")
+	}
+	if got := settingsStringSlice(manager.merged, "skills"); got != nil {
+		t.Fatalf("empty legacy skills object should be removed, got %#v", got)
+	}
+	if got := manager.GetProviderRetrySettings().MaxRetryDelayMS; got != 3_000 {
+		t.Fatalf("existing provider maxRetryDelayMs = %d, want 3000", got)
+	}
+}
+
+func TestSettingsManagerPiStyleRetryDefaultsAndAccessors(t *testing.T) {
+	manager := NewInMemorySettingsManager(nil)
+	if retry := manager.GetRetrySettings(); !retry.Enabled || retry.MaxRetries != 3 || retry.BaseDelayMs != 2000 {
+		t.Fatalf("default retry settings = %#v", retry)
+	}
+	if providerRetry := manager.GetProviderRetrySettings(); providerRetry.TimeoutMS != 0 || providerRetry.MaxRetries != 0 || providerRetry.MaxRetryDelayMS != 60000 {
+		t.Fatalf("default provider retry settings = %#v", providerRetry)
+	}
+
+	manager.SetRetryEnabled(false)
+	if manager.GetRetryEnabled() {
+		t.Fatal("retry should be disabled after SetRetryEnabled(false)")
+	}
+	savedRetry, _ := manager.global["retry"].(map[string]any)
+	if savedRetry["enabled"] != false {
+		t.Fatalf("saved retry settings = %#v", savedRetry)
+	}
+}
+
 func TestSettingsManagerPreservesExternalArrayEdits(t *testing.T) {
 	agentDir, projectDir := createSettingsTestDirs(t)
 	settingsPath := filepath.Join(agentDir, "settings.json")

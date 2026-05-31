@@ -137,8 +137,8 @@ func TestBashOutputAccumulatorPiBoundedTempFileAndUTF8Tail(t *testing.T) {
 	snapshot := accumulator.Snapshot(true)
 	accumulator.Close()
 
-	if len(accumulator.rawChunks) != 0 {
-		t.Fatalf("raw chunks retained after temp file switch: %d bytes", len(accumulator.rawChunks))
+	if accumulator.RawBufferedBytes() != 0 {
+		t.Fatalf("raw chunks retained after temp file switch: %d bytes", accumulator.RawBufferedBytes())
 	}
 	if snapshot.FullOutputPath == "" {
 		t.Fatalf("missing full output path: %#v", snapshot)

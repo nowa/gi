@@ -217,3 +217,28 @@ func TestGenerateImagesHandlesImmediateContextCancel(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 }
+
+func TestOpenRouterImagesPiCaseNames(t *testing.T) {
+	t.Run("passes through abort signal and returns aborted result", func(t *testing.T) {
+		model := MustGetImageModel("openrouter", "black-forest-labs/flux.2-pro")
+		called := false
+		RegisterImagesAPIProvider("test-openrouter-images-abort", ImagesAPIProviderFuncs{
+			GenerateImagesFunc: func(ImagesModel, ImagesContext, ImagesOptions) (AssistantImages, error) {
+				called = true
+				return AssistantImages{}, nil
+			},
+		})
+		defer UnregisterImagesAPIProvider("test-openrouter-images-abort")
+		model.API = "test-openrouter-images-abort"
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		result, err := GenerateImages(model, ImagesContext{Input: []ImagesContent{ImageText("hi")}}, ImagesOptions{Context: ctx})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if called || result.StopReason != ImagesStopReasonAborted || result.ErrorMessage == "" {
+			t.Fatalf("called=%v result=%#v", called, result)
+		}
+	})
+}

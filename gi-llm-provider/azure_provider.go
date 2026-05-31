@@ -37,7 +37,7 @@ func NewAzureOpenAIResponsesProvider(client HTTPDoer) AzureOpenAIResponsesProvid
 }
 
 func init() {
-	RegisterAPIProvider("azure-openai-responses", NewAzureOpenAIResponsesProvider(nil))
+	RegisterBuiltInAPIProvider("azure-openai-responses", NewAzureOpenAIResponsesProvider(nil))
 }
 
 func (p AzureOpenAIResponsesProvider) Stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {

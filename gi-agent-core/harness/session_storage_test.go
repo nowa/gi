@@ -162,6 +162,114 @@ func TestJsonlSessionStorageRejectsMalformedFiles(t *testing.T) {
 	}
 }
 
+func TestSessionStoragePiCaseNames(t *testing.T) {
+	t.Run("copies initial entries and persists leaf changes", func(t *testing.T) {
+		entry := Entry{Type: "message", ID: "entry-1", Timestamp: "2026-01-01T00:00:00.000Z", Message: harnessUserMessage("one")}
+		initial := []Entry{entry}
+		storage, err := NewInMemorySessionStorage(nil, initial)
+		if err != nil {
+			t.Fatal(err)
+		}
+		initial[0].ID = "mutated"
+		if got := entryIDs(storage.Entries()); !reflect.DeepEqual(got, []string{"entry-1"}) {
+			t.Fatalf("entries = %#v", got)
+		}
+		if err := storage.SetLeafID(nil); err != nil {
+			t.Fatal(err)
+		}
+		if last := storage.Entries()[len(storage.Entries())-1]; last.Type != "leaf" || last.TargetID != nil {
+			t.Fatalf("last entry = %#v", last)
+		}
+	})
+
+	t.Run("finds entries by type", func(t *testing.T) {
+		storage, err := NewInMemorySessionStorage(nil, []Entry{
+			{Type: "message", ID: "message-1", Timestamp: nowISO(), Message: harnessUserMessage("one")},
+			{Type: "label", ID: "label-1", Timestamp: nowISO(), TargetID: stringPtr("message-1"), Label: stringPtr("checkpoint")},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := entryIDs(storage.FindEntries("message")); !reflect.DeepEqual(got, []string{"message-1"}) {
+			t.Fatalf("message entries = %#v", got)
+		}
+	})
+
+	t.Run("maintains label lookup", func(t *testing.T) {
+		storage, err := NewInMemorySessionStorage(nil, []Entry{{Type: "message", ID: "root", Timestamp: nowISO(), Message: harnessUserMessage("root")}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := storage.AppendEntry(Entry{Type: "label", ID: "label-1", Timestamp: nowISO(), TargetID: stringPtr("root"), Label: stringPtr("checkpoint")}); err != nil {
+			t.Fatal(err)
+		}
+		if got, ok := storage.Label("root"); !ok || got != "checkpoint" {
+			t.Fatalf("label = %q %v", got, ok)
+		}
+		if err := storage.AppendEntry(Entry{Type: "label", ID: "label-2", Timestamp: nowISO(), TargetID: stringPtr("root")}); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := storage.Label("root"); ok {
+			t.Fatal("label should be removed")
+		}
+	})
+
+	t.Run("walks paths to root", func(t *testing.T) {
+		storage, err := NewInMemorySessionStorage(nil, []Entry{
+			{Type: "message", ID: "root", Timestamp: nowISO(), Message: harnessUserMessage("root")},
+			{Type: "message", ID: "child", ParentID: stringPtr("root"), Timestamp: nowISO(), Message: harnessAssistantMessage("child")},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		path, err := storage.PathToRoot(stringPtr("child"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := entryIDs(path); !reflect.DeepEqual(got, []string{"root", "child"}) {
+			t.Fatalf("path = %#v", got)
+		}
+	})
+
+	t.Run("writes the header on create", func(t *testing.T) {
+		dir := t.TempDir()
+		filePath := filepath.Join(dir, "session.jsonl")
+		if _, err := CreateJsonlSessionStorage(filePath, SessionMetadata{ID: "session-1", CreatedAt: "2026-01-01T00:00:00.000Z", CWD: dir}); err != nil {
+			t.Fatal(err)
+		}
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(content), `"type":"session"`) || !strings.Contains(string(content), `"version":3`) {
+			t.Fatalf("header = %q", string(content))
+		}
+	})
+
+	t.Run("loads existing entries and reconstructs leaf", func(t *testing.T) {
+		dir := t.TempDir()
+		filePath := filepath.Join(dir, "session.jsonl")
+		storage, err := CreateJsonlSessionStorage(filePath, SessionMetadata{ID: "session-1", CreatedAt: "2026-01-01T00:00:00.000Z", CWD: dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := storage.AppendEntry(Entry{Type: "message", ID: "user-1", Timestamp: nowISO(), Message: harnessUserMessage("one")}); err != nil {
+			t.Fatal(err)
+		}
+		if err := storage.SetLeafID(stringPtr("user-1")); err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := OpenJsonlSessionStorage(filePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leaf, ok, err := loaded.LeafID()
+		if err != nil || !ok || leaf != "user-1" {
+			t.Fatalf("leaf = %q ok=%v err=%v", leaf, ok, err)
+		}
+	})
+}
+
 func entryIDs(entries []Entry) []string {
 	ids := make([]string, len(entries))
 	for i, entry := range entries {

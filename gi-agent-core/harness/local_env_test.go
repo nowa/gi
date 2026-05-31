@@ -217,7 +217,7 @@ func TestExecuteShellWithCapture(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	env := MustLocalExecutionEnv(root)
-	result, err := ExecuteShellWithCapture(ctx, env, "yes line | head -n 15000", 1024)
+	result, err := ExecuteShellWithCapture(ctx, env, "i=0; while [ $i -lt 15000 ]; do printf 'line\n'; i=$((i+1)); done", 1024)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,4 +231,78 @@ func TestExecuteShellWithCapture(t *testing.T) {
 	if strings.Count(fullOutput, "\n") < 10000 || len(result.Output) >= len(fullOutput) {
 		t.Fatalf("full output len=%d preview len=%d", len(fullOutput), len(result.Output))
 	}
+}
+
+func TestSanitizeBinaryOutputPiStyle(t *testing.T) {
+	got := SanitizeBinaryOutput("a\x00b\tc\rd\ne\uFFF9f\u001fg")
+	want := "ab\tc\rd\nefg"
+	if got != want {
+		t.Fatalf("sanitized = %q, want %q", got, want)
+	}
+}
+
+func TestLocalExecutionEnvPiCaseNames(t *testing.T) {
+	t.Run("stops reading text lines at the requested limit", func(t *testing.T) {
+		env := MustLocalExecutionEnv(t.TempDir())
+		if err := env.WriteFile(context.Background(), "lines.txt", []byte("one\ntwo\nthree\n")); err != nil {
+			t.Fatal(err)
+		}
+		lines, err := env.ReadTextLines(context.Background(), "lines.txt", 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(lines, []string{"one", "two"}) {
+			t.Fatalf("lines = %#v", lines)
+		}
+	})
+
+	t.Run("honors createDir recursive false and remove recursive/force options", func(t *testing.T) {
+		env := MustLocalExecutionEnv(t.TempDir())
+		if err := env.CreateDir(context.Background(), "a/b", CreateDirOptions{}); err == nil {
+			t.Fatal("CreateDir without Recursive should fail for missing parent")
+		}
+		if err := env.CreateDir(context.Background(), "a/b", CreateDirOptions{Recursive: true}); err != nil {
+			t.Fatal(err)
+		}
+		if err := env.WriteFile(context.Background(), "a/b/file.txt", []byte("ok")); err != nil {
+			t.Fatal(err)
+		}
+		if err := env.Remove(context.Background(), "a", RemoveOptions{}); err == nil {
+			t.Fatal("non-recursive remove should fail for non-empty directory")
+		}
+		if err := env.Remove(context.Background(), "a", RemoveOptions{Recursive: true}); err != nil {
+			t.Fatal(err)
+		}
+		if err := env.Remove(context.Background(), "missing", RemoveOptions{Force: true}); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("cleanup is best-effort", func(t *testing.T) {
+		env := MustLocalExecutionEnv(t.TempDir())
+		if err := env.Cleanup(context.Background()); err != nil {
+			t.Fatalf("Cleanup() error = %v", err)
+		}
+	})
+
+	t.Run("streams stdout and stderr chunks", func(t *testing.T) {
+		env := MustLocalExecutionEnv(t.TempDir())
+		var stdout, stderr strings.Builder
+		result, err := env.Exec(context.Background(), "printf out; printf err >&2", ExecOptions{
+			OnStdout: func(chunk string) error {
+				stdout.WriteString(chunk)
+				return nil
+			},
+			OnStderr: func(chunk string) error {
+				stderr.WriteString(chunk)
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Stdout != "out" || result.Stderr != "err" || stdout.String() != "out" || stderr.String() != "err" {
+			t.Fatalf("result=%#v stdout=%q stderr=%q", result, stdout.String(), stderr.String())
+		}
+	})
 }

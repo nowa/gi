@@ -82,6 +82,14 @@ func TestStdinBufferPiRegularAndCompleteSequences(t *testing.T) {
 	}
 }
 
+func TestStdinBufferPiEdgeCases(t *testing.T) {
+	t.Run("should handle empty input", func(t *testing.T) {
+		buffer, recorder := newRecordedStdinBuffer(time.Second)
+		buffer.Process("")
+		requireStringSlice(t, recorder.Data(), []string{""})
+	})
+}
+
 func TestStdinBufferPiPartialAndMixedSequences(t *testing.T) {
 	t.Run("buffers incomplete CSI across chunks", func(t *testing.T) {
 		buffer, recorder := newRecordedStdinBuffer(time.Second)

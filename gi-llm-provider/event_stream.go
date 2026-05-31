@@ -1,75 +1,14 @@
 package gillmprovider
 
-import (
-	"context"
-	"sync"
-)
+import "github.com/nowa/gi/gi-llm-provider/internal/eventstream"
 
 type EventStream[T any, R any] struct {
-	events     chan T
-	resultCh   chan struct{}
-	isComplete func(T) bool
-	extract    func(T) R
-	mu         sync.Mutex
-	done       bool
-	result     R
+	*eventstream.EventStream[T, R]
 }
 
 func NewEventStream[T any, R any](isComplete func(T) bool, extract func(T) R) *EventStream[T, R] {
 	return &EventStream[T, R]{
-		events:     make(chan T, 4096),
-		resultCh:   make(chan struct{}),
-		isComplete: isComplete,
-		extract:    extract,
-	}
-}
-
-func (s *EventStream[T, R]) Push(event T) {
-	s.mu.Lock()
-	if s.done {
-		s.mu.Unlock()
-		return
-	}
-	complete := s.isComplete(event)
-	if complete {
-		s.result = s.extract(event)
-		s.done = true
-	}
-	s.mu.Unlock()
-
-	s.events <- event
-	if complete {
-		close(s.events)
-		close(s.resultCh)
-	}
-}
-
-func (s *EventStream[T, R]) End(result R) {
-	s.mu.Lock()
-	if s.done {
-		s.mu.Unlock()
-		return
-	}
-	s.result = result
-	s.done = true
-	s.mu.Unlock()
-	close(s.events)
-	close(s.resultCh)
-}
-
-func (s *EventStream[T, R]) Events() <-chan T {
-	return s.events
-}
-
-func (s *EventStream[T, R]) Result(ctx context.Context) (R, error) {
-	select {
-	case <-s.resultCh:
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		return s.result, nil
-	case <-ctx.Done():
-		var zero R
-		return zero, ctx.Err()
+		EventStream: eventstream.NewEventStream(isComplete, extract),
 	}
 }
 

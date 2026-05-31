@@ -63,9 +63,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## golang.org/x/term and golang.org/x/sys
+## golang.org/x/term, golang.org/x/sys, and golang.org/x/image
 
-- Versions: `golang.org/x/term v0.43.0`, `golang.org/x/sys v0.44.0`
+- Versions: `golang.org/x/term v0.43.0`, `golang.org/x/sys v0.44.0`, `golang.org/x/image v0.41.0`
 - License: BSD-style Go license
 
 ```text

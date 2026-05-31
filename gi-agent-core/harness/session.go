@@ -1,7 +1,6 @@
 package harness
 
 import (
-	"fmt"
 	"strings"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
@@ -185,16 +184,16 @@ func BuildSessionContext(pathEntries []Entry) SessionContext {
 		case "message":
 			context.Messages = append(context.Messages, entry.Message)
 		case "custom_message":
-			context.Messages = append(context.Messages, llm.Message{Role: entry.CustomType, Content: []llm.ContentPart{llm.Text(fmt.Sprint(entry.Content))}, Timestamp: llm.NowMillis(), Details: entry.Details})
+			context.Messages = append(context.Messages, customMessageFromEntry(entry))
 		case "branch_summary":
 			if entry.Summary != "" {
-				context.Messages = append(context.Messages, llm.Message{Role: "branchSummary", Content: []llm.ContentPart{llm.Text(entry.Summary)}, Timestamp: llm.NowMillis()})
+				context.Messages = append(context.Messages, branchSummaryMessageFromEntry(entry))
 			}
 		}
 	}
 
 	if compaction != nil {
-		context.Messages = append(context.Messages, llm.Message{Role: "compactionSummary", Content: []llm.ContentPart{llm.Text(compaction.Summary)}, Timestamp: llm.NowMillis()})
+		context.Messages = append(context.Messages, compactionSummaryMessageFromEntry(*compaction))
 		compactionIndex := -1
 		for i, entry := range pathEntries {
 			if entry.ID == compaction.ID {

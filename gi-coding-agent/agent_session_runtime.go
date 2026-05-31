@@ -42,6 +42,7 @@ type AgentSessionEvent struct {
 type AgentSessionEventListener func(AgentSessionEvent)
 
 type AgentSessionResponder func(prompt string, context []llm.Message, model llm.Model) (llm.Message, error)
+type AgentSessionStreamResponder func(prompt string, context []llm.Message, model llm.Model) (*llm.AssistantMessageEventStream, error)
 
 type AgentSessionCompactionSummarizer func(preparation agentharness.CompactionPreparation, customInstructions string) (agentharness.CompactionResult, error)
 
@@ -61,7 +62,7 @@ type AgentSessionRetrySettings struct {
 }
 
 func DefaultAgentSessionRetrySettings() AgentSessionRetrySettings {
-	return AgentSessionRetrySettings{Enabled: false, MaxRetries: 0, BaseDelayMs: 0}
+	return AgentSessionRetrySettings{Enabled: true, MaxRetries: defaultAgentSessionMaxRetries, BaseDelayMs: defaultAgentSessionBaseDelayMS}
 }
 
 func (s *AgentSession) Subscribe(listener AgentSessionEventListener) func() {
@@ -308,60 +309,7 @@ func (s *AgentSession) providerContextMessages() ([]llm.Message, error) {
 }
 
 func providerContextFromSessionMessages(messages []llm.Message) []llm.Message {
-	result := make([]llm.Message, 0, len(messages))
-	for _, message := range messages {
-		switch message.Role {
-		case "bashExecution":
-			if sessionMessageExcludedFromContext(message) {
-				continue
-			}
-			message.Role = llm.RoleUser
-		case "custom":
-			message.Role = llm.RoleUser
-			message.CustomType = ""
-			message.Display = nil
-		case "branchSummary":
-			message.Role = llm.RoleUser
-			message.Content = []llm.ContentPart{llm.Text(branchSummaryPromptText(sessionMessageText(message)))}
-		case "compactionSummary":
-			message.Role = llm.RoleUser
-			message.Content = []llm.ContentPart{llm.Text(compactionSummaryPromptText(sessionMessageText(message)))}
-		}
-		result = append(result, message)
-	}
-	return result
-}
-
-const compactionSummaryPrefix = `The conversation history before this point was compacted into the following summary:
-
-<summary>
-`
-
-const compactionSummarySuffix = `
-</summary>`
-
-const branchSummaryPrefix = `The following is a summary of a branch that this conversation came back from:
-
-<summary>
-`
-
-const branchSummarySuffix = `</summary>`
-
-func compactionSummaryPromptText(summary string) string {
-	return compactionSummaryPrefix + summary + compactionSummarySuffix
-}
-
-func branchSummaryPromptText(summary string) string {
-	return branchSummaryPrefix + summary + branchSummarySuffix
-}
-
-func sessionMessageExcludedFromContext(message llm.Message) bool {
-	details, ok := message.Details.(map[string]any)
-	if !ok {
-		return false
-	}
-	excluded, _ := details["excludeFromContext"].(bool)
-	return excluded
+	return agentharness.ConvertToLLM(messages)
 }
 
 func (s *AgentSession) runPromptLoop(prompt string) error {
@@ -376,21 +324,31 @@ func (s *AgentSession) runPromptLoop(prompt string) error {
 		if err != nil {
 			return err
 		}
-		assistant, err := responder(prompt, messages, s.Agent.State.Model)
+		assistant, err := s.respondToPrompt(prompt, messages, s.Agent.State.Model, responder)
+		streamed := s.StreamResponder != nil && err == nil
 		if err != nil {
 			assistant = llm.Message{Role: llm.RoleAssistant, StopReason: llm.StopReasonError, ErrorMessage: err.Error()}
 		}
 		assistant = s.normalizeAssistantMessage(assistant)
-		if err := s.emitMessageStart(assistant); err != nil {
-			return err
+		if !streamed {
+			if err := s.emitMessageStart(assistant); err != nil {
+				return err
+			}
+			assistant, err = s.emitAssistantMessageUpdates(assistant)
+			if err != nil {
+				return err
+			}
 		}
-		assistant = s.emitAssistantMessageUpdates(assistant)
 		if isRetryableAssistantError(assistant) && s.RetrySettings.Enabled && attempt < s.RetrySettings.MaxRetries {
 			attempt++
 			retried = true
 			s.isRetrying = true
-			s.emit(AgentSessionEvent{Type: "auto_retry_start", Attempt: attempt, MaxAttempts: s.RetrySettings.MaxRetries, DelayMs: s.RetrySettings.BaseDelayMs, ErrorMessage: assistant.ErrorMessage})
-			if !s.waitForRetryDelay(s.RetrySettings.BaseDelayMs) {
+			delayMs := retryDelayMS(s.RetrySettings.BaseDelayMs, attempt)
+			cancelled, cleanupRetryDelay := s.prepareRetryDelay()
+			s.emit(AgentSessionEvent{Type: "auto_retry_start", Attempt: attempt, MaxAttempts: s.RetrySettings.MaxRetries, DelayMs: delayMs, ErrorMessage: assistant.ErrorMessage})
+			retryDelayCompleted := waitForRetryDelay(delayMs, cancelled)
+			cleanupRetryDelay()
+			if !retryDelayCompleted {
 				s.isRetrying = false
 				s.emit(AgentSessionEvent{Type: "auto_retry_end", Success: false, Attempt: attempt, FinalError: "Retry cancelled"})
 				s.emit(AgentSessionEvent{Type: "turn_end"})
@@ -455,16 +413,116 @@ func (s *AgentSession) runPromptLoop(prompt string) error {
 	}
 }
 
-func (s *AgentSession) waitForRetryDelay(delayMs int) bool {
-	if delayMs <= 0 {
-		return true
+func (s *AgentSession) respondToPrompt(prompt string, messages []llm.Message, model llm.Model, responder AgentSessionResponder) (llm.Message, error) {
+	if s == nil || s.StreamResponder == nil {
+		return responder(prompt, messages, model)
 	}
+	return s.streamAssistantResponse(prompt, messages, model)
+}
+
+func (s *AgentSession) streamAssistantResponse(prompt string, messages []llm.Message, model llm.Model) (llm.Message, error) {
+	stream, err := s.StreamResponder(prompt, messages, model)
+	if err != nil {
+		return llm.Message{}, err
+	}
+	if stream == nil {
+		return llm.Message{}, errors.New("stream responder returned nil stream")
+	}
+	started := false
+	var final llm.Message
+	for event := range stream.Events() {
+		event = s.normalizeAssistantMessageEvent(event)
+		switch event.Type {
+		case "start":
+			started = true
+			if err := s.emitMessageStart(event.Partial); err != nil {
+				return llm.Message{}, err
+			}
+		case "text_start", "text_delta", "text_end", "thinking_start", "thinking_delta", "thinking_end", "toolcall_start", "toolcall_delta", "toolcall_end":
+			if err := s.emitAssistantMessageEvent(event); err != nil {
+				return llm.Message{}, err
+			}
+			if s.abortRequested {
+				return s.abortedAssistantMessage(event.Partial)
+			}
+		case "done":
+			final = event.Message
+			if !started {
+				if err := s.emitMessageStart(final); err != nil {
+					return llm.Message{}, err
+				}
+			}
+			return final, nil
+		case "error":
+			final = event.Error
+			if !started {
+				if err := s.emitMessageStart(final); err != nil {
+					return llm.Message{}, err
+				}
+			}
+			return final, nil
+		}
+	}
+	final, err = stream.Result(context.Background())
+	if err != nil {
+		return llm.Message{}, err
+	}
+	final = s.normalizeAssistantMessage(final)
+	if !started {
+		if err := s.emitMessageStart(final); err != nil {
+			return llm.Message{}, err
+		}
+	}
+	return final, nil
+}
+
+func (s *AgentSession) normalizeAssistantMessageEvent(event llm.AssistantMessageEvent) llm.AssistantMessageEvent {
+	switch event.Type {
+	case "start", "text_start", "text_delta", "text_end", "thinking_start", "thinking_delta", "thinking_end", "toolcall_start", "toolcall_delta", "toolcall_end":
+		event.Partial = s.normalizeAssistantMessage(event.Partial)
+	case "done":
+		event.Message = s.normalizeAssistantMessage(event.Message)
+	case "error":
+		event.Error = s.normalizeAssistantMessage(event.Error)
+	}
+	return event
+}
+
+func retryDelayMS(baseDelayMS, attempt int) int {
+	if baseDelayMS <= 0 || attempt <= 1 {
+		return baseDelayMS
+	}
+	delay := baseDelayMS
+	for i := 1; i < attempt; i++ {
+		if delay > int(^uint(0)>>1)/2 {
+			return int(^uint(0) >> 1)
+		}
+		delay *= 2
+	}
+	return delay
+}
+
+func (s *AgentSession) prepareRetryDelay() (<-chan struct{}, func()) {
 	cancelled := make(chan struct{})
 	var once sync.Once
 	s.retryAbort = func() {
 		once.Do(func() {
 			close(cancelled)
 		})
+	}
+	return cancelled, func() {
+		s.retryAbort = nil
+	}
+}
+
+func waitForRetryDelay(delayMs int, cancelled <-chan struct{}) bool {
+	if delayMs <= 0 {
+		select {
+		case <-cancelled:
+			return false
+		default:
+			return true
+		}
 	}
 	timer := time.NewTimer(time.Duration(delayMs) * time.Millisecond)
 	defer func() {
@@ -474,7 +532,6 @@ func (s *AgentSession) waitForRetryDelay(delayMs int) bool {
 			default:
 			}
 		}
-		s.retryAbort = nil
 	}()
 	select {
 	case <-timer.C:
@@ -566,62 +623,108 @@ func (s *AgentSession) appendCustomMessage(message QueuedCustomMessage, includeI
 	return nil
 }
 
-func (s *AgentSession) emitAssistantMessageUpdates(message llm.Message) llm.Message {
+func (s *AgentSession) emitAssistantMessageUpdates(message llm.Message) (llm.Message, error) {
 	partial := message
 	partial.Content = nil
-	s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "start", Partial: partial})
 	for index, part := range message.Content {
 		switch part.Type {
 		case llm.ContentThinking:
 			partial.Content = append(partial.Content, llm.Thinking(""))
-			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "thinking_start", ContentIndex: index, Partial: partial})
+			if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "thinking_start", ContentIndex: index, Partial: partial}); err != nil {
+				return llm.Message{}, err
+			}
 			partial.Content[index].Thinking = part.Thinking
-			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "thinking_delta", ContentIndex: index, Delta: part.Thinking, Partial: partial})
-			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "thinking_end", ContentIndex: index, Content: part.Thinking, Partial: partial})
+			if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "thinking_delta", ContentIndex: index, Delta: part.Thinking, Partial: partial}); err != nil {
+				return llm.Message{}, err
+			}
+			if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "thinking_end", ContentIndex: index, Content: part.Thinking, Partial: partial}); err != nil {
+				return llm.Message{}, err
+			}
 			if s.abortRequested {
 				return s.abortedAssistantMessage(partial)
 			}
 		case llm.ContentText:
 			partial.Content = append(partial.Content, llm.Text(""))
-			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "text_start", ContentIndex: index, Partial: partial})
+			if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "text_start", ContentIndex: index, Partial: partial}); err != nil {
+				return llm.Message{}, err
+			}
 			partial.Content[index].Text = part.Text
-			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "text_delta", ContentIndex: index, Delta: part.Text, Partial: partial})
-			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "text_end", ContentIndex: index, Content: part.Text, Partial: partial})
+			if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "text_delta", ContentIndex: index, Delta: part.Text, Partial: partial}); err != nil {
+				return llm.Message{}, err
+			}
+			if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "text_end", ContentIndex: index, Content: part.Text, Partial: partial}); err != nil {
+				return llm.Message{}, err
+			}
 			if s.abortRequested {
 				return s.abortedAssistantMessage(partial)
 			}
 		case llm.ContentToolCall:
 			partial.Content = append(partial.Content, llm.ToolCall(part.ID, part.Name, map[string]any{}))
-			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "toolcall_start", ContentIndex: index, Partial: partial})
+			if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "toolcall_start", ContentIndex: index, Partial: partial}); err != nil {
+				return llm.Message{}, err
+			}
 			argsJSON, _ := json.Marshal(part.Arguments)
-			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "toolcall_delta", ContentIndex: index, Delta: string(argsJSON), Partial: partial})
+			if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "toolcall_delta", ContentIndex: index, Delta: string(argsJSON), Partial: partial}); err != nil {
+				return llm.Message{}, err
+			}
 			partial.Content[index] = part
-			s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "toolcall_end", ContentIndex: index, ToolCall: part, Partial: partial})
+			if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "toolcall_end", ContentIndex: index, ToolCall: part, Partial: partial}); err != nil {
+				return llm.Message{}, err
+			}
 			if s.abortRequested {
 				return s.abortedAssistantMessage(partial)
 			}
 		}
 	}
 	if message.StopReason == llm.StopReasonError || message.StopReason == llm.StopReasonAborted {
-		s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "error", Reason: message.StopReason, Error: message})
-		return message
+		return message, nil
 	}
-	s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "done", Reason: message.StopReason, Message: message})
-	return message
+	return message, nil
 }
 
-func (s *AgentSession) abortedAssistantMessage(partial llm.Message) llm.Message {
+func (s *AgentSession) abortedAssistantMessage(partial llm.Message) (llm.Message, error) {
 	s.abortRequested = false
 	partial.StopReason = llm.StopReasonAborted
 	if partial.ErrorMessage == "" {
 		partial.ErrorMessage = "aborted"
 	}
-	s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "error", Reason: llm.StopReasonAborted, Error: partial})
-	return partial
+	if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "error", Reason: llm.StopReasonAborted, Error: partial}); err != nil {
+		return llm.Message{}, err
+	}
+	return partial, nil
 }
 
-func (s *AgentSession) emitAssistantMessageEvent(event llm.AssistantMessageEvent) {
-	s.emit(AgentSessionEvent{Type: "message_update", AssistantMessageEvent: &event})
+func (s *AgentSession) emitAssistantMessageEvent(event llm.AssistantMessageEvent) error {
+	message := assistantMessageEventMessage(event)
+	if message.Role == "" {
+		message.Role = llm.RoleAssistant
+	}
+	if s != nil && s.ExtensionRuntime != nil {
+		eventCopy := event
+		messageCopy := message
+		if _, err := s.ExtensionRuntime.EmitSessionEvent(ProtocolSessionEvent{
+			Type:                  ProtocolEventMessageUpdate,
+			Message:               &messageCopy,
+			AssistantMessageEvent: &eventCopy,
+		}); err != nil {
+			return err
+		}
+	}
+	eventCopy := event
+	messageCopy := message
+	s.emit(AgentSessionEvent{Type: "message_update", Message: &messageCopy, AssistantMessageEvent: &eventCopy})
+	return nil
+}
+
+func assistantMessageEventMessage(event llm.AssistantMessageEvent) llm.Message {
+	switch event.Type {
+	case "done":
+		return event.Message
+	case "error":
+		return event.Error
+	default:
+		return event.Partial
+	}
 }
 
 func (s *AgentSession) normalizeAssistantMessage(message llm.Message) llm.Message {

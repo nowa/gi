@@ -173,6 +173,26 @@ func (r *ModelRegistry) Refresh() {
 			r.applyProviderConfig(providerName, config)
 		}
 	}
+	r.applyOAuthModelOverrides()
+}
+
+func (r *ModelRegistry) applyOAuthModelOverrides() {
+	if r == nil || r.authStorage == nil {
+		return
+	}
+	credential, ok := r.authStorage.Get("github-copilot")
+	if !ok || credential.Type != "oauth" {
+		return
+	}
+	baseURL := llm.GitHubCopilotBaseURL(credential.Access, credential.EnterpriseURL)
+	if strings.TrimSpace(baseURL) == "" {
+		return
+	}
+	for index := range r.models {
+		if r.models[index].Provider == "github-copilot" {
+			r.models[index].BaseURL = baseURL
+		}
+	}
 }
 
 func (r *ModelRegistry) GetError() string {
@@ -339,6 +359,7 @@ func (r *ModelRegistry) loadModels() {
 	}
 	builtIns := r.loadBuiltInModels(result.overrides, result.modelOverrides)
 	r.models = mergeCustomModels(builtIns, result.models)
+	r.applyOAuthModelOverrides()
 }
 
 func (r *ModelRegistry) loadCustomModels() customModelsResult {
