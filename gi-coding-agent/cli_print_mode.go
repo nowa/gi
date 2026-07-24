@@ -13,6 +13,7 @@ import (
 type agentSessionPrintModeHost struct {
 	session             *AgentSession
 	modelRegistry       *ModelRegistry
+	modelRuntime        *ModelRuntime
 	processExtensions   []ProtocolPackageProcessExtension
 	processSupervisor   *ProtocolExtensionProcessSupervisor
 	sessionRuntimeHost  *AgentSessionRuntimeHost
@@ -56,6 +57,13 @@ func (h *agentSessionPrintModeHost) ModelRegistry() *ModelRegistry {
 	return h.modelRegistry
 }
 
+func (h *agentSessionPrintModeHost) ModelRuntime() *ModelRuntime {
+	if h == nil {
+		return nil
+	}
+	return h.modelRuntime
+}
+
 func (h *agentSessionPrintModeHost) StartupWarnings() []string {
 	if h == nil || len(h.startupWarnings) == 0 {
 		return nil
@@ -90,7 +98,10 @@ func (h *agentSessionPrintModeHost) NewProtocolExtensionRPCSessionHost(viewTreeH
 	}
 	host := NewRPCSessionHost(h.session)
 	host.Settings = h.settingsManager
-	if h.modelRegistry != nil {
+	if h.modelRuntime != nil {
+		host.ProviderAuthStatus = h.modelRuntime.GetProviderAuthStatus
+		host.AvailableModels = h.modelRuntime.GetAvailable()
+	} else if h.modelRegistry != nil {
 		host.ProviderAuthStatus = h.modelRegistry.GetProviderAuthStatus
 	}
 	host.ProcessExecutor = LocalHostProcessExecutor{}
@@ -265,8 +276,12 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	if err != nil {
 		return nil, err
 	}
+	modelRuntime, err := NewModelRuntimeFromRegistry(modelRegistry)
+	if err != nil {
+		return nil, err
+	}
 
-	resolvedModel, err := resolveCLIPrintModeModelForSession(args, modelRegistry, settingsManager, sessionManager)
+	resolvedModel, err := resolveCLIPrintModeModelForSession(args, modelRuntime, settingsManager, sessionManager)
 	if err != nil {
 		return nil, err
 	}
@@ -275,9 +290,15 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	if model == nil {
 		return nil, errors.New(formatNoModelsAvailableMessage())
 	}
-	scopedModels := resolveCLIPrintModeModelScope(args, modelRegistry, settingsManager)
-	if args.APIKey != "" && modelRegistry.authStorage != nil {
-		modelRegistry.authStorage.SetRuntimeAPIKey(model.Provider, args.APIKey)
+	scopedModels := resolveCLIPrintModeModelScope(args, modelRuntime, settingsManager)
+	if args.APIKey != "" {
+		if err := modelRuntime.SetRuntimeAPIKey(
+			context.Background(),
+			model.Provider,
+			args.APIKey,
+		); err != nil {
+			return nil, err
+		}
 	}
 	installTelemetryEnabled := IsInstallTelemetryEnabled(settingsManager)
 	resourceLoader := NewDefaultResourceLoader(defaultResourceLoaderOptionsFromCLI(args, cwd, agentDir, settingsManager))
@@ -286,11 +307,11 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	resourceLoader.ApplyExtensionFlagValues(args.UnknownFlags, cliAllowsDeferredExtensionFlags(args, extensions))
 	extensions = resourceLoader.GetExtensions()
 	if extensions.Runtime != nil {
-		extensions.Runtime.BindModelRegistry(modelRegistry)
+		extensions.Runtime.BindModelRuntime(modelRuntime)
 	}
 
 	host := &agentSessionPrintModeHost{}
-	preflight := cliProviderPreflight(modelRegistry, args)
+	preflight := cliModelRuntimePreflight(modelRuntime, args)
 	retrySettings := settingsManager.GetRetrySettings()
 	session, err := CreateAgentSession(AgentSessionOptions{
 		CWD:            cwd,
@@ -302,6 +323,7 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 		Preflight:      preflight,
 		ResourceLoader: resourceLoader,
 		RetrySettings:  &retrySettings,
+		ModelRuntime:   modelRuntime,
 		Tools:          args.Tools,
 		ToolsSet:       args.Tools != nil,
 		NoTools:        cliNoToolsMode(args),
@@ -317,6 +339,7 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	}
 	host.session = session
 	host.modelRegistry = modelRegistry
+	host.modelRuntime = modelRuntime
 	host.settingsManager = settingsManager
 	host.extensionFlagValues = cloneMapAny(args.UnknownFlags)
 	host.processExtensions = extensions.ProcessExtensions
@@ -389,14 +412,34 @@ func cliAllowsDeferredExtensionFlags(args Args, extensions ResourceExtensionsRes
 	return !args.Print && args.Mode != ModeJSON && args.Mode != ModeRPC && len(extensions.ProcessExtensions) > 0
 }
 
-func cliProviderPreflight(registry *ModelRegistry, args Args) AgentSessionPreflight {
+func cliModelRuntimePreflight(
+	runtime *ModelRuntime,
+	args Args,
+) AgentSessionPreflight {
 	return func(model llm.Model) error {
-		auth := registry.GetAPIKeyAndHeaders(model)
-		if !auth.OK {
-			return errors.New(auth.Error)
+		var apiKey *string
+		if args.APIKey != "" {
+			apiKey = &args.APIKey
 		}
-		if args.APIKey == "" && auth.APIKey == "" && providerNeedsExplicitAPIKey(model.Provider) {
-			return errors.New(formatNoAPIKeyFoundMessage(model.Provider))
+		auth, err := runtime.GetAuth(
+			context.Background(),
+			model,
+			llm.AuthResolutionOverrides{APIKey: apiKey},
+		)
+		if err != nil {
+			return err
+		}
+		if auth == nil {
+			return errors.New(
+				"Provider is not configured: " + model.Provider,
+			)
+		}
+		if args.APIKey == "" &&
+			auth.APIKey == "" &&
+			providerNeedsExplicitAPIKey(model.Provider) {
+			return errors.New(
+				formatNoAPIKeyFoundMessage(model.Provider),
+			)
 		}
 		return nil
 	}
@@ -689,12 +732,17 @@ func (h *agentSessionPrintModeHost) PrintModeCWD() string {
 func (h *agentSessionPrintModeHost) providerResponder(registry *ModelRegistry, args Args, installTelemetryEnabled bool) AgentSessionResponder {
 	return func(_ string, messages []llm.Message, model llm.Model) (llm.Message, error) {
 		ctx := context.Background()
-		auth, err := h.providerAuth(registry, args, model)
+		runtime, err := h.modelRuntimeForRegistry(registry)
 		if err != nil {
 			return llm.Message{}, err
 		}
-		options := h.providerStreamOptions(ctx, model, auth, args, installTelemetryEnabled)
-		return llm.CompleteSimple(ctx, model, llm.Context{
+		options := h.modelRuntimeStreamOptions(
+			ctx,
+			model,
+			args,
+			installTelemetryEnabled,
+		)
+		return runtime.CompleteSimple(ctx, model, llm.Context{
 			SystemPrompt: h.session.SystemPrompt,
 			Messages:     messages,
 			Tools:        h.session.GetActiveLLMTools(),
@@ -705,12 +753,17 @@ func (h *agentSessionPrintModeHost) providerResponder(registry *ModelRegistry, a
 func (h *agentSessionPrintModeHost) providerStreamResponder(registry *ModelRegistry, args Args, installTelemetryEnabled bool) AgentSessionStreamResponder {
 	return func(_ string, messages []llm.Message, model llm.Model) (*llm.AssistantMessageEventStream, error) {
 		ctx := context.Background()
-		auth, err := h.providerAuth(registry, args, model)
+		runtime, err := h.modelRuntimeForRegistry(registry)
 		if err != nil {
 			return nil, err
 		}
-		options := h.providerStreamOptions(ctx, model, auth, args, installTelemetryEnabled)
-		return llm.StreamSimple(model, llm.Context{
+		options := h.modelRuntimeStreamOptions(
+			ctx,
+			model,
+			args,
+			installTelemetryEnabled,
+		)
+		return runtime.StreamSimple(ctx, model, llm.Context{
 			SystemPrompt: h.session.SystemPrompt,
 			Messages:     messages,
 			Tools:        h.session.GetActiveLLMTools(),
@@ -718,44 +771,93 @@ func (h *agentSessionPrintModeHost) providerStreamResponder(registry *ModelRegis
 	}
 }
 
-func (h *agentSessionPrintModeHost) providerAuth(registry *ModelRegistry, args Args, model llm.Model) (ResolvedRequestAuth, error) {
-	auth := registry.GetAPIKeyAndHeaders(model)
-	if !auth.OK {
-		return ResolvedRequestAuth{}, errors.New(auth.Error)
+func (h *agentSessionPrintModeHost) modelRuntimeForRegistry(
+	registry *ModelRegistry,
+) (*ModelRuntime, error) {
+	if h.modelRuntime != nil &&
+		h.modelRuntime.ModelRegistry() == registry {
+		return h.modelRuntime, nil
 	}
-	if args.APIKey == "" && auth.APIKey == "" && providerNeedsExplicitAPIKey(model.Provider) {
-		return ResolvedRequestAuth{}, errors.New(formatNoAPIKeyFoundMessage(model.Provider))
+	runtime, err := NewModelRuntimeFromRegistry(registry)
+	if err != nil {
+		return nil, err
 	}
-	return auth, nil
+	h.modelRuntime = runtime
+	return runtime, nil
 }
 
-func (h *agentSessionPrintModeHost) providerStreamOptions(ctx context.Context, model llm.Model, auth ResolvedRequestAuth, args Args, installTelemetryEnabled bool) llm.SimpleStreamOptions {
-	providerRetrySettings := ProviderRetrySettings{MaxRetryDelayMS: defaultProviderMaxRetryDelayMS}
+func (h *agentSessionPrintModeHost) modelRuntimeStreamOptions(
+	ctx context.Context,
+	model llm.Model,
+	args Args,
+	installTelemetryEnabled bool,
+) llm.ModelsStreamOptions {
+	providerRetrySettings := ProviderRetrySettings{
+		MaxRetryDelayMS: defaultProviderMaxRetryDelayMS,
+	}
 	if h.settingsManager != nil {
-		providerRetrySettings = h.settingsManager.GetProviderRetrySettings()
+		providerRetrySettings =
+			h.settingsManager.GetProviderRetrySettings()
 	}
-	return llm.SimpleStreamOptions{
-		APIKey:          firstNonEmptyString(args.APIKey, auth.APIKey),
-		Context:         ctx,
-		Headers:         BuildSDKStreamHeaders(model, installTelemetryEnabled, auth.Headers, nil),
-		Reasoning:       cliReasoningOption(model, ThinkingLevel(h.session.Agent.State.ThinkingLevel)),
-		Transport:       settingsTransport(h.settingsManager),
-		TimeoutMillis:   providerRetrySettings.TimeoutMS,
-		MaxRetries:      providerRetrySettings.MaxRetries,
-		MaxRetryDelayMs: providerRetrySettings.MaxRetryDelayMS,
-		OnPayload: func(payload any, model llm.Model) (any, bool, error) {
-			if h.session == nil {
-				return nil, false, nil
-			}
-			return h.session.emitBeforeProviderRequest(ctx, payload, model)
+	options := llm.ModelsStreamOptions{
+		StreamOptions: llm.StreamOptions{
+			Context: ctx,
+			Reasoning: cliReasoningOption(
+				model,
+				ThinkingLevel(
+					h.session.Agent.State.ThinkingLevel,
+				),
+			),
+			Transport:       settingsTransport(h.settingsManager),
+			TimeoutMillis:   providerRetrySettings.TimeoutMS,
+			MaxRetries:      providerRetrySettings.MaxRetries,
+			MaxRetryDelayMs: providerRetrySettings.MaxRetryDelayMS,
+			OnPayload: func(
+				payload any,
+				model llm.Model,
+			) (any, bool, error) {
+				if h.session == nil {
+					return nil, false, nil
+				}
+				return h.session.emitBeforeProviderRequest(
+					ctx,
+					payload,
+					model,
+				)
+			},
+			OnResponseStatus: func(
+				status int,
+				headers map[string]string,
+				model llm.Model,
+			) error {
+				if h.session == nil {
+					return nil
+				}
+				return h.session.emitAfterProviderResponse(
+					ctx,
+					status,
+					headers,
+					model,
+				)
+			},
 		},
-		OnResponseStatus: func(status int, headers map[string]string, model llm.Model) error {
-			if h.session == nil {
-				return nil
-			}
-			return h.session.emitAfterProviderResponse(ctx, status, headers, model)
+		TransformHeaders: func(
+			_ context.Context,
+			headers map[string]string,
+		) (map[string]string, error) {
+			return BuildSDKStreamHeaders(
+				model,
+				installTelemetryEnabled,
+				headers,
+				nil,
+			), nil
 		},
 	}
+	if args.APIKey != "" {
+		apiKey := args.APIKey
+		options.APIKey = &apiKey
+	}
+	return options
 }
 
 func settingsTransport(settings *SettingsManager) string {

@@ -145,11 +145,13 @@ func (h *CLIInteractiveTUIHost) showModelRegistryErrorIfAny() {
 	if h == nil || h.chat == nil {
 		return
 	}
-	registry := h.modelRegistry()
-	if registry == nil {
-		return
+	message := ""
+	if runtime := h.modelRuntime(); runtime != nil {
+		message = runtime.GetError()
+	} else if registry := h.modelRegistry(); registry != nil {
+		message = registry.GetError()
 	}
-	if message := strings.TrimSpace(registry.GetError()); message != "" {
+	if message = strings.TrimSpace(message); message != "" {
 		h.addStatus("models.json error: " + message)
 	}
 }

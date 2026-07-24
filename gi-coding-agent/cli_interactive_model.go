@@ -19,6 +19,17 @@ func (h *CLIInteractiveTUIHost) modelRegistry() *ModelRegistry {
 	return provider.ModelRegistry()
 }
 
+func (h *CLIInteractiveTUIHost) modelRuntime() *ModelRuntime {
+	if h == nil || h.runtimeHost == nil {
+		return nil
+	}
+	provider, ok := h.runtimeHost.(modelRuntimeProvider)
+	if !ok {
+		return nil
+	}
+	return provider.ModelRuntime()
+}
+
 func markdownTableValue(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {

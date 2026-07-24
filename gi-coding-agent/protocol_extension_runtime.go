@@ -43,6 +43,7 @@ type ProtocolExtensionRuntime struct {
 	pendingProviders          []protocolProviderRegistration
 	providerRegistrations     []protocolProviderRegistration
 	modelRegistry             *ModelRegistry
+	modelRuntime              *ModelRuntime
 	tools                     []SDKTool
 	messageRenderers          map[string]ProtocolMessageRenderer
 	messageSources            map[string]ProtocolSourceInfo
@@ -509,7 +510,28 @@ func (r *ProtocolExtensionRuntime) BindModelRegistry(registry *ModelRegistry) {
 	if r == nil {
 		return
 	}
+	r.modelRuntime = nil
 	r.modelRegistry = registry
+	r.bindPendingProviderRegistrations()
+}
+
+// BindModelRuntime routes provider mutations through the instance runtime
+// while retaining the compatibility registry for legacy extension surfaces.
+func (r *ProtocolExtensionRuntime) BindModelRuntime(
+	runtime *ModelRuntime,
+) {
+	if r == nil {
+		return
+	}
+	r.modelRuntime = runtime
+	r.modelRegistry = nil
+	if runtime != nil {
+		r.modelRegistry = runtime.ModelRegistry()
+	}
+	r.bindPendingProviderRegistrations()
+}
+
+func (r *ProtocolExtensionRuntime) bindPendingProviderRegistrations() {
 	pending := append([]protocolProviderRegistration(nil), r.pendingProviders...)
 	r.pendingProviders = nil
 	for _, registration := range pending {
@@ -1381,7 +1403,7 @@ func (r *ProtocolExtensionRuntime) registerProvider(source ProtocolSourceInfo, p
 	registration := protocolProviderRegistration{source: source, name: provider, config: override}
 	r.providerRegistrations = append(r.providerRegistrations, registration)
 	r.rebuildProviderMaps()
-	if r.modelRegistry == nil {
+	if r.modelRuntime == nil && r.modelRegistry == nil {
 		r.pendingProviders = append(r.pendingProviders, registration)
 		r.ApplyToSession(r.boundSession)
 		return nil
@@ -1416,7 +1438,9 @@ func (r *ProtocolExtensionRuntime) unregisterProvider(provider string) {
 	}
 	r.pendingProviders = filtered
 	r.rebuildProviderMaps()
-	if r.modelRegistry != nil {
+	if r.modelRuntime != nil {
+		r.modelRuntime.UnregisterProvider(provider)
+	} else if r.modelRegistry != nil {
 		r.modelRegistry.UnregisterProvider(provider)
 	}
 	r.ApplyToSession(r.boundSession)
@@ -1441,12 +1465,16 @@ func (r *ProtocolExtensionRuntime) rebuildProviderState(affected map[string]bool
 		return
 	}
 	r.rebuildProviderMaps()
-	if r.modelRegistry == nil {
+	if r.modelRuntime == nil && r.modelRegistry == nil {
 		return
 	}
 	names := sortedBoolMapKeys(affected)
 	for _, name := range names {
-		r.modelRegistry.UnregisterProvider(name)
+		if r.modelRuntime != nil {
+			r.modelRuntime.UnregisterProvider(name)
+		} else {
+			r.modelRegistry.UnregisterProvider(name)
+		}
 		for _, registration := range r.providerRegistrations {
 			if registration.name != name {
 				continue
@@ -1511,10 +1539,23 @@ func mergeProtocolProviderOverride(existing, incoming ProtocolProviderOverride) 
 }
 
 func (r *ProtocolExtensionRuntime) applyProviderRegistration(registration protocolProviderRegistration) error {
-	if r == nil || r.modelRegistry == nil {
+	if r == nil {
 		return nil
 	}
-	return r.modelRegistry.RegisterProvider(registration.name, registration.config.toProviderConfigInput())
+	config := registration.config.toProviderConfigInput()
+	if r.modelRuntime != nil {
+		return r.modelRuntime.RegisterProvider(
+			registration.name,
+			config,
+		)
+	}
+	if r.modelRegistry != nil {
+		return r.modelRegistry.RegisterProvider(
+			registration.name,
+			config,
+		)
+	}
+	return nil
 }
 
 func (o ProtocolProviderOverride) toProviderConfigInput() ProviderConfigInput {

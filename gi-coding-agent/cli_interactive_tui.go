@@ -78,6 +78,14 @@ type modelRegistryProvider interface {
 	ModelRegistry() *ModelRegistry
 }
 
+type modelRuntimeProvider interface {
+	ModelRuntime() *ModelRuntime
+}
+
+type availableModelsProvider interface {
+	GetAvailable() []llm.Model
+}
+
 type startupWarningsProvider interface {
 	StartupWarnings() []string
 }
@@ -3079,11 +3087,23 @@ func (h *CLIInteractiveTUIHost) refreshFooterState() {
 			state.SessionName = session.SessionManager.GetSessionName()
 		}
 	}
-	if registryProvider, ok := h.runtimeHost.(modelRegistryProvider); ok {
-		registry := registryProvider.ModelRegistry()
-		state.AvailableProviderCount = footerAvailableProviderCount(registry)
-		if session != nil && session.Agent != nil && registry != nil {
-			state.UsingOAuth = registry.IsUsingOAuth(session.Agent.State.Model)
+	if runtime := h.modelRuntime(); runtime != nil {
+		state.AvailableProviderCount = footerAvailableProviderCount(
+			runtime,
+		)
+		if session != nil && session.Agent != nil {
+			state.UsingOAuth = runtime.IsUsingOAuth(
+				session.Agent.State.Model.Provider,
+			)
+		}
+	} else if registry := h.modelRegistry(); registry != nil {
+		state.AvailableProviderCount = footerAvailableProviderCount(
+			registry,
+		)
+		if session != nil && session.Agent != nil {
+			state.UsingOAuth = registry.IsUsingOAuth(
+				session.Agent.State.Model,
+			)
 		}
 	}
 	h.footer.SetState(state)
@@ -3217,12 +3237,14 @@ func (h *CLIInteractiveTUIHost) footerAgentSession() *AgentSession {
 	return h.agentSession()
 }
 
-func footerAvailableProviderCount(registry *ModelRegistry) int {
-	if registry == nil {
+func footerAvailableProviderCount(
+	models availableModelsProvider,
+) int {
+	if models == nil {
 		return 0
 	}
 	seen := map[string]struct{}{}
-	for _, model := range registry.GetAvailable() {
+	for _, model := range models.GetAvailable() {
 		if strings.TrimSpace(model.Provider) != "" {
 			seen[model.Provider] = struct{}{}
 		}
@@ -3555,7 +3577,10 @@ func (h *CLIInteractiveTUIHost) newRPCSessionHost() (*RPCSessionHost, error) {
 	host.TUIStatus = h
 	host.TUITheme = h
 	host.TUIToolExpansion = h
-	if registry := h.modelRegistry(); registry != nil {
+	if runtime := h.modelRuntime(); runtime != nil {
+		host.ProviderAuthStatus = runtime.GetProviderAuthStatus
+		host.AvailableModels = runtime.GetAvailable()
+	} else if registry := h.modelRegistry(); registry != nil {
 		host.ProviderAuthStatus = registry.GetProviderAuthStatus
 		host.AvailableModels = registry.GetAvailable()
 	}

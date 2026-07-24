@@ -26,6 +26,7 @@ type AgentSessionOptions struct {
 	AgentContinue        func() error
 	Responder            AgentSessionResponder
 	StreamResponder      AgentSessionStreamResponder
+	ModelRuntime         *ModelRuntime
 	CustomTools          []SDKTool
 	ScopedModels         []ScopedModel
 	Tools                []string
@@ -47,6 +48,7 @@ type AgentSession struct {
 	AgentContinue        func() error
 	Responder            AgentSessionResponder
 	StreamResponder      AgentSessionStreamResponder
+	ModelRuntime         *ModelRuntime
 	Preflight            AgentSessionPreflight
 	ExtensionRuntime     *ProtocolExtensionRuntime
 	DynamicTools         []SDKTool
@@ -239,6 +241,7 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		AgentContinue:        options.AgentContinue,
 		Responder:            responder,
 		StreamResponder:      options.StreamResponder,
+		ModelRuntime:         options.ModelRuntime,
 		Preflight:            options.Preflight,
 		ScopedModels:         append([]ScopedModel(nil), options.ScopedModels...),
 		Tools:                append([]string(nil), options.Tools...),

@@ -343,6 +343,7 @@ func cloneAgentSessionWithManager(source *AgentSession, manager *SessionManager)
 		AgentContinue:        source.AgentContinue,
 		Responder:            source.Responder,
 		StreamResponder:      source.StreamResponder,
+		ModelRuntime:         source.ModelRuntime,
 		ScopedModels:         source.ScopedModels,
 		Tools:                source.Tools,
 		ToolsSet:             source.ToolsSet,

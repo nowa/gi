@@ -69,11 +69,13 @@ type ProviderConfigInput struct {
 }
 
 type ResolvedRequestAuth struct {
-	OK      bool
-	APIKey  string
-	Headers map[string]string
-	Env     llm.ProviderEnv
-	Error   string
+	OK             bool
+	APIKey         string
+	Headers        map[string]string
+	HeaderRemovals []string
+	BaseURL        string
+	Env            llm.ProviderEnv
+	Error          string
 }
 
 type modelsJSONProviderConfig struct {
@@ -150,6 +152,7 @@ type ModelRegistry struct {
 	apiProviderRestores      map[string]apiProviderRestore
 	oauthProviderRestores    map[string]oauthProviderRestore
 	loadError                string
+	modelRuntime             *ModelRuntime
 }
 
 var builtInProviderDisplayNames = map[string]string{
@@ -411,24 +414,56 @@ func (r *ModelRegistry) GetAPIKeyForProvider(provider string) (string, bool) {
 }
 
 func (r *ModelRegistry) GetAPIKeyAndHeaders(model llm.Model) ResolvedRequestAuth {
+	return r.GetAPIKeyAndHeadersWithOverrides(
+		context.Background(),
+		model,
+		llm.AuthResolutionOverrides{},
+	)
+}
+
+// GetAPIKeyAndHeadersWithOverrides resolves one immutable request-auth
+// snapshot. Request-scoped key and environment overrides are applied without
+// mutating credential storage or the model registry.
+func (r *ModelRegistry) GetAPIKeyAndHeadersWithOverrides(
+	ctx context.Context,
+	model llm.Model,
+	overrides llm.AuthResolutionOverrides,
+) ResolvedRequestAuth {
+	if r == nil {
+		return ResolvedRequestAuth{Error: "model registry is required"}
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return ResolvedRequestAuth{Error: err.Error()}
+	}
 	config := r.providerRequestConfigs[model.Provider]
 	apiKey := ""
 	var dynamicHeaders map[string]string
-	var requestEnv llm.ProviderEnv
-	authSelected := r.hasExplicitAuth(model.Provider)
+	var headerRemovals []string
+	baseURL := ""
+	requestEnv := cloneResolvedProviderEnv(overrides.Env)
+	authSelected := overrides.APIKey != nil || r.hasExplicitAuth(model.Provider)
+	if overrides.APIKey != nil {
+		apiKey = *overrides.APIKey
+	}
 	if authSelected {
 		if r.authStorage != nil &&
 			!r.authStorage.HasRuntimeAPIKey(model.Provider) {
 			if credential, ok := r.authStorage.Get(model.Provider); ok {
-				requestEnv = credential.Env
+				requestEnv = mergeResolvedProviderEnv(
+					credential.Env,
+					overrides.Env,
+				)
 			}
 		}
 		if r.dynamicModels != nil {
 			if _, ok := r.dynamicModels.GetProvider(model.Provider); ok {
 				result, err := r.dynamicModels.GetModelAuth(
-					context.Background(),
+					ctx,
 					model,
-					llm.AuthResolutionOverrides{},
+					overrides,
 				)
 				if err != nil {
 					return ResolvedRequestAuth{
@@ -439,9 +474,18 @@ func (r *ModelRegistry) GetAPIKeyAndHeaders(model llm.Model) ResolvedRequestAuth
 				if result != nil {
 					apiKey = result.Auth.APIKey
 					dynamicHeaders = result.Auth.Headers
-					requestEnv = result.Env
+					headerRemovals = append(
+						[]string(nil),
+						result.Auth.HeaderRemovals...,
+					)
+					baseURL = result.Auth.BaseURL
+					requestEnv = mergeResolvedProviderEnv(
+						result.Env,
+						overrides.Env,
+					)
 				}
-			} else if r.authStorage != nil {
+			} else if r.authStorage != nil &&
+				overrides.APIKey == nil {
 				apiKey, _ = r.authStorage.GetAPIKeyWithOptions(
 					model.Provider,
 					AuthStorageOptions{
@@ -449,7 +493,8 @@ func (r *ModelRegistry) GetAPIKeyAndHeaders(model llm.Model) ResolvedRequestAuth
 					},
 				)
 			}
-		} else if r.authStorage != nil {
+		} else if r.authStorage != nil &&
+			overrides.APIKey == nil {
 			apiKey, _ = r.authStorage.GetAPIKeyWithOptions(
 				model.Provider,
 				AuthStorageOptions{
@@ -459,12 +504,13 @@ func (r *ModelRegistry) GetAPIKeyAndHeaders(model llm.Model) ResolvedRequestAuth
 		}
 	}
 	if !authSelected && config.APIKey != "" {
-		value, err := resolveConfigValueOrError(
+		value, err := ResolveConfigValueOrError(
 			config.APIKey,
 			fmt.Sprintf(
 				`API key for provider "%s"`,
 				model.Provider,
 			),
+			requestEnv,
 		)
 		if err != nil {
 			return ResolvedRequestAuth{OK: false, Error: err.Error()}
@@ -475,9 +521,9 @@ func (r *ModelRegistry) GetAPIKeyAndHeaders(model llm.Model) ResolvedRequestAuth
 	if !authSelected && r.dynamicModels != nil {
 		if _, ok := r.dynamicModels.GetProvider(model.Provider); ok {
 			result, err := r.dynamicModels.GetModelAuth(
-				context.Background(),
+				ctx,
 				model,
-				llm.AuthResolutionOverrides{},
+				overrides,
 			)
 			if err != nil {
 				return ResolvedRequestAuth{OK: false, Error: err.Error()}
@@ -485,7 +531,15 @@ func (r *ModelRegistry) GetAPIKeyAndHeaders(model llm.Model) ResolvedRequestAuth
 			if result != nil {
 				apiKey = result.Auth.APIKey
 				dynamicHeaders = result.Auth.Headers
-				requestEnv = result.Env
+				headerRemovals = append(
+					[]string(nil),
+					result.Auth.HeaderRemovals...,
+				)
+				baseURL = result.Auth.BaseURL
+				requestEnv = mergeResolvedProviderEnv(
+					result.Env,
+					overrides.Env,
+				)
 				authSelected = true
 			}
 		}
@@ -519,26 +573,36 @@ func (r *ModelRegistry) GetAPIKeyAndHeaders(model llm.Model) ResolvedRequestAuth
 	if err != nil {
 		return ResolvedRequestAuth{OK: false, Error: err.Error()}
 	}
-	mergedHeaders := mergeStringMaps(
+	mergedHeaders := mergeHeadersCaseInsensitive(
 		model.Headers,
 		dynamicHeaders,
 		headers,
 		modelHeaders,
 	)
+	headerRemovals = clearResolvedHeaderRemovals(
+		headerRemovals,
+		mergedHeaders,
+	)
 	if config.AuthHeader {
 		if apiKey == "" {
 			return ResolvedRequestAuth{OK: false, Error: formatNoAPIKeyFoundMessage(model.Provider)}
 		}
-		if mergedHeaders == nil {
-			mergedHeaders = map[string]string{}
-		}
-		mergedHeaders["Authorization"] = "Bearer " + apiKey
+		mergedHeaders = mergeHeadersCaseInsensitive(
+			mergedHeaders,
+			map[string]string{"Authorization": "Bearer " + apiKey},
+		)
+		headerRemovals = clearResolvedHeaderRemovals(
+			headerRemovals,
+			map[string]string{"Authorization": ""},
+		)
 	}
 	return ResolvedRequestAuth{
-		OK:      true,
-		APIKey:  apiKey,
-		Headers: emptyMapAsNil(mergedHeaders),
-		Env:     cloneResolvedProviderEnv(requestEnv),
+		OK:             true,
+		APIKey:         apiKey,
+		Headers:        emptyMapAsNil(mergedHeaders),
+		HeaderRemovals: headerRemovals,
+		BaseURL:        baseURL,
+		Env:            cloneResolvedProviderEnv(requestEnv),
 	}
 }
 
@@ -641,6 +705,41 @@ func (r *ModelRegistry) GetProviderDisplayName(provider string) string {
 		return name
 	}
 	return provider
+}
+
+// GetRegisteredProviderConfig returns a detached compatibility provider
+// registration.
+func (r *ModelRegistry) GetRegisteredProviderConfig(
+	provider string,
+) (ProviderConfigInput, bool) {
+	if r == nil {
+		return ProviderConfigInput{}, false
+	}
+	config, ok := r.registeredProviders[provider]
+	return cloneRuntimeProviderConfig(config), ok
+}
+
+// GetRegisteredProviderIDs returns configured and native registrations. Native
+// providers are owned by ModelRuntime.
+func (r *ModelRegistry) GetRegisteredProviderIDs() []string {
+	if r == nil {
+		return nil
+	}
+	if r.modelRuntime != nil {
+		return r.modelRuntime.GetRegisteredProviderIDs()
+	}
+	return append([]string(nil), r.registeredOrder...)
+}
+
+// GetRegisteredNativeProvider projects the native provider owned by the bound
+// ModelRuntime.
+func (r *ModelRegistry) GetRegisteredNativeProvider(
+	provider string,
+) (*llm.Provider, bool) {
+	if r == nil || r.modelRuntime == nil {
+		return nil, false
+	}
+	return r.modelRuntime.GetRegisteredNativeProvider(provider)
 }
 
 func (r *ModelRegistry) IsUsingOAuth(model llm.Model) bool {
@@ -1333,6 +1432,23 @@ func cloneResolvedProviderEnv(env llm.ProviderEnv) llm.ProviderEnv {
 	return cloned
 }
 
+func mergeResolvedProviderEnv(
+	base llm.ProviderEnv,
+	override llm.ProviderEnv,
+) llm.ProviderEnv {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+	merged := cloneResolvedProviderEnv(base)
+	if merged == nil {
+		merged = llm.ProviderEnv{}
+	}
+	for name, value := range override {
+		merged[name] = value
+	}
+	return merged
+}
+
 func stripJSONCommentsAndTrailingCommas(input string) string {
 	var out strings.Builder
 	inString := false
@@ -1409,6 +1525,49 @@ func mergeStringMaps(maps ...map[string]string) map[string]string {
 		}
 	}
 	return merged
+}
+
+func mergeHeadersCaseInsensitive(
+	maps ...map[string]string,
+) map[string]string {
+	var merged map[string]string
+	for _, values := range maps {
+		for name, value := range values {
+			if merged == nil {
+				merged = map[string]string{}
+			}
+			for existing := range merged {
+				if strings.EqualFold(existing, name) {
+					delete(merged, existing)
+				}
+			}
+			merged[name] = value
+		}
+	}
+	return emptyMapAsNil(merged)
+}
+
+func clearResolvedHeaderRemovals(
+	removals []string,
+	headers map[string]string,
+) []string {
+	if len(removals) == 0 || len(headers) == 0 {
+		return append([]string(nil), removals...)
+	}
+	filtered := make([]string, 0, len(removals))
+	for _, removal := range removals {
+		overridden := false
+		for name := range headers {
+			if strings.EqualFold(name, removal) {
+				overridden = true
+				break
+			}
+		}
+		if !overridden {
+			filtered = append(filtered, removal)
+		}
+	}
+	return filtered
 }
 
 func emptyMapAsNil(values map[string]string) map[string]string {

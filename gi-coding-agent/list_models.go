@@ -26,18 +26,28 @@ func runCLIListModels(args Args, options CLIOptions) int {
 		writeCLIError(options.Stderr, err.Error())
 		return 1
 	}
+	runtime, err := NewModelRuntimeFromRegistry(registry)
+	if err != nil {
+		writeCLIError(options.Stderr, err.Error())
+		return 1
+	}
 	search := ""
 	if value, ok := args.ListModels.(string); ok {
 		search = value
 	}
-	if err := WriteListModels(nonNilWriter(options.Stdout), nonNilWriter(options.Stderr), registry, search); err != nil {
+	if err := WriteListModels(nonNilWriter(options.Stdout), nonNilWriter(options.Stderr), runtime, search); err != nil {
 		writeCLIError(options.Stderr, err.Error())
 		return 1
 	}
 	return 0
 }
 
-func WriteListModels(stdout, stderr io.Writer, registry *ModelRegistry, searchPattern string) error {
+type listModelsRegistry interface {
+	GetAvailable() []llm.Model
+	GetError() string
+}
+
+func WriteListModels(stdout, stderr io.Writer, registry listModelsRegistry, searchPattern string) error {
 	if registry == nil {
 		return fmt.Errorf("model registry is required")
 	}

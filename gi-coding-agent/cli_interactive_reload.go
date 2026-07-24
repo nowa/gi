@@ -84,7 +84,9 @@ func (h *CLIInteractiveTUIHost) handleReloadSlashCommand() error {
 			}
 		}
 		if extensions.Runtime != nil {
-			if registry := h.modelRegistry(); registry != nil {
+			if runtime := h.modelRuntime(); runtime != nil {
+				extensions.Runtime.BindModelRuntime(runtime)
+			} else if registry := h.modelRegistry(); registry != nil {
 				extensions.Runtime.BindModelRegistry(registry)
 			}
 			h.bindProtocolRuntimeHosts(extensions.Runtime)

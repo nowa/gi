@@ -142,7 +142,12 @@ func (h *CLIInteractiveTUIHost) runInteractiveLogin(providerID, authType string)
 		return nil
 	}
 	registry.authStorage.Set(providerID, AuthCredential{Type: "api_key", Key: apiKey})
-	registry.Refresh()
+	if err := h.refreshModelRuntimeAfterCredentialChange(
+		context.Background(),
+		registry,
+	); err != nil {
+		return err
+	}
 	h.addStatus("Saved API key for " + providerName + ". Credentials saved to ~/.gi/agent/auth.json")
 	return nil
 }
@@ -307,7 +312,13 @@ func (h *CLIInteractiveTUIHost) showAnthropicOAuthLoginDialog(providerName strin
 		return nil
 	}
 	registry.authStorage.Set("anthropic", credential)
-	registry.Refresh()
+	if err := h.refreshModelRuntimeAfterCredentialChange(
+		ctx,
+		registry,
+	); err != nil {
+		h.addStatus("Failed to refresh models after login to " + providerName + ": " + err.Error())
+		return nil
+	}
 	h.addStatus("Logged in to " + providerName + ". Credentials saved to ~/.gi/agent/auth.json")
 	return nil
 }
@@ -420,7 +431,13 @@ func (h *CLIInteractiveTUIHost) showOpenAICodexOAuthLoginDialog(providerName str
 		return nil
 	}
 	registry.authStorage.Set("openai-codex", credential)
-	registry.Refresh()
+	if err := h.refreshModelRuntimeAfterCredentialChange(
+		ctx,
+		registry,
+	); err != nil {
+		h.addStatus("Failed to refresh models after login to " + providerName + ": " + err.Error())
+		return nil
+	}
 	h.addStatus("Logged in to " + providerName + ". Credentials saved to ~/.gi/agent/auth.json")
 	return nil
 }
@@ -546,7 +563,13 @@ func (h *CLIInteractiveTUIHost) showGitHubCopilotOAuthLoginDialog(providerName s
 		return nil
 	}
 	registry.authStorage.Set("github-copilot", credential)
-	registry.Refresh()
+	if err := h.refreshModelRuntimeAfterCredentialChange(
+		ctx,
+		registry,
+	); err != nil {
+		h.addStatus("Failed to refresh models after login to " + providerName + ": " + err.Error())
+		return nil
+	}
 	h.addStatus("Logged in to " + providerName + ". Credentials saved to ~/.gi/agent/auth.json")
 	return nil
 }
@@ -668,7 +691,12 @@ func (h *CLIInteractiveTUIHost) handleLogoutSlashCommand(args string) error {
 			return nil
 		}
 		registry.authStorage.Remove(provider)
-		registry.Refresh()
+		if err := h.refreshModelRuntimeAfterCredentialChange(
+			context.Background(),
+			registry,
+		); err != nil {
+			return err
+		}
 		h.addStatus("Removed stored credential for " + provider + ". Environment variables and models.json config are unchanged.")
 		return nil
 	}
@@ -694,8 +722,30 @@ func (h *CLIInteractiveTUIHost) handleLogoutSlashCommand(args string) error {
 		return errors.New("invalid provider selection")
 	}
 	registry.authStorage.Remove(provider)
-	registry.Refresh()
+	if err := h.refreshModelRuntimeAfterCredentialChange(
+		context.Background(),
+		registry,
+	); err != nil {
+		return err
+	}
 	h.addStatus("Removed stored credential for " + provider + ". Environment variables and models.json config are unchanged.")
+	return nil
+}
+
+func (h *CLIInteractiveTUIHost) refreshModelRuntimeAfterCredentialChange(
+	ctx context.Context,
+	registry *ModelRegistry,
+) error {
+	if runtime := h.modelRuntime(); runtime != nil {
+		_, err := runtime.Refresh(
+			ctx,
+			ModelRegistryRefreshOptions{},
+		)
+		return err
+	}
+	if registry != nil {
+		registry.Refresh()
+	}
 	return nil
 }
 
