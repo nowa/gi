@@ -125,6 +125,10 @@ const modules = [
 				"gi-agent-core/harness/format_test.go",
 			],
 			"packages/agent/test/harness/system-prompt.test.ts": ["gi-agent-core/harness/format_test.go"],
+			"packages/agent/test/harness/tools.test.ts": [
+				"gi-agent-core/harness/tools/file_tools_test.go",
+				"gi-agent-core/harness/tools/bash_test.go",
+			],
 		},
 	},
 	{
