@@ -12,6 +12,7 @@ type OpenAICompletionsCompat struct {
 	SupportsReasoningEffort                  bool
 	SupportsUsageInStreaming                 bool
 	SupportsStrictMode                       bool
+	SupportsOpenAIGrammarTools               bool
 	SupportsLongCacheRetention               bool
 	MaxTokensField                           string
 	ThinkingFormat                           string
@@ -22,6 +23,7 @@ type OpenAICompletionsCompat struct {
 	RequiresThinkingAsText                   bool
 	RequiresReasoningContentOnAssistant      bool
 	RequiresReasoningContentOnAssistantTurns bool
+	DeferredToolsMode                        string
 }
 
 type OpenAICompletionsPayloadOptions struct {
@@ -83,6 +85,7 @@ type OpenAIChatMessage struct {
 	Reasoning        string               `json:"reasoning,omitempty"`
 	ReasoningText    string               `json:"reasoning_text,omitempty"`
 	ReasoningDetails []map[string]any     `json:"reasoning_details,omitempty"`
+	Tools            []OpenAIChatTool     `json:"tools,omitempty"`
 	Extra            map[string]any       `json:"-"`
 
 	includeReasoningContent bool
@@ -133,6 +136,16 @@ type OpenAIChatImageURL struct {
 }
 
 func ConvertOpenAICompletionsMessages(model Model, context Context, compat OpenAICompletionsCompat) []OpenAIChatMessage {
+	toolPlacement := splitKimiDeferredTools(context, compat.DeferredToolsMode == "kimi")
+	return convertOpenAICompletionsMessages(model, context, compat, toolPlacement)
+}
+
+func convertOpenAICompletionsMessages(
+	model Model,
+	context Context,
+	compat OpenAICompletionsCompat,
+	toolPlacement DeferredToolSet,
+) []OpenAIChatMessage {
 	var params []OpenAIChatMessage
 	transformed := TransformMessages(context.Messages, model, func(id string, target Model, _ Message) string {
 		return NormalizeToolCallIDForOpenAICompletions(id, target)
@@ -170,6 +183,8 @@ func ConvertOpenAICompletionsMessages(model Model, context Context, compat OpenA
 			lastRole = RoleAssistant
 		case RoleToolResult:
 			imageBlocks := []OpenAIChatContentPart{}
+			deferredToolNames := make([]string, 0)
+			seenDeferredToolNames := make(map[string]struct{})
 			j := i
 			for ; j < len(transformed) && transformed[j].Role == RoleToolResult; j++ {
 				toolMessage := transformed[j]
@@ -184,6 +199,15 @@ func ConvertOpenAICompletionsMessages(model Model, context Context, compat OpenA
 					toolResult.Name = toolMessage.ToolName
 				}
 				params = append(params, toolResult)
+				if compat.DeferredToolsMode == "kimi" {
+					for _, name := range toolMessage.AddedToolNames {
+						if _, seen := seenDeferredToolNames[name]; seen {
+							continue
+						}
+						seenDeferredToolNames[name] = struct{}{}
+						deferredToolNames = append(deferredToolNames, name)
+					}
+				}
 				if containsString(model.Input, "image") {
 					for _, part := range toolMessage.Content {
 						if part.Type == ContentImage {
@@ -205,6 +229,15 @@ func ConvertOpenAICompletionsMessages(model Model, context Context, compat OpenA
 				lastRole = RoleUser
 			} else {
 				lastRole = RoleToolResult
+			}
+			if len(deferredToolNames) > 0 {
+				deferredTools := getToolsByName(toolPlacement.Deferred, deferredToolNames)
+				if len(deferredTools) > 0 {
+					params = append(params, OpenAIChatMessage{
+						Role:  "system",
+						Tools: ConvertOpenAICompletionsTools(deferredTools, compat),
+					})
+				}
 			}
 		default:
 			params = append(params, OpenAIChatMessage{Role: message.Role, Content: joinTextContent(message.Content)})
@@ -236,7 +269,8 @@ func ShouldSendOpenAICompletionsTools(context Context) bool {
 func BuildOpenAICompletionsPayload(model Model, context Context, options OpenAICompletionsPayloadOptions) OpenAICompletionsPayload {
 	compat := ResolveOpenAICompletionsCompat(model)
 	cacheRetention := resolveCacheRetention(options.CacheRetention)
-	messages := ConvertOpenAICompletionsMessages(model, context, compat)
+	toolPlacement := splitKimiDeferredTools(context, compat.DeferredToolsMode == "kimi")
+	messages := convertOpenAICompletionsMessages(model, context, compat, toolPlacement)
 	payload := OpenAICompletionsPayload{
 		Model:    model.ID,
 		Messages: messages,
@@ -266,8 +300,8 @@ func BuildOpenAICompletionsPayload(model Model, context Context, options OpenAIC
 	if cacheRetention == "long" && compat.SupportsLongCacheRetention {
 		payload.PromptCacheRetention = "24h"
 	}
-	if len(context.Tools) > 0 {
-		payload.Tools = ConvertOpenAICompletionsTools(context.Tools, compat)
+	if len(toolPlacement.Immediate) > 0 {
+		payload.Tools = ConvertOpenAICompletionsTools(toolPlacement.Immediate, compat)
 		if compat.ZAIToolStream {
 			payload.ToolStream = ptrBool(true)
 		}
@@ -345,6 +379,9 @@ func ResolveOpenAICompletionsCompat(model Model) OpenAICompletionsCompat {
 	if compat.SupportsStrictMode != nil {
 		detected.SupportsStrictMode = *compat.SupportsStrictMode
 	}
+	if compat.SupportsOpenAIGrammarTools != nil {
+		detected.SupportsOpenAIGrammarTools = *compat.SupportsOpenAIGrammarTools
+	}
 	if compat.SupportsLongCacheRetention != nil {
 		detected.SupportsLongCacheRetention = *compat.SupportsLongCacheRetention
 	}
@@ -377,6 +414,9 @@ func ResolveOpenAICompletionsCompat(model Model) OpenAICompletionsCompat {
 	}
 	if compat.CacheControlFormat != "" {
 		detected.CacheControlFormat = compat.CacheControlFormat
+	}
+	if compat.DeferredToolsMode != "" {
+		detected.DeferredToolsMode = compat.DeferredToolsMode
 	}
 	return detected
 }

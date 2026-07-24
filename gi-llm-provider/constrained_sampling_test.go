@@ -113,6 +113,37 @@ func TestConstrainedToolSampling(t *testing.T) {
 		}
 	})
 
+	t.Run("applies Anthropic strict-tool compatibility", func(t *testing.T) {
+		strictTool := constrainedSamplingTestTool(&ConstrainedSamplingConfig{
+			Type:   ConstrainedSamplingJSONSchema,
+			Strict: ConstrainedSamplingPrefer,
+		})
+		converted, err := ConvertAnthropicToolsChecked([]Tool{strictTool}, AnthropicToolOptions{
+			SupportsStrictTools: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(converted) != 1 ||
+			converted[0].Strict == nil ||
+			!*converted[0].Strict ||
+			converted[0].InputSchema["type"] != "object" {
+			t.Fatalf("Anthropic strict tool = %#v", converted)
+		}
+
+		required := strictTool
+		required.ConstrainedSampling = &ConstrainedSamplingConfig{
+			Type:   ConstrainedSamplingJSONSchema,
+			Strict: ConstrainedSamplingRequire,
+		}
+		if _, err := ConvertAnthropicToolsChecked(
+			[]Tool{required},
+			AnthropicToolOptions{},
+		); err == nil || !strings.Contains(err.Error(), `tool "sample_tool" requires JSON-schema constrained sampling`) {
+			t.Fatalf("required Anthropic strict error = %v", err)
+		}
+	})
+
 	t.Run("replays grammar calls as custom Responses items", func(t *testing.T) {
 		toolCall := ToolCall("call_1|ctc_1", "sample_tool", map[string]any{})
 		context := Context{

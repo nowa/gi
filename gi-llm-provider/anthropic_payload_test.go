@@ -63,6 +63,26 @@ func TestBuildAnthropicPayloadThinkingDisableAndAdaptive(t *testing.T) {
 	}
 }
 
+func TestAnthropicOmitsTemperatureForCustomModelsWithSupportsTemperatureDisabled(t *testing.T) {
+	model := Model{
+		ID:       "custom-claude",
+		API:      "anthropic-messages",
+		Provider: "anthropic-proxy",
+		Compat: ModelCompat{
+			SupportsTemperature: ptrBool(false),
+		},
+	}
+	temperature := 0.0
+	payload := BuildAnthropicPayload(
+		model,
+		Context{Messages: []Message{UserMessageText("Hello")}},
+		AnthropicPayloadOptions{Temperature: &temperature},
+	)
+	if payload.Temperature != nil {
+		t.Fatalf("temperature = %#v, want omitted", payload.Temperature)
+	}
+}
+
 func TestBuildAnthropicPayloadThinkingBudgetMaxTokensPiParity(t *testing.T) {
 	model := MustGetModel("anthropic", "claude-sonnet-4-5")
 	contextValue := Context{Messages: []Message{UserMessageText("Hello")}}

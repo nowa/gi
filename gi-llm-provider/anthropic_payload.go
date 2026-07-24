@@ -1,6 +1,10 @@
 package gillmprovider
 
-import "strings"
+import (
+	"regexp"
+	"strconv"
+	"strings"
+)
 
 const (
 	fineGrainedToolStreamingBeta = "fine-grained-tool-streaming-2025-05-14"
@@ -27,10 +31,17 @@ var claudeCodeToolNames = []string{
 	"WebSearch",
 }
 
+var anthropicToolReferenceVersionPattern = regexp.MustCompile(
+	`^claude-(?:opus|sonnet|fable)-(\d+)(?:-(\d+))?(?:-|$)`,
+)
+
 type AnthropicCompat struct {
 	SupportsEagerToolInputStreaming bool
 	SupportsCacheControlOnTools     bool
 	SupportsLongCacheRetention      bool
+	SupportsStrictTools             bool
+	SupportsToolReferences          bool
+	SupportsTemperature             bool
 	SendSessionAffinityHeaders      bool
 }
 
@@ -74,6 +85,7 @@ type AnthropicContentBlock struct {
 	Name         string                    `json:"name,omitempty"`
 	Input        map[string]any            `json:"input,omitempty"`
 	ToolUseID    string                    `json:"tool_use_id,omitempty"`
+	ToolName     string                    `json:"tool_name,omitempty"`
 	Content      any                       `json:"content,omitempty"`
 	IsError      bool                      `json:"is_error,omitempty"`
 	Thinking     string                    `json:"thinking,omitempty"`
@@ -92,12 +104,72 @@ type AnthropicTool struct {
 	Name                string                    `json:"name"`
 	Description         string                    `json:"description,omitempty"`
 	EagerInputStreaming *bool                     `json:"eager_input_streaming,omitempty"`
+	Strict              *bool                     `json:"strict,omitempty"`
 	InputSchema         map[string]any            `json:"input_schema"`
+	DeferLoading        bool                      `json:"defer_loading,omitempty"`
 	CacheControl        *OpenAICompatCacheControl `json:"cache_control,omitempty"`
 }
 
-func BuildAnthropicPayload(model Model, context Context, options AnthropicPayloadOptions) AnthropicPayload {
+type AnthropicToolOptions struct {
+	IsOAuthToken                    bool
+	SupportsEagerToolInputStreaming bool
+	SupportsStrictTools             bool
+	CacheControl                    *OpenAICompatCacheControl
+	DeferLoading                    bool
+}
+
+// AnthropicRequestState is resolved once per request so message references and
+// the advertised tool list cannot disagree about deferred placement.
+type AnthropicRequestState struct {
+	Compat            AnthropicCompat
+	ToolPlacement     DeferredToolSet
+	DeferredToolNames map[string]struct{}
+	NormalizeToolName ToolNameNormalizer
+}
+
+func ResolveAnthropicRequestState(model Model, context Context, isOAuthToken bool) AnthropicRequestState {
 	compat := ResolveAnthropicCompat(model)
+	normalizeToolName := ToolNameNormalizer(func(name string) string { return name })
+	if isOAuthToken {
+		normalizeToolName = ToClaudeCodeToolName
+	}
+	toolPlacement := SplitDeferredTools(
+		context,
+		compat.SupportsToolReferences,
+		normalizeToolName,
+	)
+	if len(toolPlacement.Immediate) == 0 && len(toolPlacement.DeferredTools) > 0 {
+		toolPlacement.Immediate = append([]Tool(nil), toolPlacement.DeferredTools...)
+		toolPlacement.Deferred = map[string]Tool{}
+		toolPlacement.DeferredTools = nil
+	}
+	deferredToolNames := make(map[string]struct{}, len(toolPlacement.Deferred))
+	for name := range toolPlacement.Deferred {
+		deferredToolNames[name] = struct{}{}
+	}
+	return AnthropicRequestState{
+		Compat:            compat,
+		ToolPlacement:     toolPlacement,
+		DeferredToolNames: deferredToolNames,
+		NormalizeToolName: normalizeToolName,
+	}
+}
+
+func BuildAnthropicPayload(model Model, context Context, options AnthropicPayloadOptions) AnthropicPayload {
+	payload, _ := buildAnthropicPayload(model, context, options)
+	return payload
+}
+
+func BuildAnthropicPayloadChecked(model Model, context Context, options AnthropicPayloadOptions) (AnthropicPayload, error) {
+	return buildAnthropicPayload(model, context, options)
+}
+
+func buildAnthropicPayload(model Model, context Context, options AnthropicPayloadOptions) (AnthropicPayload, error) {
+	transformed := transformAnthropicMessages(model, context.Messages)
+	transformedContext := context
+	transformedContext.Messages = transformed
+	state := ResolveAnthropicRequestState(model, transformedContext, options.IsOAuthToken)
+	compat := state.Compat
 	cacheControl := anthropicCacheControl(options.CacheRetention, compat)
 	reasoning := options.Reasoning
 	if reasoning == "off" {
@@ -108,23 +180,55 @@ func BuildAnthropicPayload(model Model, context Context, options AnthropicPayloa
 		maxTokens = model.MaxTokens
 	}
 	payload := AnthropicPayload{
-		Model:     model.ID,
-		Messages:  ConvertAnthropicMessages(model, context, options.IsOAuthToken, cacheControl),
+		Model: model.ID,
+		Messages: convertAnthropicMessages(
+			transformed,
+			options.IsOAuthToken,
+			cacheControl,
+			state.DeferredToolNames,
+			state.NormalizeToolName,
+		),
 		System:    buildAnthropicSystem(context.SystemPrompt, options.IsOAuthToken, cacheControl),
 		MaxTokens: maxTokens,
 		Stream:    true,
 	}
-	if len(context.Tools) > 0 {
+	if len(state.ToolPlacement.Immediate) > 0 || len(state.ToolPlacement.DeferredTools) > 0 {
 		var toolCacheControl *OpenAICompatCacheControl
 		if compat.SupportsCacheControlOnTools {
 			toolCacheControl = cacheControl
 		}
-		payload.Tools = ConvertAnthropicTools(context.Tools, options.IsOAuthToken, compat.SupportsEagerToolInputStreaming, toolCacheControl)
+		immediateTools, err := ConvertAnthropicToolsChecked(
+			state.ToolPlacement.Immediate,
+			AnthropicToolOptions{
+				IsOAuthToken:                    options.IsOAuthToken,
+				SupportsEagerToolInputStreaming: compat.SupportsEagerToolInputStreaming,
+				SupportsStrictTools:             compat.SupportsStrictTools,
+				CacheControl:                    toolCacheControl,
+			},
+		)
+		if err != nil {
+			return AnthropicPayload{}, err
+		}
+		deferredTools, err := ConvertAnthropicToolsChecked(
+			state.ToolPlacement.DeferredTools,
+			AnthropicToolOptions{
+				IsOAuthToken:                    options.IsOAuthToken,
+				SupportsEagerToolInputStreaming: compat.SupportsEagerToolInputStreaming,
+				SupportsStrictTools:             compat.SupportsStrictTools,
+				DeferLoading:                    true,
+			},
+		)
+		if err != nil {
+			return AnthropicPayload{}, err
+		}
+		payload.Tools = append(immediateTools, deferredTools...)
 	}
 	if model.Reasoning {
 		if reasoning == "" {
 			payload.Thinking = map[string]any{"type": "disabled"}
-			payload.Temperature = options.Temperature
+			if compat.SupportsTemperature {
+				payload.Temperature = options.Temperature
+			}
 		} else if SupportsAnthropicAdaptiveThinking(model) {
 			display := options.ThinkingDisplay
 			if display == "" {
@@ -142,12 +246,14 @@ func BuildAnthropicPayload(model Model, context Context, options AnthropicPayloa
 			payload.Thinking = map[string]any{"type": "enabled", "budget_tokens": budget, "display": display}
 		}
 	} else {
-		payload.Temperature = options.Temperature
+		if compat.SupportsTemperature {
+			payload.Temperature = options.Temperature
+		}
 	}
 	if userID, ok := options.Metadata["user_id"].(string); ok {
 		payload.Metadata = map[string]any{"user_id": userID}
 	}
-	return payload
+	return payload, nil
 }
 
 func BuildAnthropicHeaders(model Model, context Context, options AnthropicPayloadOptions) map[string]string {
@@ -178,9 +284,36 @@ func BuildAnthropicHeaders(model Model, context Context, options AnthropicPayloa
 }
 
 func ConvertAnthropicMessages(model Model, context Context, isOAuthToken bool, cacheControl *OpenAICompatCacheControl) []AnthropicMessage {
-	transformed := TransformMessages(context.Messages, model, func(id string, _ Model, _ Message) string {
+	transformed := transformAnthropicMessages(model, context.Messages)
+	transformedContext := context
+	transformedContext.Messages = transformed
+	state := ResolveAnthropicRequestState(model, transformedContext, isOAuthToken)
+	return convertAnthropicMessages(
+		transformed,
+		isOAuthToken,
+		cacheControl,
+		state.DeferredToolNames,
+		state.NormalizeToolName,
+	)
+}
+
+func transformAnthropicMessages(model Model, messages []Message) []Message {
+	return TransformMessages(messages, model, func(id string, _ Model, _ Message) string {
 		return normalizeAnthropicToolCallID(id)
 	})
+}
+
+func convertAnthropicMessages(
+	transformed []Message,
+	isOAuthToken bool,
+	cacheControl *OpenAICompatCacheControl,
+	deferredToolNames map[string]struct{},
+	normalizeToolName ToolNameNormalizer,
+) []AnthropicMessage {
+	if normalizeToolName == nil {
+		normalizeToolName = func(name string) string { return name }
+	}
+	loadedToolNames := make(map[string]struct{})
 	result := make([]AnthropicMessage, 0, len(transformed))
 	for i := 0; i < len(transformed); i++ {
 		message := transformed[i]
@@ -196,12 +329,21 @@ func ConvertAnthropicMessages(model Model, context Context, isOAuthToken bool, c
 				result = append(result, AnthropicMessage{Role: "assistant", Content: blocks})
 			}
 		case RoleToolResult:
-			blocks := []AnthropicContentBlock{convertAnthropicToolResult(message)}
-			j := i + 1
+			toolResults := make([]AnthropicContentBlock, 0)
+			siblingContent := make([]AnthropicContentBlock, 0)
+			j := i
 			for ; j < len(transformed) && transformed[j].Role == RoleToolResult; j++ {
-				blocks = append(blocks, convertAnthropicToolResult(transformed[j]))
+				toolResult, siblings := convertAnthropicToolResult(
+					transformed[j],
+					deferredToolNames,
+					loadedToolNames,
+					normalizeToolName,
+				)
+				toolResults = append(toolResults, toolResult)
+				siblingContent = append(siblingContent, siblings...)
 			}
 			i = j - 1
+			blocks := append(toolResults, siblingContent...)
 			result = append(result, AnthropicMessage{Role: "user", Content: blocks})
 		}
 	}
@@ -212,10 +354,19 @@ func ConvertAnthropicMessages(model Model, context Context, isOAuthToken bool, c
 }
 
 func ConvertAnthropicTools(tools []Tool, isOAuthToken bool, supportsEagerToolInputStreaming bool, cacheControl *OpenAICompatCacheControl) []AnthropicTool {
+	converted, _ := ConvertAnthropicToolsChecked(tools, AnthropicToolOptions{
+		IsOAuthToken:                    isOAuthToken,
+		SupportsEagerToolInputStreaming: supportsEagerToolInputStreaming,
+		CacheControl:                    cacheControl,
+	})
+	return converted
+}
+
+func ConvertAnthropicToolsChecked(tools []Tool, options AnthropicToolOptions) ([]AnthropicTool, error) {
 	result := make([]AnthropicTool, 0, len(tools))
 	for i, tool := range tools {
 		name := tool.Name
-		if isOAuthToken {
+		if options.IsOAuthToken {
 			name = ToClaudeCodeToolName(name)
 		}
 		schema := SchemaToMap(tool.Parameters)
@@ -232,20 +383,40 @@ func ConvertAnthropicTools(tools []Tool, isOAuthToken bool, supportsEagerToolInp
 		if required != nil {
 			inputSchema["required"] = required
 		}
-		converted := AnthropicTool{
-			Name:        name,
-			Description: tool.Description,
-			InputSchema: inputSchema,
+		strict, err := ResolveJSONSchemaStrictSampling(tool, options.SupportsStrictTools)
+		if err != nil {
+			return nil, err
 		}
-		if supportsEagerToolInputStreaming {
+		if strict != nil && *strict {
+			inputSchema = schema
+			inputSchema["type"] = "object"
+			inputSchema["properties"] = map[string]any{}
+			inputSchema["required"] = []any{}
+			if properties != nil {
+				inputSchema["properties"] = properties
+			}
+			if required != nil {
+				inputSchema["required"] = required
+			}
+		}
+		converted := AnthropicTool{
+			Name:         name,
+			Description:  tool.Description,
+			InputSchema:  inputSchema,
+			DeferLoading: options.DeferLoading,
+		}
+		if strict != nil && *strict {
+			converted.Strict = ptrBool(true)
+		}
+		if options.SupportsEagerToolInputStreaming {
 			converted.EagerInputStreaming = ptrBool(true)
 		}
-		if cacheControl != nil && i == len(tools)-1 {
-			converted.CacheControl = cacheControl
+		if options.CacheControl != nil && i == len(tools)-1 {
+			converted.CacheControl = options.CacheControl
 		}
 		result = append(result, converted)
 	}
-	return result
+	return result, nil
 }
 
 func ResolveAnthropicCompat(model Model) AnthropicCompat {
@@ -253,6 +424,8 @@ func ResolveAnthropicCompat(model Model) AnthropicCompat {
 		SupportsEagerToolInputStreaming: true,
 		SupportsCacheControlOnTools:     true,
 		SupportsLongCacheRetention:      true,
+		SupportsTemperature:             true,
+		SupportsToolReferences:          defaultSupportsToolReferences(model),
 	}
 	if model.Compat.SupportsEagerToolInputStreaming != nil {
 		compat.SupportsEagerToolInputStreaming = *model.Compat.SupportsEagerToolInputStreaming
@@ -263,10 +436,39 @@ func ResolveAnthropicCompat(model Model) AnthropicCompat {
 	if model.Compat.SupportsLongCacheRetention != nil {
 		compat.SupportsLongCacheRetention = *model.Compat.SupportsLongCacheRetention
 	}
+	if model.Compat.SupportsStrictTools != nil {
+		compat.SupportsStrictTools = *model.Compat.SupportsStrictTools
+	}
+	if model.Compat.SupportsToolReferences != nil {
+		compat.SupportsToolReferences = *model.Compat.SupportsToolReferences
+	}
+	if model.Compat.SupportsTemperature != nil {
+		compat.SupportsTemperature = *model.Compat.SupportsTemperature
+	}
 	if model.Compat.SendSessionAffinityHeaders != nil {
 		compat.SendSessionAffinityHeaders = *model.Compat.SendSessionAffinityHeaders
 	}
 	return compat
+}
+
+func defaultSupportsToolReferences(model Model) bool {
+	id := strings.ToLower(model.ID)
+	if model.Provider != "anthropic" || strings.Contains(id, "haiku") {
+		return false
+	}
+	version := anthropicToolReferenceVersionPattern.FindStringSubmatch(id)
+	if len(version) == 0 {
+		return false
+	}
+	major, err := strconv.Atoi(version[1])
+	if err != nil {
+		return false
+	}
+	minor := 0
+	if len(version) > 2 && version[2] != "" && len(version[2]) < 8 {
+		minor, _ = strconv.Atoi(version[2])
+	}
+	return major > 4 || major == 4 && minor >= 5
 }
 
 func ToClaudeCodeToolName(name string) string {
@@ -389,12 +591,46 @@ func convertAnthropicAssistantContent(message Message, isOAuthToken bool) []Anth
 	return blocks
 }
 
-func convertAnthropicToolResult(message Message) AnthropicContentBlock {
-	return AnthropicContentBlock{
+func convertAnthropicToolResult(
+	message Message,
+	deferredToolNames map[string]struct{},
+	loadedToolNames map[string]struct{},
+	normalizeToolName ToolNameNormalizer,
+) (AnthropicContentBlock, []AnthropicContentBlock) {
+	references := make([]AnthropicContentBlock, 0, len(message.AddedToolNames))
+	for _, name := range message.AddedToolNames {
+		normalizedName := normalizeToolName(name)
+		if _, deferred := deferredToolNames[normalizedName]; !deferred {
+			continue
+		}
+		if _, loaded := loadedToolNames[normalizedName]; loaded {
+			continue
+		}
+		loadedToolNames[normalizedName] = struct{}{}
+		references = append(references, AnthropicContentBlock{
+			Type:     "tool_reference",
+			ToolName: normalizedName,
+		})
+	}
+
+	convertedContent := convertAnthropicToolResultContent(message.Content)
+	toolResult := AnthropicContentBlock{
 		Type:      "tool_result",
 		ToolUseID: message.ToolCallID,
-		Content:   convertAnthropicToolResultContent(message.Content),
+		Content:   convertedContent,
 		IsError:   message.IsError,
+	}
+	if len(references) == 0 {
+		return toolResult, nil
+	}
+	toolResult.Content = references
+	switch content := convertedContent.(type) {
+	case string:
+		return toolResult, []AnthropicContentBlock{{Type: "text", Text: content}}
+	case []AnthropicContentBlock:
+		return toolResult, content
+	default:
+		return toolResult, nil
 	}
 }
 

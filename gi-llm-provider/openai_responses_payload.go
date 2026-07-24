@@ -7,6 +7,7 @@ type OpenAIResponsesCompat struct {
 	SupportsLongCacheRetention bool
 	SupportsStrictMode         bool
 	SupportsOpenAIGrammarTools bool
+	SupportsToolSearch         bool
 }
 
 type OpenAIResponsesPayloadOptions struct {
@@ -153,6 +154,9 @@ func ResolveOpenAIResponsesCompat(model Model) OpenAIResponsesCompat {
 	if model.Compat.SupportsOpenAIGrammarTools != nil {
 		compat.SupportsOpenAIGrammarTools = *model.Compat.SupportsOpenAIGrammarTools
 	}
+	if model.Compat.SupportsToolSearch != nil {
+		compat.SupportsToolSearch = *model.Compat.SupportsToolSearch
+	}
 	return compat
 }
 
@@ -168,9 +172,9 @@ func buildOpenAIResponsesPayload(
 ) (OpenAIResponsesPayload, OpenAIResponsesSamplingState, error) {
 	cacheRetention := resolveCacheRetention(options.CacheRetention)
 	compat := ResolveOpenAIResponsesCompat(model)
-	sampling, err := ResolveOpenAIResponsesSamplingState(
+	requestState, err := ResolveOpenAIResponsesRequestState(
 		model,
-		context.Tools,
+		context,
 		OpenAIResponsesSamplingDefaults{
 			Strict: OpenAIResponsesStrictDefaultFalse,
 		},
@@ -179,7 +183,9 @@ func buildOpenAIResponsesPayload(
 		return OpenAIResponsesPayload{}, OpenAIResponsesSamplingState{}, err
 	}
 	input, err := ConvertOpenAIResponsesMessagesChecked(model, context, ConvertOpenAIResponsesOptions{
-		GrammarToolInputProperties: sampling.GrammarToolInputProperties,
+		GrammarToolInputProperties: requestState.Sampling.GrammarToolInputProperties,
+		DeferredTools:              requestState.ToolPlacement.Deferred,
+		ToolOptions:                requestState.Sampling.ToolOptions,
 	})
 	if err != nil {
 		return OpenAIResponsesPayload{}, OpenAIResponsesSamplingState{}, err
@@ -205,14 +211,17 @@ func buildOpenAIResponsesPayload(
 	if options.ServiceTier != "" {
 		payload.ServiceTier = options.ServiceTier
 	}
-	if len(context.Tools) > 0 {
-		payload.Tools, err = ConvertOpenAIResponsesToolsChecked(context.Tools, sampling.ToolOptions)
+	if len(requestState.ToolPlacement.Immediate) > 0 {
+		payload.Tools, err = ConvertOpenAIResponsesToolsChecked(
+			requestState.ToolPlacement.Immediate,
+			requestState.Sampling.ToolOptions,
+		)
 		if err != nil {
 			return OpenAIResponsesPayload{}, OpenAIResponsesSamplingState{}, err
 		}
 	}
 	applyOpenAIResponsesReasoning(&payload, model, options)
-	return payload, sampling, nil
+	return payload, requestState.Sampling, nil
 }
 
 func BuildOpenAIResponsesPayloadChecked(model Model, context Context, options OpenAIResponsesPayloadOptions) (OpenAIResponsesPayload, error) {

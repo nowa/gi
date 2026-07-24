@@ -211,7 +211,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/context-overflow.test.ts` | `gi-llm-provider/overflow_test.go` |
 | `packages/ai/test/constrained-sampling.test.ts` | `gi-llm-provider/constrained_sampling_test.go` for strict/grammar fallback, custom-call replay, append-only argument deltas, shared OpenAI/Azure/Codex request state, and indexed custom-call streaming |
 | `packages/ai/test/cross-provider-handoff.test.ts` | `gi-llm-provider/cross_provider_handoff_test.go` |
-| `packages/ai/test/deferred-tools.test.ts` | `gi-llm-provider/deferred_tools_test.go` for deterministic normalized immediate/deferred classification; provider-specific serialization cases remain tracked by the active v0.82.0 debt snapshot |
+| `packages/ai/test/deferred-tools.test.ts` | `gi-llm-provider/deferred_tools_test.go` for deterministic normalized placement; Anthropic `tool_reference` replay with OAuth normalization, sibling content, compatibility overrides, and all-deferred fallback; Kimi batched system tool schemas; OpenAI Responses/Codex client `tool_search` loading; and unsupported-provider fallbacks |
 | `packages/ai/test/empty.test.ts` | `gi-llm-provider/provider_contracts_test.go` |
 | `packages/ai/test/google-shared-convert-tools.test.ts` | `gi-llm-provider/google_convert_test.go` |
 | `packages/ai/test/google-shared-gemini3-unsigned-tool-call.test.ts` | `gi-llm-provider/google_convert_test.go` |

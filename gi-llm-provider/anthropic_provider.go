@@ -43,7 +43,10 @@ func (p AnthropicMessagesProvider) StreamSimple(model Model, llmContext Context,
 		Headers:         options.Headers,
 		IsOAuthToken:    isOAuthToken,
 	}
-	payload := BuildAnthropicPayload(model, llmContext, payloadOptions)
+	payload, err := BuildAnthropicPayloadChecked(model, llmContext, payloadOptions)
+	if err != nil {
+		return streamError(model, "%s", err.Error()), nil
+	}
 	payloadAny := any(payload)
 	if options.OnPayload != nil {
 		next, replace, err := options.OnPayload(payloadAny, model)

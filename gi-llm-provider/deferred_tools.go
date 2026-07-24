@@ -3,11 +3,13 @@ package gillmprovider
 // ToolNameNormalizer maps provider-facing aliases to one comparison key.
 type ToolNameNormalizer func(string) string
 
-// DeferredToolSet is the immutable request-time split between tools sent in
-// the request prefix and tools loaded at transcript markers.
+// DeferredToolSet is the request-time split between tools sent in the request
+// prefix and tools loaded at transcript markers. Callers treat it as read-only
+// after resolution.
 type DeferredToolSet struct {
-	Immediate []Tool
-	Deferred  map[string]Tool
+	Immediate     []Tool
+	Deferred      map[string]Tool
+	DeferredTools []Tool
 }
 
 // SplitDeferredTools classifies the current tool registry against transcript
@@ -56,15 +58,76 @@ func SplitDeferredTools(context Context, enabled bool, normalizeName ToolNameNor
 	}
 
 	result := DeferredToolSet{
-		Immediate: make([]Tool, 0, len(order)),
-		Deferred:  make(map[string]Tool, len(deferredNames)),
+		Immediate:     make([]Tool, 0, len(order)),
+		Deferred:      make(map[string]Tool, len(deferredNames)),
+		DeferredTools: make([]Tool, 0, len(deferredNames)),
 	}
 	for _, name := range order {
 		tool := uniqueTools[name]
 		if _, deferred := deferredNames[name]; deferred {
 			result.Deferred[name] = tool
+			result.DeferredTools = append(result.DeferredTools, tool)
 		} else {
 			result.Immediate = append(result.Immediate, tool)
+		}
+	}
+	return result
+}
+
+// splitKimiDeferredTools implements Kimi's system-message loading contract.
+// Unlike tool-reference protocols, every schema named by a marker is removed
+// from the request prefix, because the provider consumes the schema only from
+// the system message emitted after that tool-result batch.
+func splitKimiDeferredTools(context Context, enabled bool) DeferredToolSet {
+	if !enabled {
+		return DeferredToolSet{
+			Immediate: append([]Tool(nil), context.Tools...),
+			Deferred:  map[string]Tool{},
+		}
+	}
+
+	deferredNames := getDeferredToolNames(context.Messages)
+
+	result := DeferredToolSet{
+		Immediate:     make([]Tool, 0, len(context.Tools)),
+		Deferred:      make(map[string]Tool, len(deferredNames)),
+		DeferredTools: make([]Tool, 0, len(deferredNames)),
+	}
+	deferredIndexes := make(map[string]int, len(deferredNames))
+	for _, tool := range context.Tools {
+		if _, deferred := deferredNames[tool.Name]; deferred {
+			if index, exists := deferredIndexes[tool.Name]; exists {
+				result.DeferredTools[index] = tool
+			} else {
+				deferredIndexes[tool.Name] = len(result.DeferredTools)
+				result.DeferredTools = append(result.DeferredTools, tool)
+			}
+			result.Deferred[tool.Name] = tool
+			continue
+		}
+		result.Immediate = append(result.Immediate, tool)
+	}
+	return result
+}
+
+func getDeferredToolNames(messages []Message) map[string]struct{} {
+	names := make(map[string]struct{})
+	for _, message := range messages {
+		if message.Role != RoleToolResult {
+			continue
+		}
+		for _, name := range message.AddedToolNames {
+			names[name] = struct{}{}
+		}
+	}
+	return names
+}
+
+func getToolsByName(tools map[string]Tool, names []string) []Tool {
+	result := make([]Tool, 0, len(names))
+	for _, name := range names {
+		if tool, ok := tools[name]; ok {
+			result = append(result, tool)
 		}
 	}
 	return result

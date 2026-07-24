@@ -102,9 +102,9 @@ func buildOpenAICodexResponsesPayload(
 	if instructions == "" {
 		instructions = "You are a helpful assistant."
 	}
-	sampling, err := ResolveOpenAIResponsesSamplingState(
+	requestState, err := ResolveOpenAIResponsesRequestState(
 		model,
-		context.Tools,
+		context,
 		OpenAIResponsesSamplingDefaults{
 			SupportsStrictMode: true,
 			Strict:             OpenAIResponsesStrictDefaultNull,
@@ -115,7 +115,9 @@ func buildOpenAICodexResponsesPayload(
 	}
 	input, err := ConvertOpenAIResponsesMessagesChecked(model, context, ConvertOpenAIResponsesOptions{
 		IncludeSystemPrompt:        ptrBool(false),
-		GrammarToolInputProperties: sampling.GrammarToolInputProperties,
+		GrammarToolInputProperties: requestState.Sampling.GrammarToolInputProperties,
+		DeferredTools:              requestState.ToolPlacement.Deferred,
+		ToolOptions:                requestState.Sampling.ToolOptions,
 	})
 	if err != nil {
 		return OpenAICodexResponsesPayload{}, OpenAIResponsesSamplingState{}, err
@@ -138,8 +140,11 @@ func buildOpenAICodexResponsesPayload(
 	if options.ServiceTier != "" {
 		payload.ServiceTier = options.ServiceTier
 	}
-	if len(context.Tools) > 0 {
-		payload.Tools, err = ConvertOpenAIResponsesToolsChecked(context.Tools, sampling.ToolOptions)
+	if len(requestState.ToolPlacement.Immediate) > 0 {
+		payload.Tools, err = ConvertOpenAIResponsesToolsChecked(
+			requestState.ToolPlacement.Immediate,
+			requestState.Sampling.ToolOptions,
+		)
 		if err != nil {
 			return OpenAICodexResponsesPayload{}, OpenAIResponsesSamplingState{}, err
 		}
@@ -154,7 +159,7 @@ func buildOpenAICodexResponsesPayload(
 			payload.Reasoning = map[string]string{"effort": effort, "summary": summary}
 		}
 	}
-	return payload, sampling, nil
+	return payload, requestState.Sampling, nil
 }
 
 func GetOpenAICodexWebSocketDebugStats(sessionID string) (OpenAICodexWebSocketDebugStats, bool) {

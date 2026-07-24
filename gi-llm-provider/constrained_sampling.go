@@ -27,16 +27,44 @@ type GrammarToolInputJSONBuffer struct {
 	Closed  bool
 }
 
-// OpenAIResponsesSamplingState is the immutable sampling snapshot shared by
-// request conversion and stream decoding.
+// OpenAIResponsesSamplingState is the request-owned sampling snapshot shared
+// by request conversion and stream decoding.
 type OpenAIResponsesSamplingState struct {
 	ToolOptions                OpenAIResponsesToolOptions
 	GrammarToolInputProperties map[string]string
 }
 
+// OpenAIResponsesRequestState is the request-owned snapshot shared by payload
+// construction and transcript replay. Grammar classification always sees the
+// complete tool registry, while ToolPlacement controls which schemas are sent
+// in the request prefix and which are loaded from transcript markers.
+type OpenAIResponsesRequestState struct {
+	Sampling      OpenAIResponsesSamplingState
+	ToolPlacement DeferredToolSet
+}
+
 type OpenAIResponsesSamplingDefaults struct {
 	SupportsStrictMode bool
 	Strict             OpenAIResponsesStrictDefault
+}
+
+func ResolveOpenAIResponsesRequestState(
+	model Model,
+	context Context,
+	defaults OpenAIResponsesSamplingDefaults,
+) (OpenAIResponsesRequestState, error) {
+	sampling, err := ResolveOpenAIResponsesSamplingState(model, context.Tools, defaults)
+	if err != nil {
+		return OpenAIResponsesRequestState{}, err
+	}
+	supportsToolSearch := false
+	if model.Compat.SupportsToolSearch != nil {
+		supportsToolSearch = *model.Compat.SupportsToolSearch
+	}
+	return OpenAIResponsesRequestState{
+		Sampling:      sampling,
+		ToolPlacement: SplitDeferredTools(context, supportsToolSearch, nil),
+	}, nil
 }
 
 func ResolveOpenAIResponsesSamplingState(

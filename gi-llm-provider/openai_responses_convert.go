@@ -7,19 +7,72 @@ import (
 )
 
 type OpenAIResponsesInputItem struct {
-	Type             string                       `json:"type,omitempty"`
-	Role             string                       `json:"role,omitempty"`
-	Content          any                          `json:"content,omitempty"`
-	Summary          []OpenAIResponsesContentPart `json:"summary,omitempty"`
-	ID               string                       `json:"id,omitempty"`
-	CallID           string                       `json:"call_id,omitempty"`
-	Name             string                       `json:"name,omitempty"`
-	Arguments        string                       `json:"arguments,omitempty"`
-	Input            string                       `json:"input,omitempty"`
-	Output           any                          `json:"output,omitempty"`
-	Status           string                       `json:"status,omitempty"`
-	Phase            string                       `json:"phase,omitempty"`
-	EncryptedContent string                       `json:"encrypted_content,omitempty"`
+	Type                string                              `json:"type,omitempty"`
+	Role                string                              `json:"role,omitempty"`
+	Content             any                                 `json:"content,omitempty"`
+	Summary             []OpenAIResponsesContentPart        `json:"summary,omitempty"`
+	ID                  string                              `json:"id,omitempty"`
+	CallID              string                              `json:"call_id,omitempty"`
+	Name                string                              `json:"name,omitempty"`
+	Arguments           string                              `json:"arguments,omitempty"`
+	ToolSearchArguments *OpenAIResponsesToolSearchArguments `json:"-"`
+	Input               string                              `json:"input,omitempty"`
+	Output              any                                 `json:"output,omitempty"`
+	Status              string                              `json:"status,omitempty"`
+	Execution           string                              `json:"execution,omitempty"`
+	Tools               []OpenAIResponsesTool               `json:"tools,omitempty"`
+	Phase               string                              `json:"phase,omitempty"`
+	EncryptedContent    string                              `json:"encrypted_content,omitempty"`
+}
+
+type OpenAIResponsesToolSearchArguments struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit"`
+}
+
+func (item OpenAIResponsesInputItem) MarshalJSON() ([]byte, error) {
+	type alias OpenAIResponsesInputItem
+	raw, err := json.Marshal(alias(item))
+	if err != nil || item.ToolSearchArguments == nil {
+		return raw, err
+	}
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return nil, err
+	}
+	object["arguments"] = item.ToolSearchArguments
+	return json.Marshal(object)
+}
+
+func (item *OpenAIResponsesInputItem) UnmarshalJSON(data []byte) error {
+	type alias OpenAIResponsesInputItem
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	arguments := fields["arguments"]
+	delete(fields, "arguments")
+	withoutArguments, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	*item = OpenAIResponsesInputItem{}
+	if err := json.Unmarshal(withoutArguments, (*alias)(item)); err != nil {
+		return err
+	}
+	if len(arguments) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(arguments, &item.Arguments); err == nil {
+		return nil
+	}
+	item.Arguments = ""
+	var searchArguments OpenAIResponsesToolSearchArguments
+	if err := json.Unmarshal(arguments, &searchArguments); err != nil {
+		return err
+	}
+	item.ToolSearchArguments = &searchArguments
+	return nil
 }
 
 type OpenAIResponsesContentPart struct {
@@ -34,6 +87,8 @@ type ConvertOpenAIResponsesOptions struct {
 	AllowedToolCallProviders   map[string]bool
 	IncludeSystemPrompt        *bool
 	GrammarToolInputProperties map[string]string
+	DeferredTools              map[string]Tool
+	ToolOptions                OpenAIResponsesToolOptions
 }
 
 func ConvertOpenAIResponsesMessages(model Model, context Context, options ConvertOpenAIResponsesOptions) []OpenAIResponsesInputItem {
@@ -69,6 +124,7 @@ func ConvertOpenAIResponsesMessagesChecked(
 	}
 
 	messageIndex := 0
+	loadedToolNames := make(map[string]struct{})
 	for _, message := range transformed {
 		switch message.Role {
 		case RoleUser:
@@ -141,6 +197,50 @@ func ConvertOpenAIResponsesMessagesChecked(
 				itemType = "custom_tool_call_output"
 			}
 			items = append(items, OpenAIResponsesInputItem{Type: itemType, CallID: callID, Output: output})
+
+			deferredTools := make([]Tool, 0, len(message.AddedToolNames))
+			for _, name := range message.AddedToolNames {
+				tool, ok := options.DeferredTools[name]
+				if !ok {
+					continue
+				}
+				if _, loaded := loadedToolNames[name]; loaded {
+					continue
+				}
+				loadedToolNames[name] = struct{}{}
+				deferredTools = append(deferredTools, tool)
+			}
+			if len(deferredTools) == 0 {
+				continue
+			}
+			names := make([]string, 0, len(deferredTools))
+			for _, tool := range deferredTools {
+				names = append(names, tool.Name)
+			}
+			searchCallID := "pi_tool_load_" + shortHash(message.ToolCallID+":"+strings.Join(names, ","))
+			items = append(items, OpenAIResponsesInputItem{
+				Type:      "tool_search_call",
+				CallID:    searchCallID,
+				Execution: "client",
+				Status:    "completed",
+				ToolSearchArguments: &OpenAIResponsesToolSearchArguments{
+					Query: strings.Join(names, " "),
+					Limit: len(names),
+				},
+			})
+			toolOptions := options.ToolOptions
+			toolOptions.DeferLoading = true
+			convertedTools, err := ConvertOpenAIResponsesToolsChecked(deferredTools, toolOptions)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, OpenAIResponsesInputItem{
+				Type:      "tool_search_output",
+				CallID:    searchCallID,
+				Execution: "client",
+				Status:    "completed",
+				Tools:     convertedTools,
+			})
 		}
 	}
 	return items, nil
