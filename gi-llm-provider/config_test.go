@@ -19,7 +19,7 @@ func TestNormalizeAzureOpenAIBaseURL(t *testing.T) {
 			want:  "https://my-resource.openai.azure.com/openai/v1",
 		},
 		{
-			name:  "normalizes openai to openai v1",
+			name:  "normalizes /openai to /openai/v1",
 			input: "https://my-resource.cognitiveservices.azure.com/openai",
 			want:  "https://my-resource.cognitiveservices.azure.com/openai/v1",
 		},
@@ -60,6 +60,18 @@ func TestNormalizeAzureOpenAIBaseURL(t *testing.T) {
 			t.Fatal("expected invalid URL error")
 		}
 	})
+}
+
+func TestAzureOpenAIBaseURLNormalizesOpenAIToOpenAIV1(t *testing.T) {
+	got, err := NormalizeAzureOpenAIBaseURL(
+		"https://my-resource.cognitiveservices.azure.com/openai",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "https://my-resource.cognitiveservices.azure.com/openai/v1" {
+		t.Fatalf("base URL = %q", got)
+	}
 }
 
 func TestResolveAzureOpenAIConfigBuildsDefaultFromResourceName(t *testing.T) {

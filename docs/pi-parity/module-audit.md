@@ -148,7 +148,7 @@ The member-level source inventory currently reports:
 
 | Module | Pi source files | Gi production files | Pi symbols | Missing Pi files | Missing Pi symbols |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 169 | 87 | 632 | 28 | 54 |
+| LLM provider | 169 | 88 | 632 | 28 | 51 |
 | Agent core | 35 | 35 | 327 | 0 | 0 |
 | TUI | 28 | 32 | 449 | 0 | 0 |
 | Coding agent | 177 | 172 | 2115 | 27 | 398 |
@@ -378,6 +378,7 @@ Observed direct coverage:
 - Pi assistant-message diagnostics in `utils/diagnostics.ts` now map to Gi `diagnostics.go` plus the `Message.Diagnostics` field. Gi uses this for OpenAI Codex transport fallback reporting.
 - Pi OpenAI Codex WebSocket transport maps to Gi's synchronized connection leases, 55-minute age rotation, five-minute idle cleanup, continuation deltas, retryable backend state errors, and session debug/reset/close helpers. A `provider_transport_failure` diagnostic accompanies SSE fallback only when the WebSocket fails before stream start.
 - Pi OpenAI Codex request timing and retry policy map to one immutable Go execution snapshot shared by SSE and WebSocket paths. SSE header deadlines stop once headers arrive without cancelling body streaming; retry parsing accepts fractional and HTTP-date headers, rejects terminal quota failures, and enforces the default 60-second server-delay ceiling through a typed error.
+- Pi OpenAI Codex SSE request compression maps to a reusable pure-Go level-3 zstd encoder. A prepared request clones headers and owns one compressed byte slice reused across attempts, while the WebSocket path continues to send plain JSON frames.
 - Pi `utils/json-parse.ts` maps to Gi `RepairJSON`, `UnmarshalJSONWithRepair`, and `parseStreamingJSONObject`; the streaming parser now repairs common partial objects so tool arguments can appear before the final JSON delta.
 - Pi `utils/hash.ts`, `headers.ts`, `node-http-proxy.ts`, `sanitize-unicode.ts`, and `validation.ts` map to Gi `shortHash`, `responseHeaders`, `http_proxy.go`, `SanitizeSurrogates`, and `validation.go`. `ValidateToolCall` is present for the Pi-level "find tool by name, then validate arguments" contract.
 - Pi `utils/typebox-helpers.ts` `StringEnum` maps to Gi `StringEnum` / `StringEnumWithOptions`, and Gi validation now enforces `Schema.Enum`.
@@ -566,8 +567,8 @@ remaining question is whether Gi provider/runtime is creating thinking blocks in
 cases where Pi would not. The OpenAI Responses/Codex SSE parser now matches Pi's
 summary-part guard for this path, and OpenAI-compatible Chat Completions now
 uses the same lifecycle event shape as Pi for reasoning/tool streams. Codex
-WebSocket reuse/cache/continuation parity is now covered separately from the
-remaining optional SSE request-compression gap.
+WebSocket reuse/cache/continuation and SSE request-compression parity are now
+covered by separate transport-focused tests.
 
 ## Completion Criteria
 

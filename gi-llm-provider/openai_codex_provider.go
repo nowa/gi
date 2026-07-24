@@ -193,6 +193,10 @@ func (p OpenAICodexResponsesProvider) postWithRetry(
 ) (*http.Response, error) {
 	client := httpClientOrDefault(p.Client)
 	endpoint := ResolveOpenAICodexURL(model.BaseURL)
+	sseRequest, err := prepareOpenAICodexSSERequest(payload, headers)
+	if err != nil {
+		return nil, fmt.Errorf("encode Codex SSE request: %w", err)
+	}
 	var lastErr error
 	for attempt := 0; attempt <= execution.maxRetries; attempt++ {
 		if err := ctx.Err(); err != nil {
@@ -202,8 +206,7 @@ func (p OpenAICodexResponsesProvider) postWithRetry(
 			ctx,
 			client,
 			endpoint,
-			headers,
-			payload,
+			sseRequest,
 			execution.sseResponseHeaderTimeout,
 		)
 		if err != nil {
@@ -272,12 +275,11 @@ func postOpenAICodexSSEWithHeaderTimeout(
 	ctx context.Context,
 	client HTTPDoer,
 	endpoint string,
-	headers map[string]string,
-	payload any,
+	request openAICodexSSERequest,
 	timeout time.Duration,
 ) (*http.Response, error) {
 	if timeout <= 0 {
-		return postSSE(ctx, client, endpoint, headers, payload)
+		return postOpenAICodexSSE(ctx, client, endpoint, request)
 	}
 
 	requestContext, cancel := context.WithCancel(ctx)
@@ -286,7 +288,7 @@ func postOpenAICodexSSEWithHeaderTimeout(
 		close(timeoutDone)
 		cancel()
 	})
-	response, err := postSSE(requestContext, client, endpoint, headers, payload)
+	response, err := postOpenAICodexSSE(requestContext, client, endpoint, request)
 	if !timer.Stop() {
 		<-timeoutDone
 	}

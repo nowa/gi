@@ -1,6 +1,7 @@
 package gillmprovider
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -62,8 +63,17 @@ func TestPrepareOpenAICodexExecutionOptions(t *testing.T) {
 
 func TestOpenAICodexPostWithRetryUsesServerDelay(t *testing.T) {
 	requests := 0
+	var requestBodies [][]byte
 	client := openAICodexRetryDoerFunc(func(request *http.Request) (*http.Response, error) {
 		requests++
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			return nil, err
+		}
+		requestBodies = append(requestBodies, body)
+		if request.Header.Get("content-encoding") != "zstd" {
+			return nil, errors.New("Codex SSE request is not zstd encoded")
+		}
 		if requests == 1 {
 			return openAICodexRetryResponse(
 				request,
@@ -106,6 +116,12 @@ func TestOpenAICodexPostWithRetryUsesServerDelay(t *testing.T) {
 		len(delays) != 1 ||
 		delays[0] != 1500*time.Millisecond+500*time.Microsecond {
 		t.Fatalf("requests=%d delays=%v", requests, delays)
+	}
+	if len(requestBodies) != 2 {
+		t.Fatalf("captured request bodies = %d, want 2", len(requestBodies))
+	}
+	if !bytes.Equal(requestBodies[0], requestBodies[1]) {
+		t.Fatalf("retry request body lengths = %d and %d", len(requestBodies[0]), len(requestBodies[1]))
 	}
 }
 
@@ -237,12 +253,18 @@ func TestOpenAICodexSSEHeaderTimeoutStopsAfterHeaders(t *testing.T) {
 			"",
 		), nil
 	})
+	sseRequest, err := prepareOpenAICodexSSERequest(
+		map[string]any{"input": []any{}},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	response, err := postOpenAICodexSSEWithHeaderTimeout(
 		context.Background(),
 		client,
 		"https://example.test/codex/responses",
-		nil,
-		map[string]any{"input": []any{}},
+		sseRequest,
 		10*time.Millisecond,
 	)
 	if err != nil {

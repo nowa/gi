@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -60,6 +61,10 @@ func TestBuildOpenAICodexPayloadAndHeaders(t *testing.T) {
 	}
 	if headers["OpenAI-Beta"] != "responses=experimental" || headers["accept"] != "text/event-stream" || headers["originator"] != "pi" {
 		t.Fatalf("protocol headers = %#v", headers)
+	}
+	wantUserAgent := "pi (" + runtime.GOOS + "; " + runtime.GOARCH + ")"
+	if got := headers["User-Agent"]; got != wantUserAgent || openAICodexUserAgent() != wantUserAgent {
+		t.Fatalf("user agent = %q, helper = %q, want %q", got, openAICodexUserAgent(), wantUserAgent)
 	}
 	if headers["session-id"] != "session-123" || headers["x-client-request-id"] != "session-123" {
 		t.Fatalf("session headers = %#v", headers)

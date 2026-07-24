@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -486,8 +487,12 @@ func buildOpenAICodexBaseHeaders(modelHeaders, optionHeaders map[string]string, 
 	setHeaderCaseInsensitive(headers, "Authorization", "Bearer "+token)
 	setHeaderCaseInsensitive(headers, "chatgpt-account-id", accountID)
 	setHeaderCaseInsensitive(headers, "originator", "pi")
-	setHeaderCaseInsensitive(headers, "User-Agent", "pi (go)")
+	setHeaderCaseInsensitive(headers, "User-Agent", openAICodexUserAgent())
 	return headers
+}
+
+func openAICodexUserAgent() string {
+	return fmt.Sprintf("pi (%s; %s)", runtime.GOOS, runtime.GOARCH)
 }
 
 func decodeJWTPayload(value string) ([]byte, error) {
