@@ -23,7 +23,9 @@ const (
 	maxRadiusErrorBodyBytes  = 16 << 10
 )
 
-var radiusGatewayScheme = regexp.MustCompile(`(?i)^https?://`)
+var radiusGatewayScheme = regexp.MustCompile(
+	`(?i)^[a-z][a-z0-9+.-]*://`,
+)
 
 // RadiusGatewayModel is one model advertised by a Radius gateway.
 type RadiusGatewayModel struct {
@@ -52,9 +54,11 @@ type RadiusProviderOptions struct {
 	OAuthLoader OAuthAuthLoader
 }
 
-// NormalizeRadiusGatewayURL adds HTTPS when needed and removes trailing
-// slashes. The returned value identifies the gateway root, not its /v1 API.
+// NormalizeRadiusGatewayURL adds HTTPS when no URI scheme is present and
+// removes trailing slashes. Unsupported explicit schemes remain intact so the
+// endpoint validator can reject them instead of silently rewriting them.
 func NormalizeRadiusGatewayURL(value string) string {
+	value = strings.TrimSpace(value)
 	if !radiusGatewayScheme.MatchString(value) {
 		value = "https://" + value
 	}
@@ -216,13 +220,22 @@ func NewRadiusProvider(options RadiusProviderOptions) (*Provider, error) {
 		return nil, err
 	}
 
-	oauth := radiusOAuthAuth(name, options.OAuthLoader)
+	client := httpClientOrDefault(options.Client)
+	oauth, err := radiusOAuthAuth(
+		name,
+		gateway,
+		client,
+		options.OAuthLoader,
+	)
+	if err != nil {
+		return nil, err
+	}
 	state := &radiusProviderState{
 		providerID: id,
 		gateway:    gateway,
-		client:     httpClientOrDefault(options.Client),
+		client:     client,
 	}
-	transport := NewPiMessagesProvider(options.Client)
+	transport := NewPiMessagesProvider(client)
 	return &Provider{
 		ID:      id,
 		Name:    name,
@@ -238,8 +251,21 @@ func NewRadiusProvider(options RadiusProviderOptions) (*Provider, error) {
 	}, nil
 }
 
-func radiusOAuthAuth(name string, loader OAuthAuthLoader) *OAuthAuth {
-	lazy := registeredOAuthAuth("radius", name, "")
+func radiusOAuthAuth(
+	name string,
+	gateway string,
+	client HTTPDoer,
+	loader OAuthAuthLoader,
+) (*OAuthAuth, error) {
+	builtin, err := NewRadiusOAuth(RadiusOAuthOptions{
+		Name:    name,
+		Gateway: gateway,
+		Client:  client,
+	})
+	if err != nil {
+		return nil, err
+	}
+	lazy := registeredOrBuiltinOAuthAuth("radius", builtin)
 	if loader != nil {
 		lazy = LazyOAuthAuth(name, "", loader)
 	}
@@ -260,7 +286,7 @@ func radiusOAuthAuth(name string, loader OAuthAuthLoader) *OAuthAuth {
 			}
 			return ModelAuth{APIKey: credential.Access}, nil
 		},
-	}
+	}, nil
 }
 
 type radiusProviderState struct {

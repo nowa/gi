@@ -147,10 +147,10 @@ The member-level source inventory currently reports:
 
 | Module | Pi source files | Gi production files | Pi symbols | Missing Pi files | Missing Pi symbols |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 169 | 62 | 632 | 51 | 155 |
+| LLM provider | 169 | 70 | 632 | 47 | 133 |
 | Agent core | 35 | 22 | 327 | 11 | 68 |
 | TUI | 28 | 27 | 449 | 3 | 56 |
-| Coding agent | 177 | 161 | 2115 | 31 | 480 |
+| Coding agent | 177 | 163 | 2115 | 27 | 462 |
 
 `docs/pi-parity/member-symbol-inventory.md` is the generated per-file detail.
 A mentioned symbol means its ownership or gap has been classified; it does not
@@ -171,10 +171,10 @@ The test-case inventory currently reports:
 
 | Module | Pi test files | Pi cases | Candidate files | Candidate cases | No-candidate files | No-candidate cases |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 112 | 1189 | 105 | 1126 | 7 | 63 |
+| LLM provider | 112 | 1189 | 106 | 1140 | 6 | 49 |
 | Agent core | 18 | 224 | 15 | 186 | 3 | 38 |
 | TUI | 27 | 700 | 25 | 673 | 2 | 27 |
-| Coding agent | 181 | 1649 | 172 | 1587 | 9 | 62 |
+| Coding agent | 181 | 1649 | 173 | 1597 | 8 | 52 |
 
 Candidate matching is an audit lead, not proof. Behavioral parity still
 requires the mapped Go tests, implementation review, and the release gate in

@@ -249,6 +249,7 @@ func TestRadiusConfigValidationAndLoading(t *testing.T) {
 			"radius.example.com/":         "https://radius.example.com",
 			"http://localhost:8788///":    "http://localhost:8788",
 			"HTTPS://radius.example.com/": "HTTPS://radius.example.com",
+			"file:///tmp/radius/":         "file:///tmp/radius",
 		}
 		for input, want := range cases {
 			if got := NormalizeRadiusGatewayURL(input); got != want {

@@ -147,12 +147,36 @@ func LazyOAuthAuth(name, loginLabel string, loader OAuthAuthLoader) *OAuthAuth {
 
 func registeredOAuthAuth(providerID, name, loginLabel string) *OAuthAuth {
 	return LazyOAuthAuth(name, loginLabel, func(ctx context.Context) (*OAuthAuth, error) {
-		oauthAuthLoaders.RLock()
-		loader := oauthAuthLoaders.values[providerID]
-		oauthAuthLoaders.RUnlock()
+		loader := getOAuthAuthLoader(providerID)
 		if loader == nil {
 			return nil, fmt.Errorf("OAuth loader is not registered for provider %s", providerID)
 		}
 		return loader(contextOrBackground(ctx))
 	})
+}
+
+func registeredOrBuiltinOAuthAuth(
+	providerID string,
+	builtin *OAuthAuth,
+) *OAuthAuth {
+	if builtin == nil {
+		return registeredOAuthAuth(providerID, providerID, "")
+	}
+	return LazyOAuthAuth(
+		builtin.Name,
+		builtin.LoginLabel,
+		func(ctx context.Context) (*OAuthAuth, error) {
+			if loader := getOAuthAuthLoader(providerID); loader != nil {
+				return loader(contextOrBackground(ctx))
+			}
+			return builtin, nil
+		},
+	)
+}
+
+func getOAuthAuthLoader(providerID string) OAuthAuthLoader {
+	oauthAuthLoaders.RLock()
+	loader := oauthAuthLoaders.values[providerID]
+	oauthAuthLoaders.RUnlock()
+	return loader
 }

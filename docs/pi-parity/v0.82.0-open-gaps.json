@@ -43,15 +43,12 @@
         "api/simple-options.ts",
         "api/transform-messages.ts",
         "auth/oauth/anthropic.ts",
-        "auth/oauth/device-code.ts",
         "auth/oauth/github-copilot.ts",
         "auth/oauth/kimi-coding.ts",
         "auth/oauth/load.ts",
         "auth/oauth/oauth-page.ts",
         "auth/oauth/openai-codex.ts",
         "auth/oauth/openrouter.ts",
-        "auth/oauth/pkce.ts",
-        "auth/oauth/radius.ts",
         "auth/oauth/xai.ts",
         "bun-oauth.ts",
         "compat.ts",
@@ -120,7 +117,6 @@
         "api/openai-responses.ts::getClientApiKey",
         "api/openai-responses.ts::hasHeader",
         "api/simple-options.ts::clampMaxTokensToContext",
-        "auth/oauth/device-code.ts::pollOAuthDeviceCodeFlow",
         "auth/oauth/github-copilot.ts::asRecord",
         "auth/oauth/github-copilot.ts::copilotEnterpriseDomain",
         "auth/oauth/github-copilot.ts::fetchAvailableGitHubCopilotModelIds",
@@ -151,16 +147,6 @@
         "auth/oauth/openrouter.ts::getCallbackHost",
         "auth/oauth/openrouter.ts::loginOpenRouter",
         "auth/oauth/openrouter.ts::sendHtml",
-        "auth/oauth/radius.ts::OAuthResponseError",
-        "auth/oauth/radius.ts::OAuthResponseError.constructor",
-        "auth/oauth/radius.ts::createRadiusOAuth",
-        "auth/oauth/radius.ts::loadRadiusOAuthConfig",
-        "auth/oauth/radius.ts::loginWithBrowser",
-        "auth/oauth/radius.ts::loginWithDeviceCode",
-        "auth/oauth/radius.ts::readOAuthResponseError",
-        "auth/oauth/radius.ts::requestDeviceAuthorization",
-        "auth/oauth/radius.ts::requestOAuthToken",
-        "auth/oauth/radius.ts::startOAuthCallbackServer",
         "auth/oauth/xai.ts::credentialsFromTokenResponse",
         "auth/oauth/xai.ts::loginXai",
         "auth/oauth/xai.ts::parseDeviceCode",
@@ -1048,26 +1034,6 @@
           "name": "filters models to the authenticated account picker catalog"
         },
         {
-          "file": "packages/ai/test/github-copilot-oauth.test.ts",
-          "line": 119,
-          "name": "reports device-code details through onDeviceCode"
-        },
-        {
-          "file": "packages/ai/test/kimi-coding-oauth.test.ts",
-          "line": 51,
-          "name": "logs in with the device authorization flow"
-        },
-        {
-          "file": "packages/ai/test/kimi-coding-oauth.test.ts",
-          "line": 120,
-          "name": "fails when the device code expires"
-        },
-        {
-          "file": "packages/ai/test/kimi-coding-oauth.test.ts",
-          "line": 164,
-          "name": "honors the KIMI_CODE_OAUTH_HOST override"
-        },
-        {
           "file": "packages/ai/test/mistral-reasoning-mode.test.ts",
           "line": 81,
           "name": "uses the session id as prompt cache key"
@@ -1076,16 +1042,6 @@
           "file": "packages/ai/test/mistral-reasoning-mode.test.ts",
           "line": 89,
           "name": "omits prompt cache key when cache retention is disabled"
-        },
-        {
-          "file": "packages/ai/test/oauth-device-code.test.ts",
-          "line": 9,
-          "name": "polls immediately and returns the completed value"
-        },
-        {
-          "file": "packages/ai/test/oauth-device-code.test.ts",
-          "line": 125,
-          "name": "cancels an in-flight wait"
         },
         {
           "file": "packages/ai/test/openai-codex-stream.test.ts",

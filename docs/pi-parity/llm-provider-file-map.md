@@ -64,7 +64,10 @@ fresh provider/runtime state; the generated catalog is frozen separately.
 | `providers/faux.ts` | faux content helpers, queue/core, `createFauxCore`, `fauxProvider` | `faux.go` `Faux*`, `NewFauxProvider`, `FauxProviderHandle` | direct | The new handle owns a provider and queue without touching the process-wide API registry; legacy `RegisterFauxProvider` remains compatible. |
 | `providers/openrouter-images.ts` | `openrouterImagesProvider` | `image_models.go`, `openrouter_images_provider.go` | partial | Catalog and HTTP generation are present; instance-scoped image provider/auth assembly remains part of the `providers/all.ts` image gap. |
 | `providers/radius-config.ts` | `isRadiusGatewayModel`, `sanitizeRadiusGatewayConfig`, `normalizeRadiusGatewayUrl`, `getRadiusCredentialConfig`, `getRadiusModelsFromConfig`, `getRadiusModels`, `truncateHttpBody`, `loadRadiusGatewayConfig` | `radius.go` typed gateway/config models, validation, legacy import, and bounded HTTP loader | direct | Malformed model rows are filtered through a typed decoder; stored and fetched catalogs are converted to detached provider-scoped models. |
-| `providers/radius.ts` | `radiusProvider` | `radius.go` `NewRadiusProvider`, `builtin_providers.go` Radius factory | partial | Instance-owned catalog state, persisted restore, coalesced refresh, explicit network policy, API-key/OAuth request auth, and `pi-messages` streaming are present. Interactive Radius OAuth login and token refresh loading remain open. |
+| `providers/radius.ts` | `radiusProvider` | `radius.go` `NewRadiusProvider`, `builtin_providers.go` Radius factory | direct | Instance-owned catalog state, persisted restore, coalesced refresh, explicit network policy, built-in OAuth/API-key request auth, and `pi-messages` streaming are present. |
+| `auth/oauth/device-code.ts` | `abortableSleep`, `pollOAuthDeviceCodeFlow` | `oauth_device_code.go` `sleepWithContext`, `PollOAuthDeviceCodeFlow` | go-native | The generic typed poll result models pending, slow-down, failed, and complete states; `context.Context`, an injected clock, RFC 8628 defaults, and the five-second slow-down increment replace JavaScript timers and abort signals. |
+| `auth/oauth/pkce.ts` | `base64urlEncode`, `generatePKCE` | `oauth_pkce.go` `GeneratePKCE`, `generatePKCE`, `randomOAuthToken` | direct | Uses `crypto/rand`, SHA-256, and raw URL-safe base64 with errors returned to the caller. |
+| `auth/oauth/radius.ts` | `loadRadiusOAuthConfig`, `OAuthResponseError`, `readOAuthResponseError`, `requestOAuthToken`, `startOAuthCallbackServer`, `loginWithBrowser`, `requestDeviceAuthorization`, `loginWithDeviceCode`, `createRadiusOAuth`, `OAuthResponseError.constructor` | `radius_oauth.go` login/runtime orchestration; `radius_oauth_http.go` `loadRadiusOAuthConfig`, `requestRadiusOAuthToken`, `requestRadiusDeviceAuthorization`; `radius_oauth_callback.go` `startRadiusOAuthCallbackServer`; `oauth_http.go` `OAuthResponseError`, `readOAuthResponseError` | direct | OAuth discovery, browser PKCE callback, RFC 8628 device flow, refresh rotation, expiry skew, scoped metadata preservation, and access-token request auth are provider-owned. HTTP, callback, clock, and polling boundaries are separated and injectable for deterministic tests; the application owns only `AuthInteraction`. |
 
 ## Provider Files
 
@@ -106,7 +109,7 @@ fresh provider/runtime state; the generated catalog is frozen separately.
 | `utils/oauth/index.ts` | OAuth exports | Go package exports | consolidated | No barrel file needed. |
 | `utils/oauth/oauth-page.ts` | OAuth success/error HTML | `oauth_page.go`, `gi-coding-agent/oauth_*.go` callback pages | direct | Shared OAuth success/error page rendering now lives in `gi-llm-provider`, escapes title/message/details like Pi, preserves Gi branding, and lets callback hosts scrub provider-specific local callback paths. |
 | `utils/oauth/openai-codex.ts` | PKCE login, token refresh, credential construction | `oauth.go`, `gi-coding-agent/oauth_openai_codex.go` | split | Token request/refresh errors are provider-level; callback/login flow is coding-agent. |
-| `utils/oauth/pkce.ts` | `generatePKCE` | `gi-coding-agent/oauth_openai_codex.go` | direct | Used by Codex browser login. |
+| `utils/oauth/pkce.ts` | `generatePKCE` | `oauth_pkce.go` `GeneratePKCE`; `gi-coding-agent/oauth_openai_codex.go` compatibility use | direct | The provider package now owns the reusable cryptographic primitive; existing coding-agent flows retain their application-level orchestration. |
 | `utils/oauth/types.ts` | legacy OAuth credentials/provider types | `oauth.go`, `auth.go`, `credential_store.go`; coding-agent provider-specific login flows | split | Canonical credential and provider-auth types now live in `gi-llm-provider`; coding-agent owns only application login orchestration. |
 | `utils/overflow.ts` | context overflow detection | `overflow.go` | direct | Pattern and length-stop detection represented. |
 | `utils/provider-retry.ts` | abortable request retries, retry headers/status policy, delay cap, and jittered backoff | `retry.go` `ProviderRetryOptions`, `RetryProviderRequest`, `IsRetryableProviderError`; `http_provider.go` retry-aware request path | direct | `ProviderError` plus `errors.As` replaces `isProviderError`; Go context cancellation replaces `createAbortError`. OpenAI, Anthropic, Azure, Google, Mistral, and OpenRouter image adapters use the shared path. |
@@ -282,10 +285,9 @@ implementation logic is not skipped.
   not yet connected to the existing coding-agent login implementations.
   `openai-codex` has no API-key fallback, so its built-in provider is currently
   discoverable but not configurable through `BuiltinModels`.
-- Radius catalog and `pi-messages` request/stream behavior are implemented.
-  The remaining Radius gap is its interactive OAuth browser/device login and
-  refresh-token loader; an existing unexpired OAuth credential already derives
-  request auth directly from its access token.
+- Radius catalog, browser/device OAuth, refresh-token rotation, request auth,
+  and `pi-messages` request/stream behavior are implemented. The provider owns
+  protocol and callback state while the caller supplies only `AuthInteraction`.
 - The Google Vertex API-key/ADC login contract is implemented, but Gi does not
   yet register a real `google-vertex` API transport. It returns the same typed
   unsupported-API stream failure used for any missing implementation.
