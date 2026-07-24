@@ -29,6 +29,8 @@ type CLIOptions struct {
 	VersionCheckOptions    VersionCheckOptions
 	StartupWarnings        []string
 	Responder              AgentSessionResponder
+	ProjectTrustPrompt     ProjectTrustPrompt
+	ProjectTrustOverride   *bool
 }
 
 func RunCLI(options CLIOptions) int {
@@ -39,6 +41,9 @@ func RunCLI(options CLIOptions) int {
 		return code
 	}
 	args := ParseArgs(options.Args)
+	if args.ProjectTrustOverride == nil {
+		args.ProjectTrustOverride = options.ProjectTrustOverride
+	}
 	timings.Mark("parse args")
 	if reportCLIArgDiagnostics(args.Diagnostics, options.Stderr) {
 		return 1
@@ -212,6 +217,8 @@ Options:
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
+  --approve, -a                  Trust project-local files for this run
+  --no-approve, -na              Ignore project-local files for this run
   --offline                      Disable startup network operations (same as GI_OFFLINE=1)
   --help, -h                     Show this help
   --version, -v                  Show version number
@@ -335,7 +342,10 @@ func cliHelpExtensionFlags(args Args, options CLIOptions) []ProtocolFlagRegistra
 	if err != nil {
 		return nil
 	}
-	settingsManager := NewSettingsManager(cwd, agentDir)
+	settingsManager, _, err := newCLIRuntimeSettingsManager(args, cwd, agentDir, nil)
+	if err != nil {
+		return nil
+	}
 	loader := NewDefaultResourceLoader(defaultResourceLoaderOptionsFromCLI(args, cwd, agentDir, settingsManager))
 	loader.Reload()
 	extensions := loader.GetExtensions()
@@ -481,6 +491,7 @@ func runPackageSubcommand(options CLIOptions) (int, bool) {
 	if len(options.Args) == 0 {
 		return 0, false
 	}
+	options.Args, options.ProjectTrustOverride = extractPackageProjectTrustFlags(options.Args, options.ProjectTrustOverride)
 	command := options.Args[0]
 	if command == "uninstall" {
 		command = "remove"
@@ -525,7 +536,12 @@ func runPackageSubcommand(options CLIOptions) (int, bool) {
 
 	manager := options.PackageManager
 	if manager == nil {
-		manager = defaultCLIPackageManager()
+		var err error
+		manager, err = defaultCLIPackageManager(options, false)
+		if err != nil {
+			writeCLIError(options.Stderr, err.Error())
+			return 1, true
+		}
 	}
 	if command == "install" {
 		if err := manager.Install(source, project); err != nil {
@@ -571,7 +587,17 @@ func runConfigSubcommand(options CLIOptions) int {
 	if factory == nil {
 		factory = newDefaultCLIConfigHost
 	}
-	host, err := factory(PackageResourceConfigOptions{CWD: cwd, AgentDir: agentDir})
+	settings, _, err := newCLIRuntimeSettingsManager(
+		Args{ProjectTrustOverride: options.ProjectTrustOverride},
+		cwd,
+		agentDir,
+		cliProjectTrustPrompt(options),
+	)
+	if err != nil {
+		writeCLIError(options.Stderr, err.Error())
+		return 1
+	}
+	host, err := factory(PackageResourceConfigOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings})
 	if err != nil {
 		writeCLIError(options.Stderr, err.Error())
 		return 1
@@ -635,7 +661,12 @@ func runUpdateSubcommand(options CLIOptions) (int, bool) {
 
 	manager := options.PackageManager
 	if manager == nil {
-		manager = defaultCLIPackageManager()
+		var err error
+		manager, err = defaultCLIPackageManager(options, true)
+		if err != nil {
+			writeCLIError(options.Stderr, err.Error())
+			return 1, true
+		}
 	}
 	if parsed.target.updatePackages {
 		if err := manager.Update(parsed.target.sources...); err != nil {
@@ -759,7 +790,12 @@ func runListPackagesSubcommand(options CLIOptions) int {
 	}
 	manager := options.PackageManager
 	if manager == nil {
-		manager = defaultCLIPackageManager()
+		var err error
+		manager, err = defaultCLIPackageManager(options, false)
+		if err != nil {
+			writeCLIError(options.Stderr, err.Error())
+			return 1
+		}
 	}
 	writeConfiguredPackages(nonNilWriter(options.Stdout), manager.ListConfiguredPackages())
 	return 0
@@ -913,12 +949,43 @@ func isZeroInstallEnvironment(env InstallEnvironment) bool {
 		env.CommandOutput == nil
 }
 
-func defaultCLIPackageManager() *DefaultPackageManager {
-	cwd, err := os.Getwd()
-	if err != nil || cwd == "" {
-		cwd = "."
+func defaultCLIPackageManager(options CLIOptions, useSavedProjectTrustOnly bool) (*DefaultPackageManager, error) {
+	cwd, agentDir, err := resolveCLICWDAndAgentDir(options)
+	if err != nil {
+		return nil, err
 	}
-	return NewDefaultPackageManager(PackageManagerOptions{CWD: cwd, AgentDir: defaultCLIAgentDir(cwd)})
+	settings, _, err := newCLICommandSettingsManager(
+		Args{ProjectTrustOverride: options.ProjectTrustOverride},
+		cwd,
+		agentDir,
+		cliProjectTrustPrompt(options),
+		useSavedProjectTrustOnly,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return NewDefaultPackageManager(PackageManagerOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings}), nil
+}
+
+func extractPackageProjectTrustFlags(args []string, initial *bool) ([]string, *bool) {
+	if len(args) == 0 {
+		return nil, initial
+	}
+	filtered := []string{args[0]}
+	override := initial
+	for _, arg := range args[1:] {
+		switch arg {
+		case "--approve", "-a":
+			value := true
+			override = &value
+		case "--no-approve", "-na":
+			value := false
+			override = &value
+		default:
+			filtered = append(filtered, arg)
+		}
+	}
+	return filtered, override
 }
 
 func defaultCLIAgentDir(cwd string) string {

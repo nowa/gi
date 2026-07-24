@@ -3246,6 +3246,11 @@ func (h *CLIInteractiveTUIHost) handleBuiltinSlashCommand(text string) (bool, er
 			return false, nil
 		}
 		return true, h.handleSettingsSlashCommand()
+	case "trust":
+		if hasArgs {
+			return false, nil
+		}
+		return true, h.handleTrustSlashCommand()
 	case "model":
 		return true, h.handleModelSlashCommand(args)
 	case "scoped-models":

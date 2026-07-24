@@ -158,11 +158,13 @@ func TestCLIPrintModeUsesSelectedSessionCwdForRuntimeResourcesPiStyle(t *testing
 		t.Fatal(err)
 	}
 
+	approved := true
 	host, err := newDefaultCLIPrintModeHost(Args{
-		Offline:    true,
-		Model:      "openai/gpt-4o-mini",
-		Session:    manager.GetSessionFile(),
-		SessionDir: sessionDir,
+		Offline:              true,
+		Model:                "openai/gpt-4o-mini",
+		Session:              manager.GetSessionFile(),
+		SessionDir:           sessionDir,
+		ProjectTrustOverride: &approved,
 	}, CLIOptions{CWD: startupCwd, AgentDir: agentDir})
 	if err != nil {
 		t.Fatal(err)

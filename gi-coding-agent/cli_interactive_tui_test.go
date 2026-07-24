@@ -2280,6 +2280,7 @@ func TestCLIInteractiveTUIHostShowsLoadedResourcesOnStartupPiStyle(t *testing.T)
 	t.Setenv("OPENAI_API_KEY", "")
 	cwd := t.TempDir()
 	agentDir := filepath.Join(cwd, "agent")
+	trustProjectForTest(t, cwd, agentDir)
 	writeResourceFile(t, filepath.Join(cwd, "AGENTS.md"), "Project context")
 	writeResourceSkill(t, filepath.Join(cwd, ConfigDirName, "skills", "review", "SKILL.md"), "review", "Review code", "Review content")
 	writeResourceFile(t, filepath.Join(cwd, ConfigDirName, "prompts", "plan.md"), "Plan prompt")
@@ -2340,6 +2341,7 @@ func TestCLIInteractiveTUIHostStartupResourcesWithoutContextUsePiSpacing(t *test
 	t.Setenv("OPENAI_API_KEY", "")
 	cwd := t.TempDir()
 	agentDir := filepath.Join(cwd, "agent")
+	trustProjectForTest(t, cwd, agentDir)
 	writeResourceSkill(t, filepath.Join(cwd, ConfigDirName, "skills", "review", "SKILL.md"), "review", "Review code", "Review content")
 	runtimeHost, err := newDefaultCLIPrintModeHost(Args{
 		Offline:   true,
@@ -2399,6 +2401,7 @@ func TestCLIInteractiveTUIHostQuietStartupSuppressesResourceListingButKeepsDiagn
 	t.Setenv("OPENAI_API_KEY", "")
 	cwd := t.TempDir()
 	agentDir := filepath.Join(cwd, "agent")
+	trustProjectForTest(t, cwd, agentDir)
 	settings := NewSettingsManager(cwd, agentDir)
 	settings.SetQuietStartup(true)
 	writeResourceSkill(t, filepath.Join(agentDir, "skills", "review", "SKILL.md"), "review", "User review", "User content")
@@ -6072,6 +6075,7 @@ func TestCLIInteractiveTUIHostSkillCommandSettingRefreshesAutocompletePiStyle(t 
 	t.Setenv("OPENAI_API_KEY", "")
 	cwd := t.TempDir()
 	agentDir := filepath.Join(cwd, "agent")
+	trustProjectForTest(t, cwd, agentDir)
 	writeResourceSkill(t, filepath.Join(cwd, ConfigDirName, "skills", "review", "SKILL.md"), "review", "Review", "Review content")
 	runtimeHost, err := newDefaultCLIPrintModeHost(Args{
 		Offline:   true,
@@ -6128,6 +6132,7 @@ func TestCLIInteractiveTUIHostPrefixesResourceSlashDescriptionsPiStyle(t *testin
 	t.Setenv("OPENAI_API_KEY", "")
 	cwd := t.TempDir()
 	agentDir := filepath.Join(cwd, "agent")
+	trustProjectForTest(t, cwd, agentDir)
 	writeResourceSkill(t, filepath.Join(cwd, ConfigDirName, "skills", "review", "SKILL.md"), "review", "Review skill", "Review content")
 	writeResourceFile(t, filepath.Join(cwd, ConfigDirName, "prompts", "plan.md"), "---\ndescription: Plan work\nargument-hint: <scope>\n---\nPlan $1\n")
 	runtimeHost, err := newDefaultCLIPrintModeHost(Args{
@@ -10348,6 +10353,7 @@ func TestCLIInteractiveTUIHostReflectsRPCThemeHostAction(t *testing.T) {
 	t.Cleanup(func() { tuiSetActiveThemePalette(previousTheme) })
 	cwd := t.TempDir()
 	agentDir := filepath.Join(cwd, "agent")
+	trustProjectForTest(t, cwd, agentDir)
 	settings := NewSettingsManager(cwd, agentDir)
 	settings.SetTheme("dark")
 	themePath := filepath.Join(cwd, ConfigDirName, "themes", "focus.json")
@@ -11963,4 +11969,11 @@ func assertHostActionResponseOK(t *testing.T, response HostActionResponse, id st
 		t.Fatalf("result = %#v", response.Result)
 	}
 	return result
+}
+
+func trustProjectForTest(t *testing.T, cwd, agentDir string) {
+	t.Helper()
+	if err := NewProjectTrustStore(agentDir).Set(cwd, true); err != nil {
+		t.Fatal(err)
+	}
 }

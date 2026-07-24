@@ -128,6 +128,21 @@ non-TTY contexts it falls back to a basic single-turn host for
 `gi <message>` or piped stdin. The Pi-equivalent TUI workflow disposition is
 documented in `PI_CODING_AGENT_SOURCE_AUDIT.md`.
 
+### Project Trust
+
+Gi gates project-local settings, packages, extensions, skills, prompts, themes,
+and project system-prompt files behind one runtime trust decision. Decisions are
+stored in `~/.gi/agent/trust.json` and inherit from parent directories.
+Interactive startup asks when trust-requiring resources exist; non-interactive
+modes use the saved decision or global default, with `ask` safely resolving to
+untrusted when no UI is available.
+
+Use `--approve` / `-a` or `--no-approve` / `-na` for a session-only override.
+Inside the TUI, `/trust` changes the saved decision for the next Gi process.
+The global `defaultProjectTrust` setting accepts `ask`, `always`, or `never`.
+Explicit resource paths supplied on the command line remain explicit user
+choices and are not treated as auto-discovered project resources.
+
 ## LLM Usage
 
 ```go

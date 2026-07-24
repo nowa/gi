@@ -11,22 +11,25 @@ import (
 )
 
 type PackageResourceConfigOptions struct {
-	CWD      string
-	AgentDir string
-	Terminal gitui.Terminal
+	CWD             string
+	AgentDir        string
+	Terminal        gitui.Terminal
+	SettingsManager *SettingsManager
 }
 
 type packageResourceConfigHost struct {
-	cwd      string
-	agentDir string
-	terminal gitui.Terminal
+	cwd             string
+	agentDir        string
+	terminal        gitui.Terminal
+	settingsManager *SettingsManager
 }
 
 func newDefaultCLIConfigHost(options PackageResourceConfigOptions) (CLIConfigRuntimeHost, error) {
 	return &packageResourceConfigHost{
-		cwd:      options.CWD,
-		agentDir: options.AgentDir,
-		terminal: options.Terminal,
+		cwd:             options.CWD,
+		agentDir:        options.AgentDir,
+		terminal:        options.Terminal,
+		settingsManager: options.SettingsManager,
 	}, nil
 }
 
@@ -34,7 +37,10 @@ func (h *packageResourceConfigHost) Run() error {
 	if h == nil {
 		return errors.New("config host is nil")
 	}
-	settings := NewSettingsManager(h.cwd, h.agentDir)
+	settings := h.settingsManager
+	if settings == nil {
+		settings = NewSettingsManager(h.cwd, h.agentDir)
+	}
 	manager := NewDefaultPackageManager(PackageManagerOptions{
 		CWD:             h.cwd,
 		AgentDir:        h.agentDir,

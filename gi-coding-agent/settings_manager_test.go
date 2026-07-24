@@ -561,6 +561,111 @@ func TestSettingsManagerPreservesExternalProjectEdits(t *testing.T) {
 	}
 }
 
+func TestSettingsManagerProjectTrustPiMatrix(t *testing.T) {
+	agentDir, projectDir := createSettingsTestDirs(t)
+	globalPath := filepath.Join(agentDir, "settings.json")
+	projectPath := filepath.Join(projectDir, ConfigDirName, "settings.json")
+	writeSettingsJSON(t, globalPath, map[string]any{
+		"theme":               "global",
+		"defaultProjectTrust": "always",
+	})
+	writeSettingsJSON(t, projectPath, map[string]any{
+		"theme":               "project",
+		"defaultProjectTrust": "never",
+		"packages":            []any{"npm:existing"},
+	})
+
+	manager := NewSettingsManagerWithOptions(projectDir, agentDir, SettingsManagerOptions{ProjectTrusted: false})
+	if manager.IsProjectTrusted() {
+		t.Fatal("manager unexpectedly trusts project")
+	}
+	if got := manager.GetTheme(); got != "global" {
+		t.Fatalf("theme = %q", got)
+	}
+	if got := manager.GetProjectSettings(); len(got) != 0 {
+		t.Fatalf("project settings = %#v", got)
+	}
+	if got := manager.GetDefaultProjectTrust(); got != DefaultProjectTrustAlways {
+		t.Fatalf("default project trust = %q", got)
+	}
+	if err := manager.SetProjectPackages([]any{"npm:new"}); err == nil ||
+		err.Error() != "Project is not trusted; refusing to write project settings" {
+		t.Fatalf("write error = %v", err)
+	}
+	if got := settingsStringSlice(readSettingsJSON(t, projectPath), "packages"); !reflect.DeepEqual(got, []string{"npm:existing"}) {
+		t.Fatalf("persisted packages = %#v", got)
+	}
+
+	manager.SetProjectTrusted(true)
+	if !manager.IsProjectTrusted() || manager.GetTheme() != "project" {
+		t.Fatalf("trusted manager theme = %q, trusted = %t", manager.GetTheme(), manager.IsProjectTrusted())
+	}
+	if err := manager.SetProjectSkillPaths([]string{"skills/review"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.SetProjectPromptTemplatePaths([]string{"prompts/plan.md"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.SetProjectThemePaths([]string{"themes/focus.json"}); err != nil {
+		t.Fatal(err)
+	}
+	projectSettings := manager.GetProjectSettings()
+	if !reflect.DeepEqual(settingsStringSlice(projectSettings, "skills"), []string{"skills/review"}) ||
+		!reflect.DeepEqual(settingsStringSlice(projectSettings, "prompts"), []string{"prompts/plan.md"}) ||
+		!reflect.DeepEqual(settingsStringSlice(projectSettings, "themes"), []string{"themes/focus.json"}) {
+		t.Fatalf("project resource paths = %#v", projectSettings)
+	}
+	manager.SetProjectTrusted(false)
+	if manager.GetTheme() != "global" || len(manager.GetProjectSettings()) != 0 {
+		t.Fatalf("untrusted manager theme = %q, project = %#v", manager.GetTheme(), manager.GetProjectSettings())
+	}
+}
+
+func TestSettingsManagerUntrustedReloadNeverReadsProjectSettings(t *testing.T) {
+	agentDir, projectDir := createSettingsTestDirs(t)
+	projectPath := filepath.Join(projectDir, ConfigDirName, "settings.json")
+	if err := os.WriteFile(projectPath, []byte("{invalid"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewSettingsManagerWithOptions(projectDir, agentDir, SettingsManagerOptions{ProjectTrusted: false})
+	manager.Reload()
+	for _, item := range manager.DrainErrors() {
+		if item.Scope == "project" {
+			t.Fatalf("untrusted project settings were read: %v", item.Err)
+		}
+	}
+	manager.SetProjectTrusted(true)
+	errors := manager.DrainErrors()
+	if len(errors) != 1 || errors[0].Scope != "project" {
+		t.Fatalf("trusted load errors = %#v", errors)
+	}
+}
+
+func TestSettingsManagerInvalidDefaultProjectTrustFallsBackToAsk(t *testing.T) {
+	agentDir, projectDir := createSettingsTestDirs(t)
+	writeSettingsJSON(t, filepath.Join(agentDir, "settings.json"), map[string]any{"defaultProjectTrust": "sometimes"})
+	manager := NewSettingsManager(projectDir, agentDir)
+	if got := manager.GetDefaultProjectTrust(); got != DefaultProjectTrustAsk {
+		t.Fatalf("default project trust = %q", got)
+	}
+	manager.SetDefaultProjectTrust(DefaultProjectTrustAlways)
+	if got := manager.GetDefaultProjectTrust(); got != DefaultProjectTrustAlways {
+		t.Fatalf("updated default project trust = %q", got)
+	}
+}
+
+func TestInMemorySettingsManagerProjectTrustToggleStaysInMemory(t *testing.T) {
+	manager := NewInMemorySettingsManager(map[string]any{"theme": "global"})
+	manager.SetProjectTrusted(false)
+	manager.SetProjectTrusted(true)
+	if !manager.IsProjectTrusted() || manager.GetTheme() != "global" {
+		t.Fatalf("trusted = %t, theme = %q", manager.IsProjectTrusted(), manager.GetTheme())
+	}
+	if errors := manager.DrainErrors(); len(errors) != 0 {
+		t.Fatalf("in-memory trust toggle errors = %#v", errors)
+	}
+}
+
 func createSettingsTestDirs(t *testing.T) (string, string) {
 	t.Helper()
 	root := t.TempDir()

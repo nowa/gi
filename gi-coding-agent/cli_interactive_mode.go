@@ -17,6 +17,10 @@ type basicCLIInteractiveHost struct {
 
 func newDefaultCLIInteractiveHost(args Args, options CLIOptions) (CLIInteractiveRuntimeHost, error) {
 	interactiveTTY := isCLIInteractiveStdin(options)
+	runtimeOptions := options
+	if interactiveTTY && runtimeOptions.ProjectTrustPrompt == nil {
+		runtimeOptions.ProjectTrustPrompt = defaultCLIProjectTrustPrompt
+	}
 	promptArgs := args
 	stdinContent, err := readCLIPipedStdin(options)
 	if err != nil {
@@ -50,7 +54,7 @@ func newDefaultCLIInteractiveHost(args Args, options CLIOptions) (CLIInteractive
 		}
 	}
 
-	runtimeHost, err := newDefaultCLIPrintModeHost(args, options)
+	runtimeHost, err := newDefaultCLIPrintModeHost(args, runtimeOptions)
 	if err != nil {
 		return nil, err
 	}

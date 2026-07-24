@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -148,6 +149,10 @@ func (m *DefaultPackageManager) GetPackageIdentity(source string) string {
 func (m *DefaultPackageManager) Install(source string, project bool) error {
 	source = strings.TrimSpace(source)
 	m.emitProgress(PackageProgressEvent{Type: "start", Action: "install", Source: source})
+	if err := m.assertProjectTrustedForScope(projectPackageScope(project)); err != nil {
+		m.emitProgress(PackageProgressEvent{Type: "error", Action: "install", Source: source, Error: err.Error()})
+		return err
+	}
 	if err := m.installPackageArtifact(source, project); err != nil {
 		m.emitProgress(PackageProgressEvent{Type: "error", Action: "install", Source: source, Error: err.Error()})
 		return err
@@ -214,7 +219,9 @@ func (m *DefaultPackageManager) addSourceToSettings(source string, project bool)
 		values[i] = value
 	}
 	if project {
-		m.settingsManager.SetProjectPackages(values)
+		if err := m.settingsManager.SetProjectPackages(values); err != nil {
+			return false, err
+		}
 	} else {
 		m.settingsManager.SetPackages(values)
 	}
@@ -224,6 +231,10 @@ func (m *DefaultPackageManager) addSourceToSettings(source string, project bool)
 func (m *DefaultPackageManager) Remove(source string, project bool) error {
 	source = strings.TrimSpace(source)
 	m.emitProgress(PackageProgressEvent{Type: "start", Action: "remove", Source: source})
+	if err := m.assertProjectTrustedForScope(projectPackageScope(project)); err != nil {
+		m.emitProgress(PackageProgressEvent{Type: "error", Action: "remove", Source: source, Error: err.Error()})
+		return err
+	}
 	if err := m.removePackageArtifact(source, project); err != nil {
 		m.emitProgress(PackageProgressEvent{Type: "error", Action: "remove", Source: source, Error: err.Error()})
 		return err
@@ -284,7 +295,9 @@ func (m *DefaultPackageManager) removeSourceFromSettings(source string, project 
 		values[i] = value
 	}
 	if project {
-		m.settingsManager.SetProjectPackages(values)
+		if err := m.settingsManager.SetProjectPackages(values); err != nil {
+			return false, err
+		}
 	} else {
 		m.settingsManager.SetPackages(values)
 	}
@@ -292,9 +305,12 @@ func (m *DefaultPackageManager) removeSourceFromSettings(source string, project 
 }
 
 func (m *DefaultPackageManager) settingsPackages(project bool) []string {
-	settings := m.settingsManager.global
+	if project && !m.settingsManager.IsProjectTrusted() {
+		return nil
+	}
+	settings := m.settingsManager.GetGlobalSettings()
 	if project {
-		settings = m.settingsManager.project
+		settings = m.settingsManager.GetProjectSettings()
 	}
 	return settingsPackagesToStrings(settingsSlice(settings, "packages"))
 }
@@ -332,8 +348,10 @@ func (m *DefaultPackageManager) ListConfiguredPackages() []ConfiguredPackage {
 			})
 		}
 	}
-	add(settingsSlice(m.settingsManager.global, "packages"), "user")
-	add(settingsSlice(m.settingsManager.project, "packages"), "project")
+	add(settingsSlice(m.settingsManager.GetGlobalSettings(), "packages"), "user")
+	if m.settingsManager.IsProjectTrusted() {
+		add(settingsSlice(m.settingsManager.GetProjectSettings(), "packages"), "project")
+	}
 	return result
 }
 
@@ -422,11 +440,14 @@ func (m *DefaultPackageManager) ListTopLevelResourceToggles() []PackageResourceT
 		settings map[string]any
 	}
 	scopes := []scopeConfig{
-		{scope: "user", baseDir: m.agentDir, settings: m.settingsManager.global},
-		{scope: "project", baseDir: filepath.Join(m.cwd, ConfigDirName), settings: m.settingsManager.project},
+		{scope: "user", baseDir: m.agentDir, settings: m.settingsManager.GetGlobalSettings()},
+		{scope: "project", baseDir: filepath.Join(m.cwd, ConfigDirName), settings: m.settingsManager.GetProjectSettings()},
 	}
 	var result []PackageResourceToggleItem
 	for _, scope := range scopes {
+		if scope.scope == "project" && !m.settingsManager.IsProjectTrusted() {
+			continue
+		}
 		if scope.baseDir == "" {
 			continue
 		}
@@ -573,9 +594,9 @@ func (m *DefaultPackageManager) SetPackageResourceEnabled(toggle PackageResource
 		scope = "project"
 		baseDir = filepath.Join(m.cwd, ConfigDirName)
 	}
-	values := settingsSlice(m.settingsManager.global, "packages")
+	values := settingsSlice(m.settingsManager.GetGlobalSettings(), "packages")
 	if project {
-		values = settingsSlice(m.settingsManager.project, "packages")
+		values = settingsSlice(m.settingsManager.GetProjectSettings(), "packages")
 	}
 	for index, value := range values {
 		spec, ok := protocolPackageSourceSpecFromSettings(value, scope)
@@ -594,7 +615,9 @@ func (m *DefaultPackageManager) SetPackageResourceEnabled(toggle PackageResource
 			values[index] = object
 		}
 		if project {
-			m.settingsManager.SetProjectPackages(values)
+			if err := m.settingsManager.SetProjectPackages(values); err != nil {
+				return false, err
+			}
 		} else {
 			m.settingsManager.SetPackages(values)
 		}
@@ -616,17 +639,33 @@ func (m *DefaultPackageManager) SetTopLevelResourceEnabled(toggle TopLevelResour
 		return false, fmt.Errorf("missing resource pattern")
 	}
 	project := toggle.Scope == "project"
-	values := settingsStringSlice(m.settingsManager.global, resourceType)
+	values := settingsStringSlice(m.settingsManager.GetGlobalSettings(), resourceType)
 	if project {
-		values = settingsStringSlice(m.settingsManager.project, resourceType)
+		values = settingsStringSlice(m.settingsManager.GetProjectSettings(), resourceType)
 	}
 	values = updatePackageResourceFilters(values, pattern, toggle.Enabled)
 	if project {
-		m.settingsManager.setProject(resourceType, stringSliceToAny(values))
+		if err := m.settingsManager.setProject(resourceType, stringSliceToAny(values)); err != nil {
+			return false, err
+		}
 	} else {
 		m.settingsManager.setGlobal(resourceType, stringSliceToAny(values))
 	}
 	return true, nil
+}
+
+func projectPackageScope(project bool) string {
+	if project {
+		return "project"
+	}
+	return "user"
+}
+
+func (m *DefaultPackageManager) assertProjectTrustedForScope(scope string) error {
+	if scope == "project" && (m == nil || m.settingsManager == nil || !m.settingsManager.IsProjectTrusted()) {
+		return errors.New("Project is not trusted; refusing to access project package storage")
+	}
+	return nil
 }
 
 func validPackageResourceType(resourceType string) bool {

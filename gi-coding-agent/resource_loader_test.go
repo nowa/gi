@@ -879,6 +879,96 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 	})
 }
 
+func TestDefaultResourceLoaderGatesProjectResourcesByTrust(t *testing.T) {
+	root := t.TempDir()
+	agentDir := filepath.Join(root, "agent")
+	cwd := filepath.Join(root, "repo", "subdir")
+	projectDir := filepath.Join(cwd, ConfigDirName)
+	projectExtension := filepath.Join(projectDir, "extensions", "project.gi.json")
+	projectSkill := filepath.Join(projectDir, "skills", "project-skill", "SKILL.md")
+	ancestorSkill := filepath.Join(root, "repo", ".agents", "skills", "ancestor-skill", "SKILL.md")
+	projectPrompt := filepath.Join(projectDir, "prompts", "project.md")
+	projectTheme := filepath.Join(projectDir, "themes", "project.json")
+	explicitSkill := filepath.Join(cwd, "explicit", "SKILL.md")
+	writeGiProtocolExtensionDescriptor(t, projectExtension)
+	writeResourceSkill(t, projectSkill, "project-skill", "Project skill", "Project content")
+	writeResourceSkill(t, ancestorSkill, "ancestor-skill", "Ancestor skill", "Ancestor content")
+	writeResourceSkill(t, explicitSkill, "explicit-skill", "Explicit skill", "Explicit content")
+	writeResourceFile(t, projectPrompt, "Project prompt")
+	writeJSON(t, projectTheme, map[string]any{"name": "project-theme"})
+	writeResourceFile(t, filepath.Join(projectDir, "SYSTEM.md"), "Project system prompt")
+	writeResourceFile(t, filepath.Join(projectDir, "APPEND_SYSTEM.md"), "Project append prompt")
+	writeResourceFile(t, filepath.Join(cwd, "AGENTS.md"), "Project context")
+	writeResourceSkill(t, filepath.Join(agentDir, "skills", "user-skill", "SKILL.md"), "user-skill", "User skill", "User content")
+	writeResourceFile(t, filepath.Join(agentDir, "prompts", "user.md"), "User prompt")
+	writeJSON(t, filepath.Join(agentDir, "themes", "user.json"), map[string]any{"name": "user-theme"})
+	writeResourceFile(t, filepath.Join(agentDir, "SYSTEM.md"), "User system prompt")
+	writeResourceFile(t, filepath.Join(agentDir, "APPEND_SYSTEM.md"), "User append prompt")
+
+	settings := NewSettingsManagerWithOptions(cwd, agentDir, SettingsManagerOptions{ProjectTrusted: false})
+	loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+		CWD:                  cwd,
+		AgentDir:             agentDir,
+		SettingsManager:      settings,
+		AdditionalSkillPaths: []string{explicitSkill},
+	})
+	loader.Reload()
+
+	if len(loader.GetExtensions().Extensions) != 0 || len(loader.GetExtensions().Errors) != 0 {
+		t.Fatalf("untrusted extensions = %#v, errors = %#v", loader.GetExtensions().Extensions, loader.GetExtensions().Errors)
+	}
+	for _, name := range []string{"project-skill", "ancestor-skill"} {
+		if resourceHasSkill(loader.GetSkills().Skills, name) {
+			t.Fatalf("untrusted skill %q loaded: %#v", name, loader.GetSkills().Skills)
+		}
+	}
+	for _, name := range []string{"user-skill", "explicit-skill"} {
+		if !resourceHasSkill(loader.GetSkills().Skills, name) {
+			t.Fatalf("trusted skill %q missing: %#v", name, loader.GetSkills().Skills)
+		}
+	}
+	if resourceHasPrompt(loader.GetPrompts().Prompts, "project") || !resourceHasPrompt(loader.GetPrompts().Prompts, "user") {
+		t.Fatalf("untrusted prompts = %#v", loader.GetPrompts().Prompts)
+	}
+	if resourceFindTheme(loader.GetThemes().Themes, "project-theme") != nil ||
+		resourceFindTheme(loader.GetThemes().Themes, "user-theme") == nil {
+		t.Fatalf("untrusted themes = %#v", loader.GetThemes().Themes)
+	}
+	if loader.GetSystemPrompt() != "User system prompt" || loader.GetAppendSystemPrompt() != "User append prompt" {
+		t.Fatalf("untrusted prompts = system %q append %q", loader.GetSystemPrompt(), loader.GetAppendSystemPrompt())
+	}
+	if files := loader.GetAgentsFiles().AgentsFiles; !resourceContextFilesContain(files, filepath.Join(cwd, "AGENTS.md")) {
+		t.Fatalf("project context should remain available: %#v", files)
+	}
+
+	settings.SetProjectTrusted(true)
+	loader.Reload()
+	if len(loader.GetExtensions().Extensions) != 1 || loader.GetExtensions().Extensions[0].Path != projectExtension {
+		t.Fatalf("trusted extensions = %#v", loader.GetExtensions().Extensions)
+	}
+	for _, name := range []string{"project-skill", "ancestor-skill"} {
+		if !resourceHasSkill(loader.GetSkills().Skills, name) {
+			t.Fatalf("trusted skill %q missing: %#v", name, loader.GetSkills().Skills)
+		}
+	}
+	if !resourceHasPrompt(loader.GetPrompts().Prompts, "project") ||
+		resourceFindTheme(loader.GetThemes().Themes, "project-theme") == nil {
+		t.Fatalf("trusted resources: prompts=%#v themes=%#v", loader.GetPrompts().Prompts, loader.GetThemes().Themes)
+	}
+	if loader.GetSystemPrompt() != "Project system prompt" || loader.GetAppendSystemPrompt() != "Project append prompt" {
+		t.Fatalf("trusted prompts = system %q append %q", loader.GetSystemPrompt(), loader.GetAppendSystemPrompt())
+	}
+}
+
+func resourceContextFilesContain(files []ResourceContextFile, path string) bool {
+	for _, file := range files {
+		if file.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
 func createResourceLoaderDirs(t *testing.T) (string, string) {
 	t.Helper()
 	root := t.TempDir()

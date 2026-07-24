@@ -76,6 +76,9 @@ func (m *DefaultPackageManager) ResolveProtocolPackageResources(sources []string
 func (m *DefaultPackageManager) ResolveProtocolPackageSourceSpecs(specs []ProtocolPackageSourceSpec) (ProtocolPackageResources, error) {
 	var result ProtocolPackageResources
 	for _, spec := range specs {
+		if err := m.assertProjectTrustedForScope(spec.Scope); err != nil {
+			return ProtocolPackageResources{}, err
+		}
 		resolved, packageDir, err := m.resolveProtocolPackageSource(spec.Source, spec.Scope)
 		if err != nil {
 			return ProtocolPackageResources{}, err
@@ -124,8 +127,10 @@ func (m *DefaultPackageManager) configuredProtocolPackageSourceSpecs() []Protoco
 			order = append(order, keyedSpec{key: key, spec: spec})
 		}
 	}
-	addSpecs(settingsSlice(m.settingsManager.global, "packages"), "user", m.agentDir)
-	addSpecs(settingsSlice(m.settingsManager.project, "packages"), "project", filepath.Join(m.cwd, ConfigDirName))
+	addSpecs(settingsSlice(m.settingsManager.GetGlobalSettings(), "packages"), "user", m.agentDir)
+	if m.settingsManager.IsProjectTrusted() {
+		addSpecs(settingsSlice(m.settingsManager.GetProjectSettings(), "packages"), "project", filepath.Join(m.cwd, ConfigDirName))
+	}
 	specs := make([]ProtocolPackageSourceSpec, 0, len(order))
 	for _, item := range order {
 		specs = append(specs, item.spec)

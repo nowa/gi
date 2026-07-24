@@ -2,6 +2,7 @@ package gicodingagent
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 )
@@ -12,11 +13,12 @@ type SettingsError struct {
 }
 
 type SettingsManager struct {
-	cwd         string
-	agentDir    string
-	globalPath  string
-	projectPath string
-	inMemory    bool
+	cwd            string
+	agentDir       string
+	globalPath     string
+	projectPath    string
+	inMemory       bool
+	projectTrusted bool
 
 	global  map[string]any
 	project map[string]any
@@ -46,16 +48,28 @@ type ProviderRetrySettings struct {
 }
 
 func NewSettingsManager(cwd, agentDir string) *SettingsManager {
+	return NewSettingsManagerWithOptions(cwd, agentDir, SettingsManagerOptions{ProjectTrusted: true})
+}
+
+type SettingsManagerOptions struct {
+	ProjectTrusted bool
+}
+
+func NewSettingsManagerWithOptions(cwd, agentDir string, options SettingsManagerOptions) *SettingsManager {
 	manager := &SettingsManager{
 		cwd:             cwd,
 		agentDir:        agentDir,
 		globalPath:      filepath.Join(agentDir, "settings.json"),
 		projectPath:     filepath.Join(cwd, ConfigDirName, "settings.json"),
+		projectTrusted:  options.ProjectTrusted,
 		modifiedGlobal:  map[string]struct{}{},
 		modifiedProject: map[string]struct{}{},
 	}
 	manager.global, manager.globalLoadErr = loadSettingsFile(manager.globalPath)
-	manager.project, manager.projectLoadErr = loadSettingsFile(manager.projectPath)
+	manager.project = map[string]any{}
+	if manager.projectTrusted {
+		manager.project, manager.projectLoadErr = loadSettingsFile(manager.projectPath)
+	}
 	if manager.globalLoadErr != nil {
 		manager.errors = append(manager.errors, SettingsError{Scope: "global", Err: manager.globalLoadErr})
 	}
@@ -69,6 +83,7 @@ func NewSettingsManager(cwd, agentDir string) *SettingsManager {
 func NewInMemorySettingsManager(settings map[string]any) *SettingsManager {
 	manager := &SettingsManager{
 		inMemory:        true,
+		projectTrusted:  true,
 		global:          migrateSettings(cloneSettingsMap(settings)),
 		project:         map[string]any{},
 		modifiedGlobal:  map[string]struct{}{},
@@ -201,11 +216,16 @@ func (s *SettingsManager) Reload() {
 		s.global = settings
 		s.globalLoadErr = nil
 	}
-	if settings, err := loadSettingsFile(s.projectPath); err != nil {
-		s.projectLoadErr = err
-		s.errors = append(s.errors, SettingsError{Scope: "project", Err: err})
+	if s.projectTrusted {
+		if settings, err := loadSettingsFile(s.projectPath); err != nil {
+			s.projectLoadErr = err
+			s.errors = append(s.errors, SettingsError{Scope: "project", Err: err})
+		} else {
+			s.project = settings
+			s.projectLoadErr = nil
+		}
 	} else {
-		s.project = settings
+		s.project = map[string]any{}
 		s.projectLoadErr = nil
 	}
 	clear(s.modifiedGlobal)
@@ -221,6 +241,56 @@ func (s *SettingsManager) DrainErrors() []SettingsError {
 	drained := append([]SettingsError(nil), s.errors...)
 	s.errors = nil
 	return drained
+}
+
+func (s *SettingsManager) GetGlobalSettings() map[string]any {
+	return cloneSettingsMap(s.global)
+}
+
+func (s *SettingsManager) GetProjectSettings() map[string]any {
+	return cloneSettingsMap(s.project)
+}
+
+func (s *SettingsManager) IsProjectTrusted() bool {
+	return s != nil && s.projectTrusted
+}
+
+func (s *SettingsManager) SetProjectTrusted(trusted bool) {
+	if s == nil || s.projectTrusted == trusted {
+		return
+	}
+	s.projectTrusted = trusted
+	clear(s.modifiedProject)
+	if !trusted {
+		s.project = map[string]any{}
+		s.projectLoadErr = nil
+		s.refreshMerged()
+		return
+	}
+	if s.inMemory {
+		s.project = map[string]any{}
+		s.projectLoadErr = nil
+		s.refreshMerged()
+		return
+	}
+	settings, err := loadSettingsFile(s.projectPath)
+	if err != nil {
+		s.project = map[string]any{}
+		s.projectLoadErr = err
+		s.errors = append(s.errors, SettingsError{Scope: "project", Err: err})
+	} else {
+		s.project = settings
+		s.projectLoadErr = nil
+	}
+	s.refreshMerged()
+}
+
+func (s *SettingsManager) GetDefaultProjectTrust() DefaultProjectTrust {
+	return normalizeDefaultProjectTrust(DefaultProjectTrust(settingsString(s.global, "defaultProjectTrust")))
+}
+
+func (s *SettingsManager) SetDefaultProjectTrust(defaultProjectTrust DefaultProjectTrust) {
+	s.setGlobal("defaultProjectTrust", string(normalizeDefaultProjectTrust(defaultProjectTrust)))
 }
 
 func (s *SettingsManager) GetTheme() string {
@@ -515,20 +585,28 @@ func (s *SettingsManager) SetPackages(packages []any) {
 	s.setGlobal("packages", cloneSettingsValue(packages))
 }
 
-func (s *SettingsManager) SetProjectPackages(packages []any) {
-	s.setProject("packages", cloneSettingsValue(packages))
+func (s *SettingsManager) SetProjectPackages(packages []any) error {
+	return s.setProject("packages", cloneSettingsValue(packages))
 }
 
 func (s *SettingsManager) GetExtensionPaths() []string {
 	return settingsStringSlice(s.merged, "extensions")
 }
 
-func (s *SettingsManager) SetProjectExtensionPaths(paths []string) {
-	values := make([]any, len(paths))
-	for i, path := range paths {
-		values[i] = path
-	}
-	s.setProject("extensions", values)
+func (s *SettingsManager) SetProjectExtensionPaths(paths []string) error {
+	return s.setProject("extensions", settingsStringsValue(paths))
+}
+
+func (s *SettingsManager) SetProjectSkillPaths(paths []string) error {
+	return s.setProject("skills", settingsStringsValue(paths))
+}
+
+func (s *SettingsManager) SetProjectPromptTemplatePaths(paths []string) error {
+	return s.setProject("prompts", settingsStringsValue(paths))
+}
+
+func (s *SettingsManager) SetProjectThemePaths(paths []string) error {
+	return s.setProject("themes", settingsStringsValue(paths))
 }
 
 func (s *SettingsManager) setGlobal(key string, value any) {
@@ -550,11 +628,22 @@ func (s *SettingsManager) setGlobalNested(key, nestedKey string, value any) {
 	s.saveGlobal()
 }
 
-func (s *SettingsManager) setProject(key string, value any) {
+func (s *SettingsManager) setProject(key string, value any) error {
+	if !s.projectTrusted {
+		return errors.New("Project is not trusted; refusing to write project settings")
+	}
 	s.project[key] = cloneSettingsValue(value)
 	s.modifiedProject[key] = struct{}{}
 	s.refreshMerged()
-	s.saveProject()
+	return s.saveProject()
+}
+
+func settingsStringsValue(values []string) []any {
+	result := make([]any, len(values))
+	for index, value := range values {
+		result[index] = value
+	}
+	return result
 }
 
 func (s *SettingsManager) saveGlobal() {
@@ -572,19 +661,20 @@ func (s *SettingsManager) saveGlobal() {
 	clear(s.modifiedGlobal)
 }
 
-func (s *SettingsManager) saveProject() {
+func (s *SettingsManager) saveProject() error {
 	if s.inMemory {
 		clear(s.modifiedProject)
-		return
+		return nil
 	}
 	if s.projectLoadErr != nil {
-		return
+		return s.projectLoadErr
 	}
 	if err := saveModifiedSettings(s.projectPath, s.project, s.modifiedProject); err != nil {
 		s.errors = append(s.errors, SettingsError{Scope: "project", Err: err})
-		return
+		return err
 	}
 	clear(s.modifiedProject)
+	return nil
 }
 
 func saveModifiedSettings(path string, inMemory map[string]any, modified map[string]struct{}) error {

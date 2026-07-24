@@ -593,7 +593,6 @@
     {
       "module": "coding",
       "missingFiles": [
-        "cli/project-trust.ts",
         "cli/startup-ui.ts",
         "core/cache-stats.ts",
         "core/experimental.ts",
@@ -601,13 +600,11 @@
         "core/model-config.ts",
         "core/model-runtime.ts",
         "core/models-store.ts",
-        "core/project-trust.ts",
         "core/provider-attribution.ts",
         "core/provider-composer.ts",
         "core/radius.ts",
         "core/remote-catalog-provider.ts",
         "core/runtime-credentials.ts",
-        "core/trust-manager.ts",
         "core/usage-totals.ts",
         "extensions/llama/client.ts",
         "extensions/llama/huggingface.ts",
@@ -617,7 +614,6 @@
         "modes/interactive/components/custom-entry.ts",
         "modes/interactive/components/first-time-setup.ts",
         "modes/interactive/components/status-indicator.ts",
-        "modes/interactive/components/trust-selector.ts",
         "modes/interactive/external-editor.ts",
         "modes/interactive/model-search.ts",
         "modes/interactive/theme/theme-controller.ts",
@@ -631,7 +627,6 @@
         "utils/windows-self-update.ts"
       ],
       "missingSymbols": [
-        "cli/project-trust.ts::createProjectTrustContext",
         "cli/startup-ui.ts::applyDetectedStartupTheme",
         "cli/startup-ui.ts::clearStartupTui",
         "cli/startup-ui.ts::createStartupTui",
@@ -766,7 +761,6 @@
         "core/output-guard.ts::waitForRawStdoutBackpressure",
         "core/output-guard.ts::writeRawStdoutChunk",
         "core/package-manager.ts::DefaultPackageManager.applyPackageDeltaFilter",
-        "core/package-manager.ts::DefaultPackageManager.assertProjectTrustedForScope",
         "core/package-manager.ts::DefaultPackageManager.ensureGitRef",
         "core/package-manager.ts::DefaultPackageManager.findAutoloadDeltaBase",
         "core/package-manager.ts::DefaultPackageManager.getLegacyGlobalNpmInstallPath",
@@ -779,10 +773,6 @@
         "core/package-manager.ts::getExtensionTempFolder",
         "core/package-manager.ts::getNpmVersionRange",
         "core/package-manager.ts::isExactNpmVersion",
-        "core/project-trust.ts::formatProjectTrustPrompt",
-        "core/project-trust.ts::resolveProjectTrusted",
-        "core/project-trust.ts::saveProjectTrustPromptResult",
-        "core/project-trust.ts::selectProjectTrustOption",
         "core/provider-attribution.ts::getDefaultAttributionHeaders",
         "core/provider-attribution.ts::getSessionHeaders",
         "core/provider-attribution.ts::isCloudflareModel",
@@ -854,8 +844,6 @@
         "core/session-manager.ts::readSessionHeaderForDiscovery",
         "core/session-manager.ts::sessionCwdMatches",
         "core/session-manager.ts::sessionEntryToContextMessages",
-        "core/settings-manager.ts::SettingsManager.assertProjectTrustedForWrite",
-        "core/settings-manager.ts::SettingsManager.getDefaultProjectTrust",
         "core/settings-manager.ts::SettingsManager.getEnableAnalytics",
         "core/settings-manager.ts::SettingsManager.getExternalEditorCommand",
         "core/settings-manager.ts::SettingsManager.getHttpIdleTimeoutMs",
@@ -864,12 +852,9 @@
         "core/settings-manager.ts::SettingsManager.getThemeSetting",
         "core/settings-manager.ts::SettingsManager.getTrackingId",
         "core/settings-manager.ts::SettingsManager.getWebSocketConnectTimeoutMs",
-        "core/settings-manager.ts::SettingsManager.isProjectTrusted",
-        "core/settings-manager.ts::SettingsManager.setDefaultProjectTrust",
         "core/settings-manager.ts::SettingsManager.setEnableAnalytics",
         "core/settings-manager.ts::SettingsManager.setHttpIdleTimeoutMs",
         "core/settings-manager.ts::SettingsManager.setOutputPad",
-        "core/settings-manager.ts::SettingsManager.setProjectTrusted",
         "core/settings-manager.ts::SettingsManager.setShowCacheMissNotices",
         "core/settings-manager.ts::SettingsManager.updateProjectSettings",
         "core/settings-manager.ts::parseTimeoutSetting",
@@ -887,21 +872,6 @@
         "core/tools/render-utils.ts::linkPath",
         "core/tools/render-utils.ts::renderToolPath",
         "core/tools/truncate.ts::splitLinesForCounting",
-        "core/trust-manager.ts::ProjectTrustStore",
-        "core/trust-manager.ts::ProjectTrustStore.constructor",
-        "core/trust-manager.ts::ProjectTrustStore.get",
-        "core/trust-manager.ts::ProjectTrustStore.getEntry",
-        "core/trust-manager.ts::ProjectTrustStore.set",
-        "core/trust-manager.ts::ProjectTrustStore.setMany",
-        "core/trust-manager.ts::acquireTrustLockSync",
-        "core/trust-manager.ts::findNearestTrustEntry",
-        "core/trust-manager.ts::getProjectTrustOptions",
-        "core/trust-manager.ts::getProjectTrustParentPath",
-        "core/trust-manager.ts::hasTrustRequiringProjectResources",
-        "core/trust-manager.ts::normalizeCwd",
-        "core/trust-manager.ts::readTrustFile",
-        "core/trust-manager.ts::withTrustFileLock",
-        "core/trust-manager.ts::writeTrustFile",
         "core/usage-totals.ts::addUsageToTotals",
         "core/usage-totals.ts::createUsageTotals",
         "core/usage-totals.ts::getUsageCostBreakdown",
@@ -1064,23 +1034,15 @@
         "modes/interactive/components/tree-selector.ts::compactRawKeys",
         "modes/interactive/components/tree-selector.ts::formatHelpKeys",
         "modes/interactive/components/tree-selector.ts::renderHorizontalViewport",
-        "modes/interactive/components/trust-selector.ts::TrustSelectorComponent",
-        "modes/interactive/components/trust-selector.ts::TrustSelectorComponent.constructor",
-        "modes/interactive/components/trust-selector.ts::TrustSelectorComponent.handleInput",
-        "modes/interactive/components/trust-selector.ts::TrustSelectorComponent.isSavedOption",
-        "modes/interactive/components/trust-selector.ts::TrustSelectorComponent.updateList",
-        "modes/interactive/components/trust-selector.ts::formatDecision",
         "modes/interactive/components/user-message.ts::UserMessageComponent.rebuild",
         "modes/interactive/components/user-message.ts::UserMessageComponent.setOutputPad",
         "modes/interactive/external-editor.ts::editInExternalEditor",
         "modes/interactive/interactive-mode.ts::InteractiveMode.addCacheMissNotice",
         "modes/interactive/interactive-mode.ts::InteractiveMode.addCustomEntryToChat",
         "modes/interactive/interactive-mode.ts::InteractiveMode.clearStatusIndicator",
-        "modes/interactive/interactive-mode.ts::InteractiveMode.createProjectTrustContext",
         "modes/interactive/interactive-mode.ts::InteractiveMode.handleClipboardPaste",
         "modes/interactive/interactive-mode.ts::InteractiveMode.handleOpenExternalEditor",
         "modes/interactive/interactive-mode.ts::InteractiveMode.maybeShowCacheMissNotice",
-        "modes/interactive/interactive-mode.ts::InteractiveMode.renderProjectTrustWarningIfNeeded",
         "modes/interactive/interactive-mode.ts::InteractiveMode.renderSessionEntries",
         "modes/interactive/interactive-mode.ts::InteractiveMode.renderSessionItems",
         "modes/interactive/interactive-mode.ts::InteractiveMode.showStatusIndicator",
@@ -2334,9 +2296,7 @@
         "packages/coding-agent/test/suite/regressions/extension-factory-cache.test.ts",
         "packages/coding-agent/test/suite/regressions/pre-prompt-compaction-no-continue.test.ts",
         "packages/coding-agent/test/theme-detection.test.ts",
-        "packages/coding-agent/test/theme-picker.test.ts",
-        "packages/coding-agent/test/trust-manager.test.ts",
-        "packages/coding-agent/test/trust-selector.test.ts"
+        "packages/coding-agent/test/theme-picker.test.ts"
       ],
       "noCandidateFiles": [
         "packages/coding-agent/test/experimental.test.ts",
@@ -2641,11 +2601,6 @@
           "name": "forwards websocketConnectTimeoutMs from settings"
         },
         {
-          "file": "packages/coding-agent/test/settings-manager.test.ts",
-          "line": 349,
-          "name": "should reject invalid timeout values"
-        },
-        {
           "file": "packages/coding-agent/test/status-indicator.test.ts",
           "line": 19,
           "name": "disposes retry countdown updates"
@@ -2689,21 +2644,6 @@
           "file": "packages/coding-agent/test/theme-detection.test.ts",
           "line": 103,
           "name": "uses terminal capabilities"
-        },
-        {
-          "file": "packages/coding-agent/test/trust-selector.test.ts",
-          "line": 17,
-          "name": "marks the saved trusted decision"
-        },
-        {
-          "file": "packages/coding-agent/test/trust-selector.test.ts",
-          "line": 49,
-          "name": "labels saved ancestor decisions as inherited"
-        },
-        {
-          "file": "packages/coding-agent/test/trust-selector.test.ts",
-          "line": 63,
-          "name": "adds a trust parent option"
         }
       ]
     }

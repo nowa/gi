@@ -167,6 +167,7 @@ type interactiveSlashCommand struct {
 func builtinInteractiveSlashCommands() []interactiveSlashCommand {
 	return []interactiveSlashCommand{
 		{Name: "settings", Description: "Open settings menu"},
+		{Name: "trust", Description: "Manage project trust"},
 		{Name: "model", Description: "Select model (opens selector UI)"},
 		{Name: "scoped-models", Description: "Enable/disable models for Ctrl+P cycling"},
 		{Name: "export", Description: "Export session (HTML default, or specify path: .html/.jsonl)"},

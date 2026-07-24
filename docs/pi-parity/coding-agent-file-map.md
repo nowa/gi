@@ -99,6 +99,33 @@ not to the agent runtime.
 | `core/slash-commands.ts` | command metadata | `cli_interactive_tui.go`, `prompt_templates.go`, protocol command registry | split | Built-ins, prompt templates, skills, and extension commands share the Go command registry. |
 | `core/source-info.ts`, `core/diagnostics.ts`, `core/timings.ts`, `core/telemetry.ts` | metadata, diagnostics, timing, telemetry | `resource_loader.go`, `diagnostics` structs, `internal/startuptiming`, `startup_timings.go` facade, `internal/telemetry`, `telemetry.go` facade | split | Gi-specific names are used where the product boundary differs from Pi, with timing and telemetry env parsing behind focused helper packages. |
 
+### Project Trust State And Data Flow
+
+Gi keeps the resolved trust decision in one runtime owner. The persistent store
+does not become a second source of live state:
+
+```text
+CLI override ───────────────┐
+trust.json ─────────────────┤
+global default ─────────────┼─> ResolveProjectTrusted
+resource detection + UI ────┘            |
+                                         v
+                             SettingsManager.projectTrusted
+                                  |                 |
+                                  v                 v
+                          DefaultResourceLoader  PackageManager
+```
+
+| Pi file / surface | Pi functions or members | Gi equivalent | Status | Notes |
+| --- | --- | --- | --- | --- |
+| `cli/project-trust.ts` | `createProjectTrustContext` | `cli_project_trust.go`, startup select dialog support | partial | Built-in startup selection, cancellation, and non-UI deny behavior are represented. Extension-provided pre-trust UI interception remains open with the protocol adaptation. |
+| `core/project-trust.ts` | `formatProjectTrustPrompt`, `selectProjectTrustOption`, `saveProjectTrustPromptResult`, `resolveProjectTrusted` | `project_trust.go`, `cli_project_trust.go` | partial | CLI override, no-resource auto-trust, remembered decisions, global defaults, session-only choices, persistence, and non-UI fallback are represented. The extension-first decision hook remains open. |
+| `core/trust-manager.ts` | `normalizeCwd`, `findNearestTrustEntry`, `getProjectTrustParentPath`, `getProjectTrustOptions`, `readTrustFile`, `writeTrustFile`, `acquireTrustLockSync`, `withTrustFileLock`, `hasTrustRequiringProjectResources`, `ProjectTrustStore`, `ProjectTrustStore.constructor`, `ProjectTrustStore.get`, `ProjectTrustStore.getEntry`, `ProjectTrustStore.set`, `ProjectTrustStore.setMany` | `project_trust.go` | direct | Canonical paths, parent inheritance, sorted private JSON, process/thread locking, null-style clearing, resource detection, and parent/session options are represented. |
+| `core/settings-manager.ts` trust members | `SettingsManager.isProjectTrusted`, `SettingsManager.setProjectTrusted`, `SettingsManager.assertProjectTrustedForWrite`, `SettingsManager.getDefaultProjectTrust`, `SettingsManager.setDefaultProjectTrust` | `settings_manager.go` | direct | Project settings start empty until trust resolves; untrusted project writes fail through the same state owner used by resource and package consumers. |
+| `core/package-manager.ts` | `DefaultPackageManager.assertProjectTrustedForScope` | `package_manager.go`, `protocol_package_resolver.go` | direct | Project package storage, resolution, mutation, and configuration are rejected while untrusted. |
+| `modes/interactive/components/trust-selector.ts` | `formatDecision`, `TrustSelectorComponent`, `TrustSelectorComponent.constructor`, `TrustSelectorComponent.isSavedOption`, `TrustSelectorComponent.updateList`, `TrustSelectorComponent.handleInput` | `cli_interactive_trust.go`, `cli_interactive_dialog_host.go` | split | The generic Go dialog host renders the trust choices, saved checkmark, inherited decision label, selection, and cancellation without a second trust-specific widget hierarchy. |
+| `modes/interactive/interactive-mode.ts` | `InteractiveMode.createProjectTrustContext`, `InteractiveMode.renderProjectTrustWarningIfNeeded` | `cli_project_trust.go`, `cli_interactive_mode.go`, `cli_print_mode.go` | partial | Startup UI and the untrusted-project warning are represented. Protocol extensions cannot yet answer the pre-runtime trust event. |
+
 ### Core Auth And OAuth Function Map
 
 Pi keeps OAuth provider primitives in `packages/ai` and drives them from the

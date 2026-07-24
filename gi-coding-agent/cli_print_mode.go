@@ -244,9 +244,9 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	if err != nil {
 		return nil, err
 	}
-	settingsManager := NewSettingsManager(startupCwd, agentDir)
+	startupSettingsManager := NewSettingsManager(startupCwd, agentDir)
 
-	sessionManager, err := newCLIPrintModeSessionManager(args, startupCwd, agentDir, settingsManager)
+	sessionManager, err := newCLIPrintModeSessionManager(args, startupCwd, agentDir, startupSettingsManager)
 	if err != nil {
 		return nil, err
 	}
@@ -254,8 +254,9 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	if err != nil {
 		return nil, err
 	}
-	if cwd != startupCwd {
-		settingsManager = NewSettingsManager(cwd, agentDir)
+	settingsManager, projectTrusted, err := newCLIRuntimeSettingsManager(args, cwd, agentDir, options.ProjectTrustPrompt)
+	if err != nil {
+		return nil, err
 	}
 	registryOptions := options
 	registryOptions.CWD = cwd
@@ -320,6 +321,9 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	host.extensionFlagValues = cloneMapAny(args.UnknownFlags)
 	host.processExtensions = extensions.ProcessExtensions
 	host.startupWarnings = startupWarningLines(resolvedModel.Warning)
+	if warning := projectTrustStartupWarning(cwd, projectTrusted); warning != "" {
+		host.startupWarnings = append(host.startupWarnings, warning)
+	}
 	if extensions.Runtime != nil {
 		runtimeHost, err := NewAgentSessionRuntimeHost(session, extensions.Runtime)
 		if err != nil {

@@ -269,7 +269,12 @@ func (l *DefaultResourceLoader) loadExtensions() ResourceExtensionsResult {
 	combined.Extensions = append(combined.Extensions, explicit.Extensions...)
 	combined.Errors = append(combined.Errors, explicit.Errors...)
 	if !l.noExtensions {
-		for _, dir := range []string{filepath.Join(l.cwd, ConfigDirName, "extensions"), filepath.Join(l.agentDir, "extensions")} {
+		var dirs []string
+		if l.projectTrusted() {
+			dirs = append(dirs, filepath.Join(l.cwd, ConfigDirName, "extensions"))
+		}
+		dirs = append(dirs, filepath.Join(l.agentDir, "extensions"))
+		for _, dir := range dirs {
 			discovered := discoverProtocolExtensionsInDir(dir)
 			combined.Extensions = append(combined.Extensions, discovered.Extensions...)
 			combined.Errors = append(combined.Errors, discovered.Errors...)
@@ -349,14 +354,16 @@ func (l *DefaultResourceLoader) loadSkills() ResourceSkillsResult {
 			result.Skills = append(result.Skills, loaded.Skills...)
 			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 		}
-		for _, dir := range projectAgentsSkillDirs(l.cwd, userAgentsDir) {
-			loaded := loadResourceSkillsWithMetadataOptions(dir, skillSourceMetadata(dir, "project"), agentharness.LoadSkillsOptions{RespectGitignore: true})
+		if l.projectTrusted() {
+			for _, dir := range projectAgentsSkillDirs(l.cwd, userAgentsDir) {
+				loaded := loadResourceSkillsWithMetadataOptions(dir, skillSourceMetadata(dir, "project"), agentharness.LoadSkillsOptions{RespectGitignore: true})
+				result.Skills = append(result.Skills, loaded.Skills...)
+				result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
+			}
+			loaded := loadResourceSkillsWithMetadata(filepath.Join(l.cwd, ConfigDirName, "skills"), skillSourceMetadata(filepath.Join(l.cwd, ConfigDirName, "skills"), "project"))
 			result.Skills = append(result.Skills, loaded.Skills...)
 			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 		}
-		loaded := loadResourceSkillsWithMetadata(filepath.Join(l.cwd, ConfigDirName, "skills"), skillSourceMetadata(filepath.Join(l.cwd, ConfigDirName, "skills"), "project"))
-		result.Skills = append(result.Skills, loaded.Skills...)
-		result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 	}
 	for _, path := range l.additionalSkillPaths {
 		resolved := ResolveToCwd(path, l.cwd)
@@ -464,7 +471,9 @@ func (l *DefaultResourceLoader) loadPrompts() []PromptTemplate {
 			prompts = append(prompts, LoadPromptTemplates(LoadPromptTemplatesOptions{Cwd: l.cwd, PromptPaths: []string{path}})...)
 		}
 		prompts = append(prompts, loadPromptTemplatesFromDir(filepath.Join(l.agentDir, "prompts"), sourceInfoForPromptPath(filepath.Join(l.agentDir, "prompts"), filepath.Join(l.agentDir, "prompts"), filepath.Join(l.cwd, ConfigDirName, "prompts")))...)
-		prompts = append(prompts, loadPromptTemplatesFromDir(filepath.Join(l.cwd, ConfigDirName, "prompts"), sourceInfoForPromptPath(filepath.Join(l.cwd, ConfigDirName, "prompts"), filepath.Join(l.agentDir, "prompts"), filepath.Join(l.cwd, ConfigDirName, "prompts")))...)
+		if l.projectTrusted() {
+			prompts = append(prompts, loadPromptTemplatesFromDir(filepath.Join(l.cwd, ConfigDirName, "prompts"), sourceInfoForPromptPath(filepath.Join(l.cwd, ConfigDirName, "prompts"), filepath.Join(l.agentDir, "prompts"), filepath.Join(l.cwd, ConfigDirName, "prompts")))...)
+		}
 	}
 	for _, path := range l.additionalPromptPaths {
 		prompts = append(prompts, LoadPromptTemplates(LoadPromptTemplatesOptions{Cwd: l.cwd, PromptPaths: []string{path}})...)
@@ -549,7 +558,11 @@ func (l *DefaultResourceLoader) loadThemes() ResourceThemesResult {
 				themes = append(themes, loadThemeFile(resource.Path)...)
 			}
 		}
-		for _, dir := range []string{filepath.Join(l.agentDir, "themes"), filepath.Join(l.cwd, ConfigDirName, "themes")} {
+		dirs := []string{filepath.Join(l.agentDir, "themes")}
+		if l.projectTrusted() {
+			dirs = append(dirs, filepath.Join(l.cwd, ConfigDirName, "themes"))
+		}
+		for _, dir := range dirs {
 			themes = append(themes, loadThemesFromDir(dir)...)
 		}
 	}
@@ -674,7 +687,12 @@ func (l *DefaultResourceLoader) loadSystemPrompt() string {
 	if strings.TrimSpace(l.systemPromptSource) != "" {
 		return resolvePromptInput(l.systemPromptSource)
 	}
-	return strings.TrimSpace(readOptionalFile(filepath.Join(l.cwd, ConfigDirName, "SYSTEM.md")))
+	if l.projectTrusted() {
+		if projectPrompt := strings.TrimSpace(readOptionalFile(filepath.Join(l.cwd, ConfigDirName, "SYSTEM.md"))); projectPrompt != "" {
+			return projectPrompt
+		}
+	}
+	return strings.TrimSpace(readOptionalFile(filepath.Join(l.agentDir, "SYSTEM.md")))
 }
 
 func (l *DefaultResourceLoader) loadAppendSystemPrompt() string {
@@ -687,7 +705,12 @@ func (l *DefaultResourceLoader) loadAppendSystemPrompt() string {
 		}
 		return strings.Join(parts, "\n\n")
 	}
-	return readOptionalFile(filepath.Join(l.cwd, ConfigDirName, "APPEND_SYSTEM.md"))
+	if l.projectTrusted() {
+		if projectPrompt := readOptionalFile(filepath.Join(l.cwd, ConfigDirName, "APPEND_SYSTEM.md")); projectPrompt != "" {
+			return projectPrompt
+		}
+	}
+	return readOptionalFile(filepath.Join(l.agentDir, "APPEND_SYSTEM.md"))
 }
 
 func (l *DefaultResourceLoader) resourceFilters(key string) []string {
@@ -696,23 +719,31 @@ func (l *DefaultResourceLoader) resourceFilters(key string) []string {
 
 func (l *DefaultResourceLoader) settingsExtensionSources() []ProtocolExtensionSource {
 	var sources []ProtocolExtensionSource
-	for _, path := range l.settingsResourcePathsByScope("extensions", l.settingsManager.global, l.agentDir) {
+	for _, path := range l.settingsResourcePathsByScope("extensions", l.settingsManager.GetGlobalSettings(), l.agentDir) {
 		loaded := LoadProtocolExtensionSources([]string{path}, l.agentDir)
 		sources = append(sources, loaded.Extensions...)
 	}
 	projectBase := filepath.Join(l.cwd, ConfigDirName)
-	for _, path := range l.settingsResourcePathsByScope("extensions", l.settingsManager.project, projectBase) {
-		loaded := LoadProtocolExtensionSources([]string{path}, projectBase)
-		sources = append(sources, loaded.Extensions...)
+	if l.projectTrusted() {
+		for _, path := range l.settingsResourcePathsByScope("extensions", l.settingsManager.GetProjectSettings(), projectBase) {
+			loaded := LoadProtocolExtensionSources([]string{path}, projectBase)
+			sources = append(sources, loaded.Extensions...)
+		}
 	}
 	return sources
 }
 
 func (l *DefaultResourceLoader) settingsResourcePaths(key string) []string {
 	var paths []string
-	paths = append(paths, l.settingsResourcePathsByScope(key, l.settingsManager.global, l.agentDir)...)
-	paths = append(paths, l.settingsResourcePathsByScope(key, l.settingsManager.project, filepath.Join(l.cwd, ConfigDirName))...)
+	paths = append(paths, l.settingsResourcePathsByScope(key, l.settingsManager.GetGlobalSettings(), l.agentDir)...)
+	if l.projectTrusted() {
+		paths = append(paths, l.settingsResourcePathsByScope(key, l.settingsManager.GetProjectSettings(), filepath.Join(l.cwd, ConfigDirName))...)
+	}
 	return paths
+}
+
+func (l *DefaultResourceLoader) projectTrusted() bool {
+	return l == nil || l.settingsManager == nil || l.settingsManager.IsProjectTrusted()
 }
 
 func (l *DefaultResourceLoader) settingsResourcePathsByScope(key string, settings map[string]any, baseDir string) []string {

@@ -27,44 +27,45 @@ type Diagnostic struct {
 }
 
 type Args struct {
-	Provider           string
-	Model              string
-	APIKey             string
-	SystemPrompt       string
-	AppendSystemPrompt []string
-	Thinking           ThinkingLevel
-	Continue           bool
-	Resume             bool
-	Help               bool
-	Version            bool
-	Mode               Mode
-	NoSession          bool
-	Session            string
-	SessionCwdOverride string
-	Fork               string
-	SessionDir         string
-	Models             []string
-	Tools              []string
-	NoTools            bool
-	NoBuiltinTools     bool
-	Extensions         []string
-	NoExtensions       bool
-	Print              bool
-	Export             string
-	NoSkills           bool
-	Skills             []string
-	PromptTemplates    []string
-	NoPromptTemplates  bool
-	Themes             []string
-	NoThemes           bool
-	NoContextFiles     bool
-	ListModels         any
-	Offline            bool
-	Verbose            bool
-	Messages           []string
-	FileArgs           []string
-	UnknownFlags       map[string]any
-	Diagnostics        []Diagnostic
+	Provider             string
+	Model                string
+	APIKey               string
+	SystemPrompt         string
+	AppendSystemPrompt   []string
+	Thinking             ThinkingLevel
+	Continue             bool
+	Resume               bool
+	Help                 bool
+	Version              bool
+	Mode                 Mode
+	NoSession            bool
+	Session              string
+	SessionCwdOverride   string
+	Fork                 string
+	SessionDir           string
+	Models               []string
+	Tools                []string
+	NoTools              bool
+	NoBuiltinTools       bool
+	Extensions           []string
+	NoExtensions         bool
+	Print                bool
+	Export               string
+	NoSkills             bool
+	Skills               []string
+	PromptTemplates      []string
+	NoPromptTemplates    bool
+	Themes               []string
+	NoThemes             bool
+	NoContextFiles       bool
+	ListModels           any
+	Offline              bool
+	Verbose              bool
+	ProjectTrustOverride *bool
+	Messages             []string
+	FileArgs             []string
+	UnknownFlags         map[string]any
+	Diagnostics          []Diagnostic
 }
 
 var validThinkingLevels = map[string]ThinkingLevel{
@@ -194,6 +195,12 @@ func ParseArgs(argv []string) Args {
 			}
 		case arg == "--verbose":
 			result.Verbose = true
+		case arg == "--approve" || arg == "-a":
+			value := true
+			result.ProjectTrustOverride = &value
+		case arg == "--no-approve" || arg == "-na":
+			value := false
+			result.ProjectTrustOverride = &value
 		case arg == "--offline":
 			result.Offline = true
 		case strings.HasPrefix(arg, "@"):
