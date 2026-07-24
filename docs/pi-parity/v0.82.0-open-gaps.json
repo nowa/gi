@@ -50,11 +50,7 @@
         "compat/extension-oauth-types.ts",
         "legacy-api-aliases.ts",
         "utils/abort-signals.ts",
-        "utils/deferred-tools.ts",
-        "utils/estimate.ts",
-        "utils/provider-env.ts",
-        "utils/text.ts",
-        "utils/uuid.ts"
+        "utils/provider-env.ts"
       ],
       "missingSymbols": [
         "api/anthropic-messages.ts::assertRequestAuth",
@@ -131,23 +127,9 @@
         "compat.ts::hasResolvedCloudflareAuth",
         "compat.ts::withEnvApiKey",
         "utils/abort-signals.ts::combineAbortSignals",
-        "utils/deferred-tools.ts::splitDeferredTools",
-        "utils/estimate.ts::calculateContextTokens",
-        "utils/estimate.ts::estimateContextTokens",
-        "utils/estimate.ts::estimateMessageTokens",
-        "utils/estimate.ts::estimateMessages",
-        "utils/estimate.ts::estimateTextAndImageContentChars",
-        "utils/estimate.ts::estimateTextAndImageContentTokens",
-        "utils/estimate.ts::estimateTextTokens",
-        "utils/estimate.ts::estimateToolsTokens",
-        "utils/estimate.ts::getLastAssistantUsageInfo",
-        "utils/estimate.ts::isMessageArray",
         "utils/headers.ts::providerHeadersToRecord",
         "utils/provider-env.ts::getBunSandboxEnvValue",
-        "utils/provider-env.ts::getProviderEnvValue",
-        "utils/text.ts::contentText",
-        "utils/uuid.ts::fillRandomBytes",
-        "utils/uuid.ts::uuidv7"
+        "utils/provider-env.ts::getProviderEnvValue"
       ]
     },
     {
@@ -158,31 +140,7 @@
     {
       "module": "tui",
       "missingFiles": [],
-      "missingSymbols": [
-        "components/editor.ts::Editor.exitHistoryBrowsing",
-        "components/editor.ts::Editor.setAutocompleteTriggerCharacters",
-        "components/editor.ts::buildDebouncePattern",
-        "components/editor.ts::buildTriggerPattern",
-        "components/editor.ts::createScrollBorder",
-        "components/editor.ts::escapeCharacterClass",
-        "components/markdown.ts::Markdown.getOrderedListMarker",
-        "components/markdown.ts::Markdown.getUnorderedListMarker",
-        "components/markdown.ts::trimPartialClosingFences",
-        "terminal-image.ts::probeTmuxHyperlinks",
-        "tui.ts::TUI.clearOverlayFocusRestore",
-        "tui.ts::TUI.clearOverlayFocusRestoreFor",
-        "tui.ts::TUI.containsComponent",
-        "tui.ts::TUI.expandChangedRangeForKittyImages",
-        "tui.ts::TUI.getKittyImageReservedRows",
-        "tui.ts::TUI.getVisibleOverlayFocusRestore",
-        "tui.ts::TUI.isComponentMounted",
-        "tui.ts::TUI.isOverlayFocusAncestor",
-        "tui.ts::TUI.resolveBlockedOverlayFocusResume",
-        "tui.ts::TUI.retargetOverlayPreFocus",
-        "tui.ts::TUI.setFocusInternal",
-        "tui.ts::extractKittyImageRows",
-        "tui.ts::parseKittyImageHeader"
-      ]
+      "missingSymbols": []
     },
     {
       "module": "coding",
@@ -641,11 +599,7 @@
       "undocumentedFiles": [],
       "noCandidateFiles": [
         "packages/ai/test/constrained-sampling.test.ts",
-        "packages/ai/test/context-estimate.test.ts",
-        "packages/ai/test/deferred-tools.test.ts",
-        "packages/ai/test/reasoning-options.test.ts",
-        "packages/ai/test/text.test.ts",
-        "packages/ai/test/uuid.test.ts"
+        "packages/ai/test/reasoning-options.test.ts"
       ],
       "noCandidateCases": [
         {
@@ -694,109 +648,9 @@
           "name": "streams custom Responses tool calls as string arguments"
         },
         {
-          "file": "packages/ai/test/context-estimate.test.ts",
-          "line": 44,
-          "name": "ignores stale assistant usage after a newer message is inserted before it"
-        },
-        {
-          "file": "packages/ai/test/context-estimate.test.ts",
-          "line": 63,
-          "name": "uses assistant usage again after a response to the inserted context"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 180,
-          "name": "loads an Anthropic tool at its tool-result marker"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 188,
-          "name": "preserves tool output as sibling content after emitting references"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 223,
-          "name": "loads a tool introduced by OpenAI history after switching to Anthropic"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 236,
-          "name": "does not resurrect a marked tool missing from Context.tools"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 245,
-          "name": "keeps a tool immediate when it was used before its marker"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 255,
-          "name": "normalizes OAuth names before checking prior tool usage"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 271,
-          "name": "matches OAuth-canonicalized markers to active tools"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 287,
-          "name": "deduplicates active tools after OAuth canonicalization"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 301,
-          "name": "uses the normal tool list when Anthropic tool references are unsupported"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 315,
-          "name": "keeps one immediate Anthropic tool when every current tool is marked"
-        },
-        {
           "file": "packages/ai/test/deferred-tools.test.ts",
           "line": 325,
           "name": "supports explicit Anthropic compatibility overrides"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 337,
-          "name": "serializes Kimi deferred tools as system tool definitions"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 349,
-          "name": "emits Kimi deferred schemas after all tool results in a batch"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 387,
-          "name": "leaves OpenAI Completions tools unchanged without Kimi mode"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 395,
-          "name": "loads an OpenAI Responses tool through client tool search"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 420,
-          "name": "uses the normal tool list when OpenAI tool search is explicitly disabled"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 433,
-          "name": "uses tool search only for supported Codex models"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 452,
-          "name": "leaves providers without deferred loading unchanged"
-        },
-        {
-          "file": "packages/ai/test/deferred-tools.test.ts",
-          "line": 458,
-          "name": "counts definitions marked after the latest usage checkpoint"
         },
         {
           "file": "packages/ai/test/github-copilot-oauth.test.ts",
@@ -859,31 +713,6 @@
           "name": "leaves toggle and budget controls for their adapter-specific implementations"
         },
         {
-          "file": "packages/ai/test/text.test.ts",
-          "line": 12,
-          "name": "extracts assistant text blocks"
-        },
-        {
-          "file": "packages/ai/test/text.test.ts",
-          "line": 16,
-          "name": "supports custom separators"
-        },
-        {
-          "file": "packages/ai/test/text.test.ts",
-          "line": 20,
-          "name": "passes string content through"
-        },
-        {
-          "file": "packages/ai/test/text.test.ts",
-          "line": 24,
-          "name": "extracts text from tool-result content"
-        },
-        {
-          "file": "packages/ai/test/uuid.test.ts",
-          "line": 16,
-          "name": "uses the RFC 9562 layout and preserves monotonic order"
-        },
-        {
           "file": "packages/ai/test/xai-responses.test.ts",
           "line": 63,
           "name": "excludes retired and redundant models from the built-in catalog"
@@ -899,46 +728,8 @@
     {
       "module": "tui",
       "undocumentedFiles": [],
-      "noCandidateFiles": [
-        "packages/tui/test/regression-overlay-cjk-boundary.test.ts"
-      ],
-      "noCandidateCases": [
-        {
-          "file": "packages/tui/test/keybindings.test.ts",
-          "line": 6,
-          "name": "binds Ctrl+J as a default newline alias"
-        },
-        {
-          "file": "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
-          "line": 29,
-          "name": "excludes a wide grapheme from before when overlay starts inside it"
-        },
-        {
-          "file": "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
-          "line": 39,
-          "name": "keeps ASCII before-segment behavior at the same boundary"
-        },
-        {
-          "file": "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
-          "line": 47,
-          "name": "composites an overlay at the requested column when it starts inside a wide grapheme"
-        },
-        {
-          "file": "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
-          "line": 59,
-          "name": "composites an overlay when it starts at a wide grapheme boundary"
-        },
-        {
-          "file": "packages/tui/test/tab-width.test.ts",
-          "line": 60,
-          "name": "keeps tabs inside terminal control sequences byte-identical"
-        },
-        {
-          "file": "packages/tui/test/tab-width.test.ts",
-          "line": 72,
-          "name": "keeps tab-containing overlays on one physical terminal row"
-        }
-      ]
+      "noCandidateFiles": [],
+      "noCandidateCases": []
     },
     {
       "module": "coding",

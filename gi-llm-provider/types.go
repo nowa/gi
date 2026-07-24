@@ -92,23 +92,24 @@ func ToolCall(id, name string, args map[string]any) ContentPart {
 }
 
 type Message struct {
-	Role         string                       `json:"role"`
-	Content      []ContentPart                `json:"content,omitempty"`
-	Timestamp    int64                        `json:"timestamp,omitempty"`
-	API          string                       `json:"api,omitempty"`
-	Provider     string                       `json:"provider,omitempty"`
-	Model        string                       `json:"model,omitempty"`
-	Diagnostics  []AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
-	Usage        Usage                        `json:"usage,omitempty"`
-	StopReason   string                       `json:"stopReason,omitempty"`
-	ErrorMessage string                       `json:"errorMessage,omitempty"`
-	ResponseID   string                       `json:"responseId,omitempty"`
-	ToolCallID   string                       `json:"toolCallID,omitempty"`
-	ToolName     string                       `json:"toolName,omitempty"`
-	CustomType   string                       `json:"customType,omitempty"`
-	Display      *bool                        `json:"display,omitempty"`
-	Details      any                          `json:"details,omitempty"`
-	IsError      bool                         `json:"isError,omitempty"`
+	Role           string                       `json:"role"`
+	Content        []ContentPart                `json:"content,omitempty"`
+	Timestamp      int64                        `json:"timestamp,omitempty"`
+	API            string                       `json:"api,omitempty"`
+	Provider       string                       `json:"provider,omitempty"`
+	Model          string                       `json:"model,omitempty"`
+	Diagnostics    []AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+	Usage          Usage                        `json:"usage,omitempty"`
+	StopReason     string                       `json:"stopReason,omitempty"`
+	ErrorMessage   string                       `json:"errorMessage,omitempty"`
+	ResponseID     string                       `json:"responseId,omitempty"`
+	ToolCallID     string                       `json:"toolCallID,omitempty"`
+	ToolName       string                       `json:"toolName,omitempty"`
+	CustomType     string                       `json:"customType,omitempty"`
+	Display        *bool                        `json:"display,omitempty"`
+	Details        any                          `json:"details,omitempty"`
+	IsError        bool                         `json:"isError,omitempty"`
+	AddedToolNames []string                     `json:"addedToolNames,omitempty"`
 }
 
 func NowMillis() int64 {
@@ -270,10 +271,41 @@ type AssistantMessageEvent struct {
 	ToolCall     ContentPart `json:"toolCall,omitempty"`
 }
 
+type ConstrainedSamplingType string
+
+const (
+	ConstrainedSamplingJSONSchema ConstrainedSamplingType = "json_schema"
+	ConstrainedSamplingGrammar    ConstrainedSamplingType = "grammar"
+)
+
+type ConstrainedSamplingStrictness string
+
+const (
+	ConstrainedSamplingPrefer  ConstrainedSamplingStrictness = "prefer"
+	ConstrainedSamplingRequire ConstrainedSamplingStrictness = "require"
+)
+
+// GrammarVariants carries provider-specific encodings of the same intended
+// grammar. A provider selects only variants it explicitly supports.
+type GrammarVariants struct {
+	OpenAILark  string `json:"openai_lark,omitempty"`
+	OpenAIRegex string `json:"openai_regex,omitempty"`
+}
+
+// ConstrainedSamplingConfig is the Go representation of Pi's discriminated
+// constrained-sampling union. A nil Tool.ConstrainedSampling is equivalent to
+// Pi's absent/false value.
+type ConstrainedSamplingConfig struct {
+	Type     ConstrainedSamplingType       `json:"type"`
+	Strict   ConstrainedSamplingStrictness `json:"strict,omitempty"`
+	Variants GrammarVariants               `json:"variants,omitempty"`
+}
+
 type Tool struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Parameters  Schema `json:"parameters,omitempty"`
+	Name                string                     `json:"name"`
+	Description         string                     `json:"description,omitempty"`
+	Parameters          Schema                     `json:"parameters,omitempty"`
+	ConstrainedSampling *ConstrainedSamplingConfig `json:"constrainedSampling,omitempty"`
 }
 
 type Schema struct {

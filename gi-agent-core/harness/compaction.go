@@ -2,7 +2,6 @@ package harness
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -19,14 +18,7 @@ type CompactionSettings struct {
 
 var DefaultCompactionSettings = CompactionSettings{Enabled: true, ReserveTokens: 16_384, KeepRecentTokens: 20_000}
 
-const estimatedImageChars = 4800
-
-type ContextTokenEstimate struct {
-	Tokens         int  `json:"tokens"`
-	UsageTokens    int  `json:"usageTokens"`
-	EstimateTokens int  `json:"estimateTokens"`
-	LastUsageIndex *int `json:"lastUsageIndex"`
-}
+type ContextTokenEstimate = llm.ContextUsageEstimate
 
 type CutPoint struct {
 	FirstKeptEntryIndex int  `json:"firstKeptEntryIndex"`
@@ -179,10 +171,7 @@ Summarize the prefix to provide context for the retained suffix:
 Be concise. Focus on what's needed to understand the kept suffix.`
 
 func CalculateContextTokens(usage llm.Usage) int {
-	if usage.TotalTokens != 0 {
-		return usage.TotalTokens
-	}
-	return usage.Input + usage.Output + usage.CacheRead + usage.CacheWrite
+	return llm.CalculateContextTokens(usage)
 }
 
 func ShouldCompact(contextTokens, contextWindow int, settings CompactionSettings) bool {
@@ -193,82 +182,18 @@ func ShouldCompact(contextTokens, contextWindow int, settings CompactionSettings
 }
 
 func EstimateTokens(message llm.Message) int {
-	var chars int
 	switch message.Role {
-	case llm.RoleUser, llm.RoleToolResult, "custom":
-		chars = estimateTextAndImageContentChars(message.Content)
-	case llm.RoleAssistant:
-		for _, part := range message.Content {
-			switch part.Type {
-			case llm.ContentText:
-				chars += utf16CodeUnits(part.Text)
-			case llm.ContentThinking:
-				chars += utf16CodeUnits(part.Thinking)
-			case llm.ContentToolCall:
-				chars += utf16CodeUnits(part.Name) + utf16CodeUnits(safeJSONString(part.Arguments))
-			}
-		}
 	case "branchSummary", "compactionSummary", "bashExecution":
-		chars = estimateTextAndImageContentChars(message.Content)
+		return llm.EstimateTextAndImageContentTokens(message.Content)
+	case "custom":
+		return llm.EstimateTextAndImageContentTokens(message.Content)
 	default:
-		return 0
+		return llm.EstimateMessageTokens(message)
 	}
-	return (chars + 3) / 4
-}
-
-func estimateTextAndImageContentChars(content []llm.ContentPart) int {
-	chars := 0
-	for _, part := range content {
-		switch part.Type {
-		case llm.ContentText:
-			chars += utf16CodeUnits(part.Text)
-		case llm.ContentImage:
-			chars += estimatedImageChars
-		}
-	}
-	return chars
-}
-
-func safeJSONString(value any) string {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return "[unserializable]"
-	}
-	return string(encoded)
-}
-
-func utf16CodeUnits(value string) int {
-	units := 0
-	for _, codePoint := range value {
-		if codePoint > 0xffff {
-			units += 2
-		} else {
-			units++
-		}
-	}
-	return units
 }
 
 func EstimateContextTokens(messages []llm.Message) ContextTokenEstimate {
-	total := 0
-	usageTokens := 0
-	estimateTokens := 0
-	var lastUsageIndex *int
-	for i, message := range messages {
-		estimated := EstimateTokens(message)
-		estimateTokens += estimated
-		total += estimated
-		if message.Role == llm.RoleAssistant && message.StopReason != llm.StopReasonError && message.StopReason != llm.StopReasonAborted {
-			usage := CalculateContextTokens(message.Usage)
-			if usage > 0 {
-				index := i
-				lastUsageIndex = &index
-				usageTokens = usage
-				total = usage
-			}
-		}
-	}
-	return ContextTokenEstimate{Tokens: total, UsageTokens: usageTokens, EstimateTokens: estimateTokens, LastUsageIndex: lastUsageIndex}
+	return llm.EstimateMessagesTokens(messages)
 }
 
 func GetLastAssistantUsage(entries []Entry) *llm.Usage {

@@ -685,13 +685,7 @@ func setOpenAIChatAssistantThinkingReplayField(assistant *OpenAIChatMessage, par
 }
 
 func joinTextContent(content []ContentPart) string {
-	var parts []string
-	for _, part := range content {
-		if part.Type == ContentText {
-			parts = append(parts, part.Text)
-		}
-	}
-	return strings.Join(parts, "\n")
+	return ExtractTextContent(content)
 }
 
 func selectToolText(hasText bool, text string) string {
