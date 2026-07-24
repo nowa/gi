@@ -144,11 +144,8 @@
         "providers/zai.ts",
         "utils/abort-signals.ts",
         "utils/deferred-tools.ts",
-        "utils/error-body.ts",
         "utils/estimate.ts",
         "utils/provider-env.ts",
-        "utils/provider-retry.ts",
-        "utils/retry.ts",
         "utils/text.ts",
         "utils/uuid.ts"
       ],
@@ -403,12 +400,6 @@
         "providers/zai.ts::zaiProvider",
         "utils/abort-signals.ts::combineAbortSignals",
         "utils/deferred-tools.ts::splitDeferredTools",
-        "utils/error-body.ts::extractBody",
-        "utils/error-body.ts::extractStatus",
-        "utils/error-body.ts::formatProviderError",
-        "utils/error-body.ts::isNonEmptyObject",
-        "utils/error-body.ts::normalizeProviderError",
-        "utils/error-body.ts::pickBodyText",
         "utils/estimate.ts::calculateContextTokens",
         "utils/estimate.ts::estimateContextTokens",
         "utils/estimate.ts::estimateMessageTokens",
@@ -422,17 +413,6 @@
         "utils/headers.ts::providerHeadersToRecord",
         "utils/provider-env.ts::getBunSandboxEnvValue",
         "utils/provider-env.ts::getProviderEnvValue",
-        "utils/provider-retry.ts::createAbortError",
-        "utils/provider-retry.ts::getRetryDelayMs",
-        "utils/provider-retry.ts::isProviderError",
-        "utils/provider-retry.ts::isRetryableProviderError",
-        "utils/provider-retry.ts::retryProviderRequest",
-        "utils/provider-retry.ts::validateServerRetryDelayMs",
-        "utils/retry.ts::RetrySleepAbortError",
-        "utils/retry.ts::RetrySleepAbortError.constructor",
-        "utils/retry.ts::buildProviderErrorPattern",
-        "utils/retry.ts::isRetryableAssistantError",
-        "utils/retry.ts::retryAssistantCall",
         "utils/text.ts::contentText",
         "utils/uuid.ts::fillRandomBytes",
         "utils/uuid.ts::uuidv7"
@@ -1180,7 +1160,6 @@
         "packages/ai/test/constrained-sampling.test.ts",
         "packages/ai/test/context-estimate.test.ts",
         "packages/ai/test/deferred-tools.test.ts",
-        "packages/ai/test/error-body.test.ts",
         "packages/ai/test/image-model-data.test.ts",
         "packages/ai/test/images-models.test.ts",
         "packages/ai/test/kimi-coding-oauth.test.ts",
@@ -1192,7 +1171,6 @@
         "packages/ai/test/oauth-auth.test.ts",
         "packages/ai/test/oauth-device-code.test.ts",
         "packages/ai/test/openai-completions-reasoning-details.test.ts",
-        "packages/ai/test/openai-completions-retry.test.ts",
         "packages/ai/test/openai-responses-compat.test.ts",
         "packages/ai/test/openai-responses-empty-tool-result.test.ts",
         "packages/ai/test/openai-responses-message-id.test.ts",
@@ -1202,11 +1180,9 @@
         "packages/ai/test/pi-messages.test.ts",
         "packages/ai/test/provider-error-body-passthrough.test.ts",
         "packages/ai/test/provider-error-body-regression.test.ts",
-        "packages/ai/test/provider-retry.test.ts",
         "packages/ai/test/providers.test.ts",
         "packages/ai/test/qwen-token-plan-models.test.ts",
         "packages/ai/test/reasoning-options.test.ts",
-        "packages/ai/test/retry.test.ts",
         "packages/ai/test/text.test.ts",
         "packages/ai/test/uuid.test.ts",
         "packages/ai/test/xai-oauth.test.ts",
@@ -1218,12 +1194,10 @@
         "packages/ai/test/constrained-sampling.test.ts",
         "packages/ai/test/context-estimate.test.ts",
         "packages/ai/test/deferred-tools.test.ts",
-        "packages/ai/test/error-body.test.ts",
         "packages/ai/test/max-thinking.test.ts",
         "packages/ai/test/pi-messages.test.ts",
         "packages/ai/test/providers.test.ts",
         "packages/ai/test/reasoning-options.test.ts",
-        "packages/ai/test/retry.test.ts",
         "packages/ai/test/text.test.ts",
         "packages/ai/test/uuid.test.ts"
       ],
@@ -1382,66 +1356,6 @@
           "file": "packages/ai/test/deferred-tools.test.ts",
           "line": 458,
           "name": "counts definitions marked after the latest usage checkpoint"
-        },
-        {
-          "file": "packages/ai/test/error-body.test.ts",
-          "line": 12,
-          "name": "extracts status and body from a Mistral-shaped error"
-        },
-        {
-          "file": "packages/ai/test/error-body.test.ts",
-          "line": 25,
-          "name": "reads the parsed body off an openai APIError when the message is opaque"
-        },
-        {
-          "file": "packages/ai/test/error-body.test.ts",
-          "line": 40,
-          "name": "preserves the message when @google/genai already folds the body into it"
-        },
-        {
-          "file": "packages/ai/test/error-body.test.ts",
-          "line": 53,
-          "name": "extracts status and body from a Bedrock-shaped ServiceException"
-        },
-        {
-          "file": "packages/ai/test/error-body.test.ts",
-          "line": 67,
-          "name": "JSON-stringifies a non-Error thrown value"
-        },
-        {
-          "file": "packages/ai/test/error-body.test.ts",
-          "line": 76,
-          "name": "treats an empty parsed body object as no body"
-        },
-        {
-          "file": "packages/ai/test/error-body.test.ts",
-          "line": 88,
-          "name": "truncates the body at the cap"
-        },
-        {
-          "file": "packages/ai/test/error-body.test.ts",
-          "line": 101,
-          "name": "sets messageCarriesBody when the message already contains the extracted body"
-        },
-        {
-          "file": "packages/ai/test/error-body.test.ts",
-          "line": 114,
-          "name": "surfaces status and body without a prefix"
-        },
-        {
-          "file": "packages/ai/test/error-body.test.ts",
-          "line": 129,
-          "name": "applies a provider prefix with status and body"
-        },
-        {
-          "file": "packages/ai/test/error-body.test.ts",
-          "line": 142,
-          "name": "preserves the message (with prefix + status) when it already carries the body"
-        },
-        {
-          "file": "packages/ai/test/error-body.test.ts",
-          "line": 149,
-          "name": "returns the bare message for a non-Error value"
         },
         {
           "file": "packages/ai/test/github-copilot-oauth.test.ts",
@@ -1659,11 +1573,6 @@
           "name": "is a known api usable on models"
         },
         {
-          "file": "packages/ai/test/provider-error-body-regression.test.ts",
-          "line": 140,
-          "name": "openai-completions (body-blind text) surfaces status + body"
-        },
-        {
           "file": "packages/ai/test/providers.test.ts",
           "line": 26,
           "name": "builtinModels registers every builtin provider with models"
@@ -1767,76 +1676,6 @@
           "file": "packages/ai/test/reasoning-options.test.ts",
           "line": 31,
           "name": "leaves toggle and budget controls for their adapter-specific implementations"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 17,
-          "name": "matches explicit provider retry guidance"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 35,
-          "name": "matches Bun fetch socket drop wording"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 52,
-          "name": "matches OpenAI Responses streams that end before terminal events"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 60,
-          "name": "keeps provider limit errors non-retryable"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 68,
-          "name": "classifies assistant error messages"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 85,
-          "name": "returns a successful response immediately without retrying"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 92,
-          "name": "does not retry an aborted message"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 101,
-          "name": "does not retry a non-retryable error (quota/billing)"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 114,
-          "name": "retries a transient error up to maxRetries then returns the final error"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 125,
-          "name": "stops retrying once a call succeeds"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 140,
-          "name": "reports an aborted retried call as unsuccessful"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 155,
-          "name": "does not retry when policy is disabled"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 166,
-          "name": "emits onRetryAttemptStart after backoff before each retried call"
-        },
-        {
-          "file": "packages/ai/test/retry.test.ts",
-          "line": 197,
-          "name": "aborts backoff sleep via signal, returns an aborted message, and emits onRetryFinished(false)"
         },
         {
           "file": "packages/ai/test/supports-xhigh.test.ts",

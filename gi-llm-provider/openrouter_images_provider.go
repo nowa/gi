@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"strings"
 )
 
 type OpenRouterImagesProvider struct {
@@ -39,27 +37,27 @@ func (p OpenRouterImagesProvider) GenerateImages(model ImagesModel, imagesContex
 			payload = next
 		}
 	}
-	response, err := postJSON(ctx, httpClientOrDefault(p.Client), openRouterImagesEndpoint(model.BaseURL), openRouterImagesHeaders(model, options, apiKey), payload)
+	response, err := postJSONWithRetry(
+		ctx,
+		httpClientOrDefault(p.Client),
+		openRouterImagesEndpoint(model.BaseURL),
+		openRouterImagesHeaders(model, options, apiKey),
+		payload,
+		providerRetryOptions(options.MaxRetries, options.MaxRetryDelayMs),
+		func(status int, headers map[string]string) error {
+			if options.OnResponse == nil {
+				return nil
+			}
+			return options.OnResponse(status, headers, model)
+		},
+	)
 	if err != nil {
 		if ctx.Err() != nil {
 			return AbortedImages(model, ctx.Err()), nil
 		}
-		return ErrorImages(model, fmt.Errorf("request failed: %w", err)), nil
+		return ErrorImages(model, fmt.Errorf("%s", FormatProviderError(NormalizeProviderError(err)))), nil
 	}
 	defer response.Body.Close()
-	if options.OnResponse != nil {
-		if err := options.OnResponse(response.StatusCode, responseHeaders(response.Header), model); err != nil {
-			return ErrorImages(model, err), nil
-		}
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		message := strings.TrimSpace(string(body))
-		if message == "" {
-			message = response.Status
-		}
-		return ErrorImages(model, fmt.Errorf("provider returned HTTP %d: %s", response.StatusCode, message)), nil
-	}
 	var parsed OpenRouterImagesResponse
 	if err := json.NewDecoder(response.Body).Decode(&parsed); err != nil {
 		return ErrorImages(model, fmt.Errorf("decode OpenRouter images response: %w", err)), nil

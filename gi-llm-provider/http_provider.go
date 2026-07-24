@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,10 +35,6 @@ func postSSE(ctx context.Context, client HTTPDoer, endpoint string, headers map[
 	return postJSONWithAccept(ctx, client, endpoint, headers, payload, "text/event-stream")
 }
 
-func postJSON(ctx context.Context, client HTTPDoer, endpoint string, headers map[string]string, payload any) (*http.Response, error) {
-	return postJSONWithAccept(ctx, client, endpoint, headers, payload, "application/json")
-}
-
 func postJSONWithAccept(ctx context.Context, client HTTPDoer, endpoint string, headers map[string]string, payload any, accept string) (*http.Response, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -57,18 +54,81 @@ func postJSONWithAccept(ctx context.Context, client HTTPDoer, endpoint string, h
 	return client.Do(req)
 }
 
-func streamError(model Model, format string, args ...any) *AssistantMessageEventStream {
-	return ErrorAssistantStream(AssistantErrorMessage(fmt.Sprintf(format, args...), model, false))
+type providerResponseCallback func(status int, headers map[string]string) error
+
+func postSSEWithRetry(
+	ctx context.Context,
+	client HTTPDoer,
+	endpoint string,
+	headers map[string]string,
+	payload any,
+	options ProviderRetryOptions,
+	onResponse providerResponseCallback,
+) (*http.Response, error) {
+	return postJSONWithAcceptAndRetry(ctx, client, endpoint, headers, payload, "text/event-stream", options, onResponse)
 }
 
-func responseErrorStream(model Model, response *http.Response) *AssistantMessageEventStream {
-	defer response.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-	message := strings.TrimSpace(string(body))
-	if message == "" {
-		message = response.Status
+func postJSONWithRetry(
+	ctx context.Context,
+	client HTTPDoer,
+	endpoint string,
+	headers map[string]string,
+	payload any,
+	options ProviderRetryOptions,
+	onResponse providerResponseCallback,
+) (*http.Response, error) {
+	return postJSONWithAcceptAndRetry(ctx, client, endpoint, headers, payload, "application/json", options, onResponse)
+}
+
+func postJSONWithAcceptAndRetry(
+	ctx context.Context,
+	client HTTPDoer,
+	endpoint string,
+	headers map[string]string,
+	payload any,
+	accept string,
+	options ProviderRetryOptions,
+	onResponse providerResponseCallback,
+) (*http.Response, error) {
+	return RetryProviderRequest(ctx, options, func(requestContext context.Context) (*http.Response, error) {
+		response, err := postJSONWithAccept(requestContext, client, endpoint, headers, payload, accept)
+		if err != nil {
+			return nil, newProviderTransportError(err)
+		}
+		headerMap := responseHeaders(response.Header)
+		if onResponse != nil {
+			if err := onResponse(response.StatusCode, headerMap); err != nil {
+				response.Body.Close()
+				return nil, err
+			}
+		}
+		if response.StatusCode >= 200 && response.StatusCode < 300 {
+			return response, nil
+		}
+
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, MaxProviderErrorBodyChars+1))
+		response.Body.Close()
+		if readErr != nil {
+			return nil, newProviderHTTPError(response.StatusCode, response.Header, string(body), readErr)
+		}
+		return nil, newProviderHTTPError(response.StatusCode, response.Header, string(body), errors.New(response.Status))
+	})
+}
+
+func streamProviderRequestError(model Model, err error, prefix ...string) *AssistantMessageEventStream {
+	return streamError(model, "%s", FormatProviderError(NormalizeProviderError(err), prefix...))
+}
+
+func providerRetryOptions(maxRetries, maxRetryDelayMillis int) ProviderRetryOptions {
+	maxRetryDelay := time.Duration(maxRetryDelayMillis) * time.Millisecond
+	return ProviderRetryOptions{
+		MaxRetries:    maxRetries,
+		MaxRetryDelay: &maxRetryDelay,
 	}
-	return streamError(model, "provider returned HTTP %d: %s", response.StatusCode, message)
+}
+
+func streamError(model Model, format string, args ...any) *AssistantMessageEventStream {
+	return ErrorAssistantStream(AssistantErrorMessage(fmt.Sprintf(format, args...), model, false))
 }
 
 func dispatchSSE(body io.ReadCloser, handle func(data string) error) error {

@@ -339,7 +339,7 @@ func (s *AgentSession) runPromptLoop(prompt string) error {
 				return err
 			}
 		}
-		if isRetryableAssistantError(assistant) && s.RetrySettings.Enabled && attempt < s.RetrySettings.MaxRetries {
+		if llm.IsRetryableAssistantError(assistant) && s.RetrySettings.Enabled && attempt < s.RetrySettings.MaxRetries {
 			attempt++
 			retried = true
 			s.isRetrying = true
@@ -362,7 +362,7 @@ func (s *AgentSession) runPromptLoop(prompt string) error {
 		}
 		s.SessionManager.AppendMessage(sessionMessageValue(assistant))
 		s.emit(AgentSessionEvent{Type: "message_end", Message: &assistant})
-		if isRetryableAssistantError(assistant) {
+		if llm.IsRetryableAssistantError(assistant) {
 			if retried {
 				s.emit(AgentSessionEvent{Type: "auto_retry_end", Success: false, Attempt: attempt, FinalError: assistant.ErrorMessage})
 			}
@@ -1298,16 +1298,6 @@ func (s *AgentSession) emitQueueUpdate() {
 		Steering: append([]string(nil), s.steeringMessages...),
 		FollowUp: append([]string(nil), s.followUpMessages...),
 	})
-}
-
-func isRetryableAssistantError(message llm.Message) bool {
-	if message.StopReason != llm.StopReasonError {
-		return false
-	}
-	text := strings.ToLower(message.ErrorMessage)
-	return strings.Contains(text, "overloaded") ||
-		strings.Contains(text, "network_error") ||
-		strings.Contains(text, "network connection lost")
 }
 
 func DefaultAgentSessionResponder(prompt string, context []llm.Message, model llm.Model) (llm.Message, error) {

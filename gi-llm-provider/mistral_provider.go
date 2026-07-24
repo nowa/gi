@@ -88,18 +88,25 @@ func (p MistralProvider) StreamSimple(model Model, llmContext Context, options S
 		}
 	}
 	headers := mistralHeaders(model, options, apiKey)
-	response, err := postSSE(ctx, httpClientOrDefault(p.Client), mistralEndpoint(model.BaseURL), headers, payload)
+	response, err := postSSEWithRetry(
+		ctx,
+		httpClientOrDefault(p.Client),
+		mistralEndpoint(model.BaseURL),
+		headers,
+		payload,
+		providerRetryOptions(options.MaxRetries, options.MaxRetryDelayMs),
+		func(status int, headers map[string]string) error {
+			if options.OnResponseStatus == nil {
+				return nil
+			}
+			return options.OnResponseStatus(status, headers, model)
+		},
+	)
 	if err != nil {
-		return streamError(model, "request failed: %v", err), nil
-	}
-	if options.OnResponseStatus != nil {
-		if err := options.OnResponseStatus(response.StatusCode, responseHeaders(response.Header), model); err != nil {
-			response.Body.Close()
-			return streamError(model, "%s", err.Error()), nil
+		if ctx.Err() != nil {
+			return ErrorAssistantStream(AssistantErrorMessage(ctx.Err().Error(), model, true)), nil
 		}
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return responseErrorStream(model, response), nil
+		return streamProviderRequestError(model, err), nil
 	}
 	stream := NewAssistantMessageEventStream()
 	go streamMistralBody(model, response.Body, stream)
