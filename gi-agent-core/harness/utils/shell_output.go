@@ -50,6 +50,7 @@ type shellCaptureState struct {
 	hasOpenLine      bool
 	currentLineBytes int
 	err              error
+	pendingUTF8      []byte
 }
 
 func ExecuteShellWithCapture(ctx context.Context, env harnessenv.ExecutionEnv, command string, options ShellCaptureOptions) (ShellCaptureResult, error) {
@@ -62,12 +63,12 @@ func ExecuteShellWithCapture(ctx context.Context, env harnessenv.ExecutionEnv, c
 		accepting:  true,
 	}
 	onChunk := func(chunk string) error {
-		accepted, err := state.append(chunk)
+		text, accepted, err := state.append(chunk)
 		if err != nil {
 			return err
 		}
 		if accepted && options.OnChunk != nil {
-			options.OnChunk(SanitizeBinaryOutput(chunk), state.progress)
+			options.OnChunk(text, state.progress)
 		}
 		return nil
 	}
@@ -120,30 +121,51 @@ func ExecuteShellWithCapture(ctx context.Context, env harnessenv.ExecutionEnv, c
 	return captured, nil
 }
 
-func (s *shellCaptureState) append(chunk string) (bool, error) {
-	text := SanitizeBinaryOutput(chunk)
-	if text == "" {
-		return false, nil
-	}
+func (s *shellCaptureState) append(chunk string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.accepting {
-		return false, nil
+		return "", false, nil
 	}
-	return true, s.appendLocked([]byte(text))
+	text := s.decodeChunkLocked([]byte(chunk))
+	if text == "" {
+		return "", false, nil
+	}
+	return text, true, s.appendLocked([]byte(text))
 }
 
 func (s *shellCaptureState) appendFallback(chunk string) error {
-	text := SanitizeBinaryOutput(chunk)
-	if text == "" {
-		return nil
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.totalBytes != 0 {
 		return nil
 	}
+	s.pendingUTF8 = nil
+	text := s.decodeChunkLocked([]byte(chunk))
+	if text == "" {
+		return nil
+	}
 	return s.appendLocked([]byte(text))
+}
+
+func (s *shellCaptureState) decodeChunkLocked(chunk []byte) string {
+	data := append(append([]byte(nil), s.pendingUTF8...), chunk...)
+	s.pendingUTF8 = nil
+	var decoded []byte
+	for len(data) > 0 {
+		if !utf8.FullRune(data) {
+			s.pendingUTF8 = append([]byte(nil), data...)
+			break
+		}
+		r, size := utf8.DecodeRune(data)
+		if r == utf8.RuneError && size == 1 {
+			data = data[1:]
+			continue
+		}
+		decoded = append(decoded, data[:size]...)
+		data = data[size:]
+	}
+	return SanitizeBinaryOutput(string(decoded))
 }
 
 func (s *shellCaptureState) appendLocked(data []byte) error {
@@ -267,6 +289,7 @@ func (s *shellCaptureState) totalOutputBytes() int {
 func (s *shellCaptureState) finalize() (ShellCaptureProgress, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.pendingUTF8 = nil
 	if s.err != nil {
 		return ShellCaptureProgress{}, s.err
 	}

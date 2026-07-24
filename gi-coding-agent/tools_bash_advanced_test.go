@@ -120,6 +120,26 @@ func TestBashToolPiStreamingAndUTF8(t *testing.T) {
 	if strings.TrimSpace(readToolText(result)) != "€" {
 		t.Fatalf("split utf8 output = %q", readToolText(result))
 	}
+
+	splitANSI := NewBashTool(dir, BashToolOptions{Operations: BashOperations{
+		Exec: func(_ string, _ string, options BashExecOptions) (BashOperationResult, error) {
+			for _, chunk := range [][]byte{
+				[]byte("before \x1b[3"),
+				[]byte("1mred\x1b[0"),
+				[]byte("m after\n"),
+			} {
+				options.OnData(chunk)
+			}
+			return BashOperationResult{ExitCode: 0}, nil
+		},
+	}})
+	result, err = splitANSI.Execute("test-call-split-ansi", BashToolInput{Command: "split-ansi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.TrimSpace(readToolText(result)), "before red after"; got != want {
+		t.Fatalf("split ansi output = %q, want %q", got, want)
+	}
 }
 
 func TestBashOutputAccumulatorPiBoundedTempFileAndUTF8Tail(t *testing.T) {

@@ -2,12 +2,15 @@ package gicodingagent
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"os"
 	"strings"
-	"time"
+	"sync"
 
-	agentharness "github.com/nowa/gi/gi-agent-core/harness"
+	core "github.com/nowa/gi/gi-agent-core"
+	harnessenv "github.com/nowa/gi/gi-agent-core/harness/env"
+	harnesstools "github.com/nowa/gi/gi-agent-core/harness/tools"
+	"github.com/nowa/gi/gi-coding-agent/internal/ansiutil"
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
@@ -28,8 +31,6 @@ type BashToolInput struct {
 	Timeout int
 }
 
-const bashUpdateThrottle = 100 * time.Millisecond
-
 func NewBashTool(cwd string, options ...BashToolOptions) BashTool {
 	opts := BashToolOptions{}
 	if len(options) > 0 {
@@ -39,131 +40,162 @@ func NewBashTool(cwd string, options ...BashToolOptions) BashTool {
 	if operations.Exec == nil {
 		operations = CreateLocalBashOperations(BashLocalOperationsOptions{ShellPath: opts.ShellPath})
 	}
-	return BashTool{cwd: cwd, commandPrefix: opts.CommandPrefix, operations: operations}
+	return BashTool{
+		cwd:           cwd,
+		commandPrefix: opts.CommandPrefix,
+		operations:    operations,
+	}
 }
 
-func (t BashTool) Execute(_ string, input BashToolInput) (FileToolResult, error) {
-	return t.ExecuteWithUpdates("", input, nil)
+func (t BashTool) Execute(toolCallID string, input BashToolInput) (FileToolResult, error) {
+	return t.ExecuteWithUpdates(toolCallID, input, nil)
 }
 
-func (t BashTool) ExecuteWithUpdates(_ string, input BashToolInput, onUpdate func(FileToolResult)) (FileToolResult, error) {
+func (t BashTool) ExecuteWithUpdates(toolCallID string, input BashToolInput, onUpdate func(FileToolResult)) (FileToolResult, error) {
 	if strings.TrimSpace(input.Command) == "" {
-		return FileToolResult{}, fmt.Errorf("command is required")
+		return FileToolResult{}, errors.New("command is required")
 	}
 	if stat, err := os.Stat(t.cwd); err != nil || !stat.IsDir() {
-		return FileToolResult{}, fmt.Errorf("Working directory does not exist: %s", t.cwd)
-	}
-	if onUpdate != nil {
-		onUpdate(FileToolResult{})
-	}
-	command := input.Command
-	if strings.TrimSpace(t.commandPrefix) != "" {
-		command = t.commandPrefix + "\n" + command
+		return FileToolResult{}, errors.New("Working directory does not exist: " + t.cwd)
 	}
 
-	ctx := context.Background()
-	cancel := func() {}
+	env := newCodingBashExecutionEnv(t.cwd, t.operations)
+	tool := harnesstools.CreateBashTool(harnesstools.BashToolOptions{
+		CommandPrefix: t.commandPrefix,
+	})
+	params := map[string]any{"command": input.Command}
 	if input.Timeout > 0 {
-		var cancelFunc context.CancelFunc
-		ctx, cancelFunc = context.WithTimeout(ctx, time.Duration(input.Timeout)*time.Second)
-		cancel = cancelFunc
+		params["timeout"] = input.Timeout
+	}
+	var updateCallback core.AgentToolUpdateCallback
+	if onUpdate != nil {
+		updateCallback = func(update core.AgentToolResult) {
+			onUpdate(compatibilityBashResult(update))
+		}
+	}
+	result, err := tool.Execute(
+		context.Background(),
+		toolCallID,
+		params,
+		updateCallback,
+		harnesstools.NewExecutionToolContext(env),
+	)
+	if err != nil {
+		return FileToolResult{}, err
+	}
+	return compatibilityBashResult(result), nil
+}
+
+func compatibilityBashResult(result core.AgentToolResult) FileToolResult {
+	compatibilityResult := FileToolResult{
+		Text:    textFromContentParts(result.Content),
+		Content: append([]llm.ContentPart(nil), result.Content...),
+	}
+	if details, ok := result.Details.(*harnesstools.BashToolDetails); ok && details != nil {
+		compatibilityResult.Details = &FileToolDetails{
+			Truncation:     details.Truncation,
+			FullOutputPath: details.FullOutputPath,
+		}
+	}
+	return compatibilityResult
+}
+
+type codingBashExecutionEnv struct {
+	*harnessenv.LocalExecutionEnv
+	operations BashOperations
+}
+
+func newCodingBashExecutionEnv(cwd string, operations BashOperations) *codingBashExecutionEnv {
+	return &codingBashExecutionEnv{
+		LocalExecutionEnv: harnessenv.MustLocalExecutionEnv(cwd),
+		operations:        operations,
+	}
+}
+
+func (e *codingBashExecutionEnv) Exec(ctx context.Context, command string, options harnessenv.ExecOptions) (harnessenv.ExecResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runCtx := ctx
+	cancel := func() {}
+	if options.Timeout > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, options.Timeout)
+	} else {
+		runCtx, cancel = context.WithCancel(ctx)
 	}
 	defer cancel()
 
-	var updateAccumulator *bashOutputAccumulator
-	if onUpdate != nil {
-		updateAccumulator = newBashOutputAccumulator(bashOutputAccumulatorOptions{
-			MaxLines:       defaultBashOutputLineLimit,
-			MaxBytes:       agentharness.DefaultMaxBytes,
-			TempFilePrefix: "gi-bash-update",
-		})
-		defer updateAccumulator.Close()
-	}
-	lastUpdate := time.Now()
-	emitUpdate := func() {
-		if onUpdate == nil || updateAccumulator == nil {
+	var callbackMu sync.Mutex
+	var callbackErr error
+	var outputMu sync.Mutex
+	var outputStripper ansiutil.StreamStripper
+	setCallbackError := func(err error) {
+		if err == nil {
 			return
 		}
-		snapshot := updateAccumulator.Snapshot(true)
-		onUpdate(bashSnapshotFileToolResult(snapshot))
+		callbackMu.Lock()
+		if callbackErr == nil {
+			callbackErr = err
+		}
+		callbackMu.Unlock()
+		cancel()
 	}
-	result, err := ExecuteBashWithOperations(command, t.cwd, t.operations, BashExecutorOptions{
-		Context: ctx,
-		OnChunk: func(chunk string) {
-			if onUpdate == nil || updateAccumulator == nil {
+	operationResult, operationErr := e.operations.Exec(command, options.CWD, BashExecOptions{
+		Context: runCtx,
+		Env:     options.Env,
+		OnData: func(content []byte) {
+			if options.OnStdout == nil {
 				return
 			}
-			updateAccumulator.Append([]byte(chunk))
-			if time.Since(lastUpdate) < bashUpdateThrottle {
-				return
+			outputMu.Lock()
+			filtered := outputStripper.Write(content)
+			if len(filtered) > 0 {
+				setCallbackError(options.OnStdout(string(filtered)))
 			}
-			lastUpdate = time.Now()
-			emitUpdate()
+			outputMu.Unlock()
 		},
 	})
-	if onUpdate != nil && updateAccumulator != nil && updateAccumulator.TotalRawBytes() > 0 {
-		emitUpdate()
-	}
-	if ctx.Err() == context.DeadlineExceeded {
-		return FileToolResult{}, formatBashToolError(fmt.Sprintf("Command timed out after %d seconds", input.Timeout), result)
-	}
-	if err != nil && result.ExitCode == 0 {
-		return FileToolResult{}, formatBashToolError(formatBashOperationError(err), result)
-	}
-	if result.ExitCode != 0 {
-		return FileToolResult{}, formatBashToolError(fmt.Sprintf("Command failed with code %d", result.ExitCode), result)
-	}
-	details := bashToolDetails(result)
-	return FileToolResult{Text: result.Output, Content: []llm.ContentPart{llm.Text(result.Output)}, Details: details}, nil
-}
-
-func bashSnapshotFileToolResult(snapshot bashOutputSnapshot) FileToolResult {
-	text := snapshot.Content
-	result := FileToolResult{Text: text, Content: []llm.ContentPart{llm.Text(text)}}
-	details := bashToolDetails(BashResult{
-		Truncated:      snapshot.Truncation.Truncated,
-		TruncatedBy:    snapshot.Truncation.TruncatedBy,
-		FullOutputPath: snapshot.FullOutputPath,
-		TotalLines:     snapshot.Truncation.TotalLines,
-		OutputLines:    snapshot.Truncation.OutputLines,
-	})
-	if details != nil {
-		result.Details = details
-	}
-	return result
-}
-
-func formatBashOperationError(err error) string {
-	message := err.Error()
-	if strings.HasPrefix(message, "timeout:") {
-		seconds := strings.TrimPrefix(message, "timeout:")
-		return "Command timed out after " + seconds + " seconds"
-	}
-	if message == "aborted" {
-		return "Command aborted"
-	}
-	return message
-}
-
-func formatBashToolError(message string, result BashResult) error {
-	if strings.TrimSpace(result.Output) != "" {
-		return fmt.Errorf("%s\n%s", message, result.Output)
-	}
-	return fmt.Errorf("%s", message)
-}
-
-func bashToolDetails(result BashResult) *FileToolDetails {
-	if !result.Truncated && result.FullOutputPath == "" {
-		return nil
-	}
-	details := &FileToolDetails{FullOutputPath: result.FullOutputPath}
-	if result.Truncated {
-		details.Truncation = &ReadToolTruncation{
-			Truncated:   true,
-			TruncatedBy: result.TruncatedBy,
-			TotalLines:  result.TotalLines,
-			OutputLines: result.OutputLines,
+	callbackMu.Lock()
+	capturedCallbackErr := callbackErr
+	callbackMu.Unlock()
+	if capturedCallbackErr != nil {
+		return harnessenv.ExecResult{}, &harnessenv.ExecutionError{
+			Code: harnessenv.ExecutionErrorCallbackError,
+			Err:  capturedCallbackErr,
 		}
 	}
-	return details
+	if errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
+		return harnessenv.ExecResult{}, &harnessenv.ExecutionError{
+			Code: harnessenv.ExecutionErrorTimeout,
+			Err:  runCtx.Err(),
+		}
+	}
+	if errors.Is(runCtx.Err(), context.Canceled) || operationResult.Cancelled {
+		return harnessenv.ExecResult{}, &harnessenv.ExecutionError{
+			Code: harnessenv.ExecutionErrorAborted,
+			Err:  errors.New("aborted"),
+		}
+	}
+	if operationErr != nil {
+		switch {
+		case strings.HasPrefix(operationErr.Error(), "timeout:"):
+			return harnessenv.ExecResult{}, &harnessenv.ExecutionError{
+				Code: harnessenv.ExecutionErrorTimeout,
+				Err:  operationErr,
+			}
+		case operationErr.Error() == "aborted":
+			return harnessenv.ExecResult{}, &harnessenv.ExecutionError{
+				Code: harnessenv.ExecutionErrorAborted,
+				Err:  operationErr,
+			}
+		case operationResult.ExitCode == 0:
+			return harnessenv.ExecResult{}, &harnessenv.ExecutionError{
+				Code: harnessenv.ExecutionErrorUnknown,
+				Err:  operationErr,
+			}
+		}
+	}
+	return harnessenv.ExecResult{ExitCode: operationResult.ExitCode}, nil
 }
+
+var _ harnessenv.ExecutionEnv = (*codingBashExecutionEnv)(nil)

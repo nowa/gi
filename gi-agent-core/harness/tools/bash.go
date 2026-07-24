@@ -95,7 +95,7 @@ func CreateBashTool(options ...BashToolOptions) agentharness.AgentHarnessTool {
 			var updateMu sync.Mutex
 			lastUpdate := time.Time{}
 			settled := false
-			emitProgress := func(progress harnessutils.ShellCaptureProgress, force bool) {
+			emitProgress := func(progress func() harnessutils.ShellCaptureProgress, force bool) {
 				if onUpdate == nil {
 					return
 				}
@@ -109,7 +109,7 @@ func CreateBashTool(options ...BashToolOptions) agentharness.AgentHarnessTool {
 					return
 				}
 				lastUpdate = now
-				onUpdate(bashProgressResult(progress, false))
+				onUpdate(bashProgressResult(progress(), false))
 			}
 
 			timeout := time.Duration(0)
@@ -123,7 +123,7 @@ func CreateBashTool(options ...BashToolOptions) agentharness.AgentHarnessTool {
 				Timeout:               timeout,
 				ReturnExecutionErrors: true,
 				OnChunk: func(_ string, progress func() harnessutils.ShellCaptureProgress) {
-					emitProgress(progress(), false)
+					emitProgress(progress, false)
 				},
 			})
 			updateMu.Lock()
@@ -133,7 +133,9 @@ func CreateBashTool(options ...BashToolOptions) agentharness.AgentHarnessTool {
 				return core.AgentToolResult{}, err
 			}
 			if onUpdate != nil {
-				emitProgress(capture.ShellCaptureProgress, true)
+				emitProgress(func() harnessutils.ShellCaptureProgress {
+					return capture.ShellCaptureProgress
+				}, true)
 			}
 
 			output, details := formatBashCapture(capture.ShellCaptureProgress)
@@ -147,7 +149,13 @@ func CreateBashTool(options ...BashToolOptions) agentharness.AgentHarnessTool {
 			case capture.Cancelled:
 				return core.AgentToolResult{}, fmt.Errorf("%s", appendStatus("Command aborted"))
 			case capture.ExecutionError != nil && capture.ExecutionError.Code == "timeout":
-				return core.AgentToolResult{}, fmt.Errorf("%s", appendStatus(fmt.Sprintf("Command timed out after %g seconds", timeoutSeconds)))
+				timeoutLabel := fmt.Sprintf("%g", timeoutSeconds)
+				if !hasTimeout && capture.ExecutionError.Err != nil {
+					if encoded, ok := strings.CutPrefix(capture.ExecutionError.Err.Error(), "timeout:"); ok {
+						timeoutLabel = encoded
+					}
+				}
+				return core.AgentToolResult{}, fmt.Errorf("%s", appendStatus(fmt.Sprintf("Command timed out after %s seconds", timeoutLabel)))
 			case capture.ExecutionError != nil:
 				return core.AgentToolResult{}, capture.ExecutionError
 			case capture.ExitCode != nil && *capture.ExitCode != 0:
