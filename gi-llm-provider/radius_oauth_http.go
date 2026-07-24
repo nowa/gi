@@ -368,20 +368,3 @@ func radiusOAuthEndpoint(gateway string) (*url.URL, error) {
 	}
 	return base.ResolveReference(&url.URL{Path: "/v1/oauth"}), nil
 }
-
-func mergeCredentialMetadata(
-	base map[string]any,
-	override map[string]any,
-) map[string]any {
-	if len(base) == 0 && len(override) == 0 {
-		return nil
-	}
-	merged := cloneCredentialMetadata(base)
-	if merged == nil {
-		merged = make(map[string]any, len(override))
-	}
-	for key, value := range override {
-		merged[key] = value
-	}
-	return merged
-}

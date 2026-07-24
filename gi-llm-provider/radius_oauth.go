@@ -165,16 +165,10 @@ func newRadiusOAuth(
 			if err != nil {
 				return Credential{}, err
 			}
-			if refreshed.Refresh == "" {
-				refreshed.Refresh = credential.Refresh
-			}
-			refreshed.Env = cloneProviderEnv(credential.Env)
-			refreshed.EnterpriseURL = credential.EnterpriseURL
-			refreshed.Metadata = mergeCredentialMetadata(
-				credential.Metadata,
-				refreshed.Metadata,
-			)
-			return refreshed, nil
+			return mergeRefreshedOAuthCredential(
+				credential,
+				refreshed,
+			), nil
 		},
 		ToAuth: func(
 			ctx context.Context,

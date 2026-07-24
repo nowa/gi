@@ -116,10 +116,9 @@ var builtinProviderSpecs = []builtinProviderSpec{
 	{id: "xai", name: "xAI", baseURL: "https://api.x.ai/v1", auth: func() ProviderAuth {
 		return ProviderAuth{
 			APIKey: EnvAPIKeyAuth("xAI API key", "XAI_API_KEY"),
-			OAuth: registeredOAuthAuth(
+			OAuth: registeredOrBuiltinOAuthAuth(
 				"xai",
-				"xAI (Grok/X subscription)",
-				"Sign in with SuperGrok or X Premium",
+				NewXAIOAuth(XAIOAuthOptions{}),
 			),
 		}
 	}},

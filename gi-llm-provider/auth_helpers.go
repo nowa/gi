@@ -180,3 +180,39 @@ func getOAuthAuthLoader(providerID string) OAuthAuthLoader {
 	oauthAuthLoaders.RUnlock()
 	return loader
 }
+
+func mergeRefreshedOAuthCredential(
+	previous Credential,
+	refreshed Credential,
+) Credential {
+	if refreshed.Type == "" {
+		refreshed.Type = CredentialTypeOAuth
+	}
+	if refreshed.Refresh == "" {
+		refreshed.Refresh = previous.Refresh
+	}
+	refreshed.Env = cloneProviderEnv(previous.Env)
+	refreshed.EnterpriseURL = previous.EnterpriseURL
+	refreshed.Metadata = mergeCredentialMetadata(
+		previous.Metadata,
+		refreshed.Metadata,
+	)
+	return refreshed
+}
+
+func mergeCredentialMetadata(
+	base map[string]any,
+	override map[string]any,
+) map[string]any {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+	merged := cloneCredentialMetadata(base)
+	if merged == nil {
+		merged = make(map[string]any, len(override))
+	}
+	for key, value := range override {
+		merged[key] = value
+	}
+	return merged
+}
