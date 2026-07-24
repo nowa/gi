@@ -43,7 +43,8 @@ type OpenAICodexResponsesPayload struct {
 }
 
 type OpenAICodexProcessOptions struct {
-	ServiceTier string
+	ServiceTier                string
+	GrammarToolInputProperties map[string]string
 }
 
 type OpenAICodexWebSocketDebugStats struct {
@@ -75,6 +76,24 @@ var openAICodexWebSocketState = struct {
 }
 
 func BuildOpenAICodexResponsesPayload(model Model, context Context, options OpenAICodexResponsesPayloadOptions) OpenAICodexResponsesPayload {
+	payload, _, _ := buildOpenAICodexResponsesPayload(model, context, options)
+	return payload
+}
+
+func BuildOpenAICodexResponsesPayloadChecked(
+	model Model,
+	context Context,
+	options OpenAICodexResponsesPayloadOptions,
+) (OpenAICodexResponsesPayload, error) {
+	payload, _, err := buildOpenAICodexResponsesPayload(model, context, options)
+	return payload, err
+}
+
+func buildOpenAICodexResponsesPayload(
+	model Model,
+	context Context,
+	options OpenAICodexResponsesPayloadOptions,
+) (OpenAICodexResponsesPayload, OpenAIResponsesSamplingState, error) {
 	verbosity := options.TextVerbosity
 	if verbosity == "" {
 		verbosity = "low"
@@ -83,12 +102,30 @@ func BuildOpenAICodexResponsesPayload(model Model, context Context, options Open
 	if instructions == "" {
 		instructions = "You are a helpful assistant."
 	}
+	sampling, err := ResolveOpenAIResponsesSamplingState(
+		model,
+		context.Tools,
+		OpenAIResponsesSamplingDefaults{
+			SupportsStrictMode: true,
+			Strict:             OpenAIResponsesStrictDefaultNull,
+		},
+	)
+	if err != nil {
+		return OpenAICodexResponsesPayload{}, OpenAIResponsesSamplingState{}, err
+	}
+	input, err := ConvertOpenAIResponsesMessagesChecked(model, context, ConvertOpenAIResponsesOptions{
+		IncludeSystemPrompt:        ptrBool(false),
+		GrammarToolInputProperties: sampling.GrammarToolInputProperties,
+	})
+	if err != nil {
+		return OpenAICodexResponsesPayload{}, OpenAIResponsesSamplingState{}, err
+	}
 	payload := OpenAICodexResponsesPayload{
 		Model:             model.ID,
 		Store:             false,
 		Stream:            true,
 		Instructions:      instructions,
-		Input:             ConvertOpenAIResponsesMessages(model, context, ConvertOpenAIResponsesOptions{IncludeSystemPrompt: ptrBool(false)}),
+		Input:             input,
 		Text:              map[string]string{"verbosity": verbosity},
 		Include:           []string{"reasoning.encrypted_content"},
 		PromptCacheKey:    options.SessionID,
@@ -102,9 +139,9 @@ func BuildOpenAICodexResponsesPayload(model Model, context Context, options Open
 		payload.ServiceTier = options.ServiceTier
 	}
 	if len(context.Tools) > 0 {
-		payload.Tools = ConvertOpenAIResponsesTools(context.Tools, false)
-		for i := range payload.Tools {
-			payload.Tools[i].Strict = nil
+		payload.Tools, err = ConvertOpenAIResponsesToolsChecked(context.Tools, sampling.ToolOptions)
+		if err != nil {
+			return OpenAICodexResponsesPayload{}, OpenAIResponsesSamplingState{}, err
 		}
 	}
 	if options.ReasoningEffort != "" {
@@ -117,7 +154,7 @@ func BuildOpenAICodexResponsesPayload(model Model, context Context, options Open
 			payload.Reasoning = map[string]string{"effort": effort, "summary": summary}
 		}
 	}
-	return payload
+	return payload, sampling, nil
 }
 
 func GetOpenAICodexWebSocketDebugStats(sessionID string) (OpenAICodexWebSocketDebugStats, bool) {
@@ -271,7 +308,13 @@ func ResolveOpenAICodexWebSocketURL(baseURL string) string {
 }
 
 func ProcessOpenAICodexStreamEvents(model Model, output *Message, events []OpenAIResponsesStreamEvent, options OpenAICodexProcessOptions) []AssistantMessageEvent {
-	processor := NewOpenAIResponsesStreamProcessor(model, output)
+	processor := NewOpenAIResponsesStreamProcessorWithOptions(
+		model,
+		output,
+		OpenAIResponsesStreamProcessorOptions{
+			GrammarToolInputProperties: options.GrammarToolInputProperties,
+		},
+	)
 	var emitted []AssistantMessageEvent
 	for _, event := range events {
 		normalized, ok := normalizeOpenAICodexEvent(event)

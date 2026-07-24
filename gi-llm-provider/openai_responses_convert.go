@@ -15,6 +15,7 @@ type OpenAIResponsesInputItem struct {
 	CallID           string                       `json:"call_id,omitempty"`
 	Name             string                       `json:"name,omitempty"`
 	Arguments        string                       `json:"arguments,omitempty"`
+	Input            string                       `json:"input,omitempty"`
 	Output           any                          `json:"output,omitempty"`
 	Status           string                       `json:"status,omitempty"`
 	Phase            string                       `json:"phase,omitempty"`
@@ -30,11 +31,21 @@ type OpenAIResponsesContentPart struct {
 }
 
 type ConvertOpenAIResponsesOptions struct {
-	AllowedToolCallProviders map[string]bool
-	IncludeSystemPrompt      *bool
+	AllowedToolCallProviders   map[string]bool
+	IncludeSystemPrompt        *bool
+	GrammarToolInputProperties map[string]string
 }
 
 func ConvertOpenAIResponsesMessages(model Model, context Context, options ConvertOpenAIResponsesOptions) []OpenAIResponsesInputItem {
+	items, _ := ConvertOpenAIResponsesMessagesChecked(model, context, options)
+	return items
+}
+
+func ConvertOpenAIResponsesMessagesChecked(
+	model Model,
+	context Context,
+	options ConvertOpenAIResponsesOptions,
+) ([]OpenAIResponsesInputItem, error) {
 	includeSystemPrompt := true
 	if options.IncludeSystemPrompt != nil {
 		includeSystemPrompt = *options.IncludeSystemPrompt
@@ -98,6 +109,20 @@ func ConvertOpenAIResponsesMessages(model Model, context Context, options Conver
 					if isDifferentModel && strings.HasPrefix(itemID, "fc_") {
 						itemID = ""
 					}
+					if inputProperty, custom := options.GrammarToolInputProperties[part.Name]; custom {
+						input, err := GetGrammarToolInput(part.Name, part.Arguments, inputProperty)
+						if err != nil {
+							return nil, err
+						}
+						items = append(items, OpenAIResponsesInputItem{
+							Type:   "custom_tool_call",
+							ID:     itemID,
+							CallID: callID,
+							Name:   part.Name,
+							Input:  SanitizeSurrogates(input),
+						})
+						continue
+					}
 					arguments, _ := json.Marshal(part.Arguments)
 					items = append(items, OpenAIResponsesInputItem{
 						Type:      "function_call",
@@ -111,10 +136,14 @@ func ConvertOpenAIResponsesMessages(model Model, context Context, options Conver
 		case RoleToolResult:
 			callID, _, _ := strings.Cut(message.ToolCallID, "|")
 			output := convertOpenAIResponsesToolOutput(model, message.Content)
-			items = append(items, OpenAIResponsesInputItem{Type: "function_call_output", CallID: callID, Output: output})
+			itemType := "function_call_output"
+			if _, custom := options.GrammarToolInputProperties[message.ToolName]; custom {
+				itemType = "custom_tool_call_output"
+			}
+			items = append(items, OpenAIResponsesInputItem{Type: itemType, CallID: callID, Output: output})
 		}
 	}
-	return items
+	return items, nil
 }
 
 func convertOpenAIResponsesUserContent(content []ContentPart) []OpenAIResponsesContentPart {

@@ -68,7 +68,14 @@ func TestBuildOpenAIResponsesHeadersCacheAffinity(t *testing.T) {
 }
 
 func TestBuildOpenAIResponsesPayloadCacheRetentionAndTools(t *testing.T) {
-	model := Model{ID: "gpt-5.4", Provider: "openai", API: "openai-responses", Reasoning: true, Input: []string{"text"}}
+	model := Model{
+		ID:        "gpt-5.4",
+		Provider:  "openai",
+		API:       "openai-responses",
+		Reasoning: true,
+		Input:     []string{"text"},
+		Compat:    ModelCompat{SupportsStrictMode: ptrBool(true)},
+	}
 	contextValue := Context{
 		Messages: []Message{UserMessageText("hi")},
 		Tools: []Tool{{
@@ -82,7 +89,7 @@ func TestBuildOpenAIResponsesPayloadCacheRetentionAndTools(t *testing.T) {
 	if payload.PromptCacheKey != "session-123" || payload.PromptCacheRetention != "24h" || payload.MaxOutputTokens != 512 {
 		t.Fatalf("payload = %#v", payload)
 	}
-	if len(payload.Tools) != 1 || payload.Tools[0].Name != "lookup" || payload.Tools[0].Strict == nil || !*payload.Tools[0].Strict {
+	if len(payload.Tools) != 1 || payload.Tools[0].Name != "lookup" || payload.Tools[0].Strict == nil || *payload.Tools[0].Strict {
 		t.Fatalf("tools = %#v", payload.Tools)
 	}
 

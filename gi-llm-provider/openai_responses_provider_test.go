@@ -243,11 +243,11 @@ func TestOpenAIResponsesProviderHandlesHTTPErrorAsAssistantError(t *testing.T) {
 }
 
 func TestDecodeOpenAIResponsesSSEEvent(t *testing.T) {
-	event, err := DecodeOpenAIResponsesSSEEvent([]byte(`{"type":"response.output_item.added","item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"{\"q\":\"x\"}"}}`))
+	event, err := DecodeOpenAIResponsesSSEEvent([]byte(`{"type":"response.output_item.added","output_index":3,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"{\"q\":\"x\"}"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if event.Type != "response.output_item.added" || event.Item == nil || event.Item.ID != "fc_1" || event.Item.CallID != "call_1" || event.Item.Name != "lookup" {
+	if event.Type != "response.output_item.added" || event.OutputIndex != 3 || event.Item == nil || event.Item.ID != "fc_1" || event.Item.CallID != "call_1" || event.Item.Name != "lookup" {
 		t.Fatalf("event = %#v", event)
 	}
 

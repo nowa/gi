@@ -6,13 +6,15 @@ import (
 )
 
 type OpenAIResponsesStreamEvent struct {
-	Type      string
-	Response  *OpenAIResponsesResponseEvent
-	Item      *OpenAIResponsesOutputItem
-	Part      *OpenAIResponsesOutputContentPart
-	Delta     string
-	Arguments string
-	Error     string
+	Type        string
+	OutputIndex int
+	Response    *OpenAIResponsesResponseEvent
+	Item        *OpenAIResponsesOutputItem
+	Part        *OpenAIResponsesOutputContentPart
+	Delta       string
+	Arguments   string
+	Input       string
+	Error       string
 }
 
 type OpenAIResponsesResponseEvent struct {
@@ -45,6 +47,7 @@ type OpenAIResponsesOutputItem struct {
 	CallID           string                             `json:"call_id,omitempty"`
 	Name             string                             `json:"name,omitempty"`
 	Arguments        string                             `json:"arguments,omitempty"`
+	Input            string                             `json:"input,omitempty"`
 	Status           string                             `json:"status,omitempty"`
 	Content          []OpenAIResponsesOutputContentPart `json:"content,omitempty"`
 	Summary          []OpenAIResponsesOutputContentPart `json:"summary,omitempty"`
@@ -59,24 +62,50 @@ type OpenAIResponsesOutputContentPart struct {
 }
 
 type OpenAIResponsesStreamProcessor struct {
-	model            Model
-	output           *Message
-	currentTool      *openAIResponsesToolState
-	currentReasoning *openAIResponsesReasoningState
-	textIndex        int
+	model                      Model
+	output                     *Message
+	grammarToolInputProperties map[string]string
+	outputSlots                map[int]*openAIResponsesOutputSlot
 }
 
-type openAIResponsesToolState struct {
-	index       int
-	partialJSON string
-}
+type openAIResponsesSlotKind uint8
 
-type openAIResponsesReasoningState struct {
+const (
+	openAIResponsesReasoningSlot openAIResponsesSlotKind = iota + 1
+	openAIResponsesTextSlot
+	openAIResponsesToolSlot
+)
+
+type openAIResponsesOutputSlot struct {
+	kind               openAIResponsesSlotKind
 	index              int
+	partialJSON        string
+	customInput        *openAIResponsesCustomToolState
 	summaryPartStarted bool
 }
 
+type openAIResponsesCustomToolState struct {
+	property string
+	buffer   GrammarToolInputJSONBuffer
+}
+
 func NewOpenAIResponsesStreamProcessor(model Model, output *Message) *OpenAIResponsesStreamProcessor {
+	return NewOpenAIResponsesStreamProcessorWithOptions(
+		model,
+		output,
+		OpenAIResponsesStreamProcessorOptions{},
+	)
+}
+
+type OpenAIResponsesStreamProcessorOptions struct {
+	GrammarToolInputProperties map[string]string
+}
+
+func NewOpenAIResponsesStreamProcessorWithOptions(
+	model Model,
+	output *Message,
+	options OpenAIResponsesStreamProcessorOptions,
+) *OpenAIResponsesStreamProcessor {
 	if output.API == "" {
 		output.API = model.API
 	}
@@ -89,7 +118,16 @@ func NewOpenAIResponsesStreamProcessor(model Model, output *Message) *OpenAIResp
 	if output.StopReason == "" {
 		output.StopReason = StopReasonStop
 	}
-	return &OpenAIResponsesStreamProcessor{model: model, output: output, textIndex: -1}
+	grammarToolInputProperties := make(map[string]string, len(options.GrammarToolInputProperties))
+	for name, property := range options.GrammarToolInputProperties {
+		grammarToolInputProperties[name] = property
+	}
+	return &OpenAIResponsesStreamProcessor{
+		model:                      model,
+		output:                     output,
+		grammarToolInputProperties: grammarToolInputProperties,
+		outputSlots:                make(map[int]*openAIResponsesOutputSlot),
+	}
 }
 
 func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEvent) []AssistantMessageEvent {
@@ -102,133 +140,192 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 		if event.Item == nil {
 			return nil
 		}
-		if event.Item.Type == "reasoning" {
-			part := Thinking("")
-			p.output.Content = append(p.output.Content, part)
-			p.currentReasoning = &openAIResponsesReasoningState{index: len(p.output.Content) - 1}
-			return []AssistantMessageEvent{{Type: "thinking_start", ContentIndex: p.currentReasoning.index, Partial: *p.output}}
-		}
-		if event.Item.Type == "message" {
-			p.output.Content = append(p.output.Content, Text(""))
-			p.textIndex = len(p.output.Content) - 1
-			return []AssistantMessageEvent{{Type: "text_start", ContentIndex: p.textIndex, Partial: *p.output}}
-		}
-		if event.Item.Type == "function_call" {
-			args := parseStreamingJSONObject(event.Item.Arguments)
-			p.output.Content = append(p.output.Content, ToolCall(event.Item.CallID+"|"+event.Item.ID, event.Item.Name, args))
-			p.currentTool = &openAIResponsesToolState{index: len(p.output.Content) - 1, partialJSON: event.Item.Arguments}
-			return []AssistantMessageEvent{{Type: "toolcall_start", ContentIndex: p.currentTool.index, Partial: *p.output}}
-		}
+		_, emitted := p.createOutputSlot(event.OutputIndex, *event.Item)
+		return emitted
 	case "response.content_part.added":
-		if event.Part != nil && event.Part.Type == "output_text" && p.textIndex < 0 {
-			p.output.Content = append(p.output.Content, Text(SanitizeSurrogates(event.Part.Text)))
-			p.textIndex = len(p.output.Content) - 1
-			return []AssistantMessageEvent{{Type: "text_start", ContentIndex: p.textIndex, Partial: *p.output}}
+		if event.Part == nil || event.Part.Type != "output_text" {
+			return nil
+		}
+		if p.outputSlot(event.OutputIndex, openAIResponsesTextSlot) == nil {
+			_, emitted := p.createOutputSlot(
+				event.OutputIndex,
+				OpenAIResponsesOutputItem{Type: "message"},
+			)
+			return emitted
 		}
 	case "response.output_text.delta", "response.refusal.delta":
-		if p.textIndex >= 0 && p.textIndex < len(p.output.Content) {
-			p.output.Content[p.textIndex].Text += SanitizeSurrogates(event.Delta)
-			return []AssistantMessageEvent{{Type: "text_delta", ContentIndex: p.textIndex, Delta: event.Delta, Partial: *p.output}}
+		slot := p.outputSlot(event.OutputIndex, openAIResponsesTextSlot)
+		if slot != nil {
+			p.output.Content[slot.index].Text += SanitizeSurrogates(event.Delta)
+			return []AssistantMessageEvent{{
+				Type:         "text_delta",
+				ContentIndex: slot.index,
+				Delta:        event.Delta,
+				Partial:      *p.output,
+			}}
 		}
 	case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
-		if p.currentReasoning != nil && p.currentReasoning.index >= 0 && p.currentReasoning.index < len(p.output.Content) {
-			if event.Type == "response.reasoning_summary_text.delta" && !p.currentReasoning.summaryPartStarted {
+		slot := p.outputSlot(event.OutputIndex, openAIResponsesReasoningSlot)
+		if slot != nil {
+			if event.Type == "response.reasoning_summary_text.delta" && !slot.summaryPartStarted {
 				return nil
 			}
-			p.output.Content[p.currentReasoning.index].Thinking += SanitizeSurrogates(event.Delta)
-			return []AssistantMessageEvent{{Type: "thinking_delta", ContentIndex: p.currentReasoning.index, Delta: event.Delta, Partial: *p.output}}
+			p.output.Content[slot.index].Thinking += SanitizeSurrogates(event.Delta)
+			return []AssistantMessageEvent{{
+				Type:         "thinking_delta",
+				ContentIndex: slot.index,
+				Delta:        event.Delta,
+				Partial:      *p.output,
+			}}
 		}
 	case "response.reasoning_summary_part.added":
-		if p.currentReasoning != nil {
-			p.currentReasoning.summaryPartStarted = true
+		if slot := p.outputSlot(event.OutputIndex, openAIResponsesReasoningSlot); slot != nil {
+			slot.summaryPartStarted = true
 		}
 	case "response.reasoning_summary_part.done":
-		if p.currentReasoning != nil && p.currentReasoning.index >= 0 && p.currentReasoning.index < len(p.output.Content) {
-			if !p.currentReasoning.summaryPartStarted {
+		slot := p.outputSlot(event.OutputIndex, openAIResponsesReasoningSlot)
+		if slot != nil {
+			if !slot.summaryPartStarted {
 				return nil
 			}
-			p.output.Content[p.currentReasoning.index].Thinking += "\n\n"
-			p.currentReasoning.summaryPartStarted = false
-			return []AssistantMessageEvent{{Type: "thinking_delta", ContentIndex: p.currentReasoning.index, Delta: "\n\n", Partial: *p.output}}
+			p.output.Content[slot.index].Thinking += "\n\n"
+			slot.summaryPartStarted = false
+			return []AssistantMessageEvent{{
+				Type:         "thinking_delta",
+				ContentIndex: slot.index,
+				Delta:        "\n\n",
+				Partial:      *p.output,
+			}}
 		}
 	case "response.function_call_arguments.delta":
-		if p.currentTool != nil {
-			p.currentTool.partialJSON += event.Delta
-			if p.currentTool.index >= 0 && p.currentTool.index < len(p.output.Content) {
-				p.output.Content[p.currentTool.index].Arguments = parseStreamingJSONObject(p.currentTool.partialJSON)
-			}
-			return []AssistantMessageEvent{{Type: "toolcall_delta", ContentIndex: p.currentTool.index, Delta: event.Delta, Partial: *p.output}}
+		slot := p.outputSlot(event.OutputIndex, openAIResponsesToolSlot)
+		if slot != nil && slot.customInput == nil {
+			slot.partialJSON += event.Delta
+			p.output.Content[slot.index].Arguments = parseStreamingJSONObject(slot.partialJSON)
+			return []AssistantMessageEvent{{
+				Type:         "toolcall_delta",
+				ContentIndex: slot.index,
+				Delta:        event.Delta,
+				Partial:      *p.output,
+			}}
 		}
 	case "response.function_call_arguments.done":
-		if p.currentTool != nil {
-			previousPartialJSON := p.currentTool.partialJSON
-			p.currentTool.partialJSON = event.Arguments
-			if p.currentTool.index >= 0 && p.currentTool.index < len(p.output.Content) {
-				p.output.Content[p.currentTool.index].Arguments = parseStreamingJSONObject(event.Arguments)
-			}
+		slot := p.outputSlot(event.OutputIndex, openAIResponsesToolSlot)
+		if slot != nil && slot.customInput == nil {
+			previousPartialJSON := slot.partialJSON
+			slot.partialJSON = event.Arguments
+			p.output.Content[slot.index].Arguments = parseStreamingJSONObject(event.Arguments)
 			if strings.HasPrefix(event.Arguments, previousPartialJSON) {
 				delta := event.Arguments[len(previousPartialJSON):]
 				if delta != "" {
-					return []AssistantMessageEvent{{Type: "toolcall_delta", ContentIndex: p.currentTool.index, Delta: delta, Partial: *p.output}}
+					return []AssistantMessageEvent{{
+						Type:         "toolcall_delta",
+						ContentIndex: slot.index,
+						Delta:        delta,
+						Partial:      *p.output,
+					}}
 				}
 			}
 		}
+	case "response.custom_tool_call_input.delta":
+		slot := p.outputSlot(event.OutputIndex, openAIResponsesToolSlot)
+		if slot == nil || slot.customInput == nil {
+			return nil
+		}
+		currentInput := p.customToolInput(slot)
+		return p.appendCustomToolInput(slot, currentInput+event.Delta, false)
+	case "response.custom_tool_call_input.done":
+		slot := p.outputSlot(event.OutputIndex, openAIResponsesToolSlot)
+		if slot == nil || slot.customInput == nil {
+			return nil
+		}
+		return p.appendCustomToolInput(slot, event.Input, true)
 	case "response.output_item.done":
 		if event.Item == nil {
 			return nil
 		}
+		slot := p.outputSlots[event.OutputIndex]
+		var emitted []AssistantMessageEvent
+		if slot == nil {
+			slot, emitted = p.createOutputSlot(event.OutputIndex, *event.Item)
+		}
 		if event.Item.Type == "reasoning" {
-			index := -1
-			if p.currentReasoning != nil {
-				index = p.currentReasoning.index
-			}
-			if index < 0 || index >= len(p.output.Content) {
-				p.output.Content = append(p.output.Content, Thinking(""))
-				index = len(p.output.Content) - 1
+			if slot == nil || slot.kind != openAIResponsesReasoningSlot {
+				return emitted
 			}
 			text := openAIResponsesReasoningItemText(*event.Item)
 			if text != "" {
-				p.output.Content[index].Thinking = text
+				p.output.Content[slot.index].Thinking = text
 			}
 			if signature := encodeOpenAIResponsesReasoningSignature(*event.Item); signature != "" {
-				p.output.Content[index].ThinkingSignature = signature
+				p.output.Content[slot.index].ThinkingSignature = signature
 			}
-			p.currentReasoning = nil
-			return []AssistantMessageEvent{{Type: "thinking_end", ContentIndex: index, Partial: *p.output, Content: p.output.Content[index].Thinking}}
+			delete(p.outputSlots, event.OutputIndex)
+			return append(emitted, AssistantMessageEvent{
+				Type:         "thinking_end",
+				ContentIndex: slot.index,
+				Partial:      *p.output,
+				Content:      p.output.Content[slot.index].Thinking,
+			})
 		}
 		if event.Item.Type == "message" {
+			if slot == nil || slot.kind != openAIResponsesTextSlot {
+				return emitted
+			}
 			text := openAIResponsesOutputItemText(*event.Item)
-			if p.textIndex < 0 {
-				p.output.Content = append(p.output.Content, Text(text))
-				p.textIndex = len(p.output.Content) - 1
-			} else if text != "" {
-				p.output.Content[p.textIndex].Text = SanitizeSurrogates(text)
+			if text != "" {
+				p.output.Content[slot.index].Text = SanitizeSurrogates(text)
 			}
-			if p.textIndex >= 0 && p.textIndex < len(p.output.Content) {
-				p.output.Content[p.textIndex].TextSignature = encodeOpenAIResponsesTextSignature(event.Item.ID, event.Item.Phase)
-			}
-			index := p.textIndex
-			p.textIndex = -1
-			if index >= 0 && index < len(p.output.Content) {
-				return []AssistantMessageEvent{{Type: "text_end", ContentIndex: index, Content: p.output.Content[index].Text, Partial: *p.output}}
-			}
-			return nil
+			p.output.Content[slot.index].TextSignature = encodeOpenAIResponsesTextSignature(event.Item.ID, event.Item.Phase)
+			delete(p.outputSlots, event.OutputIndex)
+			return append(emitted, AssistantMessageEvent{
+				Type:         "text_end",
+				ContentIndex: slot.index,
+				Content:      p.output.Content[slot.index].Text,
+				Partial:      *p.output,
+			})
 		}
 		if event.Item.Type == "function_call" {
-			index := -1
-			if p.currentTool != nil {
-				index = p.currentTool.index
+			if slot == nil || slot.kind != openAIResponsesToolSlot || slot.customInput != nil {
+				return emitted
 			}
-			if index < 0 || index >= len(p.output.Content) {
-				p.output.Content = append(p.output.Content, ToolCall(event.Item.CallID+"|"+event.Item.ID, event.Item.Name, nil))
-				index = len(p.output.Content) - 1
+			arguments := event.Item.Arguments
+			if arguments == "" {
+				arguments = slot.partialJSON
 			}
-			p.output.Content[index].ID = event.Item.CallID + "|" + event.Item.ID
-			p.output.Content[index].Name = event.Item.Name
-			p.output.Content[index].Arguments = parseStreamingJSONObject(event.Item.Arguments)
-			toolCall := p.output.Content[index]
-			p.currentTool = nil
-			return []AssistantMessageEvent{{Type: "toolcall_end", ContentIndex: index, ToolCall: toolCall, Partial: *p.output}}
+			p.output.Content[slot.index].ID = event.Item.CallID + "|" + event.Item.ID
+			p.output.Content[slot.index].Name = event.Item.Name
+			p.output.Content[slot.index].Arguments = parseStreamingJSONObject(arguments)
+			toolCall := p.output.Content[slot.index]
+			delete(p.outputSlots, event.OutputIndex)
+			return append(emitted, AssistantMessageEvent{
+				Type:         "toolcall_end",
+				ContentIndex: slot.index,
+				ToolCall:     toolCall,
+				Partial:      *p.output,
+			})
+		}
+		if event.Item.Type == "custom_tool_call" {
+			if slot == nil || slot.kind != openAIResponsesToolSlot || slot.customInput == nil {
+				return emitted
+			}
+			deltas := p.appendCustomToolInput(slot, event.Item.Input, true)
+			emitted = append(emitted, deltas...)
+			for _, item := range deltas {
+				if item.Type == "error" {
+					return emitted
+				}
+			}
+			p.output.Content[slot.index].ID = event.Item.CallID + "|" + event.Item.ID
+			p.output.Content[slot.index].Name = event.Item.Name
+			toolCall := p.output.Content[slot.index]
+			delete(p.outputSlots, event.OutputIndex)
+			return append(emitted, AssistantMessageEvent{
+				Type:         "toolcall_end",
+				ContentIndex: slot.index,
+				ToolCall:     toolCall,
+				Partial:      *p.output,
+			})
 		}
 	case "response.completed", "response.incomplete", "response.failed":
 		if event.Response != nil {
@@ -250,6 +347,128 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 		return []AssistantMessageEvent{{Type: "done", Reason: p.output.StopReason, Message: *p.output}}
 	}
 	return nil
+}
+
+func (p *OpenAIResponsesStreamProcessor) createOutputSlot(
+	outputIndex int,
+	item OpenAIResponsesOutputItem,
+) (*openAIResponsesOutputSlot, []AssistantMessageEvent) {
+	if slot := p.outputSlots[outputIndex]; slot != nil {
+		return slot, nil
+	}
+
+	slot := &openAIResponsesOutputSlot{index: len(p.output.Content)}
+	var eventType string
+	switch item.Type {
+	case "reasoning":
+		slot.kind = openAIResponsesReasoningSlot
+		p.output.Content = append(p.output.Content, Thinking(""))
+		eventType = "thinking_start"
+	case "message":
+		slot.kind = openAIResponsesTextSlot
+		p.output.Content = append(p.output.Content, Text(""))
+		eventType = "text_start"
+	case "function_call":
+		slot.kind = openAIResponsesToolSlot
+		slot.partialJSON = item.Arguments
+		p.output.Content = append(
+			p.output.Content,
+			ToolCall(
+				item.CallID+"|"+item.ID,
+				item.Name,
+				parseStreamingJSONObject(item.Arguments),
+			),
+		)
+		eventType = "toolcall_start"
+	case "custom_tool_call":
+		inputProperty := p.grammarToolInputProperties[item.Name]
+		if inputProperty == "" {
+			inputProperty = "input"
+		}
+		slot.kind = openAIResponsesToolSlot
+		slot.customInput = &openAIResponsesCustomToolState{property: inputProperty}
+		p.output.Content = append(
+			p.output.Content,
+			ToolCall(
+				item.CallID+"|"+item.ID,
+				item.Name,
+				map[string]any{inputProperty: item.Input},
+			),
+		)
+		eventType = "toolcall_start"
+	default:
+		return nil, nil
+	}
+	p.outputSlots[outputIndex] = slot
+	return slot, []AssistantMessageEvent{{
+		Type:         eventType,
+		ContentIndex: slot.index,
+		Partial:      *p.output,
+	}}
+}
+
+func (p *OpenAIResponsesStreamProcessor) outputSlot(
+	outputIndex int,
+	kind openAIResponsesSlotKind,
+) *openAIResponsesOutputSlot {
+	slot := p.outputSlots[outputIndex]
+	if slot == nil || slot.kind != kind {
+		return nil
+	}
+	if slot.index < 0 || slot.index >= len(p.output.Content) {
+		return nil
+	}
+	return slot
+}
+
+func (p *OpenAIResponsesStreamProcessor) customToolInput(slot *openAIResponsesOutputSlot) string {
+	if slot == nil ||
+		slot.customInput == nil ||
+		slot.index < 0 ||
+		slot.index >= len(p.output.Content) {
+		return ""
+	}
+	value, _ := p.output.Content[slot.index].Arguments[slot.customInput.property].(string)
+	return value
+}
+
+func (p *OpenAIResponsesStreamProcessor) appendCustomToolInput(
+	slot *openAIResponsesOutputSlot,
+	nextInput string,
+	closeInput bool,
+) []AssistantMessageEvent {
+	if slot == nil ||
+		slot.customInput == nil ||
+		slot.index < 0 ||
+		slot.index >= len(p.output.Content) {
+		return nil
+	}
+	custom := slot.customInput
+	delta, ok, err := AppendGrammarToolInputJSONDelta(
+		&custom.buffer,
+		custom.property,
+		nextInput,
+		closeInput,
+	)
+	if err != nil {
+		p.output.StopReason = StopReasonError
+		p.output.ErrorMessage = err.Error()
+		return []AssistantMessageEvent{{
+			Type:   "error",
+			Reason: StopReasonError,
+			Error:  *p.output,
+		}}
+	}
+	p.output.Content[slot.index].Arguments = map[string]any{custom.property: nextInput}
+	if !ok {
+		return nil
+	}
+	return []AssistantMessageEvent{{
+		Type:         "toolcall_delta",
+		ContentIndex: slot.index,
+		Delta:        delta,
+		Partial:      *p.output,
+	}}
 }
 
 func ProcessOpenAIResponsesStreamEvents(model Model, output *Message, events []OpenAIResponsesStreamEvent) []AssistantMessageEvent {

@@ -16,11 +16,8 @@
       "missingFiles": [
         "api/anthropic-messages.lazy.ts",
         "api/anthropic-messages.ts",
-        "api/azure-openai-responses.lazy.ts",
-        "api/azure-openai-responses.ts",
         "api/bedrock-converse-stream.lazy.ts",
         "api/bedrock-converse-stream.ts",
-        "api/constrained-sampling.ts",
         "api/github-copilot-headers.ts",
         "api/google-generative-ai.lazy.ts",
         "api/google-generative-ai.ts",
@@ -30,14 +27,9 @@
         "api/lazy.ts",
         "api/mistral-conversations.lazy.ts",
         "api/mistral-conversations.ts",
-        "api/openai-codex-responses.lazy.ts",
-        "api/openai-codex-responses.ts",
         "api/openai-completions.lazy.ts",
         "api/openai-completions.ts",
         "api/openai-prompt-cache.ts",
-        "api/openai-responses-shared.ts",
-        "api/openai-responses.lazy.ts",
-        "api/openai-responses.ts",
         "api/simple-options.ts",
         "api/transform-messages.ts",
         "auth/oauth/anthropic.ts",
@@ -54,22 +46,14 @@
       ],
       "missingSymbols": [
         "api/anthropic-messages.ts::assertRequestAuth",
-        "api/anthropic-messages.ts::convertToolResult",
         "api/anthropic-messages.ts::defaultSupportsToolReferences",
         "api/anthropic-messages.ts::hasHeader",
-        "api/azure-openai-responses.ts::formatAzureOpenAIError",
         "api/bedrock-converse-stream.ts::addCustomHeadersMiddleware",
         "api/bedrock-converse-stream.ts::convertToolResultContent",
         "api/bedrock-converse-stream.ts::createNonBlankTextBlock",
         "api/bedrock-converse-stream.ts::createRequiredTextBlock",
         "api/bedrock-converse-stream.ts::getConfiguredBedrockCredentials",
         "api/bedrock-converse-stream.ts::isReservedHeader",
-        "api/constrained-sampling.ts::appendGrammarToolInputJsonDelta",
-        "api/constrained-sampling.ts::createGrammarToolInputProperties",
-        "api/constrained-sampling.ts::getGrammarToolInput",
-        "api/constrained-sampling.ts::inferGrammarInputProperty",
-        "api/constrained-sampling.ts::resolveGrammarConstrainedSampling",
-        "api/constrained-sampling.ts::resolveJsonSchemaStrictSampling",
         "api/google-shared.ts::resolveGoogleFunctionCallingMode",
         "api/google-shared.ts::supportsGoogleStrictToolSampling",
         "api/google-vertex.ts::buildGoogleAuthOptions",
@@ -99,9 +83,6 @@
         "api/openai-completions.ts::isEncryptedReasoningDetail",
         "api/openai-completions.ts::resolveChatTemplateKwargValue",
         "api/openai-prompt-cache.ts::clampOpenAIPromptCacheKey",
-        "api/openai-responses-shared.ts::appendCustomToolCallInput",
-        "api/openai-responses-shared.ts::convertToolResultOutput",
-        "api/openai-responses-shared.ts::getCustomToolCallInput",
         "api/openai-responses.ts::detectSessionAffinityFormat",
         "api/openai-responses.ts::formatOpenAIResponsesError",
         "api/openai-responses.ts::getClientApiKey",
@@ -598,7 +579,6 @@
       "module": "llm",
       "undocumentedFiles": [],
       "noCandidateFiles": [
-        "packages/ai/test/constrained-sampling.test.ts",
         "packages/ai/test/reasoning-options.test.ts"
       ],
       "noCandidateCases": [
@@ -621,31 +601,6 @@
           "file": "packages/ai/test/anthropic-temperature-compat.test.ts",
           "line": 98,
           "name": "omits temperature for custom models with supportsTemperature disabled"
-        },
-        {
-          "file": "packages/ai/test/azure-openai-base-url.test.ts",
-          "line": 160,
-          "name": "disables server-side response storage"
-        },
-        {
-          "file": "packages/ai/test/constrained-sampling.test.ts",
-          "line": 78,
-          "name": "converts supported constraints and falls back when unsupported"
-        },
-        {
-          "file": "packages/ai/test/constrained-sampling.test.ts",
-          "line": 117,
-          "name": "replays grammar calls as custom Responses items"
-        },
-        {
-          "file": "packages/ai/test/constrained-sampling.test.ts",
-          "line": 174,
-          "name": "keeps grammar input JSON deltas append-only"
-        },
-        {
-          "file": "packages/ai/test/constrained-sampling.test.ts",
-          "line": 186,
-          "name": "streams custom Responses tool calls as string arguments"
         },
         {
           "file": "packages/ai/test/deferred-tools.test.ts",

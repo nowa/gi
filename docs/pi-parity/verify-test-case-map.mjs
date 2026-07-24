@@ -13,7 +13,10 @@ const modules = [
 		giTests: ["gi-llm-provider"],
 		aliases: {
 			"packages/ai/test/anthropic-oauth.test.ts": ["gi-llm-provider/oauth_test.go"],
-			"packages/ai/test/azure-openai-base-url.test.ts": ["gi-llm-provider/config_test.go"],
+			"packages/ai/test/azure-openai-base-url.test.ts": [
+				"gi-llm-provider/config_test.go",
+				"gi-llm-provider/azure_provider_test.go",
+			],
 			"packages/ai/test/bedrock-endpoint-resolution.test.ts": ["gi-llm-provider/config_test.go"],
 			"packages/ai/test/cache-retention.test.ts": [
 				"gi-llm-provider/anthropic_payload_test.go",

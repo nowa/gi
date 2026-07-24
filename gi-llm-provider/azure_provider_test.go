@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -102,5 +103,20 @@ func TestAzureOpenAIResponsesEndpointPreservesProxyQuery(t *testing.T) {
 	endpoint := azureOpenAIResponsesEndpoint(AzureOpenAIConfig{BaseURL: "https://proxy.example.com/v1?custom=true", APIVersion: "v1"})
 	if endpoint != "https://proxy.example.com/v1/responses?api-version=v1&custom=true" {
 		t.Fatalf("endpoint = %q", endpoint)
+	}
+}
+
+func TestAzureOpenAIResponsesDisablesServerSideResponseStorage(t *testing.T) {
+	payload := BuildAzureOpenAIResponsesPayload(
+		Model{ID: "gpt-4o-mini", Provider: "azure-openai-responses", API: "azure-openai-responses"},
+		Context{Messages: []Message{UserMessageText("hi")}},
+		AzureOpenAIResponsesPayloadOptions{},
+	)
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"store":false`) {
+		t.Fatalf("payload = %s", raw)
 	}
 }

@@ -46,7 +46,7 @@ func (p OpenAICodexResponsesProvider) StreamSimple(model Model, llmContext Conte
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	payload, headers, err := p.buildRequest(model, llmContext, options, apiKey)
+	payload, headers, sampling, err := p.buildRequest(model, llmContext, options, apiKey)
 	if err != nil {
 		return streamError(model, "%s", err.Error()), nil
 	}
@@ -60,11 +60,23 @@ func (p OpenAICodexResponsesProvider) StreamSimple(model Model, llmContext Conte
 
 	stream := NewAssistantMessageEventStream()
 	serviceTier := metadataString(options.Metadata, "service_tier")
-	go streamOpenAICodexResponsesBody(model, response.Body, stream, serviceTier, openAICodexTransportDiagnostics(options.Transport, options.SessionID))
+	go streamOpenAICodexResponsesBody(
+		model,
+		response.Body,
+		stream,
+		serviceTier,
+		openAICodexTransportDiagnostics(options.Transport, options.SessionID),
+		sampling.GrammarToolInputProperties,
+	)
 	return stream, nil
 }
 
-func (p OpenAICodexResponsesProvider) buildRequest(model Model, llmContext Context, options SimpleStreamOptions, apiKey string) (any, map[string]string, error) {
+func (p OpenAICodexResponsesProvider) buildRequest(
+	model Model,
+	llmContext Context,
+	options SimpleStreamOptions,
+	apiKey string,
+) (any, map[string]string, OpenAIResponsesSamplingState, error) {
 	reasoning := ""
 	if options.Reasoning != "" {
 		reasoning = ClampThinkingLevel(model, options.Reasoning)
@@ -72,18 +84,22 @@ func (p OpenAICodexResponsesProvider) buildRequest(model Model, llmContext Conte
 			reasoning = ""
 		}
 	}
-	payload := any(BuildOpenAICodexResponsesPayload(model, llmContext, OpenAICodexResponsesPayloadOptions{
+	codexPayload, sampling, err := buildOpenAICodexResponsesPayload(model, llmContext, OpenAICodexResponsesPayloadOptions{
 		Temperature:      options.Temperature,
 		SessionID:        options.SessionID,
 		ReasoningEffort:  reasoning,
 		ReasoningSummary: metadataString(options.Metadata, "reasoning_summary"),
 		ServiceTier:      metadataString(options.Metadata, "service_tier"),
 		TextVerbosity:    metadataString(options.Metadata, "text_verbosity"),
-	}))
+	})
+	if err != nil {
+		return nil, nil, OpenAIResponsesSamplingState{}, err
+	}
+	payload := any(codexPayload)
 	if options.OnPayload != nil {
 		next, replace, err := options.OnPayload(payload, model)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, OpenAIResponsesSamplingState{}, err
 		}
 		if replace {
 			payload = next
@@ -91,9 +107,9 @@ func (p OpenAICodexResponsesProvider) buildRequest(model Model, llmContext Conte
 	}
 	headers, err := BuildOpenAICodexSSEHeaders(model.Headers, options.Headers, apiKey, options.SessionID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, OpenAIResponsesSamplingState{}, err
 	}
-	return payload, headers, nil
+	return payload, headers, sampling, nil
 }
 
 func (p OpenAICodexResponsesProvider) postWithRetry(ctx context.Context, model Model, options SimpleStreamOptions, headers map[string]string, payload any) (*http.Response, error) {
@@ -167,11 +183,24 @@ func (p OpenAICodexResponsesProvider) wait(ctx context.Context, delay time.Durat
 	return sleepContext(ctx, delay)
 }
 
-func streamOpenAICodexResponsesBody(model Model, body io.ReadCloser, stream *AssistantMessageEventStream, requestServiceTier string, diagnostics []AssistantMessageDiagnostic) {
+func streamOpenAICodexResponsesBody(
+	model Model,
+	body io.ReadCloser,
+	stream *AssistantMessageEventStream,
+	requestServiceTier string,
+	diagnostics []AssistantMessageDiagnostic,
+	grammarToolInputProperties map[string]string,
+) {
 	output := AssistantMessage(nil, StopReasonStop, model)
 	output.Diagnostics = append(output.Diagnostics, diagnostics...)
 	stream.Push(AssistantMessageEvent{Type: "start", Partial: output})
-	processor := NewOpenAIResponsesStreamProcessor(model, &output)
+	processor := NewOpenAIResponsesStreamProcessorWithOptions(
+		model,
+		&output,
+		OpenAIResponsesStreamProcessorOptions{
+			GrammarToolInputProperties: grammarToolInputProperties,
+		},
+	)
 	terminal := false
 	err := dispatchSSEUntil(body, func(data string) (bool, error) {
 		event, err := DecodeOpenAIResponsesSSEEvent([]byte(data))

@@ -20,6 +20,7 @@ type AzureOpenAIResponsesPayload struct {
 	Model           string                     `json:"model"`
 	Input           []OpenAIResponsesInputItem `json:"input"`
 	Stream          bool                       `json:"stream"`
+	Store           bool                       `json:"store"`
 	PromptCacheKey  string                     `json:"prompt_cache_key,omitempty"`
 	MaxOutputTokens int                        `json:"max_output_tokens,omitempty"`
 	Temperature     *float64                   `json:"temperature,omitempty"`
@@ -70,14 +71,18 @@ func (p AzureOpenAIResponsesProvider) StreamSimple(model Model, llmContext Conte
 			reasoning = ""
 		}
 	}
-	payload := any(BuildAzureOpenAIResponsesPayload(model, llmContext, AzureOpenAIResponsesPayloadOptions{
+	azurePayload, sampling, err := buildAzureOpenAIResponsesPayload(model, llmContext, AzureOpenAIResponsesPayloadOptions{
 		DeploymentName:   ResolveAzureDeploymentName(model, azureOptions.AzureDeploymentName),
 		MaxTokens:        options.MaxTokens,
 		Temperature:      options.Temperature,
 		SessionID:        options.SessionID,
 		ReasoningEffort:  reasoning,
 		ReasoningSummary: metadataString(options.Metadata, "reasoning_summary"),
-	}))
+	})
+	if err != nil {
+		return streamError(model, "%s", err.Error()), nil
+	}
+	payload := any(azurePayload)
 	if options.OnPayload != nil {
 		next, replace, err := options.OnPayload(payload, model)
 		if err != nil {
@@ -110,19 +115,56 @@ func (p AzureOpenAIResponsesProvider) StreamSimple(model Model, llmContext Conte
 	}
 
 	stream := NewAssistantMessageEventStream()
-	go streamOpenAIResponsesBody(model, response.Body, stream)
+	go streamOpenAIResponsesBody(model, response.Body, stream, sampling.GrammarToolInputProperties)
 	return stream, nil
 }
 
 func BuildAzureOpenAIResponsesPayload(model Model, context Context, options AzureOpenAIResponsesPayloadOptions) AzureOpenAIResponsesPayload {
+	payload, _, _ := buildAzureOpenAIResponsesPayload(model, context, options)
+	return payload
+}
+
+func BuildAzureOpenAIResponsesPayloadChecked(
+	model Model,
+	context Context,
+	options AzureOpenAIResponsesPayloadOptions,
+) (AzureOpenAIResponsesPayload, error) {
+	payload, _, err := buildAzureOpenAIResponsesPayload(model, context, options)
+	return payload, err
+}
+
+func buildAzureOpenAIResponsesPayload(
+	model Model,
+	context Context,
+	options AzureOpenAIResponsesPayloadOptions,
+) (AzureOpenAIResponsesPayload, OpenAIResponsesSamplingState, error) {
 	deployment := options.DeploymentName
 	if deployment == "" {
 		deployment = model.ID
 	}
+	sampling, err := ResolveOpenAIResponsesSamplingState(
+		model,
+		context.Tools,
+		OpenAIResponsesSamplingDefaults{
+			SupportsStrictMode: true,
+			Strict:             OpenAIResponsesStrictDefaultFalse,
+		},
+	)
+	if err != nil {
+		return AzureOpenAIResponsesPayload{}, OpenAIResponsesSamplingState{}, err
+	}
+	input, err := ConvertOpenAIResponsesMessagesChecked(model, context, ConvertOpenAIResponsesOptions{
+		AllowedToolCallProviders:   azureToolCallProviders(),
+		GrammarToolInputProperties: sampling.GrammarToolInputProperties,
+	})
+	if err != nil {
+		return AzureOpenAIResponsesPayload{}, OpenAIResponsesSamplingState{}, err
+	}
 	payload := AzureOpenAIResponsesPayload{
 		Model:          deployment,
-		Input:          ConvertOpenAIResponsesMessages(model, context, ConvertOpenAIResponsesOptions{AllowedToolCallProviders: azureToolCallProviders()}),
+		Input:          input,
 		Stream:         true,
+		Store:          false,
 		PromptCacheKey: options.SessionID,
 	}
 	if options.MaxTokens > 0 {
@@ -132,10 +174,13 @@ func BuildAzureOpenAIResponsesPayload(model Model, context Context, options Azur
 		payload.Temperature = options.Temperature
 	}
 	if len(context.Tools) > 0 {
-		payload.Tools = ConvertOpenAIResponsesTools(context.Tools, false)
+		payload.Tools, err = ConvertOpenAIResponsesToolsChecked(context.Tools, sampling.ToolOptions)
+		if err != nil {
+			return AzureOpenAIResponsesPayload{}, OpenAIResponsesSamplingState{}, err
+		}
 	}
 	applyAzureOpenAIResponsesReasoning(&payload, model, options)
-	return payload
+	return payload, sampling, nil
 }
 
 func applyAzureOpenAIResponsesReasoning(payload *AzureOpenAIResponsesPayload, model Model, options AzureOpenAIResponsesPayloadOptions) {

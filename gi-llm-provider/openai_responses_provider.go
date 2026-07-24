@@ -39,7 +39,7 @@ func (p OpenAIResponsesProvider) StreamSimple(model Model, llmContext Context, o
 			reasoning = ""
 		}
 	}
-	payload, err := BuildOpenAIResponsesPayloadChecked(model, llmContext, OpenAIResponsesPayloadOptions{
+	payload, sampling, err := buildOpenAIResponsesPayloadChecked(model, llmContext, OpenAIResponsesPayloadOptions{
 		Temperature:      options.Temperature,
 		MaxTokens:        options.MaxTokens,
 		CacheRetention:   options.CacheRetention,
@@ -100,14 +100,25 @@ func (p OpenAIResponsesProvider) StreamSimple(model Model, llmContext Context, o
 	}
 
 	stream := NewAssistantMessageEventStream()
-	go streamOpenAIResponsesBody(model, response.Body, stream)
+	go streamOpenAIResponsesBody(model, response.Body, stream, sampling.GrammarToolInputProperties)
 	return stream, nil
 }
 
-func streamOpenAIResponsesBody(model Model, body io.ReadCloser, stream *AssistantMessageEventStream) {
+func streamOpenAIResponsesBody(
+	model Model,
+	body io.ReadCloser,
+	stream *AssistantMessageEventStream,
+	grammarToolInputProperties map[string]string,
+) {
 	output := AssistantMessage(nil, StopReasonStop, model)
 	stream.Push(AssistantMessageEvent{Type: "start", Partial: output})
-	processor := NewOpenAIResponsesStreamProcessor(model, &output)
+	processor := NewOpenAIResponsesStreamProcessorWithOptions(
+		model,
+		&output,
+		OpenAIResponsesStreamProcessorOptions{
+			GrammarToolInputProperties: grammarToolInputProperties,
+		},
+	)
 	terminal := false
 	err := dispatchSSEUntil(body, func(data string) (bool, error) {
 		event, err := DecodeOpenAIResponsesSSEEvent([]byte(data))
@@ -139,9 +150,11 @@ func DecodeOpenAIResponsesSSEEvent(data []byte) (OpenAIResponsesStreamEvent, err
 		return OpenAIResponsesStreamEvent{}, fmt.Errorf("decode OpenAI Responses SSE event: %w", err)
 	}
 	event := OpenAIResponsesStreamEvent{
-		Type:      raw.Type,
-		Delta:     raw.Delta,
-		Arguments: raw.Arguments,
+		Type:        raw.Type,
+		OutputIndex: raw.OutputIndex,
+		Delta:       raw.Delta,
+		Arguments:   raw.Arguments,
+		Input:       raw.Input,
 	}
 	if raw.Error != nil {
 		event.Error = raw.Error.Message
@@ -174,6 +187,7 @@ func DecodeOpenAIResponsesSSEEvent(data []byte) (OpenAIResponsesStreamEvent, err
 			CallID:           raw.Item.CallID,
 			Name:             raw.Item.Name,
 			Arguments:        raw.Item.Arguments,
+			Input:            raw.Item.Input,
 			Status:           raw.Item.Status,
 			Phase:            raw.Item.Phase,
 			EncryptedContent: raw.Item.EncryptedContent,
@@ -193,13 +207,15 @@ func DecodeOpenAIResponsesSSEEvent(data []byte) (OpenAIResponsesStreamEvent, err
 }
 
 type openAIResponsesRawEvent struct {
-	Type      string                         `json:"type"`
-	Response  *openAIResponsesRawResponse    `json:"response"`
-	Item      *openAIResponsesRawOutputItem  `json:"item"`
-	Part      *openAIResponsesRawContentPart `json:"part"`
-	Delta     string                         `json:"delta"`
-	Arguments string                         `json:"arguments"`
-	Error     *openAIResponsesRawError       `json:"error"`
+	Type        string                         `json:"type"`
+	OutputIndex int                            `json:"output_index"`
+	Response    *openAIResponsesRawResponse    `json:"response"`
+	Item        *openAIResponsesRawOutputItem  `json:"item"`
+	Part        *openAIResponsesRawContentPart `json:"part"`
+	Delta       string                         `json:"delta"`
+	Arguments   string                         `json:"arguments"`
+	Input       string                         `json:"input"`
+	Error       *openAIResponsesRawError       `json:"error"`
 }
 
 type openAIResponsesRawError struct {
@@ -236,6 +252,7 @@ type openAIResponsesRawOutputItem struct {
 	CallID           string                          `json:"call_id"`
 	Name             string                          `json:"name"`
 	Arguments        string                          `json:"arguments"`
+	Input            string                          `json:"input"`
 	Status           string                          `json:"status"`
 	Content          []openAIResponsesRawContentPart `json:"content"`
 	Summary          []openAIResponsesRawContentPart `json:"summary"`

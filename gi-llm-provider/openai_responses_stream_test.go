@@ -1,6 +1,7 @@
 package gillmprovider
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -47,6 +48,68 @@ func TestProcessOpenAIResponsesStreamCleansToolCallScratchState(t *testing.T) {
 	}
 	if ended.ContentIndex != 0 || ended.ToolCall.Arguments["path"] != "README.md" {
 		t.Fatalf("toolcall_end = %#v", *ended)
+	}
+}
+
+func TestProcessOpenAIResponsesStreamKeepsInterleavedOutputStateIsolated(t *testing.T) {
+	model := Model{ID: "gpt-test", Provider: "openai", API: "openai-responses"}
+	output := AssistantMessage(nil, StopReasonStop, model)
+	processor := NewOpenAIResponsesStreamProcessorWithOptions(
+		model,
+		&output,
+		OpenAIResponsesStreamProcessorOptions{
+			GrammarToolInputProperties: map[string]string{"grammar": "payload"},
+		},
+	)
+	events := []OpenAIResponsesStreamEvent{
+		{
+			Type:        "response.output_item.added",
+			OutputIndex: 0,
+			Item:        &OpenAIResponsesOutputItem{Type: "custom_tool_call", ID: "ctc_1", CallID: "call_1", Name: "grammar"},
+		},
+		{
+			Type:        "response.output_item.added",
+			OutputIndex: 1,
+			Item:        &OpenAIResponsesOutputItem{Type: "function_call", ID: "fc_2", CallID: "call_2", Name: "lookup"},
+		},
+		{Type: "response.custom_tool_call_input.delta", OutputIndex: 0, Delta: "ab"},
+		{Type: "response.function_call_arguments.delta", OutputIndex: 1, Delta: `{"value":`},
+		{Type: "response.custom_tool_call_input.done", OutputIndex: 0, Input: "abc"},
+		{Type: "response.function_call_arguments.done", OutputIndex: 1, Arguments: `{"value":1}`},
+		{
+			Type:        "response.output_item.done",
+			OutputIndex: 0,
+			Item:        &OpenAIResponsesOutputItem{Type: "custom_tool_call", ID: "ctc_1", CallID: "call_1", Name: "grammar", Input: "abc"},
+		},
+		{
+			Type:        "response.output_item.done",
+			OutputIndex: 1,
+			Item:        &OpenAIResponsesOutputItem{Type: "function_call", ID: "fc_2", CallID: "call_2", Name: "lookup", Arguments: `{"value":1}`},
+		},
+	}
+
+	var emitted []AssistantMessageEvent
+	for _, event := range events {
+		emitted = append(emitted, processor.Process(event)...)
+	}
+
+	if len(output.Content) != 2 {
+		t.Fatalf("content = %#v", output.Content)
+	}
+	if output.Content[0].Name != "grammar" || output.Content[0].Arguments["payload"] != "abc" {
+		t.Fatalf("custom tool = %#v", output.Content[0])
+	}
+	if output.Content[1].Name != "lookup" || output.Content[1].Arguments["value"] != float64(1) {
+		t.Fatalf("function tool = %#v", output.Content[1])
+	}
+	var ended []int
+	for _, event := range emitted {
+		if event.Type == "toolcall_end" {
+			ended = append(ended, event.ContentIndex)
+		}
+	}
+	if !reflect.DeepEqual(ended, []int{0, 1}) {
+		t.Fatalf("toolcall_end indexes = %#v", ended)
 	}
 }
 
