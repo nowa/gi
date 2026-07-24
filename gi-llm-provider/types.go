@@ -236,26 +236,27 @@ type Context struct {
 }
 
 type StreamOptions struct {
-	Context          context.Context
-	Temperature      *float64
-	MaxTokens        int
-	APIKey           string
-	Transport        string
-	CacheRetention   string
-	SessionID        string
-	Reasoning        string
-	ToolChoice       any
-	Debug            bool
-	ThinkingBudgets  map[string]int
-	Headers          map[string]string
-	HeaderRemovals   []string
-	Env              ProviderEnv
-	TimeoutMillis    int
-	MaxRetries       int
-	MaxRetryDelayMs  int
-	Metadata         map[string]any
-	OnPayload        func(payload any, model Model) (any, bool, error)
-	OnResponseStatus func(status int, headers map[string]string, model Model) error
+	Context                       context.Context
+	Temperature                   *float64
+	MaxTokens                     int
+	APIKey                        string
+	Transport                     string
+	CacheRetention                string
+	SessionID                     string
+	Reasoning                     string
+	ToolChoice                    any
+	Debug                         bool
+	ThinkingBudgets               map[string]int
+	Headers                       map[string]string
+	HeaderRemovals                []string
+	Env                           ProviderEnv
+	TimeoutMillis                 int
+	WebSocketConnectTimeoutMillis int
+	MaxRetries                    int
+	MaxRetryDelayMs               int
+	Metadata                      map[string]any
+	OnPayload                     func(payload any, model Model) (any, bool, error)
+	OnResponseStatus              func(status int, headers map[string]string, model Model) error
 }
 
 type SimpleStreamOptions = StreamOptions

@@ -2,6 +2,8 @@ package gillmprovider
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,17 +14,28 @@ import (
 const defaultOpenAICodexMaxRetries = 3
 
 type OpenAICodexResponsesProvider struct {
-	Client HTTPDoer
-	Now    func() time.Time
-	Sleep  func(context.Context, time.Duration) error
+	Client          HTTPDoer
+	WebSocketDialer OpenAICodexWebSocketDialer
+	Now             func() time.Time
+	Sleep           func(context.Context, time.Duration) error
 }
 
 func NewOpenAICodexResponsesProvider(client HTTPDoer) OpenAICodexResponsesProvider {
 	return OpenAICodexResponsesProvider{
-		Client: httpClientOrDefault(client),
-		Now:    time.Now,
-		Sleep:  sleepContext,
+		Client:          httpClientOrDefault(client),
+		WebSocketDialer: gorillaOpenAICodexWebSocketDialer{},
+		Now:             time.Now,
+		Sleep:           sleepContext,
 	}
+}
+
+type openAICodexPreparedRequest struct {
+	payload          any
+	sseHeaders       map[string]string
+	webSocketHeaders map[string]string
+	sampling         OpenAIResponsesSamplingState
+	cacheSessionID   string
+	codexSessionID   string
 }
 
 func init() {
@@ -46,11 +59,44 @@ func (p OpenAICodexResponsesProvider) StreamSimple(model Model, llmContext Conte
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	payload, headers, sampling, err := p.buildRequest(model, llmContext, options, apiKey)
+	request, err := p.buildRequest(model, llmContext, options, apiKey)
 	if err != nil {
 		return streamError(model, "%s", err.Error()), nil
 	}
-	response, err := p.postWithRetry(ctx, model, options, headers, payload)
+	if options.TimeoutMillis < 0 {
+		return streamError(model, "invalid timeoutMillis: %d", options.TimeoutMillis), nil
+	}
+	if options.WebSocketConnectTimeoutMillis < 0 {
+		return streamError(
+			model,
+			"invalid websocketConnectTimeoutMillis: %d",
+			options.WebSocketConnectTimeoutMillis,
+		), nil
+	}
+	transport := normalizeOpenAICodexTransport(options.Transport)
+	if transport != "sse" {
+		if isOpenAICodexWebSocketSSEFallbackActive(request.cacheSessionID) {
+			recordOpenAICodexWebSocketSSEFallback(request.cacheSessionID)
+		} else {
+			body, err := newOpenAICodexWebSocketRequestBody(request.payload)
+			if err != nil {
+				return streamError(model, "%s", err.Error()), nil
+			}
+			stream := NewAssistantMessageEventStream()
+			go p.streamOpenAICodexWebSocketWithFallback(
+				ctx,
+				model,
+				options,
+				request,
+				body,
+				stream,
+				transport,
+			)
+			return stream, nil
+		}
+	}
+
+	response, err := p.postWithRetry(ctx, model, options, request.sseHeaders, request.payload)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ErrorAssistantStream(AssistantErrorMessage(ctx.Err().Error(), model, true)), nil
@@ -65,8 +111,8 @@ func (p OpenAICodexResponsesProvider) StreamSimple(model Model, llmContext Conte
 		response.Body,
 		stream,
 		serviceTier,
-		openAICodexTransportDiagnostics(options.Transport, options.SessionID),
-		sampling.GrammarToolInputProperties,
+		nil,
+		request.sampling.GrammarToolInputProperties,
 	)
 	return stream, nil
 }
@@ -76,7 +122,12 @@ func (p OpenAICodexResponsesProvider) buildRequest(
 	llmContext Context,
 	options SimpleStreamOptions,
 	apiKey string,
-) (any, map[string]string, OpenAIResponsesSamplingState, error) {
+) (openAICodexPreparedRequest, error) {
+	cacheSessionID := strings.TrimSpace(options.SessionID)
+	if strings.EqualFold(strings.TrimSpace(options.CacheRetention), "none") {
+		cacheSessionID = ""
+	}
+	codexSessionID := ClampOpenAIPromptCacheKey(cacheSessionID)
 	reasoning := ""
 	if options.Reasoning != "" {
 		reasoning = ClampThinkingLevel(model, options.Reasoning)
@@ -86,30 +137,52 @@ func (p OpenAICodexResponsesProvider) buildRequest(
 	}
 	codexPayload, sampling, err := buildOpenAICodexResponsesPayload(model, llmContext, OpenAICodexResponsesPayloadOptions{
 		Temperature:      options.Temperature,
-		SessionID:        options.SessionID,
+		SessionID:        codexSessionID,
 		ReasoningEffort:  reasoning,
 		ReasoningSummary: metadataString(options.Metadata, "reasoning_summary"),
 		ServiceTier:      metadataString(options.Metadata, "service_tier"),
 		TextVerbosity:    metadataString(options.Metadata, "text_verbosity"),
 	})
 	if err != nil {
-		return nil, nil, OpenAIResponsesSamplingState{}, err
+		return openAICodexPreparedRequest{}, err
 	}
 	payload := any(codexPayload)
 	if options.OnPayload != nil {
 		next, replace, err := options.OnPayload(payload, model)
 		if err != nil {
-			return nil, nil, OpenAIResponsesSamplingState{}, err
+			return openAICodexPreparedRequest{}, err
 		}
 		if replace {
 			payload = next
 		}
 	}
-	headers, err := BuildOpenAICodexSSEHeaders(model.Headers, options.Headers, apiKey, options.SessionID)
+	sseHeaders, err := BuildOpenAICodexSSEHeaders(model.Headers, options.Headers, apiKey, codexSessionID)
 	if err != nil {
-		return nil, nil, OpenAIResponsesSamplingState{}, err
+		return openAICodexPreparedRequest{}, err
 	}
-	return payload, headers, sampling, nil
+	sseHeaders = applyHeaderRemovals(sseHeaders, options.HeaderRemovals)
+	requestID := codexSessionID
+	if requestID == "" {
+		requestID = UUIDv7()
+	}
+	webSocketHeaders, err := BuildOpenAICodexWebSocketHeaders(
+		model.Headers,
+		options.Headers,
+		apiKey,
+		requestID,
+	)
+	if err != nil {
+		return openAICodexPreparedRequest{}, err
+	}
+	webSocketHeaders = applyHeaderRemovals(webSocketHeaders, options.HeaderRemovals)
+	return openAICodexPreparedRequest{
+		payload:          payload,
+		sseHeaders:       sseHeaders,
+		webSocketHeaders: webSocketHeaders,
+		sampling:         sampling,
+		cacheSessionID:   cacheSessionID,
+		codexSessionID:   codexSessionID,
+	}, nil
 }
 
 func (p OpenAICodexResponsesProvider) postWithRetry(ctx context.Context, model Model, options SimpleStreamOptions, headers map[string]string, payload any) (*http.Response, error) {
@@ -183,6 +256,423 @@ func (p OpenAICodexResponsesProvider) wait(ctx context.Context, delay time.Durat
 	return sleepContext(ctx, delay)
 }
 
+func (p OpenAICodexResponsesProvider) streamOpenAICodexWebSocketWithFallback(
+	ctx context.Context,
+	model Model,
+	options SimpleStreamOptions,
+	request openAICodexPreparedRequest,
+	body openAICodexWebSocketRequestBody,
+	stream *AssistantMessageEventStream,
+	transport string,
+) {
+	output := AssistantMessage(nil, StopReasonStop, model)
+	startEmitted := false
+	retriedConnectionLimit := false
+	retriedMissingContinuation := false
+
+	for {
+		started, err := p.streamOpenAICodexWebSocket(
+			ctx,
+			model,
+			options,
+			request,
+			body,
+			stream,
+			transport,
+			&output,
+			&startEmitted,
+		)
+		if err == nil {
+			return
+		}
+		var apiError *openAICodexAPIError
+		connectionLimitBeforeStart := false
+		if errors.As(err, &apiError) {
+			connectionLimitBeforeStart = apiError.code == openAICodexWebSocketConnectionLimitCode && !started
+			switch {
+			case apiError.code == openAICodexPreviousResponseNotFoundCode &&
+				!retriedMissingContinuation:
+				retriedMissingContinuation = true
+				continue
+			case connectionLimitBeforeStart &&
+				!retriedConnectionLimit:
+				retriedConnectionLimit = true
+				continue
+			}
+		}
+		if ctx.Err() != nil {
+			pushOpenAICodexWebSocketError(stream, &output, ctx.Err(), true)
+			return
+		}
+		if isOpenAICodexNonTransportError(err) && !connectionLimitBeforeStart {
+			pushOpenAICodexWebSocketError(stream, &output, err, false)
+			return
+		}
+
+		diagnostic := newOpenAICodexTransportDiagnostic(
+			transport,
+			err,
+			started,
+			request.payload,
+		)
+		output.Diagnostics = append(output.Diagnostics, diagnostic)
+		recordOpenAICodexWebSocketFailure(request.cacheSessionID, err)
+		if started {
+			pushOpenAICodexWebSocketError(stream, &output, err, false)
+			return
+		}
+
+		recordOpenAICodexWebSocketSSEFallback(request.cacheSessionID)
+		response, fallbackErr := p.postWithRetry(
+			ctx,
+			model,
+			options,
+			request.sseHeaders,
+			request.payload,
+		)
+		if fallbackErr != nil {
+			message := AssistantErrorMessage(fallbackErr.Error(), model, ctx.Err() != nil)
+			message.Diagnostics = append(message.Diagnostics, diagnostic)
+			stream.Push(AssistantMessageEvent{
+				Type:   "error",
+				Reason: StopReasonError,
+				Error:  message,
+			})
+			return
+		}
+		streamOpenAICodexResponsesBody(
+			model,
+			response.Body,
+			stream,
+			metadataString(options.Metadata, "service_tier"),
+			[]AssistantMessageDiagnostic{diagnostic},
+			request.sampling.GrammarToolInputProperties,
+		)
+		return
+	}
+}
+
+func (p OpenAICodexResponsesProvider) streamOpenAICodexWebSocket(
+	ctx context.Context,
+	model Model,
+	options SimpleStreamOptions,
+	request openAICodexPreparedRequest,
+	body openAICodexWebSocketRequestBody,
+	stream *AssistantMessageEventStream,
+	transport string,
+	output *Message,
+	startEmitted *bool,
+) (started bool, resultErr error) {
+	connectTimeout := defaultOpenAICodexWebSocketConnectTimeout
+	if options.WebSocketConnectTimeoutMillis > 0 {
+		connectTimeout = time.Duration(options.WebSocketConnectTimeoutMillis) * time.Millisecond
+	}
+	idleTimeout := time.Duration(options.TimeoutMillis) * time.Millisecond
+	lease, err := acquireOpenAICodexWebSocket(
+		ctx,
+		p.WebSocketDialer,
+		ResolveOpenAICodexWebSocketURL(model.BaseURL),
+		request.webSocketHeaders,
+		request.cacheSessionID,
+		p.now(),
+		connectTimeout,
+	)
+	if err != nil {
+		return false, err
+	}
+	keepConnection := false
+	defer func() {
+		if resultErr != nil {
+			clearOpenAICodexWebSocketContinuation(lease.session)
+		}
+		lease.release(keepConnection)
+	}()
+
+	useCachedContext := transport == "websocket-cached" || transport == "auto"
+	plan := buildOpenAICodexWebSocketRequestPlan(lease.session, body, useCachedContext)
+	recordOpenAICodexWebSocketRequest(
+		request.cacheSessionID,
+		lease.reused,
+		useCachedContext,
+		body.store,
+		plan,
+	)
+	frame, err := plan.frame()
+	if err != nil {
+		return false, fmt.Errorf("encode Codex WebSocket frame: %w", err)
+	}
+	if err := lease.connection.Write(ctx, frame); err != nil {
+		return false, err
+	}
+
+	processor := NewOpenAIResponsesStreamProcessorWithOptions(
+		model,
+		output,
+		OpenAIResponsesStreamProcessorOptions{
+			GrammarToolInputProperties: request.sampling.GrammarToolInputProperties,
+		},
+	)
+	for {
+		payload, err := lease.connection.Read(ctx, idleTimeout)
+		if err != nil {
+			return started, err
+		}
+		event, err := decodeOpenAICodexWebSocketEvent(payload)
+		if err != nil {
+			return started, err
+		}
+		if event.Type == "" {
+			continue
+		}
+		normalized, ok := normalizeOpenAICodexEvent(event)
+		if !ok {
+			continue
+		}
+		if !started {
+			started = true
+			if !*startEmitted {
+				*startEmitted = true
+				stream.Push(AssistantMessageEvent{Type: "start", Partial: *output})
+			}
+		}
+
+		emitted := processOpenAICodexNormalizedEvent(
+			processor,
+			output,
+			normalized,
+			metadataString(options.Metadata, "service_tier"),
+			model,
+		)
+		terminal := false
+		for _, emittedEvent := range emitted {
+			if emittedEvent.Type == "done" || emittedEvent.Type == "error" {
+				terminal = true
+				break
+			}
+		}
+		if terminal && useCachedContext && lease.session != nil && output.ResponseID != "" {
+			responseItems, err := openAICodexWebSocketResponseItems(
+				model,
+				*output,
+				request.sampling.GrammarToolInputProperties,
+			)
+			if err != nil {
+				return started, err
+			}
+			updateOpenAICodexWebSocketContinuation(
+				lease.session,
+				body,
+				output.ResponseID,
+				responseItems,
+			)
+		}
+		for _, emittedEvent := range emitted {
+			stream.Push(emittedEvent)
+		}
+		if terminal {
+			keepConnection = ctx.Err() == nil
+			return started, nil
+		}
+	}
+}
+
+const (
+	openAICodexWebSocketConnectionLimitCode = "websocket_connection_limit_reached"
+	openAICodexPreviousResponseNotFoundCode = "previous_response_not_found"
+)
+
+type openAICodexAPIError struct {
+	code    string
+	message string
+	payload json.RawMessage
+}
+
+func (e *openAICodexAPIError) Error() string {
+	detail := strings.TrimSpace(e.message)
+	if detail == "" {
+		detail = strings.TrimSpace(e.code)
+	}
+	if detail == "" {
+		detail = "Codex error"
+	}
+	return detail
+}
+
+type openAICodexProtocolError struct {
+	message string
+	payload json.RawMessage
+}
+
+func (e *openAICodexProtocolError) Error() string {
+	return e.message
+}
+
+func isOpenAICodexNonTransportError(err error) bool {
+	var apiError *openAICodexAPIError
+	var protocolError *openAICodexProtocolError
+	return errors.As(err, &apiError) || errors.As(err, &protocolError)
+}
+
+func decodeOpenAICodexWebSocketEvent(payload []byte) (OpenAIResponsesStreamEvent, error) {
+	var envelope struct {
+		Type    string `json:"type"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+		Error   *struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Response *struct {
+			Error *struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		return OpenAIResponsesStreamEvent{}, &openAICodexProtocolError{
+			message: fmt.Sprintf("invalid Codex WebSocket JSON: %v", err),
+			payload: append(json.RawMessage(nil), payload...),
+		}
+	}
+	switch envelope.Type {
+	case "error":
+		code, message := envelope.Code, envelope.Message
+		if envelope.Error != nil {
+			if code == "" {
+				code = envelope.Error.Code
+			}
+			if message == "" {
+				message = envelope.Error.Message
+			}
+		}
+		detail := strings.TrimSpace(message)
+		if detail == "" {
+			detail = strings.TrimSpace(code)
+		}
+		if detail == "" {
+			detail = strings.TrimSpace(string(payload))
+		}
+		return OpenAIResponsesStreamEvent{}, &openAICodexAPIError{
+			code:    code,
+			message: "Codex error: " + detail,
+			payload: append(json.RawMessage(nil), payload...),
+		}
+	case "response.failed":
+		var code, message string
+		if envelope.Response != nil && envelope.Response.Error != nil {
+			code = envelope.Response.Error.Code
+			message = envelope.Response.Error.Message
+		}
+		if message == "" {
+			message = "Codex response failed"
+		}
+		return OpenAIResponsesStreamEvent{}, &openAICodexAPIError{
+			code:    code,
+			message: message,
+			payload: append(json.RawMessage(nil), payload...),
+		}
+	}
+	event, err := DecodeOpenAIResponsesSSEEvent(payload)
+	if err != nil {
+		return OpenAIResponsesStreamEvent{}, &openAICodexProtocolError{
+			message: err.Error(),
+			payload: append(json.RawMessage(nil), payload...),
+		}
+	}
+	return event, nil
+}
+
+func openAICodexWebSocketResponseItems(
+	model Model,
+	output Message,
+	grammarToolInputProperties map[string]string,
+) ([]json.RawMessage, error) {
+	items, err := ConvertOpenAIResponsesMessagesChecked(
+		model,
+		Context{Messages: []Message{output}},
+		ConvertOpenAIResponsesOptions{
+			IncludeSystemPrompt:        ptrBool(false),
+			GrammarToolInputProperties: grammarToolInputProperties,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]json.RawMessage, 0, len(items))
+	for _, item := range items {
+		if item.Type == "function_call_output" || item.Type == "custom_tool_call_output" {
+			continue
+		}
+		raw, err := json.Marshal(item)
+		if err != nil {
+			return nil, err
+		}
+		raw, err = canonicalOpenAICodexJSON(raw)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, raw)
+	}
+	return result, nil
+}
+
+func normalizeOpenAICodexTransport(transport string) string {
+	transport = strings.TrimSpace(strings.ToLower(transport))
+	if transport == "" {
+		return "auto"
+	}
+	return transport
+}
+
+func newOpenAICodexTransportDiagnostic(
+	transport string,
+	err error,
+	started bool,
+	payload any,
+) AssistantMessageDiagnostic {
+	requestBytes := 0
+	if raw, marshalErr := json.Marshal(payload); marshalErr == nil {
+		requestBytes = len(raw)
+	}
+	fallbackTransport := any(nil)
+	phase := "after_message_stream_start"
+	if !started {
+		fallbackTransport = "sse"
+		phase = "before_message_stream_start"
+	}
+	return NewAssistantMessageDiagnostic("provider_transport_failure", err, map[string]any{
+		"configuredTransport": transport,
+		"fallbackTransport":   fallbackTransport,
+		"eventsEmitted":       started,
+		"phase":               phase,
+		"requestBytes":        requestBytes,
+	})
+}
+
+func pushOpenAICodexWebSocketError(
+	stream *AssistantMessageEventStream,
+	output *Message,
+	err error,
+	aborted bool,
+) {
+	if output == nil {
+		return
+	}
+	reason := StopReasonError
+	if aborted {
+		reason = StopReasonAborted
+	}
+	output.StopReason = reason
+	output.ErrorMessage = err.Error()
+	stream.Push(AssistantMessageEvent{
+		Type:    "error",
+		Reason:  reason,
+		Error:   *output,
+		Partial: *output,
+	})
+}
+
 func streamOpenAICodexResponsesBody(
 	model Model,
 	body io.ReadCloser,
@@ -214,20 +704,13 @@ func streamOpenAICodexResponsesBody(
 			}
 			return false, nil
 		}
-		emitted := processor.Process(normalized)
-		if normalized.Type == "response.completed" && normalized.Response != nil {
-			tier := ResolveOpenAICodexServiceTier(normalized.Response.ServiceTier, requestServiceTier)
-			ApplyOpenAICodexServiceTierPricing(&output.Usage, tier, model)
-			for i := range emitted {
-				emitted[i].Reason = output.StopReason
-				if emitted[i].Type == "error" {
-					emitted[i].Error = output
-				} else {
-					emitted[i].Message = output
-				}
-				emitted[i].Partial = output
-			}
-		}
+		emitted := processOpenAICodexNormalizedEvent(
+			processor,
+			&output,
+			normalized,
+			requestServiceTier,
+			model,
+		)
 		for _, event := range emitted {
 			stream.Push(event)
 			if event.Type == "done" || event.Type == "error" {
@@ -246,31 +729,29 @@ func streamOpenAICodexResponsesBody(
 	}
 }
 
-func openAICodexTransportDiagnostics(transport, sessionID string) []AssistantMessageDiagnostic {
-	configured := strings.TrimSpace(strings.ToLower(transport))
-	if configured == "" {
-		configured = "auto"
+func processOpenAICodexNormalizedEvent(
+	processor *OpenAIResponsesStreamProcessor,
+	output *Message,
+	event OpenAIResponsesStreamEvent,
+	requestServiceTier string,
+	model Model,
+) []AssistantMessageEvent {
+	emitted := processor.Process(event)
+	if event.Type != "response.completed" || event.Response == nil {
+		return emitted
 	}
-	if configured == "sse" {
-		return nil
+	tier := ResolveOpenAICodexServiceTier(event.Response.ServiceTier, requestServiceTier)
+	ApplyOpenAICodexServiceTierPricing(&output.Usage, tier, model)
+	for index := range emitted {
+		emitted[index].Reason = output.StopReason
+		if emitted[index].Type == "error" {
+			emitted[index].Error = *output
+		} else {
+			emitted[index].Message = *output
+		}
+		emitted[index].Partial = *output
 	}
-	err := fmt.Errorf("openai codex websocket transport is not implemented")
-	fallbackActive := isOpenAICodexWebSocketSSEFallbackActive(sessionID)
-	if fallbackActive {
-		recordOpenAICodexWebSocketSSEFallback(sessionID)
-	} else {
-		recordOpenAICodexWebSocketFailure(sessionID, err)
-		recordOpenAICodexWebSocketSSEFallback(sessionID)
-	}
-	return []AssistantMessageDiagnostic{
-		NewAssistantMessageDiagnostic("provider_transport_failure", err, map[string]any{
-			"configuredTransport":     configured,
-			"fallbackTransport":       "sse",
-			"eventsEmitted":           false,
-			"phase":                   "before_message_stream_start",
-			"websocketFallbackActive": fallbackActive,
-		}),
-	}
+	return emitted
 }
 
 func metadataString(metadata map[string]any, key string) string {

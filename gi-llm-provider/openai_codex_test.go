@@ -3,6 +3,7 @@ package gillmprovider
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -60,11 +61,40 @@ func TestBuildOpenAICodexPayloadAndHeaders(t *testing.T) {
 	if headers["OpenAI-Beta"] != "responses=experimental" || headers["accept"] != "text/event-stream" || headers["originator"] != "pi" {
 		t.Fatalf("protocol headers = %#v", headers)
 	}
-	if headers["session_id"] != "session-123" || headers["x-client-request-id"] != "session-123" {
+	if headers["session-id"] != "session-123" || headers["x-client-request-id"] != "session-123" {
 		t.Fatalf("session headers = %#v", headers)
 	}
 	if _, ok := headers["x-api-key"]; ok {
 		t.Fatalf("x-api-key should not be set: %#v", headers)
+	}
+	webSocketHeaders, err := BuildOpenAICodexWebSocketHeaders(
+		map[string]string{
+			"Accept":        "application/json",
+			"openai-beta":   "old",
+			"AUTHORIZATION": "old",
+		},
+		nil,
+		token,
+		"request-123",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if webSocketHeaders["OpenAI-Beta"] != openAICodexWebSocketBeta ||
+		webSocketHeaders["session-id"] != "request-123" ||
+		webSocketHeaders["x-client-request-id"] != "request-123" {
+		t.Fatalf("websocket headers = %#v", webSocketHeaders)
+	}
+	for name := range webSocketHeaders {
+		if strings.EqualFold(name, "accept") || strings.EqualFold(name, "content-type") {
+			t.Fatalf("websocket headers retain %q: %#v", name, webSocketHeaders)
+		}
+		if strings.EqualFold(name, "openai-beta") && name != "OpenAI-Beta" {
+			t.Fatalf("websocket headers retain duplicate beta spelling: %#v", webSocketHeaders)
+		}
+	}
+	if webSocketHeaders["Authorization"] != "Bearer "+token {
+		t.Fatalf("websocket authorization = %#v", webSocketHeaders)
 	}
 }
 
@@ -86,7 +116,7 @@ func TestOpenAICodexCacheAffinityE2EContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if headers["session_id"] != sessionID || headers["x-client-request-id"] != sessionID || headers["accept"] != "text/event-stream" {
+	if headers["session-id"] != sessionID || headers["x-client-request-id"] != sessionID || headers["accept"] != "text/event-stream" {
 		t.Fatalf("headers = %#v", headers)
 	}
 }
@@ -181,22 +211,17 @@ func TestOpenAICodexWebSocketDebugStatsPiParity(t *testing.T) {
 	ResetOpenAICodexWebSocketDebugStats()
 	defer ResetOpenAICodexWebSocketDebugStats()
 
-	diagnostics := openAICodexTransportDiagnostics("websocket", "session-debug")
-	if len(diagnostics) != 1 || diagnostics[0].Details["websocketFallbackActive"] != false {
-		t.Fatalf("first diagnostics = %#v", diagnostics)
-	}
+	recordOpenAICodexWebSocketFailure("session-debug", errors.New("dial failed"))
+	recordOpenAICodexWebSocketSSEFallback("session-debug")
 	stats, ok := GetOpenAICodexWebSocketDebugStats("session-debug")
 	if !ok {
 		t.Fatal("expected debug stats after websocket fallback")
 	}
-	if stats.WebSocketFailures != 1 || stats.SSEFallbacks != 1 || !stats.WebSocketFallbackActive || !strings.Contains(stats.LastWebSocketError, "not implemented") {
+	if stats.WebSocketFailures != 1 || stats.SSEFallbacks != 1 || !stats.WebSocketFallbackActive || stats.LastWebSocketError != "dial failed" {
 		t.Fatalf("first stats = %#v", stats)
 	}
 
-	diagnostics = openAICodexTransportDiagnostics("auto", "session-debug")
-	if len(diagnostics) != 1 || diagnostics[0].Details["websocketFallbackActive"] != true {
-		t.Fatalf("second diagnostics = %#v", diagnostics)
-	}
+	recordOpenAICodexWebSocketSSEFallback("session-debug")
 	stats, ok = GetOpenAICodexWebSocketDebugStats("session-debug")
 	if !ok {
 		t.Fatal("expected debug stats after repeated fallback")

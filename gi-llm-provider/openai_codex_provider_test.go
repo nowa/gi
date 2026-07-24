@@ -21,7 +21,7 @@ func TestOpenAICodexResponsesProviderStreamsFromHTTP(t *testing.T) {
 		requestPath = r.URL.Path
 		authHeader = r.Header.Get("Authorization")
 		accountHeader = r.Header.Get("chatgpt-account-id")
-		sessionHeader = r.Header.Get("session_id")
+		sessionHeader = r.Header.Get("session-id")
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Errorf("decode request: %v", err)
 		}
@@ -59,6 +59,7 @@ func TestOpenAICodexResponsesProviderStreamsFromHTTP(t *testing.T) {
 		APIKey:    token,
 		SessionID: "session-123",
 		Reasoning: "xhigh",
+		Transport: "sse",
 		Metadata:  map[string]any{"service_tier": "priority"},
 	})
 	if err != nil {
@@ -117,7 +118,10 @@ func TestOpenAICodexResponsesProviderRetriesRetryableHTTPStatus(t *testing.T) {
 		return ctx.Err()
 	}
 	model := Model{ID: "gpt-5.1-codex", Provider: "openai-codex", API: "openai-codex-responses", BaseURL: server.URL, Input: []string{"text"}}
-	stream, err := provider.StreamSimple(model, Context{Messages: []Message{UserMessageText("hi")}}, SimpleStreamOptions{APIKey: token})
+	stream, err := provider.StreamSimple(model, Context{Messages: []Message{UserMessageText("hi")}}, SimpleStreamOptions{
+		APIKey:    token,
+		Transport: "sse",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +157,10 @@ func TestOpenAICodexResponsesProviderCompletesWhenSSEBodyStaysOpen(t *testing.T)
 	defer server.Close()
 
 	model := Model{ID: "gpt-5.1-codex", Provider: "openai-codex", API: "openai-codex-responses", BaseURL: server.URL, Input: []string{"text"}}
-	stream, err := NewOpenAICodexResponsesProvider(server.Client()).StreamSimple(model, Context{Messages: []Message{UserMessageText("hi")}}, SimpleStreamOptions{APIKey: token})
+	stream, err := NewOpenAICodexResponsesProvider(server.Client()).StreamSimple(model, Context{Messages: []Message{UserMessageText("hi")}}, SimpleStreamOptions{
+		APIKey:    token,
+		Transport: "sse",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

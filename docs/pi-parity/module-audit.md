@@ -148,10 +148,10 @@ The member-level source inventory currently reports:
 
 | Module | Pi source files | Gi production files | Pi symbols | Missing Pi files | Missing Pi symbols |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 169 | 70 | 632 | 47 | 133 |
-| Agent core | 35 | 22 | 327 | 11 | 68 |
-| TUI | 28 | 27 | 449 | 3 | 56 |
-| Coding agent | 177 | 163 | 2115 | 27 | 462 |
+| LLM provider | 169 | 86 | 632 | 28 | 59 |
+| Agent core | 35 | 35 | 327 | 0 | 0 |
+| TUI | 28 | 32 | 449 | 0 | 0 |
+| Coding agent | 177 | 172 | 2115 | 27 | 398 |
 
 `docs/pi-parity/member-symbol-inventory.md` is the generated per-file detail.
 A mentioned symbol means its ownership or gap has been classified; it does not
@@ -170,11 +170,11 @@ node docs/pi-parity/verify-module-boundaries.mjs \
 
 The test-case inventory currently reports:
 
-| Module | Pi test files | Pi cases | Candidate files | Candidate cases | No-candidate files | No-candidate cases |
+| Module | In-scope Pi test files | In-scope Pi cases | Candidate files | Candidate cases | No-candidate files | No-candidate cases |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 112 | 1189 | 106 | 1140 | 6 | 49 |
-| Agent core | 18 | 224 | 15 | 186 | 3 | 38 |
-| TUI | 27 | 700 | 25 | 673 | 2 | 27 |
+| LLM provider | 111 | 1186 | 111 | 1186 | 0 | 0 |
+| Agent core | 16 | 212 | 16 | 212 | 0 | 0 |
+| TUI | 27 | 700 | 27 | 700 | 0 | 0 |
 | Coding agent | 181 | 1649 | 173 | 1597 | 8 | 52 |
 
 Candidate matching is an audit lead, not proof. Behavioral parity still
@@ -376,7 +376,7 @@ Observed direct coverage:
 - Cross-provider behavior: Pi transform/overflow/env/OAuth/image helpers map to Gi `message_transform.go`, `overflow.go`, `env.go`, `oauth.go`, `images.go`, `image_models.go`, `openrouter_images.go`.
 - Cloudflare base URL helpers in Pi `providers/cloudflare.ts` now map to Gi `cloudflare.go`, and are wired into Anthropic/OpenAI Completions/OpenAI Responses provider request paths.
 - Pi assistant-message diagnostics in `utils/diagnostics.ts` now map to Gi `diagnostics.go` plus the `Message.Diagnostics` field. Gi uses this for OpenAI Codex transport fallback reporting.
-- Pi OpenAI Codex websocket fallback diagnostics are partially covered: explicit non-SSE transports no longer hard-fail in Gi; they fall back to SSE with a `provider_transport_failure` diagnostic, and Gi exposes Pi-style fallback debug/reset/close helpers.
+- Pi OpenAI Codex WebSocket transport maps to Gi's synchronized connection leases, 55-minute age rotation, five-minute idle cleanup, continuation deltas, retryable backend state errors, and session debug/reset/close helpers. A `provider_transport_failure` diagnostic accompanies SSE fallback only when the WebSocket fails before stream start.
 - Pi `utils/json-parse.ts` maps to Gi `RepairJSON`, `UnmarshalJSONWithRepair`, and `parseStreamingJSONObject`; the streaming parser now repairs common partial objects so tool arguments can appear before the final JSON delta.
 - Pi `utils/hash.ts`, `headers.ts`, `node-http-proxy.ts`, `sanitize-unicode.ts`, and `validation.ts` map to Gi `shortHash`, `responseHeaders`, `http_proxy.go`, `SanitizeSurrogates`, and `validation.go`. `ValidateToolCall` is present for the Pi-level "find tool by name, then validate arguments" contract.
 - Pi `utils/typebox-helpers.ts` `StringEnum` maps to Gi `StringEnum` / `StringEnumWithOptions`, and Gi validation now enforces `Schema.Enum`.
@@ -402,10 +402,10 @@ Observed direct coverage:
 Open verification items:
 
 - Pi `session-resources.ts` cleanup registry now maps to Gi
-  `session_resources.go`. Gi implements the Pi
-  `get/reset/closeOpenAICodexWebSocket*` debug/reset/close helper surface for
-  fallback diagnostics, but real websocket connection reuse and cached-input
-  delta requests remain a transport-parity gap.
+  `session_resources.go`. Codex session cleanup closes cached WebSocket
+  connections and their idle timers through the same registry; debug stats,
+  fallback state, connection reuse, and cached-input delta requests have
+  focused race-tested coverage.
 - Pi utility files currently have direct Gi counterparts or documented Go-specific equivalents.
 
 ### Agent Core
@@ -564,8 +564,9 @@ that matches Pi component behavior rather than proving a component bug. The
 remaining question is whether Gi provider/runtime is creating thinking blocks in
 cases where Pi would not. The OpenAI Responses/Codex SSE parser now matches Pi's
 summary-part guard for this path, and OpenAI-compatible Chat Completions now
-uses the same lifecycle event shape as Pi for reasoning/tool streams; websocket
-transport reuse/cache parity remains tracked as a separate provider gap.
+uses the same lifecycle event shape as Pi for reasoning/tool streams. Codex
+WebSocket reuse/cache/continuation parity is now covered separately from the
+remaining optional SSE request-compression gap.
 
 ## Completion Criteria
 

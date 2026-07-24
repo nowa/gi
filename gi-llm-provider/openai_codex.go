@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -62,17 +61,6 @@ type OpenAICodexWebSocketDebugStats struct {
 	SSEFallbacks            int    `json:"sseFallbacks"`
 	WebSocketFallbackActive bool   `json:"websocketFallbackActive,omitempty"`
 	LastWebSocketError      string `json:"lastWebSocketError,omitempty"`
-}
-
-var openAICodexWebSocketState = struct {
-	sync.Mutex
-	stats            map[string]OpenAICodexWebSocketDebugStats
-	sseFallbacks     map[string]bool
-	cachedSessionIDs map[string]bool
-}{
-	stats:            map[string]OpenAICodexWebSocketDebugStats{},
-	sseFallbacks:     map[string]bool{},
-	cachedSessionIDs: map[string]bool{},
 }
 
 func BuildOpenAICodexResponsesPayload(model Model, context Context, options OpenAICodexResponsesPayloadOptions) OpenAICodexResponsesPayload {
@@ -182,16 +170,6 @@ func ResetOpenAICodexWebSocketDebugStats(sessionIDs ...string) {
 	openAICodexWebSocketState.sseFallbacks = map[string]bool{}
 }
 
-func CloseOpenAICodexWebSocketSessions(sessionIDs ...string) {
-	openAICodexWebSocketState.Lock()
-	defer openAICodexWebSocketState.Unlock()
-	if len(sessionIDs) > 0 && strings.TrimSpace(sessionIDs[0]) != "" {
-		delete(openAICodexWebSocketState.cachedSessionIDs, strings.TrimSpace(sessionIDs[0]))
-		return
-	}
-	openAICodexWebSocketState.cachedSessionIDs = map[string]bool{}
-}
-
 func isOpenAICodexWebSocketSSEFallbackActive(sessionID string) bool {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
@@ -238,12 +216,12 @@ func BuildOpenAICodexSSEHeaders(modelHeaders, optionHeaders map[string]string, t
 		return nil, err
 	}
 	headers := buildOpenAICodexBaseHeaders(modelHeaders, optionHeaders, accountID, token)
-	headers["OpenAI-Beta"] = "responses=experimental"
-	headers["accept"] = "text/event-stream"
-	headers["content-type"] = "application/json"
+	setHeaderCaseInsensitive(headers, "OpenAI-Beta", "responses=experimental")
+	setHeaderCaseInsensitive(headers, "accept", "text/event-stream")
+	setHeaderCaseInsensitive(headers, "content-type", "application/json")
 	if sessionID != "" {
-		headers["session_id"] = sessionID
-		headers["x-client-request-id"] = sessionID
+		setHeaderCaseInsensitive(headers, "session-id", sessionID)
+		setHeaderCaseInsensitive(headers, "x-client-request-id", sessionID)
 	}
 	return headers, nil
 }
@@ -254,11 +232,11 @@ func BuildOpenAICodexWebSocketHeaders(modelHeaders, optionHeaders map[string]str
 		return nil, err
 	}
 	headers := buildOpenAICodexBaseHeaders(modelHeaders, optionHeaders, accountID, token)
-	headers["OpenAI-Beta"] = "responses=experimental, realtime=v1"
-	headers["x-client-request-id"] = requestID
-	headers["session_id"] = requestID
-	delete(headers, "accept")
-	delete(headers, "content-type")
+	removeHeaderCaseInsensitive(headers, "accept")
+	removeHeaderCaseInsensitive(headers, "content-type")
+	setHeaderCaseInsensitive(headers, "OpenAI-Beta", openAICodexWebSocketBeta)
+	setHeaderCaseInsensitive(headers, "x-client-request-id", requestID)
+	setHeaderCaseInsensitive(headers, "session-id", requestID)
 	return headers, nil
 }
 
@@ -418,17 +396,14 @@ func IsOpenAICodexRetryable(status int, body string) bool {
 }
 
 func buildOpenAICodexBaseHeaders(modelHeaders, optionHeaders map[string]string, accountID, token string) map[string]string {
-	headers := map[string]string{}
-	for key, value := range modelHeaders {
-		headers[key] = value
+	headers := mergeHeadersCaseInsensitive(modelHeaders, optionHeaders)
+	if headers == nil {
+		headers = map[string]string{}
 	}
-	for key, value := range optionHeaders {
-		headers[key] = value
-	}
-	headers["Authorization"] = "Bearer " + token
-	headers["chatgpt-account-id"] = accountID
-	headers["originator"] = "pi"
-	headers["User-Agent"] = "pi (go)"
+	setHeaderCaseInsensitive(headers, "Authorization", "Bearer "+token)
+	setHeaderCaseInsensitive(headers, "chatgpt-account-id", accountID)
+	setHeaderCaseInsensitive(headers, "originator", "pi")
+	setHeaderCaseInsensitive(headers, "User-Agent", "pi (go)")
 	return headers
 }
 

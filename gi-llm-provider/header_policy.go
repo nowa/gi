@@ -22,6 +22,11 @@ func removeHeaderCaseInsensitive(headers map[string]string, name string) {
 	}
 }
 
+func setHeaderCaseInsensitive(headers map[string]string, name, value string) {
+	removeHeaderCaseInsensitive(headers, name)
+	headers[name] = value
+}
+
 func appendUniqueHeaderRemovals(base, additional []string) []string {
 	result := append([]string(nil), base...)
 	for _, name := range additional {

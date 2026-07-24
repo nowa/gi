@@ -29,7 +29,6 @@
         "api/mistral-conversations.ts",
         "api/openai-completions.lazy.ts",
         "api/openai-completions.ts",
-        "api/openai-prompt-cache.ts",
         "api/simple-options.ts",
         "api/transform-messages.ts",
         "auth/oauth/anthropic.ts",
@@ -65,12 +64,8 @@
         "api/mistral-conversations.ts::shouldUsePromptCaching",
         "api/openai-codex-responses.ts::RetryDelayExceededError",
         "api/openai-codex-responses.ts::compressRequestBodyZstd",
-        "api/openai-codex-responses.ts::extractCodexEventError",
         "api/openai-codex-responses.ts::getRetryAfterDelayMs",
-        "api/openai-codex-responses.ts::isPreviousResponseNotFoundError",
         "api/openai-codex-responses.ts::isTerminalRateLimitError",
-        "api/openai-codex-responses.ts::isWebSocketConnectionLimitReachedError",
-        "api/openai-codex-responses.ts::isWebSocketSessionExpired",
         "api/openai-codex-responses.ts::loadNodeOs",
         "api/openai-codex-responses.ts::loadNodeZlib",
         "api/openai-codex-responses.ts::normalizeTimeoutMs",
@@ -80,7 +75,6 @@
         "api/openai-completions.ts::hasHeader",
         "api/openai-completions.ts::isEncryptedReasoningDetail",
         "api/openai-completions.ts::resolveChatTemplateKwargValue",
-        "api/openai-prompt-cache.ts::clampOpenAIPromptCacheKey",
         "api/openai-responses.ts::detectSessionAffinityFormat",
         "api/openai-responses.ts::formatOpenAIResponsesError",
         "api/openai-responses.ts::getClientApiKey",
@@ -577,13 +571,7 @@
       "module": "llm",
       "undocumentedFiles": [],
       "noCandidateFiles": [],
-      "noCandidateCases": [
-        {
-          "file": "packages/ai/test/openai-codex-stream.test.ts",
-          "line": 1767,
-          "name": "opens a fresh cached websocket before the backend connection age limit"
-        }
-      ]
+      "noCandidateCases": []
     },
     {
       "module": "agent",
