@@ -24,6 +24,11 @@ func (c *apiParityComponent) SetFocused(focused bool) {
 func (c *apiParityComponent) Focused() bool { return c.focused }
 
 func TestPiTUIIndexPublicSurfaceCompiles(t *testing.T) {
+	previousKeybindings := gitui.GetKeybindings()
+	previousKittyProtocolActive := gitui.IsKittyProtocolActive()
+	defer gitui.SetKeybindings(previousKeybindings)
+	defer gitui.SetKittyProtocolActive(previousKittyProtocolActive)
+
 	style := func(text string) string { return text }
 	component := &apiParityComponent{}
 
