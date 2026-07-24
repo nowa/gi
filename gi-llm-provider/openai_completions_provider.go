@@ -37,7 +37,7 @@ func (p OpenAICompletionsProvider) StreamSimple(model Model, llmContext Context,
 	if options.Reasoning != "" {
 		reasoning = ClampThinkingLevel(model, options.Reasoning)
 	}
-	payload, err := BuildOpenAICompletionsPayloadChecked(model, llmContext, OpenAICompletionsPayloadOptions{
+	payload, requestState, err := buildOpenAICompletionsPayloadChecked(model, llmContext, OpenAICompletionsPayloadOptions{
 		MaxTokens:      options.MaxTokens,
 		Temperature:    options.Temperature,
 		CacheRetention: options.CacheRetention,
@@ -96,14 +96,30 @@ func (p OpenAICompletionsProvider) StreamSimple(model Model, llmContext Context,
 		return streamProviderRequestError(model, err), nil
 	}
 	stream := NewAssistantMessageEventStream()
-	go streamOpenAICompletionsBody(model, response.Body, stream)
+	go streamOpenAICompletionsBody(
+		model,
+		response.Body,
+		stream,
+		requestState.GrammarToolInputProperties,
+	)
 	return stream, nil
 }
 
-func streamOpenAICompletionsBody(model Model, body io.ReadCloser, stream *AssistantMessageEventStream) {
+func streamOpenAICompletionsBody(
+	model Model,
+	body io.ReadCloser,
+	stream *AssistantMessageEventStream,
+	grammarToolInputProperties map[string]string,
+) {
 	output := AssistantMessage(nil, StopReasonStop, model)
 	stream.Push(AssistantMessageEvent{Type: "start", Partial: output})
-	processor := NewOpenAICompletionsStreamProcessor(model, &output)
+	processor := NewOpenAICompletionsStreamProcessorWithOptions(
+		model,
+		&output,
+		OpenAICompletionsStreamProcessorOptions{
+			GrammarToolInputProperties: grammarToolInputProperties,
+		},
+	)
 	terminal := false
 	err := dispatchSSEUntil(body, func(data string) (bool, error) {
 		chunk, err := DecodeOpenAIChatCompletionChunk([]byte(data))

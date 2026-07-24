@@ -60,7 +60,40 @@ type OpenAICompletionsPayload struct {
 type OpenAIChatTool struct {
 	Type         string                    `json:"type"`
 	Function     OpenAIChatToolFunction    `json:"function"`
+	Custom       *OpenAIChatCustomTool     `json:"custom,omitempty"`
 	CacheControl *OpenAICompatCacheControl `json:"cache_control,omitempty"`
+}
+
+type OpenAIChatCustomTool struct {
+	Name        string                     `json:"name"`
+	Description string                     `json:"description,omitempty"`
+	Format      OpenAIChatCustomToolFormat `json:"format"`
+}
+
+type OpenAIChatCustomToolFormat struct {
+	Type    string                      `json:"type"`
+	Grammar OpenAIChatCustomToolGrammar `json:"grammar"`
+}
+
+type OpenAIChatCustomToolGrammar struct {
+	Syntax     GrammarFormat `json:"syntax"`
+	Definition string        `json:"definition"`
+}
+
+func (tool OpenAIChatTool) MarshalJSON() ([]byte, error) {
+	if tool.Type == "custom" || tool.Custom != nil {
+		return json.Marshal(struct {
+			Type         string                    `json:"type"`
+			Custom       *OpenAIChatCustomTool     `json:"custom,omitempty"`
+			CacheControl *OpenAICompatCacheControl `json:"cache_control,omitempty"`
+		}{
+			Type:         tool.Type,
+			Custom:       tool.Custom,
+			CacheControl: tool.CacheControl,
+		})
+	}
+	type alias OpenAIChatTool
+	return json.Marshal(alias(tool))
 }
 
 type OpenAIChatToolFunction struct {
@@ -117,6 +150,28 @@ type OpenAIChatToolCall struct {
 	ID       string                     `json:"id"`
 	Type     string                     `json:"type"`
 	Function OpenAIChatToolCallFunction `json:"function"`
+	Custom   *OpenAIChatCustomToolCall  `json:"custom,omitempty"`
+}
+
+type OpenAIChatCustomToolCall struct {
+	Name  string `json:"name"`
+	Input string `json:"input"`
+}
+
+func (call OpenAIChatToolCall) MarshalJSON() ([]byte, error) {
+	if call.Type == "custom" || call.Custom != nil {
+		return json.Marshal(struct {
+			ID     string                    `json:"id"`
+			Type   string                    `json:"type"`
+			Custom *OpenAIChatCustomToolCall `json:"custom,omitempty"`
+		}{
+			ID:     call.ID,
+			Type:   call.Type,
+			Custom: call.Custom,
+		})
+	}
+	type alias OpenAIChatToolCall
+	return json.Marshal(alias(call))
 }
 
 type OpenAIChatToolCallFunction struct {
@@ -135,17 +190,62 @@ type OpenAIChatImageURL struct {
 	URL string `json:"url"`
 }
 
+// OpenAICompletionsRequestState is resolved once per request and shared by
+// payload conversion and stream decoding.
+type OpenAICompletionsRequestState struct {
+	Compat                     OpenAICompletionsCompat
+	ToolPlacement              DeferredToolSet
+	GrammarToolInputProperties map[string]string
+}
+
+func ResolveOpenAICompletionsRequestState(
+	model Model,
+	context Context,
+) (OpenAICompletionsRequestState, error) {
+	return resolveOpenAICompletionsRequestState(context, ResolveOpenAICompletionsCompat(model))
+}
+
+func resolveOpenAICompletionsRequestState(
+	context Context,
+	compat OpenAICompletionsCompat,
+) (OpenAICompletionsRequestState, error) {
+	grammarToolInputProperties, err := CreateGrammarToolInputProperties(
+		context.Tools,
+		compat.SupportsOpenAIGrammarTools,
+	)
+	if err != nil {
+		return OpenAICompletionsRequestState{}, err
+	}
+	return OpenAICompletionsRequestState{
+		Compat:                     compat,
+		ToolPlacement:              splitKimiDeferredTools(context, compat.DeferredToolsMode == "kimi"),
+		GrammarToolInputProperties: grammarToolInputProperties,
+	}, nil
+}
+
 func ConvertOpenAICompletionsMessages(model Model, context Context, compat OpenAICompletionsCompat) []OpenAIChatMessage {
-	toolPlacement := splitKimiDeferredTools(context, compat.DeferredToolsMode == "kimi")
-	return convertOpenAICompletionsMessages(model, context, compat, toolPlacement)
+	messages, _ := ConvertOpenAICompletionsMessagesChecked(model, context, compat)
+	return messages
+}
+
+func ConvertOpenAICompletionsMessagesChecked(
+	model Model,
+	context Context,
+	compat OpenAICompletionsCompat,
+) ([]OpenAIChatMessage, error) {
+	state, err := resolveOpenAICompletionsRequestState(context, compat)
+	if err != nil {
+		return nil, err
+	}
+	return convertOpenAICompletionsMessages(model, context, state)
 }
 
 func convertOpenAICompletionsMessages(
 	model Model,
 	context Context,
-	compat OpenAICompletionsCompat,
-	toolPlacement DeferredToolSet,
-) []OpenAIChatMessage {
+	state OpenAICompletionsRequestState,
+) ([]OpenAIChatMessage, error) {
+	compat := state.Compat
 	var params []OpenAIChatMessage
 	transformed := TransformMessages(context.Messages, model, func(id string, target Model, _ Message) string {
 		return NormalizeToolCallIDForOpenAICompletions(id, target)
@@ -175,7 +275,15 @@ func convertOpenAICompletionsMessages(
 			params = append(params, OpenAIChatMessage{Role: "user", Content: content})
 			lastRole = RoleUser
 		case RoleAssistant:
-			assistant := convertOpenAIChatAssistantMessage(message, model, compat)
+			assistant, err := convertOpenAIChatAssistantMessage(
+				message,
+				model,
+				compat,
+				state.GrammarToolInputProperties,
+			)
+			if err != nil {
+				return nil, err
+			}
 			if assistant == nil {
 				continue
 			}
@@ -231,11 +339,15 @@ func convertOpenAICompletionsMessages(
 				lastRole = RoleToolResult
 			}
 			if len(deferredToolNames) > 0 {
-				deferredTools := getToolsByName(toolPlacement.Deferred, deferredToolNames)
+				deferredTools := getToolsByName(state.ToolPlacement.Deferred, deferredToolNames)
 				if len(deferredTools) > 0 {
+					convertedTools, err := ConvertOpenAICompletionsToolsChecked(deferredTools, compat)
+					if err != nil {
+						return nil, err
+					}
 					params = append(params, OpenAIChatMessage{
 						Role:  "system",
-						Tools: ConvertOpenAICompletionsTools(deferredTools, compat),
+						Tools: convertedTools,
 					})
 				}
 			}
@@ -244,7 +356,7 @@ func convertOpenAICompletionsMessages(
 			lastRole = message.Role
 		}
 	}
-	return params
+	return params, nil
 }
 
 func ShouldSendOpenAICompletionsTools(context Context) bool {
@@ -267,10 +379,25 @@ func ShouldSendOpenAICompletionsTools(context Context) bool {
 }
 
 func BuildOpenAICompletionsPayload(model Model, context Context, options OpenAICompletionsPayloadOptions) OpenAICompletionsPayload {
-	compat := ResolveOpenAICompletionsCompat(model)
+	payload, _, _ := buildOpenAICompletionsPayload(model, context, options)
+	return payload
+}
+
+func buildOpenAICompletionsPayload(
+	model Model,
+	context Context,
+	options OpenAICompletionsPayloadOptions,
+) (OpenAICompletionsPayload, OpenAICompletionsRequestState, error) {
+	state, err := ResolveOpenAICompletionsRequestState(model, context)
+	if err != nil {
+		return OpenAICompletionsPayload{}, OpenAICompletionsRequestState{}, err
+	}
+	compat := state.Compat
 	cacheRetention := resolveCacheRetention(options.CacheRetention)
-	toolPlacement := splitKimiDeferredTools(context, compat.DeferredToolsMode == "kimi")
-	messages := convertOpenAICompletionsMessages(model, context, compat, toolPlacement)
+	messages, err := convertOpenAICompletionsMessages(model, context, state)
+	if err != nil {
+		return OpenAICompletionsPayload{}, OpenAICompletionsRequestState{}, err
+	}
 	payload := OpenAICompletionsPayload{
 		Model:    model.ID,
 		Messages: messages,
@@ -300,8 +427,11 @@ func BuildOpenAICompletionsPayload(model Model, context Context, options OpenAIC
 	if cacheRetention == "long" && compat.SupportsLongCacheRetention {
 		payload.PromptCacheRetention = "24h"
 	}
-	if len(toolPlacement.Immediate) > 0 {
-		payload.Tools = ConvertOpenAICompletionsTools(toolPlacement.Immediate, compat)
+	if len(state.ToolPlacement.Immediate) > 0 {
+		payload.Tools, err = ConvertOpenAICompletionsToolsChecked(state.ToolPlacement.Immediate, compat)
+		if err != nil {
+			return OpenAICompletionsPayload{}, OpenAICompletionsRequestState{}, err
+		}
 		if compat.ZAIToolStream {
 			payload.ToolStream = ptrBool(true)
 		}
@@ -315,14 +445,23 @@ func BuildOpenAICompletionsPayload(model Model, context Context, options OpenAIC
 		payload.ToolChoice = options.ToolChoice
 	}
 	applyOpenAICompletionsReasoning(&payload, model, compat, options.Reasoning)
-	return payload
+	return payload, state, nil
 }
 
 func BuildOpenAICompletionsPayloadChecked(model Model, context Context, options OpenAICompletionsPayloadOptions) (OpenAICompletionsPayload, error) {
+	payload, _, err := buildOpenAICompletionsPayloadChecked(model, context, options)
+	return payload, err
+}
+
+func buildOpenAICompletionsPayloadChecked(
+	model Model,
+	context Context,
+	options OpenAICompletionsPayloadOptions,
+) (OpenAICompletionsPayload, OpenAICompletionsRequestState, error) {
 	if err := ValidateThinkingLevelSupported(model, options.Reasoning); err != nil {
-		return OpenAICompletionsPayload{}, err
+		return OpenAICompletionsPayload{}, OpenAICompletionsRequestState{}, err
 	}
-	return BuildOpenAICompletionsPayload(model, context, options), nil
+	return buildOpenAICompletionsPayload(model, context, options)
 }
 
 func BuildOpenAICompletionsHeaders(model Model, options OpenAICompletionsPayloadOptions) map[string]string {
@@ -343,8 +482,42 @@ func BuildOpenAICompletionsHeaders(model Model, options OpenAICompletionsPayload
 }
 
 func ConvertOpenAICompletionsTools(tools []Tool, compat OpenAICompletionsCompat) []OpenAIChatTool {
+	converted, _ := ConvertOpenAICompletionsToolsChecked(tools, compat)
+	return converted
+}
+
+func ConvertOpenAICompletionsToolsChecked(
+	tools []Tool,
+	compat OpenAICompletionsCompat,
+) ([]OpenAIChatTool, error) {
 	result := make([]OpenAIChatTool, 0, len(tools))
 	for _, tool := range tools {
+		grammar, ok, err := ResolveGrammarConstrainedSampling(tool, compat.SupportsOpenAIGrammarTools)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			result = append(result, OpenAIChatTool{
+				Type: "custom",
+				Custom: &OpenAIChatCustomTool{
+					Name:        tool.Name,
+					Description: tool.Description,
+					Format: OpenAIChatCustomToolFormat{
+						Type: "grammar",
+						Grammar: OpenAIChatCustomToolGrammar{
+							Syntax:     grammar.Format,
+							Definition: grammar.Definition,
+						},
+					},
+				},
+			})
+			continue
+		}
+
+		strict, err := ResolveJSONSchemaStrictSampling(tool, compat.SupportsStrictMode)
+		if err != nil {
+			return nil, err
+		}
 		converted := OpenAIChatTool{
 			Type: "function",
 			Function: OpenAIChatToolFunction{
@@ -354,11 +527,14 @@ func ConvertOpenAICompletionsTools(tools []Tool, compat OpenAICompletionsCompat)
 			},
 		}
 		if compat.SupportsStrictMode {
-			converted.Function.Strict = ptrBool(false)
+			converted.Function.Strict = strict
+			if converted.Function.Strict == nil {
+				converted.Function.Strict = ptrBool(false)
+			}
 		}
 		result = append(result, converted)
 	}
-	return result
+	return result, nil
 }
 
 func ResolveOpenAICompletionsCompat(model Model) OpenAICompletionsCompat {
@@ -621,7 +797,12 @@ func convertOpenAIChatUserContent(content []ContentPart) []OpenAIChatContentPart
 	return parts
 }
 
-func convertOpenAIChatAssistantMessage(message Message, model Model, compat OpenAICompletionsCompat) *OpenAIChatMessage {
+func convertOpenAIChatAssistantMessage(
+	message Message,
+	model Model,
+	compat OpenAICompletionsCompat,
+	grammarToolInputProperties map[string]string,
+) (*OpenAIChatMessage, error) {
 	assistant := OpenAIChatMessage{Role: RoleAssistant}
 	if compat.RequiresAssistantAfterToolResult {
 		assistant.Content = ""
@@ -639,15 +820,30 @@ func convertOpenAIChatAssistantMessage(message Message, model Model, compat Open
 				thinkingParts = append(thinkingParts, part)
 			}
 		case ContentToolCall:
-			arguments, _ := json.Marshal(part.Arguments)
-			assistant.ToolCalls = append(assistant.ToolCalls, OpenAIChatToolCall{
-				ID:   part.ID,
-				Type: "function",
-				Function: OpenAIChatToolCallFunction{
-					Name:      part.Name,
-					Arguments: string(arguments),
-				},
-			})
+			if inputProperty, custom := grammarToolInputProperties[part.Name]; custom {
+				input, err := GetGrammarToolInput(part.Name, part.Arguments, inputProperty)
+				if err != nil {
+					return nil, err
+				}
+				assistant.ToolCalls = append(assistant.ToolCalls, OpenAIChatToolCall{
+					ID:   part.ID,
+					Type: "custom",
+					Custom: &OpenAIChatCustomToolCall{
+						Name:  part.Name,
+						Input: SanitizeSurrogates(input),
+					},
+				})
+			} else {
+				arguments, _ := json.Marshal(part.Arguments)
+				assistant.ToolCalls = append(assistant.ToolCalls, OpenAIChatToolCall{
+					ID:   part.ID,
+					Type: "function",
+					Function: OpenAIChatToolCallFunction{
+						Name:      part.Name,
+						Arguments: string(arguments),
+					},
+				})
+			}
 			if part.ThoughtSignature != "" {
 				var detail map[string]any
 				if json.Unmarshal([]byte(part.ThoughtSignature), &detail) == nil {
@@ -690,9 +886,9 @@ func convertOpenAIChatAssistantMessage(message Message, model Model, compat Open
 		hasStringContent = content != nil
 	}
 	if !hasStringContent && len(assistant.ToolCalls) == 0 {
-		return nil
+		return nil, nil
 	}
-	return &assistant
+	return &assistant, nil
 }
 
 func setOpenAIChatAssistantThinkingReplayField(assistant *OpenAIChatMessage, parts []ContentPart) {

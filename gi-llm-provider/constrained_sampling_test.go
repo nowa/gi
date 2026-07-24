@@ -144,6 +144,122 @@ func TestConstrainedToolSampling(t *testing.T) {
 		}
 	})
 
+	t.Run("builds and replays OpenAI Chat Completions custom tools", func(t *testing.T) {
+		grammarTool := constrainedSamplingTestTool(&ConstrainedSamplingConfig{
+			Type: ConstrainedSamplingGrammar,
+			Variants: GrammarVariants{
+				OpenAILark: "start: /[a-z]+/",
+			},
+		})
+		model := constrainedSamplingTestModel()
+		model.API = "openai-completions"
+		model.Compat.SupportsOpenAIGrammarTools = ptrBool(true)
+		model.Compat.SupportsStrictMode = ptrBool(true)
+		context := Context{
+			Messages: []Message{{
+				Role: RoleAssistant,
+				Content: []ContentPart{ToolCall(
+					"call_1",
+					grammarTool.Name,
+					map[string]any{"payload": "abc"},
+				)},
+				API:      model.API,
+				Provider: model.Provider,
+				Model:    model.ID,
+			}},
+			Tools: []Tool{grammarTool},
+		}
+
+		payload, err := BuildOpenAICompletionsPayloadChecked(
+			model,
+			context,
+			OpenAICompletionsPayloadOptions{},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(payload.Tools) != 1 ||
+			payload.Tools[0].Type != "custom" ||
+			payload.Tools[0].Custom == nil ||
+			payload.Tools[0].Custom.Name != grammarTool.Name ||
+			payload.Tools[0].Custom.Format.Type != "grammar" ||
+			payload.Tools[0].Custom.Format.Grammar.Syntax != GrammarFormatLark {
+			t.Fatalf("custom tools = %#v", payload.Tools)
+		}
+		if len(payload.Messages) == 0 ||
+			len(payload.Messages[0].ToolCalls) != 1 ||
+			payload.Messages[0].ToolCalls[0].Type != "custom" ||
+			payload.Messages[0].ToolCalls[0].Custom == nil ||
+			payload.Messages[0].ToolCalls[0].Custom.Input != "abc" {
+			t.Fatalf("custom replay = %#v", payload.Messages)
+		}
+
+		rawTool, err := json.Marshal(payload.Tools[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(rawTool), `"function"`) ||
+			!strings.Contains(string(rawTool), `"custom"`) {
+			t.Fatalf("custom tool wire = %s", rawTool)
+		}
+		rawCall, err := json.Marshal(payload.Messages[0].ToolCalls[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(rawCall), `"function"`) ||
+			!strings.Contains(string(rawCall), `"input":"abc"`) {
+			t.Fatalf("custom call wire = %s", rawCall)
+		}
+
+		context.Messages[0].Content[0].Arguments = map[string]any{"payload": 42}
+		if _, err := BuildOpenAICompletionsPayloadChecked(
+			model,
+			context,
+			OpenAICompletionsPayloadOptions{},
+		); err == nil || !strings.Contains(err.Error(), `requires argument "payload" to be a string`) {
+			t.Fatalf("invalid replay error = %v", err)
+		}
+	})
+
+	t.Run("applies OpenAI Chat Completions strict-tool compatibility", func(t *testing.T) {
+		strictTool := constrainedSamplingTestTool(&ConstrainedSamplingConfig{
+			Type:   ConstrainedSamplingJSONSchema,
+			Strict: ConstrainedSamplingPrefer,
+		})
+		converted, err := ConvertOpenAICompletionsToolsChecked(
+			[]Tool{strictTool},
+			OpenAICompletionsCompat{SupportsStrictMode: true},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(converted) != 1 ||
+			converted[0].Function.Strict == nil ||
+			!*converted[0].Function.Strict {
+			t.Fatalf("strict tools = %#v", converted)
+		}
+		raw, err := json.Marshal(converted[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), `"function"`) ||
+			strings.Contains(string(raw), `"custom"`) {
+			t.Fatalf("function tool wire = %s", raw)
+		}
+
+		required := strictTool
+		required.ConstrainedSampling = &ConstrainedSamplingConfig{
+			Type:   ConstrainedSamplingJSONSchema,
+			Strict: ConstrainedSamplingRequire,
+		}
+		if _, err := ConvertOpenAICompletionsToolsChecked(
+			[]Tool{required},
+			OpenAICompletionsCompat{},
+		); err == nil || !strings.Contains(err.Error(), `tool "sample_tool" requires JSON-schema constrained sampling`) {
+			t.Fatalf("required strict error = %v", err)
+		}
+	})
+
 	t.Run("replays grammar calls as custom Responses items", func(t *testing.T) {
 		toolCall := ToolCall("call_1|ctc_1", "sample_tool", map[string]any{})
 		context := Context{

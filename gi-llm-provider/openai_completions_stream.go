@@ -32,11 +32,17 @@ type OpenAIChatToolCallDelta struct {
 	ID       string                          `json:"id,omitempty"`
 	Type     string                          `json:"type,omitempty"`
 	Function OpenAIChatToolCallFunctionDelta `json:"function"`
+	Custom   *OpenAIChatCustomToolCallDelta  `json:"custom,omitempty"`
 }
 
 type OpenAIChatToolCallFunctionDelta struct {
 	Name      string `json:"name,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
+}
+
+type OpenAIChatCustomToolCallDelta struct {
+	Name  string `json:"name,omitempty"`
+	Input string `json:"input,omitempty"`
 }
 
 type OpenAIChatUsage struct {
@@ -57,13 +63,14 @@ type OpenAIChatCompletionTokenDetails struct {
 }
 
 type OpenAICompletionsStreamProcessor struct {
-	model      Model
-	output     *Message
-	textIndex  int
-	thinkIndex int
-	tools      map[string]*openAIChatToolAccumulator
-	textEnded  bool
-	thinkEnded bool
+	model                      Model
+	output                     *Message
+	grammarToolInputProperties map[string]string
+	textIndex                  int
+	thinkIndex                 int
+	tools                      map[string]*openAIChatToolAccumulator
+	textEnded                  bool
+	thinkEnded                 bool
 }
 
 type openAIChatToolAccumulator struct {
@@ -71,10 +78,32 @@ type openAIChatToolAccumulator struct {
 	id           string
 	name         string
 	argsJSON     string
+	customInput  *openAIChatCustomInputAccumulator
 	ended        bool
 }
 
+type openAIChatCustomInputAccumulator struct {
+	property string
+	buffer   GrammarToolInputJSONBuffer
+}
+
+type OpenAICompletionsStreamProcessorOptions struct {
+	GrammarToolInputProperties map[string]string
+}
+
 func NewOpenAICompletionsStreamProcessor(model Model, output *Message) *OpenAICompletionsStreamProcessor {
+	return NewOpenAICompletionsStreamProcessorWithOptions(
+		model,
+		output,
+		OpenAICompletionsStreamProcessorOptions{},
+	)
+}
+
+func NewOpenAICompletionsStreamProcessorWithOptions(
+	model Model,
+	output *Message,
+	options OpenAICompletionsStreamProcessorOptions,
+) *OpenAICompletionsStreamProcessor {
 	if output.API == "" {
 		output.API = model.API
 	}
@@ -88,11 +117,12 @@ func NewOpenAICompletionsStreamProcessor(model Model, output *Message) *OpenAICo
 		output.StopReason = StopReasonStop
 	}
 	return &OpenAICompletionsStreamProcessor{
-		model:      model,
-		output:     output,
-		textIndex:  -1,
-		thinkIndex: -1,
-		tools:      map[string]*openAIChatToolAccumulator{},
+		model:                      model,
+		output:                     output,
+		grammarToolInputProperties: options.GrammarToolInputProperties,
+		textIndex:                  -1,
+		thinkIndex:                 -1,
+		tools:                      map[string]*openAIChatToolAccumulator{},
 	}
 }
 
@@ -140,8 +170,20 @@ func (p *OpenAICompletionsStreamProcessor) Result() Message {
 }
 
 func ProcessOpenAICompletionsChunks(model Model, chunks []*OpenAIChatCompletionChunk) Message {
+	return ProcessOpenAICompletionsChunksWithOptions(
+		model,
+		chunks,
+		OpenAICompletionsStreamProcessorOptions{},
+	)
+}
+
+func ProcessOpenAICompletionsChunksWithOptions(
+	model Model,
+	chunks []*OpenAIChatCompletionChunk,
+	options OpenAICompletionsStreamProcessorOptions,
+) Message {
 	output := AssistantMessage(nil, StopReasonStop, model)
-	processor := NewOpenAICompletionsStreamProcessor(model, &output)
+	processor := NewOpenAICompletionsStreamProcessorWithOptions(model, &output, options)
 	hadFinishReason := false
 	for _, chunk := range chunks {
 		if chunk != nil {
@@ -242,8 +284,12 @@ func (p *OpenAICompletionsStreamProcessor) appendToolCall(delta OpenAIChatToolCa
 	key := openAIToolCallDeltaKey(delta)
 	acc := p.tools[key]
 	var events []AssistantMessageEvent
+	name := delta.Function.Name
+	if name == "" && delta.Custom != nil {
+		name = delta.Custom.Name
+	}
 	if acc == nil {
-		acc = &openAIChatToolAccumulator{id: delta.ID, name: delta.Function.Name}
+		acc = &openAIChatToolAccumulator{id: delta.ID, name: name}
 		if acc.id == "" {
 			acc.id = fmt.Sprintf("tool_%d", len(p.tools))
 		}
@@ -251,19 +297,112 @@ func (p *OpenAICompletionsStreamProcessor) appendToolCall(delta OpenAIChatToolCa
 		p.output.Content = append(p.output.Content, part)
 		acc.contentIndex = len(p.output.Content) - 1
 		p.tools[key] = acc
+		if delta.Custom != nil {
+			p.configureOpenAIChatCustomInput(acc)
+		}
 		events = append(events, AssistantMessageEvent{Type: "toolcall_start", ContentIndex: acc.contentIndex, Partial: *p.output})
 	} else if p.output.Content[acc.contentIndex].ID == "" && delta.ID != "" {
 		acc.id = delta.ID
 		p.output.Content[acc.contentIndex].ID = delta.ID
 	}
-	if acc.name == "" && delta.Function.Name != "" {
-		acc.name = delta.Function.Name
-		p.output.Content[acc.contentIndex].Name = delta.Function.Name
+	if acc.name == "" && name != "" {
+		acc.name = name
+		p.output.Content[acc.contentIndex].Name = name
 	}
-	acc.argsJSON += delta.Function.Arguments
-	p.output.Content[acc.contentIndex].Arguments = parseStreamingJSONObject(acc.argsJSON)
-	events = append(events, AssistantMessageEvent{Type: "toolcall_delta", ContentIndex: acc.contentIndex, Delta: delta.Function.Arguments, Partial: *p.output})
+	if delta.Custom != nil && acc.customInput == nil {
+		p.configureOpenAIChatCustomInput(acc)
+	}
+
+	emittedDelta := ""
+	switch {
+	case delta.Function.Arguments != "":
+		acc.argsJSON += delta.Function.Arguments
+		p.output.Content[acc.contentIndex].Arguments = parseStreamingJSONObject(acc.argsJSON)
+		emittedDelta = delta.Function.Arguments
+	case delta.Custom != nil && delta.Custom.Input != "":
+		nextInput := p.openAIChatCustomInput(acc) + delta.Custom.Input
+		var ok bool
+		var err error
+		emittedDelta, ok, err = p.appendOpenAIChatCustomInput(acc, nextInput, false)
+		if err != nil {
+			return p.openAIChatCustomInputError(err)
+		}
+		if !ok {
+			emittedDelta = ""
+		}
+	}
+	events = append(events, AssistantMessageEvent{
+		Type:         "toolcall_delta",
+		ContentIndex: acc.contentIndex,
+		Delta:        emittedDelta,
+		Partial:      *p.output,
+	})
 	return events
+}
+
+func (p *OpenAICompletionsStreamProcessor) configureOpenAIChatCustomInput(
+	acc *openAIChatToolAccumulator,
+) {
+	if acc == nil || acc.contentIndex < 0 || acc.contentIndex >= len(p.output.Content) {
+		return
+	}
+	property := p.grammarToolInputProperties[acc.name]
+	if property == "" {
+		property = "input"
+	}
+	acc.argsJSON = ""
+	acc.customInput = &openAIChatCustomInputAccumulator{property: property}
+	p.output.Content[acc.contentIndex].Arguments = map[string]any{property: ""}
+}
+
+func (p *OpenAICompletionsStreamProcessor) openAIChatCustomInput(
+	acc *openAIChatToolAccumulator,
+) string {
+	if acc == nil ||
+		acc.customInput == nil ||
+		acc.contentIndex < 0 ||
+		acc.contentIndex >= len(p.output.Content) {
+		return ""
+	}
+	input, _ := p.output.Content[acc.contentIndex].Arguments[acc.customInput.property].(string)
+	return input
+}
+
+func (p *OpenAICompletionsStreamProcessor) appendOpenAIChatCustomInput(
+	acc *openAIChatToolAccumulator,
+	nextInput string,
+	closeInput bool,
+) (string, bool, error) {
+	if acc == nil ||
+		acc.customInput == nil ||
+		acc.contentIndex < 0 ||
+		acc.contentIndex >= len(p.output.Content) {
+		return "", false, nil
+	}
+	custom := acc.customInput
+	delta, ok, err := AppendGrammarToolInputJSONDelta(
+		&custom.buffer,
+		custom.property,
+		nextInput,
+		closeInput,
+	)
+	if err != nil {
+		return "", false, err
+	}
+	p.output.Content[acc.contentIndex].Arguments = map[string]any{custom.property: nextInput}
+	return delta, ok, nil
+}
+
+func (p *OpenAICompletionsStreamProcessor) openAIChatCustomInputError(
+	err error,
+) []AssistantMessageEvent {
+	p.output.StopReason = StopReasonError
+	p.output.ErrorMessage = err.Error()
+	return []AssistantMessageEvent{{
+		Type:   "error",
+		Reason: StopReasonError,
+		Error:  *p.output,
+	}}
 }
 
 func (p *OpenAICompletionsStreamProcessor) finishOpenContentBlocks() []AssistantMessageEvent {
@@ -296,7 +435,27 @@ func (p *OpenAICompletionsStreamProcessor) finishOpenContentBlocks() []Assistant
 				continue
 			}
 			tool.ended = true
-			p.output.Content[index].Arguments = parseStreamingJSONObject(tool.argsJSON)
+			if tool.customInput != nil {
+				delta, ok, err := p.appendOpenAIChatCustomInput(
+					tool,
+					p.openAIChatCustomInput(tool),
+					true,
+				)
+				if err != nil {
+					events = append(events, p.openAIChatCustomInputError(err)...)
+					continue
+				}
+				if ok {
+					events = append(events, AssistantMessageEvent{
+						Type:         "toolcall_delta",
+						ContentIndex: index,
+						Delta:        delta,
+						Partial:      *p.output,
+					})
+				}
+			} else {
+				p.output.Content[index].Arguments = parseStreamingJSONObject(tool.argsJSON)
+			}
 			events = append(events, AssistantMessageEvent{
 				Type:         "toolcall_end",
 				ContentIndex: index,
@@ -324,6 +483,12 @@ func openAIToolCallDeltaKey(delta OpenAIChatToolCallDelta) string {
 	if delta.ID != "" {
 		return "id:" + delta.ID
 	}
-	nameArgs, _ := json.Marshal(delta.Function)
+	nameArgs, _ := json.Marshal(struct {
+		Function OpenAIChatToolCallFunctionDelta `json:"function"`
+		Custom   *OpenAIChatCustomToolCallDelta  `json:"custom,omitempty"`
+	}{
+		Function: delta.Function,
+		Custom:   delta.Custom,
+	})
 	return "anonymous:" + string(nameArgs)
 }

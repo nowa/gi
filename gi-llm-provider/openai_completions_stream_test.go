@@ -180,6 +180,89 @@ func TestProcessOpenAICompletionsChunksCoalescesToolDeltasByIndex(t *testing.T) 
 	}
 }
 
+func TestOpenAICompletionsCustomToolStreamUsesAppendOnlyJSONDeltas(t *testing.T) {
+	toolCalls := "tool_calls"
+	index := 0
+	model := Model{ID: "gpt-custom", Provider: "openai", API: "openai-completions"}
+	output := AssistantMessage(nil, StopReasonStop, model)
+	processor := NewOpenAICompletionsStreamProcessorWithOptions(
+		model,
+		&output,
+		OpenAICompletionsStreamProcessorOptions{
+			GrammarToolInputProperties: map[string]string{"sample_tool": "payload"},
+		},
+	)
+
+	chunks := []*OpenAIChatCompletionChunk{
+		{
+			Choices: []OpenAIChatCompletionChoice{{
+				Delta: OpenAIChatDelta{ToolCalls: []OpenAIChatToolCallDelta{{
+					Index:  &index,
+					ID:     "call_1",
+					Type:   "custom",
+					Custom: &OpenAIChatCustomToolCallDelta{Name: "sample_tool", Input: "ab"},
+				}}},
+			}},
+		},
+		{
+			Choices: []OpenAIChatCompletionChoice{{
+				Delta: OpenAIChatDelta{ToolCalls: []OpenAIChatToolCallDelta{{
+					Index:  &index,
+					Type:   "custom",
+					Custom: &OpenAIChatCustomToolCallDelta{Input: "c"},
+				}}},
+			}},
+		},
+		{
+			Choices: []OpenAIChatCompletionChoice{{
+				FinishReason: &toolCalls,
+			}},
+		},
+	}
+
+	var deltas []string
+	var ended *ContentPart
+	for _, chunk := range chunks {
+		for _, event := range processor.Process(chunk) {
+			switch event.Type {
+			case "toolcall_delta":
+				deltas = append(deltas, event.Delta)
+			case "toolcall_end":
+				call := event.ToolCall
+				ended = &call
+			}
+		}
+	}
+	if len(deltas) != 3 ||
+		deltas[0] != `{"payload":"ab` ||
+		deltas[1] != "c" ||
+		deltas[2] != `"}` {
+		t.Fatalf("deltas = %#v", deltas)
+	}
+	if ended == nil ||
+		ended.ID != "call_1" ||
+		ended.Name != "sample_tool" ||
+		ended.Arguments["payload"] != "abc" {
+		t.Fatalf("ended = %#v", ended)
+	}
+	if output.StopReason != StopReasonToolUse ||
+		len(output.Content) != 1 ||
+		output.Content[0].Arguments["payload"] != "abc" {
+		t.Fatalf("output = %#v", output)
+	}
+
+	decoded, err := DecodeOpenAIChatCompletionChunk([]byte(
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_2","type":"custom","custom":{"name":"sample_tool","input":"x"}}]},"finish_reason":null}]}`,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	custom := decoded.Choices[0].Delta.ToolCalls[0].Custom
+	if custom == nil || custom.Name != "sample_tool" || custom.Input != "x" {
+		t.Fatalf("decoded custom delta = %#v", custom)
+	}
+}
+
 func TestProcessOpenAICompletionsChunksMixedContentThinkingToolsAndUsage(t *testing.T) {
 	toolCalls := "tool_calls"
 	readIndex := 0

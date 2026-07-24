@@ -209,7 +209,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/cache-retention.test.ts` | `gi-llm-provider/anthropic_payload_test.go`, `gi-llm-provider/openai_completions_payload_test.go` |
 | `packages/ai/test/context-estimate.test.ts` | `gi-llm-provider/estimate_test.go` for stale inserted-prefix rejection, renewed assistant usage checkpoints, UTF-16 text sizing, fixed image cost, and post-checkpoint deferred-tool schema accounting |
 | `packages/ai/test/context-overflow.test.ts` | `gi-llm-provider/overflow_test.go` |
-| `packages/ai/test/constrained-sampling.test.ts` | `gi-llm-provider/constrained_sampling_test.go` for strict/grammar fallback, custom-call replay, append-only argument deltas, shared OpenAI/Azure/Codex request state, and indexed custom-call streaming |
+| `packages/ai/test/constrained-sampling.test.ts` | `gi-llm-provider/constrained_sampling_test.go` and `openai_completions_stream_test.go` for strict/grammar fallback, Anthropic strict tools, Responses and Chat Completions custom-call replay, append-only argument deltas, shared request state, and indexed custom-call streaming |
 | `packages/ai/test/cross-provider-handoff.test.ts` | `gi-llm-provider/cross_provider_handoff_test.go` |
 | `packages/ai/test/deferred-tools.test.ts` | `gi-llm-provider/deferred_tools_test.go` for deterministic normalized placement; Anthropic `tool_reference` replay with OAuth normalization, sibling content, compatibility overrides, and all-deferred fallback; Kimi batched system tool schemas; OpenAI Responses/Codex client `tool_search` loading; and unsupported-provider fallbacks |
 | `packages/ai/test/empty.test.ts` | `gi-llm-provider/provider_contracts_test.go` |
