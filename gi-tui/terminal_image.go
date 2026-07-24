@@ -2,6 +2,7 @@ package gitui
 
 import (
 	"bytes"
+	"context"
 	cryptorand "crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
@@ -12,9 +13,11 @@ import (
 	_ "image/png"
 	"math"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type ImageProtocol string
@@ -110,12 +113,42 @@ func ResetCapabilitiesCache() {
 	capabilitiesSet = false
 }
 
-func DetectCapabilities() TerminalCapabilities {
+func probeTmuxHyperlinks() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+
+	output, err := exec.CommandContext(
+		ctx,
+		"tmux",
+		"display-message",
+		"-p",
+		"#{client_termfeatures}",
+	).Output()
+	if err != nil {
+		return false
+	}
+	for _, feature := range strings.Split(string(output), ",") {
+		if strings.TrimSpace(feature) == "hyperlinks" {
+			return true
+		}
+	}
+	return false
+}
+
+func DetectCapabilities(tmuxHyperlinkProbe ...func() bool) TerminalCapabilities {
 	termProgram := strings.ToLower(os.Getenv("TERM_PROGRAM"))
+	terminalEmulator := strings.ToLower(os.Getenv("TERMINAL_EMULATOR"))
 	term := strings.ToLower(os.Getenv("TERM"))
 	colorTerm := strings.ToLower(os.Getenv("COLORTERM"))
 	trueColor := colorTerm == "truecolor" || colorTerm == "24bit"
-	if os.Getenv("TMUX") != "" || strings.HasPrefix(term, "tmux") || strings.HasPrefix(term, "screen") {
+	probe := probeTmuxHyperlinks
+	if len(tmuxHyperlinkProbe) > 0 && tmuxHyperlinkProbe[0] != nil {
+		probe = tmuxHyperlinkProbe[0]
+	}
+	if os.Getenv("TMUX") != "" || strings.HasPrefix(term, "tmux") {
+		return TerminalCapabilities{Protocol: ImageProtocolNone, TrueColor: trueColor, Hyperlinks: probe()}
+	}
+	if strings.HasPrefix(term, "screen") {
 		return TerminalCapabilities{Protocol: ImageProtocolNone, TrueColor: trueColor, Hyperlinks: false}
 	}
 	if os.Getenv("KITTY_WINDOW_ID") != "" || termProgram == "kitty" {
@@ -127,11 +160,20 @@ func DetectCapabilities() TerminalCapabilities {
 	if os.Getenv("WEZTERM_PANE") != "" || termProgram == "wezterm" {
 		return TerminalCapabilities{Images: true, Protocol: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
 	}
+	if termProgram == "warpterminal" || os.Getenv("WARP_SESSION_ID") != "" || os.Getenv("WARP_TERMINAL_SESSION_UUID") != "" {
+		return TerminalCapabilities{Images: true, Protocol: ImageProtocolKitty, TrueColor: true, Hyperlinks: true}
+	}
 	if os.Getenv("ITERM_SESSION_ID") != "" || termProgram == "iterm.app" {
 		return TerminalCapabilities{Images: true, Protocol: ImageProtocolITerm, TrueColor: true, Hyperlinks: true}
 	}
+	if os.Getenv("WT_SESSION") != "" {
+		return TerminalCapabilities{Protocol: ImageProtocolNone, TrueColor: true, Hyperlinks: true}
+	}
 	if termProgram == "vscode" || termProgram == "alacritty" {
 		return TerminalCapabilities{Protocol: ImageProtocolNone, TrueColor: true, Hyperlinks: true}
+	}
+	if terminalEmulator == "jetbrains-jediterm" {
+		return TerminalCapabilities{Protocol: ImageProtocolNone, TrueColor: true, Hyperlinks: false}
 	}
 	return TerminalCapabilities{Protocol: ImageProtocolNone, TrueColor: trueColor, Hyperlinks: false}
 }

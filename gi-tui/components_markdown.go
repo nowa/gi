@@ -48,23 +48,25 @@ type DefaultTextStyle struct {
 }
 
 type MarkdownOptions struct {
-	Theme            MarkdownTheme
-	PaddingX         int
-	PaddingY         int
-	DefaultTextStyle *DefaultTextStyle
+	Theme                      MarkdownTheme
+	PaddingX                   int
+	PaddingY                   int
+	DefaultTextStyle           *DefaultTextStyle
+	PreserveOrderedListMarkers bool
 }
 
 type Markdown struct {
-	mu                 sync.Mutex
-	text               string
-	theme              MarkdownTheme
-	paddingX           int
-	paddingY           int
-	defaultTextStyle   *DefaultTextStyle
-	defaultStylePrefix string
-	defaultPrefixOK    bool
-	linkDefinitions    map[string]string
-	cache              renderCache
+	mu                        sync.Mutex
+	text                      string
+	theme                     MarkdownTheme
+	paddingX                  int
+	paddingY                  int
+	defaultTextStyle          *DefaultTextStyle
+	preserveSourceListMarkers bool
+	defaultStylePrefix        string
+	defaultPrefixOK           bool
+	linkDefinitions           map[string]string
+	cache                     renderCache
 }
 
 func NewMarkdown(text string, theme ...MarkdownTheme) *Markdown {
@@ -77,11 +79,12 @@ func NewMarkdown(text string, theme ...MarkdownTheme) *Markdown {
 
 func NewMarkdownWithOptions(text string, options MarkdownOptions) *Markdown {
 	return &Markdown{
-		text:             text,
-		theme:            options.Theme,
-		paddingX:         max(0, options.PaddingX),
-		paddingY:         max(0, options.PaddingY),
-		defaultTextStyle: options.DefaultTextStyle,
+		text:                      text,
+		theme:                     options.Theme,
+		paddingX:                  max(0, options.PaddingX),
+		paddingY:                  max(0, options.PaddingY),
+		defaultTextStyle:          options.DefaultTextStyle,
+		preserveSourceListMarkers: options.PreserveOrderedListMarkers,
 	}
 }
 
@@ -117,12 +120,14 @@ func (m *Markdown) Render(width int) []string {
 	inListContext := false
 	listContinuationPrefix := ""
 	listContinuationSourceIndent := 0
+	listKind := markdownListKindNone
 	clearListContext := func() {
 		listOrderState.clear()
 		listIndentTracker.clear()
 		inListContext = false
 		listContinuationPrefix = ""
 		listContinuationSourceIndent = 0
+		listKind = markdownListKindNone
 	}
 	for i := 0; i < len(rawLines); i++ {
 		line := strings.TrimRight(rawLines[i], "\r")
@@ -155,9 +160,10 @@ func (m *Markdown) Render(width int) []string {
 			if inListContext {
 				if next := nextNonBlankMarkdownLine(rawLines, i+1); next >= 0 {
 					keepListContext = isMarkdownListContinuationStart(rawLines[next], listContinuationSourceIndent)
-					if _, ok := parseMarkdownListLineInfo(strings.TrimRight(rawLines[next], "\r")); ok {
-						keepListContext = true
-						suppressBlank = true
+					if nextInfo, ok := parseMarkdownListLineInfo(strings.TrimRight(rawLines[next], "\r")); ok {
+						sameListKind := !m.preserveSourceListMarkers || listKind == nextInfo.kind()
+						keepListContext = sameListKind
+						suppressBlank = sameListKind
 					}
 				}
 			}
@@ -241,7 +247,9 @@ func (m *Markdown) Render(width int) []string {
 				codeLines = append(codeLines, trimMarkdownFenceContentLine(codeLine, fence))
 			}
 			if !renderedCode {
+				codeLines = trimPartialClosingFences(codeLines, fence)
 				lines = append(lines, m.renderCodeBlockContent(codeLines, fence.lang, contentWidth)...)
+				lines = append(lines, style(m.theme.CodeBlockBorder, "```"))
 			}
 			m.appendBlockSpacing(&lines, rawLines, i+1)
 			continue
@@ -308,7 +316,11 @@ func (m *Markdown) Render(width int) []string {
 				lines = append(lines, "")
 			}
 			info = info.withIndent(listIndentTracker.indentFor(info.leading, inListContext))
+			listKind = info.kind()
 			plainPrefix := listOrderState.prefix(info)
+			if m.preserveSourceListMarkers {
+				plainPrefix = m.sourceListPrefix(info, plainPrefix)
+			}
 			prefix := m.renderListPrefix(plainPrefix)
 			continuationPrefix := strings.Repeat(" ", VisibleWidth(plainPrefix))
 			body := info.body
@@ -347,7 +359,9 @@ func (m *Markdown) Render(width int) []string {
 					codeLines = append(codeLines, trimMarkdownFenceContentLine(codeBody, fence))
 				}
 				if !renderedCode {
+					codeLines = trimPartialClosingFences(codeLines, fence)
 					lines = append(lines, m.renderListCodeBlockContent(codeLines, fence.lang, listIndent, contentWidth)...)
+					lines = append(lines, strings.Repeat(" ", listIndent)+style(m.theme.CodeBlockBorder, "```"))
 				}
 			} else {
 				bodyLines := []string{body}
@@ -410,12 +424,14 @@ func (m *Markdown) renderBlockquoteBodies(quoteBodies []string, quotePrefix stri
 	inListContext := false
 	listContinuationPrefix := ""
 	listContinuationSourceIndent := 0
+	listKind := markdownListKindNone
 	clearListContext := func() {
 		listOrderState.clear()
 		listIndentTracker.clear()
 		inListContext = false
 		listContinuationPrefix = ""
 		listContinuationSourceIndent = 0
+		listKind = markdownListKindNone
 	}
 	for i := 0; i < len(quoteBodies); i++ {
 		quoteBody := quoteBodies[i]
@@ -459,7 +475,11 @@ func (m *Markdown) renderBlockquoteBodies(quoteBodies []string, quotePrefix stri
 			if inListContext {
 				if next := nextNonBlankMarkdownLine(quoteBodies, i+1); next >= 0 {
 					keepListContext = isMarkdownListContinuationStart(quoteBodies[next], listContinuationSourceIndent)
-					_, skipBlank = parseMarkdownListLineInfo(quoteBodies[next])
+					if nextInfo, ok := parseMarkdownListLineInfo(quoteBodies[next]); ok {
+						sameListKind := !m.preserveSourceListMarkers || listKind == nextInfo.kind()
+						keepListContext = sameListKind
+						skipBlank = sameListKind
+					}
 				}
 			}
 			if !keepListContext {
@@ -583,15 +603,21 @@ func (m *Markdown) renderBlockquoteBodies(quoteBodies []string, quotePrefix stri
 				codeLines = append(codeLines, trimMarkdownFenceContentLine(codeLine, fence))
 			}
 			if !renderedCode {
+				codeLines = trimPartialClosingFences(codeLines, fence)
 				for _, rendered := range m.renderCodeBlockContent(codeLines, fence.lang, quoteContentWidth) {
 					lines = append(lines, quotePrefix+m.applyBlockquoteStyle(rendered, quoteStyle, quoteStylePrefix))
 				}
+				lines = append(lines, quotePrefix+m.applyBlockquoteStyle(style(m.theme.CodeBlockBorder, "```"), quoteStyle, quoteStylePrefix))
 			}
 			continue
 		}
 		if info, ok := parseMarkdownListLineInfo(quoteBody); ok {
 			info = info.withIndent(listIndentTracker.indentFor(info.leading, inListContext))
+			listKind = info.kind()
 			plainPrefix := listOrderState.prefix(info)
+			if m.preserveSourceListMarkers {
+				plainPrefix = m.sourceListPrefix(info, plainPrefix)
+			}
 			prefix := m.renderListPrefix(plainPrefix)
 			continuationPrefix := strings.Repeat(" ", VisibleWidth(plainPrefix))
 			body := info.body
@@ -827,6 +853,9 @@ func (m *Markdown) codeBlockIndent() string {
 }
 
 func (m *Markdown) renderCodeBlockContent(codeLines []string, lang string, width int) []string {
+	if len(codeLines) == 0 {
+		codeLines = []string{""}
+	}
 	indent := m.codeBlockIndent()
 	if m.theme.HighlightCode != nil {
 		highlighted := m.theme.HighlightCode(strings.Join(codeLines, "\n"), lang)
@@ -844,6 +873,9 @@ func (m *Markdown) renderCodeBlockContent(codeLines []string, lang string, width
 }
 
 func (m *Markdown) renderListCodeBlockContent(codeLines []string, lang string, listIndent, width int) []string {
+	if len(codeLines) == 0 {
+		codeLines = []string{""}
+	}
 	indent := m.codeBlockIndent()
 	firstPrefix := strings.Repeat(" ", listIndent) + indent
 	continuation := strings.Repeat(" ", listIndent)
@@ -892,7 +924,9 @@ func (m *Markdown) renderListContinuationBlock(rawLines []string, index int, lis
 		codeLines = append(codeLines, trimMarkdownFenceContentLine(codeBody, fence))
 	}
 	if !renderedCode {
+		codeLines = trimPartialClosingFences(codeLines, fence)
 		lines = append(lines, m.renderListCodeBlockContent(codeLines, fence.lang, listIndent, width)...)
+		lines = append(lines, listContinuationPrefix+style(m.theme.CodeBlockBorder, "```"))
 	}
 	return lines, index, true
 }
@@ -903,6 +937,31 @@ func (m *Markdown) renderListPrefix(prefix string) string {
 		return prefix
 	}
 	return prefix[:leading] + style(m.theme.ListBullet, prefix[leading:])
+}
+
+func (m *Markdown) sourceListPrefix(info markdownListLineInfo, fallback string) string {
+	marker := m.getUnorderedListMarker(info)
+	if info.ordered {
+		marker = m.getOrderedListMarker(info)
+	}
+	if marker == "" {
+		return fallback
+	}
+	return strings.Repeat(" ", info.indent) + marker + info.taskMarker
+}
+
+func (m *Markdown) getOrderedListMarker(info markdownListLineInfo) string {
+	if !info.ordered {
+		return ""
+	}
+	return info.sourceMarker
+}
+
+func (m *Markdown) getUnorderedListMarker(info markdownListLineInfo) string {
+	if info.ordered {
+		return ""
+	}
+	return info.sourceMarker
 }
 
 func (m *Markdown) applyPadding(lines []string, width int) []string {
@@ -3860,6 +3919,22 @@ func isMarkdownFenceClose(line string, fence markdownFence) bool {
 	return length >= fence.length && strings.TrimSpace(line[length:]) == ""
 }
 
+func trimPartialClosingFences(codeLines []string, fence markdownFence) []string {
+	if len(codeLines) == 0 {
+		return codeLines
+	}
+	last := codeLines[len(codeLines)-1]
+	if last == "" || len(last) >= fence.length {
+		return codeLines
+	}
+	for i := range len(last) {
+		if last[i] != fence.char {
+			return codeLines
+		}
+	}
+	return codeLines[:len(codeLines)-1]
+}
+
 func trimMarkdownFenceContentLine(line string, fence markdownFence) string {
 	remove := 0
 	for remove < len(line) && remove < fence.indent && line[remove] == ' ' {
@@ -3930,14 +4005,34 @@ func parseMarkdownListLine(line string) (prefix, body string, ok bool) {
 	return info.prefix, info.body, true
 }
 
+type markdownListKind uint8
+
+const (
+	markdownListKindNone markdownListKind = iota
+	markdownListKindUnordered
+	markdownListKindOrderedDot
+	markdownListKindOrderedParenthesis
+)
+
 type markdownListLineInfo struct {
-	prefix     string
-	body       string
-	ordered    bool
-	number     int
-	indent     int
-	leading    int
-	taskMarker string
+	prefix       string
+	sourceMarker string
+	body         string
+	ordered      bool
+	number       int
+	indent       int
+	leading      int
+	taskMarker   string
+}
+
+func (info markdownListLineInfo) kind() markdownListKind {
+	if !info.ordered {
+		return markdownListKindUnordered
+	}
+	if strings.HasSuffix(strings.TrimSpace(info.sourceMarker), ")") {
+		return markdownListKindOrderedParenthesis
+	}
+	return markdownListKindOrderedDot
 }
 
 func (info markdownListLineInfo) withIndent(indent int) markdownListLineInfo {
@@ -3962,14 +4057,29 @@ func parseMarkdownListLineInfo(line string) (markdownListLineInfo, bool) {
 	}
 	indent := (leading / 2) * 4
 	return markdownListLineInfo{
-		prefix:     strings.Repeat(" ", indent) + marker + taskMarker,
-		body:       body,
-		ordered:    ordered,
-		number:     number,
-		indent:     indent,
-		leading:    leading,
-		taskMarker: taskMarker,
+		prefix:       strings.Repeat(" ", indent) + marker + taskMarker,
+		sourceMarker: sourceMarkdownListMarker(trimmed, ordered),
+		body:         body,
+		ordered:      ordered,
+		number:       number,
+		indent:       indent,
+		leading:      leading,
+		taskMarker:   taskMarker,
 	}, true
+}
+
+func sourceMarkdownListMarker(trimmed string, ordered bool) string {
+	if !ordered {
+		if trimmed == "" {
+			return ""
+		}
+		return string(trimmed[0]) + " "
+	}
+	separator := markdownOrderedListSeparator(trimmed)
+	if separator <= 0 {
+		return ""
+	}
+	return trimmed[:separator+1] + " "
 }
 
 func parseMarkdownTaskMarker(body string) (marker string, rest string, ok bool) {

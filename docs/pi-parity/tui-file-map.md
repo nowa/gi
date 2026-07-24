@@ -21,17 +21,17 @@ file/function parity audit, not a completion claim.
 | `editor-component.ts` | `EditorComponent` custom-editor interface | `tui.go`, `components_editor.go` `Editor` | direct | Gi exposes `EditorComponent` and `Focusable` contracts through Go interfaces. |
 | `fuzzy.ts` | `FuzzyMatch`, `fuzzyMatch`, `fuzzyFilter` | `autocomplete.go` `FuzzyMatchText`, `FuzzyFilter` | direct | Fuzzy scoring/filtering helpers are represented. |
 | `index.ts` | public package re-exports | Go package exports plus `api_parity_test.go` | consolidated | Go does not need a barrel file; `TestPiTUIIndexPublicSurfaceCompiles` guards the public surface. |
-| `keybindings.ts` | `TUI_KEYBINDINGS`, `KeybindingsManager`, conflict/default resolution | `keybindings.go` | direct | Defaults, user bindings, conflicts, resolved bindings, matching, and global manager state are represented. |
+| `keybindings.ts` | `TUI_KEYBINDINGS`, `KeybindingsManager`, conflict/default resolution | `keybindings.go` | direct | Defaults, user bindings, conflicts, resolved bindings, matching, and global manager state are represented, including the v0.82 `ctrl+j` newline alias. |
 | `keys.ts` | `Key`, `matchesKey`, `parseKey`, Kitty/modifyOtherKeys helpers, release/repeat detection | `keys.go` | direct | Gi covers Kitty protocol state, CSI-u/modifyOtherKeys parsing, key IDs, repeat/release detection, and printable decoding. |
 | `kill-ring.ts` | `KillRing` | `history.go` | direct | Push/peek/rotate/length semantics are represented. |
 | `native-modifiers.ts` | native modifier state used by Apple Terminal input normalization | `native_modifiers.go`, `native_modifiers_darwin.go`, `native_modifiers_unsupported.go` | go-native | Gi uses build-selected implementations: ApplicationServices on Darwin with cgo and a deterministic unsupported-platform fallback. |
 | `stdin-buffer.ts` | `StdinBuffer`, paste/sequence splitting, incomplete escape buffering | `stdin_buffer.go` | direct | Sequence completeness, paste handling, Kitty/mouse dedupe, timeout flush, and callback locking behavior are covered by Go tests. |
 | `terminal-colors.ts` | OSC 11 background colors and CSI color-scheme reports | `terminal_colors.go` | direct | Strict response recognition, variable-width hexadecimal channel scaling, FIFO queries, late-response consumption, and color-scheme notifications are represented. |
-| `terminal-image.ts` | image protocol detection, Kitty/iTerm2 encoding, dimensions, fallbacks, hyperlinks | `terminal_image.go` | direct | Capabilities, image IDs, encoders, dimension readers, fallback text, and hyperlink helpers are represented. |
+| `terminal-image.ts` | image protocol detection, Kitty/iTerm2 encoding, dimensions, fallbacks, hyperlinks | `terminal_image.go` | direct | Capabilities, image IDs, encoders, dimension readers, fallback text, hyperlink helpers, and bounded tmux hyperlink probing are represented. |
 | `terminal.ts` | `Terminal`, `ProcessTerminal` raw mode, resize, cursor/title/progress/Kitty keyboard | `terminal.go`, `terminal_native.go`, `terminal_resize_*.go`, `native_modifiers*.go` | direct | Go implementation is native rather than Node stream-based; raw mode, start/stop, resize, cursor, title, progress, input drain, DA-sentinel keyboard negotiation, split-response buffering, modifyOtherKeys fallback, and Apple Terminal Shift+Enter normalization are represented. |
-| `tui.ts` | `Component`, `Focusable`, `Container`, `TUI`, overlays, diff rendering, cursor marker | `tui.go`, `virtual_terminal.go` | direct | Container mutation, focus/input routing, overlays, differential/full redraw, cursor marker, image cleanup, and clear-on-shrink policies are represented. |
+| `tui.ts` | `Component`, `Focusable`, `Container`, `TUI`, overlays, diff rendering, cursor marker | `tui.go`, `virtual_terminal.go` | direct | Container mutation, overlay focus restoration, differential/full redraw, multi-row Kitty placement cleanup, cursor marker, and clear-on-shrink policies are represented. |
 | `undo-stack.ts` | `UndoStack` | `history.go` | direct | Snapshot push/pop/length semantics are represented. |
-| `utils.ts` | `visibleWidth`, `wrapTextWithAnsi`, `truncateToWidth`, ANSI slicing/segments, background application | `utils.go`, `ansi_shared.go`, `internal/width`, `internal/vtemu/width.go` | direct | Visual-width and ANSI-aware wrapping/truncation/slicing helpers are represented; shared grapheme/terminal-cell width logic now lives in `internal/width` and is used by both the public TUI package and the headless emulator. |
+| `utils.ts` | `visibleWidth`, `wrapTextWithAnsi`, `truncateToWidth`, ANSI slicing/segments, background application | `utils.go`, `ansi_shared.go`, `internal/width`, `internal/vtemu/width.go` | direct | Visual-width and ANSI-aware wrapping/truncation/slicing helpers are represented; shared width logic excludes graphemes crossing overlay boundaries and expands only visible tabs while preserving control-string bytes. |
 | `word-navigation.ts` | pure forward/backward word movement with custom and atomic segmentation | `word_navigation.go`, `components_editor.go`, `components_input.go` | direct | Gi measures cursor positions in runes, exposes a custom `WordSegmenter`, and shares the same pure helpers between `Input` and `Editor`; valid paste markers remain indivisible. |
 
 ## Component Files
@@ -40,7 +40,7 @@ file/function parity audit, not a completion claim.
 | --- | --- | --- | --- | --- |
 | `components/box.ts` | `Box` padded background container | `components_basic.go` `Box` | direct | Child ordering, padding, background, clear/remove, and width clipping are represented. |
 | `components/cancellable-loader.ts` | `CancellableLoader` with abort handling | `components_loader.go` `CancellableLoader` | direct | Cancel/abort/context/dispose behavior and Pi-style `OnAbort` callback are represented. |
-| `components/editor.ts` | `Editor`, editor options/theme, wrapping, autocomplete, history, key handling, cursor marker | `components_editor.go` `Editor`, `history.go`, `autocomplete.go` | direct | Editor rendering/input/autocomplete/history behavior is consolidated in Go. |
+| `components/editor.ts` | `Editor`, editor options/theme, wrapping, autocomplete, history, key handling, cursor marker | `components_editor.go` `Editor`, `history.go`, `autocomplete.go` | direct | Editor rendering/input/autocomplete/history behavior is consolidated in Go, including provider-defined trigger characters, draft-preserving history traversal, and narrow scroll borders. |
 | `components/image.ts` | `Image`, image options/theme/fallback | `components_image.go` `Image`, `terminal_image.go` | direct | Terminal image render/fallback and image ID helpers are represented. |
 | `components/input.ts` | `Input` focusable single-line input | `components_input.go` `Input` | direct | Value, focus, cursor, placeholder, and submit/change behavior are represented. |
 | `components/loader.ts` | `Loader`, spinner frames/interval/colors/verbatim rendering | `components_loader.go` `Loader` | direct | Message updates, indicator customization, TUI-driven rerendering, stop/start, and color hooks are represented. |
@@ -85,6 +85,18 @@ file/function parity audit, not a completion claim.
 | `tui.ts` | `TUI.onTerminalColorSchemeChange`, `TUI.setTerminalColorSchemeNotifications`, `TUI.consumeOsc11BackgroundResponse`, `TUI.consumeTerminalColorSchemeReport`, `TUI.queryTerminalBackgroundColor`, `TUI.queryTerminalColorScheme` | `OnTerminalColorSchemeChange`, `SetTerminalColorSchemeNotifications`, `consumeOSC11BackgroundResponse`, `consumeTerminalColorSchemeReport`, `QueryTerminalBackgroundColor`, `QueryTerminalColorScheme` | direct |
 | `utils.ts` | `getGraphemeSegmenter`, `getWordSegmenter` | shared grapheme spans in `internal/width`; `defaultWordSegments` plus injectable `WordSegmenter` in `word_navigation.go` | go-native |
 | `word-navigation.ts` | `findWordBackward`, `findWordForward` | `FindWordBackward`, `FindWordForward` | direct |
+
+## Pi v0.82 Editor, Markdown, Image, And TUI Symbols
+
+| Pi file | Pi implementation symbols | Gi equivalent | Status |
+| --- | --- | --- | --- |
+| `components/editor.ts` | `escapeCharacterClass`, `buildTriggerPattern`, `buildDebouncePattern`, `createScrollBorder` | same-named Go helpers in `components_editor.go` | direct |
+| `components/editor.ts` | `Editor.exitHistoryBrowsing`, `Editor.setAutocompleteTriggerCharacters` | same-named Go methods in `components_editor.go` | direct |
+| `components/markdown.ts` | `trimPartialClosingFences`, `Markdown.getOrderedListMarker`, `Markdown.getUnorderedListMarker` | same-named Go helpers/methods in `components_markdown.go` | direct |
+| `terminal-image.ts` | `probeTmuxHyperlinks` | same-named bounded Go probe in `terminal_image.go` | go-native |
+| `tui.ts` | `parseKittyImageHeader`, `extractKittyImageRows` | same-named Go parsing helpers in `tui.go` | direct |
+| `tui.ts` | `TUI.setFocusInternal`, `TUI.clearOverlayFocusRestore`, `TUI.clearOverlayFocusRestoreFor`, `TUI.resolveBlockedOverlayFocusResume`, `TUI.getVisibleOverlayFocusRestore`, `TUI.isOverlayFocusAncestor`, `TUI.retargetOverlayPreFocus`, `TUI.isComponentMounted`, `TUI.containsComponent` | same-named Go methods plus typed focus-state enums in `tui.go` | direct |
+| `tui.ts` | `TUI.getKittyImageReservedRows`, `TUI.expandChangedRangeForKittyImages` | same-named Go methods in `tui.go` | direct |
 
 ## Exported Symbol Audit
 

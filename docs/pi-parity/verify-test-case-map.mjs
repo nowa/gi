@@ -151,6 +151,7 @@ const modules = [
 			"packages/tui/test/overlay-non-capturing.test.ts": ["gi-tui/tui_test.go"],
 			"packages/tui/test/overlay-options.test.ts": ["gi-tui/tui_test.go"],
 			"packages/tui/test/overlay-short-content.test.ts": ["gi-tui/tui_test.go"],
+			"packages/tui/test/regression-overlay-cjk-boundary.test.ts": ["gi-tui/utils_test.go"],
 			"packages/tui/test/regression-regional-indicator-width.test.ts": ["gi-tui/utils_test.go"],
 			"packages/tui/test/select-list.test.ts": ["gi-tui/components_test.go"],
 			"packages/tui/test/terminal-colors.test.ts": ["gi-tui/terminal_colors_test.go"],
@@ -160,6 +161,18 @@ const modules = [
 			"packages/tui/test/wrap-ansi.test.ts": ["gi-tui/utils_test.go"],
 		},
 		caseAliases: {
+			"packages/tui/test/regression-overlay-cjk-boundary.test.ts": {
+				"excludes a wide grapheme from before when overlay starts inside it": ["gi-tui/utils_test.go"],
+				"keeps ASCII before-segment behavior at the same boundary": ["gi-tui/utils_test.go"],
+				"composites an overlay at the requested column when it starts inside a wide grapheme": [
+					"gi-tui/utils_test.go",
+				],
+				"composites an overlay when it starts at a wide grapheme boundary": ["gi-tui/utils_test.go"],
+			},
+			"packages/tui/test/tab-width.test.ts": {
+				"keeps tabs inside terminal control sequences byte-identical": ["gi-tui/utils_test.go"],
+				"keeps tab-containing overlays on one physical terminal row": ["gi-tui/utils_test.go"],
+			},
 			"packages/tui/test/word-navigation.test.ts": {
 				"basic words: hello world": ["gi-tui/word_navigation_test.go"],
 				"dotted: foo.bar": ["gi-tui/word_navigation_test.go"],

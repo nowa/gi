@@ -1579,28 +1579,71 @@ func TestEditorPromptHistoryNavigation(t *testing.T) {
 	}
 }
 
-func TestEditorHistoryUsesWrappedVisualLineBoundaries(t *testing.T) {
+func TestEditorHistoryPlacesCursorAtStartWhenBrowsingUp(t *testing.T) {
 	editor := NewEditor(EditorTheme{}, EditorOptions{PaddingX: 0})
-	wrapped := strings.Repeat("x", 25)
 	editor.AddToHistory("older")
-	editor.AddToHistory(wrapped)
+	editor.AddToHistory("line1\nline2\nline3")
 
 	editor.HandleInput("\x1b[A")
-	editor.Render(11)
-	editor.HandleInput("\x1b[A")
-	if editor.GetText() != wrapped {
-		t.Fatalf("up inside wrapped history entry changed text to %q", editor.GetText())
+	if editor.GetText() != "line1\nline2\nline3" {
+		t.Fatalf("first history entry = %q", editor.GetText())
 	}
-	if line, col := editor.GetCursor(); line != 0 || col != 15 {
-		t.Fatalf("cursor after wrapped history up = (%d,%d), want (0,15)", line, col)
+	if line, col := editor.GetCursor(); line != 0 || col != 0 {
+		t.Fatalf("cursor after browsing up = (%d,%d), want (0,0)", line, col)
 	}
-	editor.HandleInput("\x1b[A")
-	if line, col := editor.GetCursor(); line != 0 || col != 5 {
-		t.Fatalf("cursor at first wrapped visual line = (%d,%d), want (0,5)", line, col)
-	}
+
 	editor.HandleInput("\x1b[A")
 	if editor.GetText() != "older" {
-		t.Fatalf("up from first visual line = %q, want older", editor.GetText())
+		t.Fatalf("second history entry = %q, want older", editor.GetText())
+	}
+	if line, col := editor.GetCursor(); line != 0 || col != 0 {
+		t.Fatalf("cursor on older entry = (%d,%d), want (0,0)", line, col)
+	}
+}
+
+func TestEditorHistoryRestoresNonEmptyDraft(t *testing.T) {
+	editor := NewEditor(EditorTheme{})
+	editor.AddToHistory("prompt")
+	editor.SetText("draft")
+	editor.HandleInput("\x1b[D")
+	editor.HandleInput("\x1b[D")
+
+	editor.HandleInput("\x1b[A")
+	if editor.GetText() != "draft" {
+		t.Fatalf("first up should preserve draft: %q", editor.GetText())
+	}
+	if line, col := editor.GetCursor(); line != 0 || col != 0 {
+		t.Fatalf("first up cursor = (%d,%d), want start of draft", line, col)
+	}
+
+	editor.HandleInput("\x1b[A")
+	if editor.GetText() != "prompt" {
+		t.Fatalf("second up should enter history: %q", editor.GetText())
+	}
+	editor.HandleInput("\x1b[B")
+	if editor.GetText() != "draft" {
+		t.Fatalf("down should restore draft: %q", editor.GetText())
+	}
+	if line, col := editor.GetCursor(); line != 0 || col != 0 {
+		t.Fatalf("restored draft cursor = (%d,%d), want (0,0)", line, col)
+	}
+}
+
+func TestEditorHistoryAllowsOppositeDirectionCursorMovement(t *testing.T) {
+	editor := NewEditor(EditorTheme{})
+	editor.AddToHistory("line1\nline2\nline3")
+
+	editor.HandleInput("\x1b[A")
+	editor.HandleInput("\x1b[B")
+	if editor.GetText() != "line1\nline2\nline3" {
+		t.Fatalf("down inside history entry changed text: %q", editor.GetText())
+	}
+	if line, col := editor.GetCursor(); line != 1 || col != 0 {
+		t.Fatalf("down inside history entry cursor = (%d,%d), want (1,0)", line, col)
+	}
+	editor.HandleInput("\x1b[A")
+	if line, col := editor.GetCursor(); line != 0 || col != 0 {
+		t.Fatalf("up inside history entry cursor = (%d,%d), want (0,0)", line, col)
 	}
 }
 
@@ -1640,8 +1683,8 @@ func TestEditorHistoryExitsOnTypingAndSkipsDuplicates(t *testing.T) {
 	editor.AddToHistory("same")
 	editor.HandleInput("\x1b[A")
 	editor.HandleInput("x")
-	if editor.GetText() != "samex" {
-		t.Fatalf("typing should append to history entry: %q", editor.GetText())
+	if editor.GetText() != "xsame" {
+		t.Fatalf("typing should insert at the history entry start: %q", editor.GetText())
 	}
 	editor.SetText("")
 	editor.HandleInput("\x1b[A")
@@ -3561,6 +3604,40 @@ func TestEditorRenderScrollIndicatorsLimitVisibleLines(t *testing.T) {
 	}
 }
 
+func TestEditorRenderTruncatedScrollIndicatorsFitAndPreserveStyle(t *testing.T) {
+	const width = 10
+	border := func(text string) string { return "\x1b[35m" + text + "\x1b[39m" }
+	editor := NewEditor(EditorTheme{Border: border}, EditorOptions{PaddingX: 0})
+	lines := make([]string, 20)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line %d", i)
+	}
+	editor.SetText(strings.Join(lines, "\n"))
+
+	editor.Render(width)
+	for range 10 {
+		editor.HandleInput("\x1b[A")
+	}
+
+	rendered := editor.Render(width)
+	top := rendered[0]
+	bottom := rendered[len(rendered)-1]
+	if !strings.HasPrefix(stripANSI(top), "─── ↑") {
+		t.Fatalf("top scroll indicator = %q", top)
+	}
+	if !strings.HasPrefix(stripANSI(bottom), "─── ↓") {
+		t.Fatalf("bottom scroll indicator = %q", bottom)
+	}
+	if top != border(stripANSI(top)) || bottom != border(stripANSI(bottom)) {
+		t.Fatalf("scroll indicators should retain border style: top=%q bottom=%q", top, bottom)
+	}
+	for i, line := range rendered {
+		if got := VisibleWidth(line); got != width {
+			t.Fatalf("rendered line %d width = %d, want %d: %q", i, got, width, line)
+		}
+	}
+}
+
 func TestEditorRenderWithSizeUsesTerminalRowsForVisibleLines(t *testing.T) {
 	editor := NewEditor(EditorTheme{}, EditorOptions{PaddingX: 0})
 	editor.SetText("one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten")
@@ -4045,7 +4122,7 @@ func TestEditorSlashCommandAutocompleteEnterSubmits(t *testing.T) {
 	}
 }
 
-func TestEditorSlashCommandLinefeedSubmits(t *testing.T) {
+func TestEditorSlashCommandCtrlJInsertsNewline(t *testing.T) {
 	editor := NewEditor(EditorTheme{})
 	changed := make(chan struct{}, 1)
 	editor.OnAutocompleteChange = func() { changed <- struct{}{} }
@@ -4060,16 +4137,17 @@ func TestEditorSlashCommandLinefeedSubmits(t *testing.T) {
 	waitForAutocompleteChange(t, changed)
 	editor.HandleInput("\n")
 
-	if submitted != "/session" {
-		t.Fatalf("linefeed slash submit = %q, want /session", submitted)
+	if submitted != "" {
+		t.Fatalf("ctrl+j should insert a newline instead of submitting, submitted %q", submitted)
 	}
-	if editor.GetText() != "" || editor.IsShowingAutocomplete() {
-		t.Fatalf("linefeed submit should clear editor and autocomplete, text=%q showing=%v", editor.GetText(), editor.IsShowingAutocomplete())
+	if editor.GetText() != "/session \n" || editor.IsShowingAutocomplete() {
+		t.Fatalf("ctrl+j should accept the slash completion and insert a newline, text=%q showing=%v", editor.GetText(), editor.IsShowingAutocomplete())
 	}
 }
 
 type testFullAutocompleteProvider struct {
-	get func(lines []string, cursorLine, cursorCol int, force bool) (*AutocompleteSuggestions, error)
+	triggers []rune
+	get      func(lines []string, cursorLine, cursorCol int, force bool) (*AutocompleteSuggestions, error)
 }
 
 func (p testFullAutocompleteProvider) Suggestions(string, int) AutocompleteSuggestions {
@@ -4078,6 +4156,10 @@ func (p testFullAutocompleteProvider) Suggestions(string, int) AutocompleteSugge
 
 func (p testFullAutocompleteProvider) GetSuggestions(lines []string, cursorLine, cursorCol int, force bool) (*AutocompleteSuggestions, error) {
 	return p.get(lines, cursorLine, cursorCol, force)
+}
+
+func (p testFullAutocompleteProvider) AutocompleteTriggerCharacters() []rune {
+	return append([]rune(nil), p.triggers...)
 }
 
 func (p testFullAutocompleteProvider) ApplyCompletion(lines []string, cursorLine, cursorCol int, item AutocompleteItem, prefix string) CompletionResult {
@@ -4200,6 +4282,79 @@ func TestEditorAutocompleteAutoTriggerAndPasteSuppression(t *testing.T) {
 	if !editor.IsShowingAutocomplete() || calls.Load() != 1 || seenPrefix != "#298" {
 		t.Fatalf("batched # autocomplete = showing %v calls %d prefix %q", editor.IsShowingAutocomplete(), calls.Load(), seenPrefix)
 	}
+}
+
+func TestEditorAutocompleteCustomTriggerCharacters(t *testing.T) {
+	t.Run("debounces custom trigger while typing", func(t *testing.T) {
+		editor := NewEditor(EditorTheme{}, EditorOptions{
+			AutocompleteMaxVisible: 5,
+			AutocompleteDebounce:   20 * time.Millisecond,
+		})
+		changed := make(chan struct{}, 1)
+		editor.OnAutocompleteChange = func() { changed <- struct{}{} }
+		var calls atomic.Int32
+		editor.SetAutocompleteProvider(testFullAutocompleteProvider{
+			triggers: []rune{'$'},
+			get: func(lines []string, _ int, cursorCol int, _ bool) (*AutocompleteSuggestions, error) {
+				calls.Add(1)
+				prefix := string([]rune(lines[0])[:cursorCol])
+				return &AutocompleteSuggestions{
+					Items:  []AutocompleteItem{{Value: "$skill-name", Label: "skill-name"}},
+					Prefix: prefix,
+					Start:  0,
+					End:    cursorCol,
+				}, nil
+			},
+		})
+
+		editor.HandleInput("$sk")
+		if calls.Load() != 0 || editor.IsShowingAutocomplete() {
+			t.Fatalf("custom trigger should debounce, calls=%d showing=%v", calls.Load(), editor.IsShowingAutocomplete())
+		}
+		waitForAutocompleteChange(t, changed)
+		if calls.Load() != 1 || !editor.IsShowingAutocomplete() {
+			t.Fatalf("custom trigger result calls=%d showing=%v", calls.Load(), editor.IsShowingAutocomplete())
+		}
+	})
+
+	t.Run("resets custom triggers when provider changes", func(t *testing.T) {
+		editor := NewEditor(EditorTheme{}, EditorOptions{AutocompleteDebounce: 20 * time.Millisecond})
+		editor.SetAutocompleteProvider(testFullAutocompleteProvider{
+			triggers: []rune{'$'},
+			get: func([]string, int, int, bool) (*AutocompleteSuggestions, error) {
+				return nil, nil
+			},
+		})
+		var calls atomic.Int32
+		editor.SetAutocompleteProvider(testFullAutocompleteProvider{
+			get: func([]string, int, int, bool) (*AutocompleteSuggestions, error) {
+				calls.Add(1)
+				return &AutocompleteSuggestions{
+					Items: []AutocompleteItem{{Value: "$skill-name", Label: "skill-name"}},
+				}, nil
+			},
+		})
+
+		editor.HandleInput("$s")
+		time.Sleep(60 * time.Millisecond)
+		if calls.Load() != 0 || editor.IsShowingAutocomplete() {
+			t.Fatalf("stale custom trigger invoked provider, calls=%d showing=%v", calls.Load(), editor.IsShowingAutocomplete())
+		}
+	})
+
+	t.Run("escapes regexp character class metacharacters", func(t *testing.T) {
+		triggers := []rune{'@', '#', ']', '-', '\\', '$'}
+		triggerPattern := buildTriggerPattern(triggers)
+		debouncePattern := buildDebouncePattern(triggers)
+		for _, prefix := range []string{"]item", "-item", `\item`, "$item"} {
+			if !triggerPattern.MatchString(prefix) {
+				t.Errorf("trigger pattern did not match %q", prefix)
+			}
+			if !debouncePattern.MatchString(prefix) {
+				t.Errorf("debounce pattern did not match %q", prefix)
+			}
+		}
+	})
 }
 
 func TestEditorAutocompleteSymbolContextMatchesPi(t *testing.T) {
@@ -4937,6 +5092,32 @@ func TestMarkdownNestedOrderedAndMixedListsMatchPi(t *testing.T) {
 	}
 }
 
+func TestMarkdownPreservesSourceListMarkersWhenConfigured(t *testing.T) {
+	md := NewMarkdownWithOptions(
+		"  4. forth\n  3. third\n\n10) ten\n7) seven\n\n+ plus\n* star\n- minus\n+",
+		MarkdownOptions{PreserveOrderedListMarkers: true},
+	)
+	lines := stripANSILines(md.Render(80))
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " ")
+	}
+	want := []string{
+		"4. forth",
+		"3. third",
+		"",
+		"10) ten",
+		"7) seven",
+		"",
+		"+ plus",
+		"* star",
+		"- minus",
+		"+",
+	}
+	if !reflect.DeepEqual(lines, want) {
+		t.Fatalf("source list markers = %#v, want %#v", lines, want)
+	}
+}
+
 func TestMarkdownOrderedListInterruptsParagraphOnlyAtOneLikeMarked(t *testing.T) {
 	theme := MarkdownTheme{ListBullet: func(s string) string { return "<bullet>" + s + "</bullet>" }}
 
@@ -5252,6 +5433,63 @@ func TestMarkdownTildeFencesRenderLikePiCodeBlocks(t *testing.T) {
 	want = []string{"- ```sh", "    echo ok", "  ```"}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("list tilde code fence = %#v, want %#v", lines, want)
+	}
+}
+
+func TestMarkdownStabilizesPartialClosingFenceRendering(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{
+			name:  "partial backtick close",
+			input: "```ts\nconst x = 1;\n``",
+			want:  []string{"```ts", "  const x = 1;", "```"},
+		},
+		{
+			name:  "partial line before complete close remains content",
+			input: "```md\nnot a closing fence:\n``\n```",
+			want:  []string{"```md", "  not a closing fence:", "  ``", "```"},
+		},
+		{
+			name:  "empty partial block",
+			input: "```ts\n``",
+			want:  []string{"```ts", "", "```"},
+		},
+		{
+			name:  "long backtick opener",
+			input: "````\n```",
+			want:  []string{"```", "", "```"},
+		},
+		{
+			name:  "long tilde opener",
+			input: "~~~~~\n~~~~",
+			want:  []string{"```", "", "```"},
+		},
+		{
+			name:  "complete block retains earlier partial line",
+			input: "```md\nnot a closing fence:\n``\n```\n\nafter",
+			want:  []string{"```md", "  not a closing fence:", "  ``", "```", "", "after"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := stripANSILines(NewMarkdown(tc.input, MarkdownTheme{}).Render(80))
+			for i := range lines {
+				lines[i] = strings.TrimRight(lines[i], " ")
+			}
+			if !reflect.DeepEqual(lines, tc.want) {
+				t.Fatalf("streaming fence = %#v, want %#v", lines, tc.want)
+			}
+		})
+	}
+
+	partial := NewMarkdown("```ts\nconst x = 1;\n``", MarkdownTheme{}).Render(80)
+	complete := NewMarkdown("```ts\nconst x = 1;\n```", MarkdownTheme{}).Render(80)
+	if len(partial) != len(complete) {
+		t.Fatalf("partial fence lines = %d, complete = %d", len(partial), len(complete))
 	}
 }
 

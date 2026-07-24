@@ -492,7 +492,7 @@ func ExtractSegments(line string, beforeEnd, afterStart, afterLen int, strictAft
 			}
 			continue
 		}
-		if currentCol < beforeEnd {
+		if currentCol < beforeEnd && currentCol+segment.width <= beforeEnd {
 			if pendingANSIBefore.Len() > 0 {
 				before.WriteString(pendingANSIBefore.String())
 				pendingANSIBefore.Reset()
@@ -766,10 +766,28 @@ func stripANSI(s string) string {
 }
 
 // NormalizeTerminalOutput rewrites codepoints that terminals commonly render
-// as decomposed sequences. This keeps output width accounting aligned with what
-// the terminal displays for Thai and Lao AM vowels.
+// inconsistently and expands visible tabs to the same fixed width used by
+// layout. Tabs inside terminal control strings remain byte-identical.
 func NormalizeTerminalOutput(s string) string {
 	s = strings.ReplaceAll(s, "\u0e33", "\u0e4d\u0e32")
 	s = strings.ReplaceAll(s, "\u0eb3", "\u0ecd\u0eb2")
-	return s
+	if !strings.Contains(s, "\t") {
+		return s
+	}
+	var normalized strings.Builder
+	normalized.Grow(len(s))
+	for i := 0; i < len(s); {
+		if sequence, length := ansiAt(s[i:]); length > 0 {
+			normalized.WriteString(sequence)
+			i += length
+			continue
+		}
+		if s[i] == '\t' {
+			normalized.WriteString("   ")
+		} else {
+			normalized.WriteByte(s[i])
+		}
+		i++
+	}
+	return normalized.String()
 }

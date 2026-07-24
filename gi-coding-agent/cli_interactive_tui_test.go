@@ -4928,7 +4928,7 @@ func TestCLIInteractiveTUIHostHandlesBuiltinSlashCommands(t *testing.T) {
 	}
 }
 
-func TestCLIInteractiveTUIHostSubmitsSlashCommandOnLinefeed(t *testing.T) {
+func TestCLIInteractiveTUIHostCtrlJInsertsSlashCommandNewline(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
 	if !ok {
@@ -4958,9 +4958,14 @@ func TestCLIInteractiveTUIHostSubmitsSlashCommandOnLinefeed(t *testing.T) {
 		terminal.SendInput(string(r))
 	}
 	terminal.SendInput("\n")
-	waitForTerminalOutput(t, terminal, "Session Info")
+	waitForCondition(t, func() bool {
+		return strings.Contains(host.editor.GetText(), "\n")
+	}, "ctrl+j to insert a newline")
 	if prompts != 0 {
-		t.Fatalf("linefeed slash command reached responder %d times", prompts)
+		t.Fatalf("ctrl+j slash command reached responder %d times", prompts)
+	}
+	if viewport := strings.Join(terminal.GetViewport(), "\n"); strings.Contains(viewport, "Session Info") {
+		t.Fatalf("ctrl+j should not execute the slash command: %q", viewport)
 	}
 
 	host.Stop()

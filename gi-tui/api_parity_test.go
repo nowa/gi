@@ -155,7 +155,8 @@ func TestPiTUIIndexPublicSurfaceCompiles(t *testing.T) {
 			},
 			CodeBlockIndent: "  ",
 		},
-		PaddingX: 1,
+		PaddingX:                   1,
+		PreserveOrderedListMarkers: true,
 		DefaultTextStyle: &gitui.DefaultTextStyle{
 			Color:     style,
 			BgColor:   style,

@@ -768,6 +768,9 @@ func MatchesKey(data, spec string) bool {
 	if data == "\b" && key == "h" && wantCtrl && !wantAlt && !wantShift && !wantSuper {
 		return true
 	}
+	if data == "\n" && key == "j" && wantCtrl && !wantAlt && !wantShift && !wantSuper {
+		return true
+	}
 	if !IsKittyProtocolActive() && wantAlt && !wantCtrl && !wantShift && !wantSuper && len(key) == 1 {
 		ch := key[0]
 		if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')) && data == "\x1b"+key {

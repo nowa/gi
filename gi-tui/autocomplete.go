@@ -27,6 +27,12 @@ type AutocompleteProvider interface {
 	Suggestions(text string, cursor int) AutocompleteSuggestions
 }
 
+// AutocompleteTriggerCharactersProvider optionally declares single-rune
+// attachment or resource prefixes in addition to the built-in @ and #.
+type AutocompleteTriggerCharactersProvider interface {
+	AutocompleteTriggerCharacters() []rune
+}
+
 type AutocompleteProviderFunc func(text string, cursor int) AutocompleteSuggestions
 
 func (f AutocompleteProviderFunc) Suggestions(text string, cursor int) AutocompleteSuggestions {
@@ -85,6 +91,25 @@ func (p *CombinedAutocompleteProvider) Add(provider AutocompleteProvider) {
 	if provider != nil {
 		p.providers = append(p.providers, provider)
 	}
+}
+
+func (p *CombinedAutocompleteProvider) AutocompleteTriggerCharacters() []rune {
+	var characters []rune
+	seen := map[rune]struct{}{}
+	for _, provider := range p.providers {
+		triggered, ok := provider.(AutocompleteTriggerCharactersProvider)
+		if !ok {
+			continue
+		}
+		for _, character := range triggered.AutocompleteTriggerCharacters() {
+			if _, exists := seen[character]; exists {
+				continue
+			}
+			seen[character] = struct{}{}
+			characters = append(characters, character)
+		}
+	}
+	return characters
 }
 
 func slashCommandsFromItems(items []AutocompleteItem) []SlashCommand {

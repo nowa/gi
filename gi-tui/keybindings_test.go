@@ -39,6 +39,16 @@ func TestKeybindingsManagerDoesNotEvictDefaultsWhenUserReusesKeys(t *testing.T) 
 	}
 }
 
+func TestKeybindingsManagerBindsCtrlJAsDefaultNewlineAlias(t *testing.T) {
+	keybindings := NewKeybindingsManager()
+	if got := keybindings.GetKeys("tui.input.newLine"); !reflect.DeepEqual(got, []string{"shift+enter", "ctrl+j"}) {
+		t.Fatalf("default newline keys = %#v, want [shift+enter ctrl+j]", got)
+	}
+	if !keybindings.Matches("\n", "tui.input.newLine") {
+		t.Fatalf("line feed should match the default ctrl+j newline alias")
+	}
+}
+
 func TestKeybindingsManagerReportsOnlyUserBindingConflicts(t *testing.T) {
 	keybindings := NewKeybindingsManager(KeybindingsConfig{
 		"tui.input.submit":   {"ctrl+x"},

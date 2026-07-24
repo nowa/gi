@@ -56,7 +56,7 @@ var defaultKeybindingDefinitions = KeybindingDefinitions{
 	"tui.editor.yank":               {Default: []string{"ctrl+y"}, Description: "Yank"},
 	"tui.editor.yankPop":            {Default: []string{"alt+y"}, Description: "Yank pop"},
 	"tui.editor.undo":               {Default: []string{"ctrl+-"}, Description: "Undo"},
-	"tui.input.newLine":             {Default: []string{"shift+enter"}, Description: "Insert newline"},
+	"tui.input.newLine":             {Default: []string{"shift+enter", "ctrl+j"}, Description: "Insert newline"},
 	"tui.input.submit":              {Default: []string{"enter"}, Description: "Submit input"},
 	"tui.input.tab":                 {Default: []string{"tab"}, Description: "Tab / autocomplete"},
 	"tui.input.copy":                {Default: []string{"ctrl+c"}, Description: "Copy selection"},

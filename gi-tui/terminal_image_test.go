@@ -110,7 +110,7 @@ func TestDetectCapabilitiesFromEnvironment(t *testing.T) {
 	t.Setenv("TERM", "tmux-256color")
 	t.Setenv("TERM_PROGRAM", "ghostty")
 	t.Setenv("TMUX", "/tmp/tmux")
-	caps = DetectCapabilities()
+	caps = DetectCapabilities(func() bool { return false })
 	if caps.Images || caps.Hyperlinks {
 		t.Fatalf("tmux caps should disable images/hyperlinks: %#v", caps)
 	}
@@ -154,7 +154,7 @@ func TestDetectCapabilitiesFromEnvironment(t *testing.T) {
 
 	t.Setenv("TERM_PROGRAM", "iterm.app")
 	t.Setenv("TERM", "tmux-256color")
-	caps = DetectCapabilities()
+	caps = DetectCapabilities(func() bool { return false })
 	if caps.Images || caps.Protocol != ImageProtocolNone || caps.Hyperlinks {
 		t.Fatalf("TERM=tmux should override outer terminal support: %#v", caps)
 	}
@@ -204,6 +204,107 @@ func TestDetectCapabilitiesPiCaseNames(t *testing.T) {
 			t.Fatalf("vscode caps = %#v, want hyperlinks without image protocol", caps)
 		}
 	})
+
+	t.Run("enables hyperlinks under tmux when the client forwards them", func(t *testing.T) {
+		clearTerminalCapabilityEnv(t)
+		t.Setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
+		t.Setenv("TERM_PROGRAM", "ghostty")
+		caps := DetectCapabilities(func() bool { return true })
+		if caps.Images || caps.Protocol != ImageProtocolNone || !caps.Hyperlinks {
+			t.Fatalf("tmux forwarding caps = %#v, want hyperlinks without images", caps)
+		}
+	})
+
+	t.Run("disables hyperlinks under tmux when the client does not forward them", func(t *testing.T) {
+		clearTerminalCapabilityEnv(t)
+		t.Setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
+		caps := DetectCapabilities(func() bool { return false })
+		if caps.Images || caps.Protocol != ImageProtocolNone || caps.Hyperlinks {
+			t.Fatalf("tmux non-forwarding caps = %#v", caps)
+		}
+	})
+
+	t.Run("checks tmux capability when TERM starts with tmux", func(t *testing.T) {
+		clearTerminalCapabilityEnv(t)
+		t.Setenv("TERM", "tmux-256color")
+		if caps := DetectCapabilities(func() bool { return true }); !caps.Hyperlinks || caps.Images {
+			t.Fatalf("TERM tmux forwarding caps = %#v", caps)
+		}
+		if caps := DetectCapabilities(func() bool { return false }); caps.Hyperlinks || caps.Images {
+			t.Fatalf("TERM tmux non-forwarding caps = %#v", caps)
+		}
+	})
+
+	t.Run("detects Warp by each supported environment hint", func(t *testing.T) {
+		cases := map[string]map[string]string{
+			"TERM_PROGRAM":               {"TERM_PROGRAM": "WarpTerminal"},
+			"WARP_SESSION_ID":            {"WARP_SESSION_ID": "session"},
+			"WARP_TERMINAL_SESSION_UUID": {"WARP_TERMINAL_SESSION_UUID": "uuid"},
+		}
+		for name, env := range cases {
+			t.Run(name, func(t *testing.T) {
+				clearTerminalCapabilityEnv(t)
+				for key, value := range env {
+					t.Setenv(key, value)
+				}
+				caps := DetectCapabilities()
+				if !caps.Images || caps.Protocol != ImageProtocolKitty || !caps.TrueColor || !caps.Hyperlinks {
+					t.Fatalf("Warp caps = %#v", caps)
+				}
+			})
+		}
+	})
+
+	t.Run("tmux takes precedence over Warp images", func(t *testing.T) {
+		clearTerminalCapabilityEnv(t)
+		t.Setenv("TERM_PROGRAM", "WarpTerminal")
+		t.Setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
+		t.Setenv("TERM", "tmux-256color")
+		caps := DetectCapabilities(func() bool { return true })
+		if caps.Images || caps.Protocol != ImageProtocolNone || !caps.Hyperlinks {
+			t.Fatalf("Warp under tmux caps = %#v", caps)
+		}
+	})
+
+	t.Run("detects Windows Terminal outside multiplexers", func(t *testing.T) {
+		clearTerminalCapabilityEnv(t)
+		t.Setenv("WT_SESSION", "session")
+		t.Setenv("TERM", "xterm-256color")
+		caps := DetectCapabilities()
+		if caps.Images || !caps.TrueColor || !caps.Hyperlinks {
+			t.Fatalf("Windows Terminal caps = %#v", caps)
+		}
+	})
+
+	t.Run("does not inherit Windows Terminal truecolor through tmux", func(t *testing.T) {
+		clearTerminalCapabilityEnv(t)
+		t.Setenv("WT_SESSION", "session")
+		t.Setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
+		t.Setenv("TERM", "tmux-256color")
+		caps := DetectCapabilities(func() bool { return false })
+		if caps.Images || caps.TrueColor || caps.Hyperlinks {
+			t.Fatalf("Windows Terminal under tmux caps = %#v", caps)
+		}
+	})
+
+	t.Run("trusts explicit truecolor hints through tmux", func(t *testing.T) {
+		clearTerminalCapabilityEnv(t)
+		t.Setenv("COLORTERM", "truecolor")
+		t.Setenv("TMUX", "/tmp/tmux-1000/default,1234,0")
+		caps := DetectCapabilities(func() bool { return false })
+		if caps.Images || !caps.TrueColor || caps.Hyperlinks {
+			t.Fatalf("tmux explicit truecolor caps = %#v", caps)
+		}
+	})
+
+	t.Run("detects JetBrains truecolor without hyperlinks", func(t *testing.T) {
+		clearTerminalCapabilityEnv(t)
+		t.Setenv("TERMINAL_EMULATOR", "JetBrains-JediTerm")
+		caps := DetectCapabilities()
+		if caps.Images || !caps.TrueColor || caps.Hyperlinks {
+			t.Fatalf("JetBrains caps = %#v", caps)
+		}
+	})
 }
 
 func clearTerminalCapabilityEnv(t *testing.T) {
@@ -211,6 +312,7 @@ func clearTerminalCapabilityEnv(t *testing.T) {
 	for _, key := range []string{
 		"TERM",
 		"TERM_PROGRAM",
+		"TERMINAL_EMULATOR",
 		"COLORTERM",
 		"TMUX",
 		"KITTY_WINDOW_ID",
@@ -218,6 +320,9 @@ func clearTerminalCapabilityEnv(t *testing.T) {
 		"WEZTERM_PANE",
 		"ITERM_SESSION_ID",
 		"CMUX_WORKSPACE_ID",
+		"WARP_SESSION_ID",
+		"WARP_TERMINAL_SESSION_UUID",
+		"WT_SESSION",
 	} {
 		t.Setenv(key, "")
 	}

@@ -71,45 +71,49 @@ type EditorChangeCallbackComponent interface {
 
 type Editor struct {
 	FocusState
-	mu                   sync.Mutex
-	text                 string
-	cursor               int
-	theme                EditorTheme
-	options              EditorOptions
-	autocomplete         *AutocompleteSuggestions
-	autocompleteList     *SelectList
-	autocompleteForce    bool
-	autocompleteProvider AutocompleteProvider
-	autocompleteTimer    *time.Timer
-	autocompleteCancel   context.CancelFunc
-	autocompleteToken    int
-	autocompleteRequest  int
-	history              []string
-	historyIndex         int
-	undoStack            []editorSnapshot
-	lastAction           string
-	pastes               map[int]string
-	pasteCounter         int
-	pasteBuffer          string
-	inPaste              bool
-	killRing             []string
-	killIndex            int
-	lastKill             bool
-	lastYank             bool
-	lastYankWidth        int
-	jumpDirection        int
-	preferredColumn      int
-	hasPreferredColumn   bool
-	snappedFromLine      int
-	snappedFromColumn    int
-	hasSnappedFromColumn bool
-	lastLayoutWidth      int
-	scrollOffset         int
-	OnSubmit             func(string)
-	OnChange             func(string)
-	OnAutocompleteChange func()
-	DisableSubmit        bool
-	pendingCallbacks     []func()
+	mu                          sync.Mutex
+	text                        string
+	cursor                      int
+	theme                       EditorTheme
+	options                     EditorOptions
+	autocomplete                *AutocompleteSuggestions
+	autocompleteList            *SelectList
+	autocompleteForce           bool
+	autocompleteProvider        AutocompleteProvider
+	autocompleteTriggers        []rune
+	autocompleteTriggerPattern  *regexp.Regexp
+	autocompleteDebouncePattern *regexp.Regexp
+	autocompleteTimer           *time.Timer
+	autocompleteCancel          context.CancelFunc
+	autocompleteToken           int
+	autocompleteRequest         int
+	history                     []string
+	historyIndex                int
+	historyDraft                *editorSnapshot
+	undoStack                   []editorSnapshot
+	lastAction                  string
+	pastes                      map[int]string
+	pasteCounter                int
+	pasteBuffer                 string
+	inPaste                     bool
+	killRing                    []string
+	killIndex                   int
+	lastKill                    bool
+	lastYank                    bool
+	lastYankWidth               int
+	jumpDirection               int
+	preferredColumn             int
+	hasPreferredColumn          bool
+	snappedFromLine             int
+	snappedFromColumn           int
+	hasSnappedFromColumn        bool
+	lastLayoutWidth             int
+	scrollOffset                int
+	OnSubmit                    func(string)
+	OnChange                    func(string)
+	OnAutocompleteChange        func()
+	DisableSubmit               bool
+	pendingCallbacks            []func()
 }
 
 type editorSnapshot struct {
@@ -136,13 +140,14 @@ type editorAutocompleteTriggerProvider interface {
 const attachmentAutocompleteDebounce = 20 * time.Millisecond
 
 var (
-	pasteMarkerPattern           = regexp.MustCompile(`\[paste #([0-9]+)( (\+[0-9]+ lines|[0-9]+ chars))?\]`)
-	editorCSIuControlPattern     = regexp.MustCompile(`\x1b\[([0-9]+);5u`)
-	markdownAutoURIPattern       = regexp.MustCompile(`(?i)<([a-z][a-z0-9+.-]{1,31}:[^<>\x00-\x1f\s]*)>`)
-	markdownAutoEmailPattern     = regexp.MustCompile("(?i)<([A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+)>")
-	markdownBareURLPattern       = regexp.MustCompile(`(?i)(?:https?://|ftp://|www\.)(?:[A-Z0-9\-]+\.?)+[^\s<]*`)
-	markdownBareEmailPattern     = regexp.MustCompile(`(?i)\b[A-Z0-9._+\-]+@[A-Z0-9_\-]+(?:\.[A-Z0-9_\-]*[A-Z0-9])+`)
-	markdownBareEmailFullPattern = regexp.MustCompile(`(?i)^[A-Z0-9._+\-]+@[A-Z0-9_\-]+(?:\.[A-Z0-9_\-]*[A-Z0-9])+$`)
+	defaultAutocompleteTriggerCharacters = []rune{'@', '#'}
+	pasteMarkerPattern                   = regexp.MustCompile(`\[paste #([0-9]+)( (\+[0-9]+ lines|[0-9]+ chars))?\]`)
+	editorCSIuControlPattern             = regexp.MustCompile(`\x1b\[([0-9]+);5u`)
+	markdownAutoURIPattern               = regexp.MustCompile(`(?i)<([a-z][a-z0-9+.-]{1,31}:[^<>\x00-\x1f\s]*)>`)
+	markdownAutoEmailPattern             = regexp.MustCompile("(?i)<([A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+)>")
+	markdownBareURLPattern               = regexp.MustCompile(`(?i)(?:https?://|ftp://|www\.)(?:[A-Z0-9\-]+\.?)+[^\s<]*`)
+	markdownBareEmailPattern             = regexp.MustCompile(`(?i)\b[A-Z0-9._+\-]+@[A-Z0-9_\-]+(?:\.[A-Z0-9_\-]*[A-Z0-9])+`)
+	markdownBareEmailFullPattern         = regexp.MustCompile(`(?i)^[A-Z0-9._+\-]+@[A-Z0-9_\-]+(?:\.[A-Z0-9_\-]*[A-Z0-9])+$`)
 )
 
 func NewEditor(theme EditorTheme, options ...EditorOptions) *Editor {
@@ -151,7 +156,69 @@ func NewEditor(theme EditorTheme, options ...EditorOptions) *Editor {
 		opts = options[0]
 	}
 	opts = normalizeEditorOptions(opts)
-	return &Editor{theme: theme, options: opts, historyIndex: -1, pastes: map[int]string{}, lastLayoutWidth: 80}
+	editor := &Editor{theme: theme, options: opts, historyIndex: -1, pastes: map[int]string{}, lastLayoutWidth: 80}
+	editor.setAutocompleteTriggerCharacters(nil)
+	return editor
+}
+
+func escapeCharacterClass(value string) string {
+	replacer := strings.NewReplacer(
+		`\`, `\\`,
+		`^`, `\^`,
+		`$`, `\$`,
+		`.`, `\.`,
+		`*`, `\*`,
+		`+`, `\+`,
+		`?`, `\?`,
+		`(`, `\(`,
+		`)`, `\)`,
+		`[`, `\[`,
+		`]`, `\]`,
+		`{`, `\{`,
+		`}`, `\}`,
+		`|`, `\|`,
+		`-`, `\-`,
+	)
+	return replacer.Replace(value)
+}
+
+func buildTriggerPattern(triggerCharacters []rune) *regexp.Regexp {
+	var characters strings.Builder
+	for _, character := range triggerCharacters {
+		characters.WriteString(escapeCharacterClass(string(character)))
+	}
+	return regexp.MustCompile(`(^|[[:space:]])[` + characters.String() + `][^[:space:]]*$`)
+}
+
+func buildDebouncePattern(triggerCharacters []rune) *regexp.Regexp {
+	var alternatives []string
+	var otherCharacters strings.Builder
+	for _, character := range triggerCharacters {
+		if character == '@' {
+			alternatives = append(alternatives, `@("[^"]*|[^[:space:]]*)`)
+			continue
+		}
+		otherCharacters.WriteString(escapeCharacterClass(string(character)))
+	}
+	if otherCharacters.Len() > 0 {
+		alternatives = append(alternatives, `[`+otherCharacters.String()+`][^[:space:]]*`)
+	}
+	if len(alternatives) == 0 {
+		return regexp.MustCompile(`a^`)
+	}
+	return regexp.MustCompile(`(^|[ \t])(` + strings.Join(alternatives, "|") + `)$`)
+}
+
+func createScrollBorder(direction string, hiddenLineCount, width int) string {
+	availableWidth := max(0, width)
+	indicator := fmt.Sprintf("─── %s %d more ", direction, hiddenLineCount)
+	remaining := availableWidth - VisibleWidth(indicator)
+	if remaining >= 0 {
+		return indicator + strings.Repeat("─", remaining)
+	}
+	ellipsis := "..."[:min(3, availableWidth)]
+	indicatorWidth := max(0, availableWidth-VisibleWidth(ellipsis))
+	return SliceByColumn(indicator, 0, indicatorWidth, true) + ellipsis
 }
 
 func normalizeEditorOptions(opts EditorOptions) EditorOptions {
@@ -276,7 +343,7 @@ func (e *Editor) SetText(text string) {
 	}
 	e.cancelAutocomplete()
 	e.setTextInternal(normalized)
-	e.historyIndex = -1
+	e.exitHistoryBrowsing()
 	e.lastAction = ""
 	e.resetPreferredColumn()
 	e.breakKillAndYank()
@@ -291,6 +358,38 @@ func (e *Editor) SetAutocompleteProvider(provider AutocompleteProvider) {
 	defer e.mu.Unlock()
 	e.cancelAutocomplete()
 	e.autocompleteProvider = provider
+	var triggerCharacters []rune
+	if triggered, ok := provider.(AutocompleteTriggerCharactersProvider); ok {
+		triggerCharacters = triggered.AutocompleteTriggerCharacters()
+	}
+	e.setAutocompleteTriggerCharacters(triggerCharacters)
+}
+
+func (e *Editor) setAutocompleteTriggerCharacters(triggerCharacters []rune) {
+	next := append([]rune(nil), defaultAutocompleteTriggerCharacters...)
+	seen := map[rune]struct{}{'@': {}, '#': {}}
+	for _, character := range triggerCharacters {
+		if character == '/' || unicode.IsSpace(character) {
+			continue
+		}
+		if _, exists := seen[character]; exists {
+			continue
+		}
+		seen[character] = struct{}{}
+		next = append(next, character)
+	}
+	e.autocompleteTriggers = next
+	e.autocompleteTriggerPattern = buildTriggerPattern(next)
+	e.autocompleteDebouncePattern = buildDebouncePattern(next)
+}
+
+func (e *Editor) isAutocompleteTriggerCharacter(character rune) bool {
+	for _, trigger := range e.autocompleteTriggers {
+		if trigger == character {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Editor) SetOnSubmit(fn func(string)) {
@@ -338,7 +437,7 @@ func (e *Editor) InsertTextAtCursor(text string) {
 	e.cancelAutocomplete()
 	e.pushUndoSnapshot()
 	e.insertTextInternal(normalizeEditorText(text))
-	e.historyIndex = -1
+	e.exitHistoryBrowsing()
 	e.lastAction = ""
 	e.resetPreferredColumn()
 	e.breakKillAndYank()
@@ -465,16 +564,14 @@ func (e *Editor) layoutEditorLines(contentWidth int) []editorLayoutLine {
 func (e *Editor) renderEditorTopBorder(width int) string {
 	horizontal := style(e.theme.Border, "─")
 	if e.scrollOffset > 0 {
-		indicator := fmt.Sprintf("─── ↑ %d more ", e.scrollOffset)
-		return style(e.theme.Border, TruncateToWidth(indicator+strings.Repeat("─", max(0, width-VisibleWidth(indicator))), width, ""))
+		return style(e.theme.Border, createScrollBorder("↑", e.scrollOffset, width))
 	}
 	return strings.Repeat(horizontal, width)
 }
 
 func (e *Editor) renderEditorBottomBorder(width, linesBelow int) string {
 	if linesBelow > 0 {
-		indicator := fmt.Sprintf("─── ↓ %d more ", linesBelow)
-		return style(e.theme.Border, TruncateToWidth(indicator+strings.Repeat("─", max(0, width-VisibleWidth(indicator))), width, ""))
+		return style(e.theme.Border, createScrollBorder("↓", linesBelow, width))
 	}
 	return strings.Repeat(style(e.theme.Border, "─"), width)
 }
@@ -632,10 +729,10 @@ func (e *Editor) handleInputLocked(data string) {
 		e.killWordForward()
 	case kb.Matches(data, "tui.editor.deleteCharBackward") || MatchesKey(data, "shift+backspace"):
 		e.backspace()
-		e.historyIndex = -1
+		e.exitHistoryBrowsing()
 	case kb.Matches(data, "tui.editor.deleteCharForward") || MatchesKey(data, "shift+delete"):
 		e.deleteForward()
-		e.historyIndex = -1
+		e.exitHistoryBrowsing()
 	case kb.Matches(data, "tui.editor.yank"):
 		e.yank()
 	case kb.Matches(data, "tui.editor.yankPop"):
@@ -664,7 +761,7 @@ func (e *Editor) handleInputLocked(data string) {
 		e.submitLocked()
 	case isEditorNewLineInput(data, kb):
 		e.insertRuneWithUndo('\n')
-		e.historyIndex = -1
+		e.exitHistoryBrowsing()
 	case kb.Matches(data, "tui.input.submit"):
 		e.submitLocked()
 	case kb.Matches(data, "tui.editor.cursorUp"):
@@ -714,7 +811,7 @@ func (e *Editor) handleInputLocked(data string) {
 		if event.Rune != 0 && isPlainPrintableRune(event.Rune) && !event.Ctrl && !event.Alt && !event.Super {
 			e.insertRuneWithUndo(event.Rune)
 			e.updateAutocompleteAfterRune(event.Rune)
-			e.historyIndex = -1
+			e.exitHistoryBrowsing()
 		}
 	}
 }
@@ -745,7 +842,7 @@ func (e *Editor) submitLocked() {
 	e.pastes = map[int]string{}
 	e.pasteCounter = 0
 	e.undoStack = nil
-	e.historyIndex = -1
+	e.exitHistoryBrowsing()
 	e.lastAction = ""
 	e.resetPreferredColumn()
 	e.breakKillAndYank()
@@ -769,17 +866,26 @@ func (e *Editor) AddToHistory(text string) {
 }
 
 func (e *Editor) handleUp() {
-	if len(e.history) > 0 && (e.text == "" || (e.historyIndex >= 0 && e.isOnFirstVisualLine())) {
+	if len(e.history) > 0 &&
+		e.isOnFirstVisualLine() &&
+		(e.text == "" || e.historyIndex >= 0 || e.cursor == e.currentLineStart()) {
 		newIndex := e.historyIndex + 1
 		if newIndex >= len(e.history) {
 			return
 		}
 		if e.historyIndex == -1 {
 			e.pushUndoSnapshot()
+			draft := editorSnapshot{
+				text:         e.text,
+				cursor:       e.cursor,
+				pastes:       clonePasteMap(e.pastes),
+				pasteCounter: e.pasteCounter,
+			}
+			e.historyDraft = &draft
 		}
 		e.historyIndex = newIndex
 		e.text = e.history[e.historyIndex]
-		e.cursor = len([]rune(e.text))
+		e.cursor = 0
 		e.lastAction = ""
 		e.resetPreferredColumn()
 		e.breakKillAndYank()
@@ -806,8 +912,18 @@ func (e *Editor) handleDown() {
 		}
 		e.historyIndex = newIndex
 		if newIndex < 0 {
-			e.text = ""
-			e.cursor = 0
+			draft := e.historyDraft
+			e.historyDraft = nil
+			if draft == nil {
+				e.text = ""
+				e.cursor = 0
+			} else {
+				e.text = draft.text
+				e.cursor = min(draft.cursor, len([]rune(draft.text)))
+				e.pastes = clonePasteMap(draft.pastes)
+				e.pasteCounter = draft.pasteCounter
+				e.scrollOffset = 0
+			}
 		} else {
 			e.text = e.history[newIndex]
 			e.cursor = len([]rune(e.text))
@@ -830,7 +946,13 @@ func (e *Editor) handleDown() {
 	e.breakKillAndYank()
 }
 
+func (e *Editor) exitHistoryBrowsing() {
+	e.historyIndex = -1
+	e.historyDraft = nil
+}
+
 func (e *Editor) insertRuneWithUndo(r rune) {
+	e.exitHistoryBrowsing()
 	e.resetPreferredColumn()
 	switch {
 	case r == '\n':
@@ -853,7 +975,7 @@ func (e *Editor) insertTextWithTypingUndo(text string) {
 	if text == "" {
 		return
 	}
-	e.historyIndex = -1
+	e.exitHistoryBrowsing()
 	e.resetPreferredColumn()
 	if containsWhitespaceRune(text) || e.lastAction != "type-word" {
 		e.pushUndoSnapshot()
@@ -881,7 +1003,7 @@ func (e *Editor) replaceBackslashBeforeCursorWithNewline() bool {
 	e.pushUndoSnapshot()
 	e.deleteRuneRange(e.cursor-1, e.cursor)
 	e.insertTextInternal("\n")
-	e.historyIndex = -1
+	e.exitHistoryBrowsing()
 	e.lastAction = ""
 	e.resetPreferredColumn()
 	e.breakKillAndYank()
@@ -923,7 +1045,7 @@ func (e *Editor) backspace() {
 	e.pushUndoSnapshot()
 	e.deleteRuneRange(start, end)
 	e.cursor = start
-	e.historyIndex = -1
+	e.exitHistoryBrowsing()
 	e.lastAction = ""
 	e.resetPreferredColumn()
 	e.breakKillAndYank()
@@ -945,7 +1067,7 @@ func (e *Editor) deleteForward() {
 	e.pushUndoSnapshot()
 	e.deleteRuneRange(start, end)
 	e.cursor = start
-	e.historyIndex = -1
+	e.exitHistoryBrowsing()
 	e.lastAction = ""
 	e.resetPreferredColumn()
 	e.breakKillAndYank()
@@ -978,7 +1100,7 @@ func (e *Editor) killRange(start, end int, backward bool) {
 	killed := e.deleteRuneRange(start, end)
 	e.cursor = start
 	e.recordKill(killed, backward)
-	e.historyIndex = -1
+	e.exitHistoryBrowsing()
 	e.lastAction = ""
 	e.resetPreferredColumn()
 	e.changed()
@@ -1070,6 +1192,7 @@ func (e *Editor) yank() {
 		e.lastKill = false
 		return
 	}
+	e.exitHistoryBrowsing()
 	e.pushUndoSnapshot()
 	e.killIndex = 0
 	text := e.killRing[e.killIndex]
@@ -1085,6 +1208,7 @@ func (e *Editor) yankPop() {
 	if !e.lastYank || len(e.killRing) <= 1 {
 		return
 	}
+	e.exitHistoryBrowsing()
 	e.pushUndoSnapshot()
 	runes := []rune(e.text)
 	start := max(0, e.cursor-e.lastYankWidth)
@@ -1132,7 +1256,7 @@ func (e *Editor) handlePaste(pastedText string) {
 	}
 
 	e.pushUndoSnapshot()
-	e.historyIndex = -1
+	e.exitHistoryBrowsing()
 	e.lastAction = ""
 	e.resetPreferredColumn()
 	e.breakKillAndYank()
@@ -1188,7 +1312,7 @@ func (e *Editor) updateAutocompleteAfterRune(r rune) {
 		e.requestAutocomplete(false)
 		return
 	}
-	if r == '@' || r == '#' {
+	if e.isAutocompleteTriggerCharacter(r) {
 		if e.symbolCompletionContext() {
 			e.requestAutocomplete(false)
 		}
@@ -1265,7 +1389,7 @@ func (e *Editor) autocompleteDebounce(force, explicitTab bool) time.Duration {
 		cursorCol = len([]rune(line))
 	}
 	before := string([]rune(line)[:cursorCol])
-	if symbolAutocompleteContext(before) {
+	if e.autocompleteDebouncePattern != nil && e.autocompleteDebouncePattern.MatchString(before) {
 		return e.options.AutocompleteDebounce
 	}
 	return 0
@@ -1400,7 +1524,7 @@ func (e *Editor) applySelectedAutocompleteWithNotify(notify bool) bool {
 	} else {
 		e.applyFlatCompletion(item)
 	}
-	e.historyIndex = -1
+	e.exitHistoryBrowsing()
 	e.lastAction = ""
 	e.resetPreferredColumn()
 	e.cancelAutocomplete()
@@ -1537,12 +1661,12 @@ func (e *Editor) inSlashCommandContext() bool {
 
 func (e *Editor) symbolCompletionContext() bool {
 	before := string([]rune(e.text)[:max(0, min(e.cursor, len([]rune(e.text))))])
-	start := findLastDelimiter(before) + 1
-	if start < 0 || start >= len(before) {
+	lineStart := strings.LastIndex(before, "\n") + 1
+	line := before[lineStart:]
+	if e.autocompleteTriggerPattern == nil {
 		return false
 	}
-	token := before[start:]
-	return strings.HasPrefix(token, "@") || strings.HasPrefix(token, "#")
+	return e.autocompleteTriggerPattern.MatchString(line)
 }
 
 func isAutocompleteContinuationRune(r rune) bool {
@@ -1620,7 +1744,7 @@ func (e *Editor) undo() {
 	e.cursor = min(snapshot.cursor, len([]rune(e.text)))
 	e.pastes = clonePasteMap(snapshot.pastes)
 	e.pasteCounter = snapshot.pasteCounter
-	e.historyIndex = -1
+	e.exitHistoryBrowsing()
 	e.lastAction = ""
 	e.resetPreferredColumn()
 	e.breakKillAndYank()

@@ -2,6 +2,7 @@ package gitui
 
 import (
 	"errors"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -138,14 +139,18 @@ func (c *keyReleaseRecorderComponent) WantsKeyRelease() bool { return c.wantsRel
 
 type focusableOverlayComponent struct {
 	FocusState
-	lines  []string
-	inputs []string
+	lines   []string
+	inputs  []string
+	onInput func(string)
 }
 
 func (c *focusableOverlayComponent) Render(_ int) []string { return append([]string(nil), c.lines...) }
 func (c *focusableOverlayComponent) Invalidate()           {}
 func (c *focusableOverlayComponent) HandleInput(data string) {
 	c.inputs = append(c.inputs, data)
+	if c.onInput != nil {
+		c.onInput(data)
+	}
 }
 
 type widthRecorderComponent struct {
@@ -3114,6 +3119,234 @@ func TestTUIOverlayPiInvisibleFocusedOverlayReroutesInput(t *testing.T) {
 	}
 }
 
+func TestTUIOverlayPiFocusRestoreStateMachine(t *testing.T) {
+	t.Run("active base replacement receives close input before overlay restore", func(t *testing.T) {
+		terminal := NewVirtualTerminal(80, 24)
+		ui := NewTUI(terminal)
+		editor := &focusableOverlayComponent{lines: []string{"EDITOR"}}
+		replacement := &focusableOverlayComponent{lines: []string{"REPLACEMENT"}}
+		overlay := &focusableOverlayComponent{lines: []string{"OVERLAY"}}
+		overlay.onInput = func(data string) {
+			if data == "b" {
+				ui.SetFocus(replacement)
+			}
+		}
+		replacement.onInput = func(data string) {
+			if data == "\r" {
+				ui.SetFocus(editor)
+			}
+		}
+		ui.AddChild(&lineComponent{lines: []string{""}})
+		ui.SetFocus(editor)
+		ui.Start()
+		defer ui.Stop()
+
+		ui.ShowOverlay(overlay)
+		terminal.SendInput("b")
+		if !replacement.Focused() {
+			t.Fatalf("replacement should retain focus until it processes close input")
+		}
+		terminal.SendInput("\r")
+		if !equalLines(replacement.inputs, []string{"\r"}) || !equalLines(overlay.inputs, []string{"b"}) {
+			t.Fatalf("input routing mismatch: replacement=%#v overlay=%#v", replacement.inputs, overlay.inputs)
+		}
+		if !overlay.Focused() {
+			t.Fatalf("overlay should regain focus after the replacement closes")
+		}
+		terminal.SendInput("x")
+		if !equalLines(overlay.inputs, []string{"b", "x"}) {
+			t.Fatalf("restored overlay inputs = %#v, want [b x]", overlay.inputs)
+		}
+	})
+
+	t.Run("mounted replacement can move focus internally before restore", func(t *testing.T) {
+		terminal := NewVirtualTerminal(80, 24)
+		ui := NewTUI(terminal)
+		base := NewContainer()
+		editor := &focusableOverlayComponent{lines: []string{"EDITOR"}}
+		first := &focusableOverlayComponent{lines: []string{"FIRST"}}
+		second := &focusableOverlayComponent{lines: []string{"SECOND"}}
+		overlay := &focusableOverlayComponent{lines: []string{"OVERLAY"}}
+		overlay.onInput = func(data string) {
+			if data == "b" {
+				ui.SetFocus(first)
+			}
+		}
+		first.onInput = func(data string) {
+			if data == "n" {
+				ui.SetFocus(second)
+			}
+		}
+		second.onInput = func(data string) {
+			if data == "\r" {
+				base.SetChildren([]Component{editor})
+				ui.SetFocus(editor)
+			}
+		}
+		base.SetChildren([]Component{editor, first, second})
+		ui.AddChild(base)
+		ui.SetFocus(editor)
+		ui.Start()
+		defer ui.Stop()
+
+		ui.ShowOverlay(overlay)
+		terminal.SendInput("b")
+		terminal.SendInput("n")
+		terminal.SendInput("2")
+		terminal.SendInput("\r")
+		if !equalLines(first.inputs, []string{"n"}) || !equalLines(second.inputs, []string{"2", "\r"}) {
+			t.Fatalf("replacement input routing mismatch: first=%#v second=%#v", first.inputs, second.inputs)
+		}
+		if !overlay.Focused() || !equalLines(overlay.inputs, []string{"b"}) {
+			t.Fatalf("overlay restore mismatch: focused=%v inputs=%#v", overlay.Focused(), overlay.inputs)
+		}
+	})
+
+	t.Run("explicit unfocus target releases blocked overlay", func(t *testing.T) {
+		terminal := NewVirtualTerminal(80, 24)
+		ui := NewTUI(terminal)
+		fallback := &focusableOverlayComponent{lines: []string{"FALLBACK"}}
+		target := &focusableOverlayComponent{lines: []string{"TARGET"}}
+		replacement := &focusableOverlayComponent{lines: []string{"REPLACEMENT"}}
+		overlay := &focusableOverlayComponent{lines: []string{"OVERLAY"}}
+		replacement.onInput = func(data string) {
+			if data == "\r" {
+				ui.SetFocus(fallback)
+			}
+		}
+		ui.AddChild(&lineComponent{lines: []string{""}})
+		ui.Start()
+		defer ui.Stop()
+
+		handle := ui.ShowOverlay(overlay)
+		overlay.onInput = func(data string) {
+			if data == "b" {
+				ui.SetFocus(replacement)
+				handle.Unfocus(OverlayUnfocusOptions{Target: target})
+			}
+		}
+		terminal.SendInput("b")
+		if !replacement.Focused() {
+			t.Fatalf("replacement should remain focused until it closes")
+		}
+		terminal.SendInput("\r")
+		terminal.SendInput("x")
+		if !equalLines(replacement.inputs, []string{"\r"}) || !equalLines(target.inputs, []string{"x"}) {
+			t.Fatalf("explicit target routing mismatch: replacement=%#v target=%#v", replacement.inputs, target.inputs)
+		}
+		if len(fallback.inputs) != 0 || len(overlay.inputs) != 1 {
+			t.Fatalf("released overlay should not regain input: fallback=%#v overlay=%#v", fallback.inputs, overlay.inputs)
+		}
+	})
+
+	t.Run("visible overlay regains input after a base focus steal", func(t *testing.T) {
+		terminal := NewVirtualTerminal(80, 24)
+		ui := NewTUI(terminal)
+		editor := &focusableOverlayComponent{lines: []string{"EDITOR"}}
+		replacement := &focusableOverlayComponent{lines: []string{"REPLACEMENT"}}
+		overlay := &focusableOverlayComponent{lines: []string{"OVERLAY"}}
+		ui.AddChild(&lineComponent{lines: []string{""}})
+		ui.SetFocus(editor)
+		ui.Start()
+		defer ui.Stop()
+
+		ui.ShowOverlay(overlay)
+		ui.SetFocus(replacement)
+		ui.SetFocus(editor)
+		terminal.SendInput("x")
+		if !overlay.Focused() || !equalLines(overlay.inputs, []string{"x"}) || len(editor.inputs) != 0 {
+			t.Fatalf("overlay focus restore mismatch: overlay=%#v editor=%#v focused=%v", overlay.inputs, editor.inputs, overlay.Focused())
+		}
+	})
+
+	t.Run("nil focus clears eligible restore but resumes a blocked overlay", func(t *testing.T) {
+		t.Run("eligible", func(t *testing.T) {
+			terminal := NewVirtualTerminal(80, 24)
+			ui := NewTUI(terminal)
+			overlay := &focusableOverlayComponent{lines: []string{"OVERLAY"}}
+			ui.AddChild(&lineComponent{lines: []string{""}})
+			ui.Start()
+			defer ui.Stop()
+
+			ui.ShowOverlay(overlay)
+			ui.SetFocus(nil)
+			terminal.SendInput("x")
+			if overlay.Focused() || len(overlay.inputs) != 0 || ui.FocusedComponent() != nil {
+				t.Fatalf("nil focus should clear eligible restore: focused=%v inputs=%#v current=%T", overlay.Focused(), overlay.inputs, ui.FocusedComponent())
+			}
+		})
+
+		t.Run("blocked", func(t *testing.T) {
+			terminal := NewVirtualTerminal(80, 24)
+			ui := NewTUI(terminal)
+			replacement := &focusableOverlayComponent{lines: []string{"REPLACEMENT"}}
+			overlay := &focusableOverlayComponent{lines: []string{"OVERLAY"}}
+			overlay.onInput = func(data string) {
+				if data == "b" {
+					ui.SetFocus(replacement)
+				}
+			}
+			replacement.onInput = func(data string) {
+				if data == "\r" {
+					ui.SetFocus(nil)
+				}
+			}
+			ui.AddChild(&lineComponent{lines: []string{""}})
+			ui.Start()
+			defer ui.Stop()
+
+			ui.ShowOverlay(overlay)
+			terminal.SendInput("b")
+			terminal.SendInput("\r")
+			terminal.SendInput("x")
+			if !overlay.Focused() || !equalLines(overlay.inputs, []string{"b", "x"}) {
+				t.Fatalf("blocked nil focus should resume overlay: focused=%v inputs=%#v", overlay.Focused(), overlay.inputs)
+			}
+		})
+	})
+
+	t.Run("temporarily invisible overlay preserves restore eligibility", func(t *testing.T) {
+		terminal := NewVirtualTerminal(80, 24)
+		ui := NewTUI(terminal)
+		editor := &focusableOverlayComponent{lines: []string{"EDITOR"}}
+		overlay := &focusableOverlayComponent{lines: []string{"OVERLAY"}}
+		visible := true
+		ui.AddChild(&lineComponent{lines: []string{""}})
+		ui.SetFocus(editor)
+		ui.Start()
+		defer ui.Stop()
+
+		ui.ShowOverlay(overlay, OverlayOptions{Visible: func(_, _ int) bool { return visible }})
+		ui.SetFocus(editor)
+		visible = false
+		terminal.SendInput("x")
+		visible = true
+		terminal.SendInput("y")
+		if !equalLines(editor.inputs, []string{"x"}) || !equalLines(overlay.inputs, []string{"y"}) {
+			t.Fatalf("temporary visibility routing mismatch: editor=%#v overlay=%#v", editor.inputs, overlay.inputs)
+		}
+	})
+
+	t.Run("cyclic overlay pre-focus ancestry terminates", func(t *testing.T) {
+		terminal := NewVirtualTerminal(80, 24)
+		ui := NewTUI(terminal)
+		editor := &focusableOverlayComponent{lines: []string{"EDITOR"}}
+		overlay := &focusableOverlayComponent{lines: []string{"OVERLAY"}}
+		ui.AddChild(&lineComponent{lines: []string{""}})
+		ui.SetFocus(overlay)
+		ui.Start()
+		defer ui.Stop()
+
+		handle := ui.ShowOverlay(overlay, OverlayOptions{NonCapturing: true})
+		handle.Focus()
+		ui.SetFocus(editor)
+		terminal.SendInput("x")
+		if !equalLines(editor.inputs, []string{"x"}) || len(overlay.inputs) != 0 {
+			t.Fatalf("cyclic ancestry should leave editor active: editor=%#v overlay=%#v", editor.inputs, overlay.inputs)
+		}
+	})
+}
+
 func TestTUIOverlayPiNonCapturingFocusRestorationMatrix(t *testing.T) {
 	t.Run("multiple capturing and non-capturing overlays restore focus through removals", func(t *testing.T) {
 		terminal := NewVirtualTerminal(80, 24)
@@ -3441,6 +3674,119 @@ func TestTUIDeletesKittyImagesBeforeRedraw(t *testing.T) {
 	}
 }
 
+func TestParseKittyImageHeaderAndRows(t *testing.T) {
+	tests := []struct {
+		name     string
+		line     string
+		wantOK   bool
+		wantIDs  []uint32
+		wantRows int
+	}{
+		{name: "absent", line: "plain", wantRows: 1},
+		{name: "unterminated params", line: "\x1b_Gi=7,r=2", wantRows: 1},
+		{name: "valid in surrounding text", line: "prefix\x1b_Ga=T,i=7,i=8,r=3;payload\x1b\\suffix", wantOK: true, wantIDs: []uint32{7, 8}, wantRows: 3},
+		{name: "invalid positive integers ignored", line: "\x1b_Gi=0,i=-1,i=1.5,i=4294967296,r=0,r=bad;payload", wantOK: true, wantRows: 1},
+		{name: "default rows", line: "\x1b_Ga=T,i=9;payload", wantOK: true, wantIDs: []uint32{9}, wantRows: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			header, ok := parseKittyImageHeader(tt.line)
+			if ok != tt.wantOK {
+				t.Fatalf("parse ok = %v, want %v", ok, tt.wantOK)
+			}
+			if !reflect.DeepEqual(header.ids, tt.wantIDs) {
+				t.Fatalf("ids = %#v, want %#v", header.ids, tt.wantIDs)
+			}
+			if got := extractKittyImageRows(tt.line); got != tt.wantRows {
+				t.Fatalf("rows = %d, want %d", got, tt.wantRows)
+			}
+		})
+	}
+
+	line := "\x1b_Gi=7,r=2;first\x1b\\\x1b_Gi=8;second\x1b\\"
+	if got := extractKittyImageIDs(line); !reflect.DeepEqual(got, []uint32{7, 8}) {
+		t.Fatalf("IDs across Kitty sequences = %#v, want [7 8]", got)
+	}
+}
+
+func TestTUIGetKittyImageReservedRows(t *testing.T) {
+	ui := NewTUI(newFakeTerminal(40, 10))
+	image := EncodeKitty([]byte("image"), ImageRenderOptions{ID: 71, Width: 2, Height: 4, DisableCursorMovement: true})
+
+	lines := []string{image, "", "", "occupied", ""}
+	if got := ui.getKittyImageReservedRows(lines, 0); got != 3 {
+		t.Fatalf("reserved rows = %d, want 3 blank-backed rows", got)
+	}
+	if got := ui.getKittyImageReservedRows(lines, 0, 1); got != 2 {
+		t.Fatalf("range-capped reserved rows = %d, want 2", got)
+	}
+	if got := ui.getKittyImageReservedRows([]string{image, "\x1b_Gi=72,r=2;payload", ""}, 0); got != 1 {
+		t.Fatalf("a following image should stop reservation, got %d", got)
+	}
+	if got := ui.getKittyImageReservedRows(lines, -1); got != 1 {
+		t.Fatalf("invalid index reserved rows = %d, want 1", got)
+	}
+}
+
+func TestTUIFullRenderReservesKittyImageRows(t *testing.T) {
+	terminal := newFakeTerminal(40, 10)
+	ui := NewTUI(terminal)
+	image := EncodeKitty([]byte("image"), ImageRenderOptions{ID: 77, Width: 2, Height: 3, DisableCursorMovement: true})
+	ui.AddChild(&lineComponent{lines: []string{image, "", "", "tail"}})
+
+	ui.RequestRender(true)
+	output := terminal.String()
+	reservation := "\r\n\r\n\x1b[2A" + image + "\x1b[2B\r\ntail"
+	if !strings.Contains(output, reservation) {
+		t.Fatalf("full render did not reserve and revisit the Kitty image rows: %q", output)
+	}
+}
+
+func TestTUIFallsBackToFullRedrawWhenKittyPreclearWouldScroll(t *testing.T) {
+	terminal := newFakeTerminal(40, 2)
+	ui := NewTUI(terminal)
+	component := &lineComponent{lines: []string{"before"}}
+	ui.AddChild(component)
+	ui.RequestRender(true)
+	redrawsBeforeImage := ui.FullRedraws()
+	terminal.ClearOutput()
+
+	image := EncodeKitty([]byte("image"), ImageRenderOptions{ID: 78, Width: 3, Height: 3, DisableCursorMovement: true})
+	component.lines = []string{"before", image, "", "", "after"}
+	ui.RequestRender(false)
+	output := terminal.String()
+	if ui.FullRedraws() <= redrawsBeforeImage {
+		t.Fatalf("unsafe Kitty preclear should force a full redraw")
+	}
+	if !strings.Contains(output, "\x1b[2J") {
+		t.Fatalf("Kitty fallback should clear and fully redraw: %q", output)
+	}
+	if strings.Contains(output, "\x1b[2A"+image) {
+		t.Fatalf("image taller than viewport should not use cursor-up placement: %q", output)
+	}
+}
+
+func TestTUIFullRedrawFallbackReservesVisibleKittyRows(t *testing.T) {
+	terminal := newFakeTerminal(40, 5)
+	ui := NewTUI(terminal)
+	component := &lineComponent{lines: []string{"l0", "l1", "l2", "l3", "l4"}}
+	ui.AddChild(component)
+	ui.RequestRender(true)
+	redrawsBeforeImage := ui.FullRedraws()
+	terminal.ClearOutput()
+
+	image := EncodeKitty([]byte("image"), ImageRenderOptions{ID: 79, Width: 3, Height: 3, DisableCursorMovement: true})
+	component.lines = []string{"l0", "l1", "l2", "l3", "l4", image, "", "", "after"}
+	ui.RequestRender(false)
+	output := terminal.String()
+	if ui.FullRedraws() <= redrawsBeforeImage || !strings.Contains(output, "\x1b[2J") {
+		t.Fatalf("scrolling image append should force a full redraw: %q", output)
+	}
+	if !strings.Contains(output, "\r\n\r\n\x1b[2A"+image+"\x1b[2B") {
+		t.Fatalf("full redraw fallback should reserve rows before drawing the image: %q", output)
+	}
+}
+
 func TestTUIDeletesChangedKittyImageBeforeMovedPlacement(t *testing.T) {
 	terminal := newFakeTerminal(40, 10)
 	ui := NewTUI(terminal)
@@ -3494,6 +3840,51 @@ func TestTUIRedrawsKittyImageLineWhenReservedRowChanges(t *testing.T) {
 	}
 	if strings.Contains(output, "\x1b[2J") {
 		t.Fatalf("reserved row changes should not force a full redraw: %q", output)
+	}
+}
+
+func TestTUIRedrawsKittyHeaderWhenFollowingReservedRowChanges(t *testing.T) {
+	terminal := newFakeTerminal(40, 10)
+	ui := NewTUI(terminal)
+	image := EncodeKitty([]byte("image"), ImageRenderOptions{ID: 89, Width: 2, Height: 2, DisableCursorMovement: true})
+	component := &lineComponent{lines: []string{image, "", "tail"}}
+	ui.AddChild(component)
+	ui.RequestRender(true)
+	terminal.ClearOutput()
+
+	component.lines = []string{image, "covered", "tail"}
+	ui.RequestRender(false)
+	output := terminal.String()
+	deleteSeq := DeleteKittyImage(89)
+	deleteIndex := strings.Index(output, deleteSeq)
+	drawIndex := strings.Index(output, image)
+	if deleteIndex < 0 || drawIndex < 0 {
+		t.Fatalf("reserved-row change should delete and redraw the image header: %q", output)
+	}
+	if deleteIndex > drawIndex {
+		t.Fatalf("old placement must be deleted before redraw: %q", output)
+	}
+	if !strings.Contains(output, "covered") || strings.Contains(output, "\x1b[2J") {
+		t.Fatalf("reserved-row change should remain a differential render: %q", output)
+	}
+}
+
+func TestTUIDiffRenderPreclearsKittyReservedRows(t *testing.T) {
+	terminal := newFakeTerminal(40, 10)
+	ui := NewTUI(terminal)
+	oldImage := EncodeKitty([]byte("old"), ImageRenderOptions{ID: 90, Width: 2, Height: 3, DisableCursorMovement: true})
+	newImage := EncodeKitty([]byte("new"), ImageRenderOptions{ID: 90, Width: 2, Height: 3, DisableCursorMovement: true})
+	component := &lineComponent{lines: []string{oldImage, "", "", "tail"}}
+	ui.AddChild(component)
+	ui.RequestRender(true)
+	terminal.ClearOutput()
+
+	component.lines = []string{newImage, "", "", "tail"}
+	ui.RequestRender(false)
+	output := terminal.String()
+	preclearAndDraw := "\x1b[2K\r\r\n\x1b[2K\r\n\x1b[2K\x1b[2A" + newImage + "\x1b[2B"
+	if !strings.Contains(output, preclearAndDraw) {
+		t.Fatalf("diff render did not clear the reserved block before drawing the image: %q", output)
 	}
 }
 

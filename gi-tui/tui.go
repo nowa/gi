@@ -243,8 +243,12 @@ type OverlayHandle interface {
 	SetHidden(hidden bool)
 	IsHidden() bool
 	Focus()
-	Unfocus()
+	Unfocus(options ...OverlayUnfocusOptions)
 	IsFocused() bool
+}
+
+type OverlayUnfocusOptions struct {
+	Target Component
 }
 
 type overlayEntry struct {
@@ -254,6 +258,40 @@ type overlayEntry struct {
 	hidden     bool
 	focusOrder int
 }
+
+type overlayFocusRestoreStatus uint8
+
+const (
+	overlayFocusRestoreInactive overlayFocusRestoreStatus = iota
+	overlayFocusRestoreEligible
+	overlayFocusRestoreBlocked
+)
+
+type overlayFocusResumeStatus uint8
+
+const (
+	overlayFocusResumeRestoreOverlay overlayFocusResumeStatus = iota
+	overlayFocusResumeTarget
+)
+
+type overlayFocusResume struct {
+	status overlayFocusResumeStatus
+	target Component
+}
+
+type overlayFocusRestoreState struct {
+	status    overlayFocusRestoreStatus
+	overlay   *overlayEntry
+	blockedBy Component
+	resume    overlayFocusResume
+}
+
+type overlayFocusRestorePolicy uint8
+
+const (
+	overlayFocusRestoreClear overlayFocusRestorePolicy = iota
+	overlayFocusRestorePreserve
+)
 
 type renderedOverlay struct {
 	lines []string
@@ -281,15 +319,18 @@ func (h *overlayHandle) SetHidden(hidden bool) {
 		return
 	}
 	h.entry.hidden = hidden
-	if hidden && h.t.focusedComponent == h.entry.component {
-		if top := h.t.topVisibleOverlayLocked(); top != nil {
-			h.t.setFocusLocked(top.component)
-		} else {
-			h.t.setFocusLocked(h.entry.preFocus)
+	if hidden {
+		h.t.clearOverlayFocusRestoreFor(h.entry)
+		if h.t.focusedComponent == h.entry.component {
+			fallback := h.entry.preFocus
+			if top := h.t.topVisibleOverlayLocked(); top != nil {
+				fallback = top.component
+			}
+			h.t.setFocusInternal(fallback, overlayFocusRestoreClear)
 		}
 	} else if !hidden && !h.entry.options.NonCapturing && h.t.isOverlayVisibleLocked(h.entry) {
 		h.entry.focusOrder = h.t.nextFocusOrder()
-		h.t.setFocusLocked(h.entry.component)
+		h.t.setFocusInternal(h.entry.component, overlayFocusRestoreClear)
 	}
 	h.t.requestRenderLocked(false)
 }
@@ -307,21 +348,50 @@ func (h *overlayHandle) Focus() {
 		return
 	}
 	h.entry.focusOrder = h.t.nextFocusOrder()
-	h.t.setFocusLocked(h.entry.component)
+	h.t.setFocusInternal(h.entry.component, overlayFocusRestoreClear)
 	h.t.requestRenderLocked(false)
 }
 
-func (h *overlayHandle) Unfocus() {
+func (h *overlayHandle) Unfocus(options ...OverlayUnfocusOptions) {
 	h.t.mu.Lock()
 	defer h.t.mu.Unlock()
-	if h.t.focusedComponent == h.entry.component {
-		if top := h.t.topVisibleOverlayLocked(); top != nil && top != h.entry {
-			h.t.setFocusLocked(top.component)
+	isFocused := h.t.focusedComponent == h.entry.component
+	restoreState := h.t.overlayFocusRestore
+	hasPendingRestore := restoreState.status != overlayFocusRestoreInactive && restoreState.overlay == h.entry
+	if !isFocused && !hasPendingRestore {
+		return
+	}
+	if restoreState.status == overlayFocusRestoreBlocked &&
+		restoreState.overlay == h.entry &&
+		h.t.focusedComponent == restoreState.blockedBy {
+		if len(options) > 0 {
+			h.t.overlayFocusRestore = overlayFocusRestoreState{
+				status:    overlayFocusRestoreBlocked,
+				overlay:   h.entry,
+				blockedBy: restoreState.blockedBy,
+				resume: overlayFocusResume{
+					status: overlayFocusResumeTarget,
+					target: options[0].Target,
+				},
+			}
 		} else {
-			h.t.setFocusLocked(h.entry.preFocus)
+			h.t.clearOverlayFocusRestore()
 		}
 		h.t.requestRenderLocked(false)
+		return
 	}
+	h.t.clearOverlayFocusRestoreFor(h.entry)
+	if isFocused || len(options) > 0 {
+		fallback := h.entry.preFocus
+		if top := h.t.topVisibleOverlayLocked(); top != nil && top != h.entry {
+			fallback = top.component
+		}
+		if len(options) > 0 {
+			fallback = options[0].Target
+		}
+		h.t.setFocusInternal(fallback, overlayFocusRestoreClear)
+	}
+	h.t.requestRenderLocked(false)
 }
 
 func (h *overlayHandle) IsFocused() bool { return h.t.FocusedComponent() == h.entry.component }
@@ -342,6 +412,7 @@ type TUI struct {
 	nextListenerID                          int
 	overlays                                []*overlayEntry
 	focusCounter                            int
+	overlayFocusRestore                     overlayFocusRestoreState
 	stopped                                 bool
 	clearOnShrink                           bool
 	showCursor                              bool
@@ -404,17 +475,146 @@ func (t *TUI) GetFullRedraws() int {
 func (t *TUI) SetFocus(component Component) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setFocusLocked(component)
+	t.setFocusInternal(component, overlayFocusRestoreClear)
 }
 
-func (t *TUI) setFocusLocked(component Component) {
+// setFocusInternal updates the focus-restore state machine. The caller must
+// hold t.mu so overlay visibility, ancestry, and focus change atomically.
+func (t *TUI) setFocusInternal(component Component, policy overlayFocusRestorePolicy) {
+	previousFocus := t.focusedComponent
+	nextFocus := component
+	previousFocusedOverlay := t.overlayForComponentLocked(previousFocus)
+	if previousFocusedOverlay != nil && !t.isOverlayVisibleLocked(previousFocusedOverlay) {
+		previousFocusedOverlay = nil
+	}
+	nextFocusIsOverlay := t.overlayForComponentLocked(nextFocus) != nil
+	restoreState := t.getVisibleOverlayFocusRestore()
+
+	if nextFocus != nil && !nextFocusIsOverlay {
+		switch {
+		case restoreState.status == overlayFocusRestoreBlocked && restoreState.blockedBy == previousFocus:
+			if restoreState.resume.status == overlayFocusResumeTarget || !t.isComponentMounted(restoreState.blockedBy) {
+				nextFocus = t.resolveBlockedOverlayFocusResume(restoreState)
+			} else {
+				restoreState.blockedBy = nextFocus
+				t.overlayFocusRestore = restoreState
+			}
+		case previousFocusedOverlay != nil &&
+			restoreState.status != overlayFocusRestoreInactive &&
+			restoreState.overlay == previousFocusedOverlay &&
+			!t.isOverlayFocusAncestor(previousFocusedOverlay, nextFocus):
+			t.overlayFocusRestore = overlayFocusRestoreState{
+				status:    overlayFocusRestoreBlocked,
+				overlay:   previousFocusedOverlay,
+				blockedBy: nextFocus,
+				resume:    overlayFocusResume{status: overlayFocusResumeRestoreOverlay},
+			}
+		}
+	} else if nextFocus == nil {
+		if restoreState.status == overlayFocusRestoreBlocked && restoreState.blockedBy == previousFocus {
+			nextFocus = t.resolveBlockedOverlayFocusResume(restoreState)
+		} else if policy == overlayFocusRestoreClear {
+			t.clearOverlayFocusRestore()
+		}
+	}
+
 	if f, ok := t.focusedComponent.(Focusable); ok {
 		f.SetFocused(false)
 	}
-	t.focusedComponent = component
-	if f, ok := component.(Focusable); ok {
+	t.focusedComponent = nextFocus
+	if f, ok := nextFocus.(Focusable); ok {
 		f.SetFocused(true)
 	}
+
+	focusedOverlay := t.overlayForComponentLocked(nextFocus)
+	if focusedOverlay != nil && t.isOverlayVisibleLocked(focusedOverlay) {
+		t.overlayFocusRestore = overlayFocusRestoreState{
+			status:  overlayFocusRestoreEligible,
+			overlay: focusedOverlay,
+		}
+	}
+}
+
+func (t *TUI) clearOverlayFocusRestore() {
+	t.overlayFocusRestore = overlayFocusRestoreState{}
+}
+
+func (t *TUI) clearOverlayFocusRestoreFor(overlay *overlayEntry) {
+	if t.overlayFocusRestore.status != overlayFocusRestoreInactive && t.overlayFocusRestore.overlay == overlay {
+		t.clearOverlayFocusRestore()
+	}
+}
+
+func (t *TUI) resolveBlockedOverlayFocusResume(restoreState overlayFocusRestoreState) Component {
+	if restoreState.resume.status == overlayFocusResumeRestoreOverlay {
+		return restoreState.overlay.component
+	}
+	t.clearOverlayFocusRestore()
+	return restoreState.resume.target
+}
+
+func (t *TUI) getVisibleOverlayFocusRestore() overlayFocusRestoreState {
+	restoreState := t.overlayFocusRestore
+	if restoreState.status == overlayFocusRestoreInactive {
+		return restoreState
+	}
+	if !t.containsOverlayLocked(restoreState.overlay) || !t.isOverlayVisibleLocked(restoreState.overlay) {
+		return overlayFocusRestoreState{}
+	}
+	return restoreState
+}
+
+func (t *TUI) isOverlayFocusAncestor(entry *overlayEntry, component Component) bool {
+	visited := map[Component]struct{}{}
+	current := entry.preFocus
+	for current != nil {
+		if _, ok := visited[current]; ok {
+			return false
+		}
+		visited[current] = struct{}{}
+		if current == component {
+			return true
+		}
+		parent := t.overlayForComponentLocked(current)
+		if parent == nil {
+			return false
+		}
+		current = parent.preFocus
+	}
+	return false
+}
+
+func (t *TUI) retargetOverlayPreFocus(removed *overlayEntry) {
+	for _, overlay := range t.overlays {
+		if overlay != removed && overlay.preFocus == removed.component {
+			overlay.preFocus = removed.preFocus
+		}
+	}
+}
+
+func (t *TUI) isComponentMounted(component Component) bool {
+	for _, child := range t.Container.snapshotChildren() {
+		if t.containsComponent(child, component) {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *TUI) containsComponent(root, target Component) bool {
+	if root == target {
+		return true
+	}
+	container, ok := root.(interface{ Children() []Component })
+	if !ok {
+		return false
+	}
+	for _, child := range container.Children() {
+		if t.containsComponent(child, target) {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *TUI) FocusedComponent() Component {
@@ -436,7 +636,7 @@ func (t *TUI) ShowOverlay(component Component, options ...OverlayOptions) Overla
 	entry := &overlayEntry{component: component, options: opts, preFocus: t.focusedComponent, focusOrder: t.nextFocusOrder()}
 	t.overlays = append(t.overlays, entry)
 	if !opts.NonCapturing && t.isOverlayVisibleLocked(entry) {
-		t.setFocusLocked(component)
+		t.setFocusInternal(component, overlayFocusRestoreClear)
 	}
 	t.reportTerminalError(t.terminal.HideCursor())
 	t.requestRenderLocked(false)
@@ -466,18 +666,25 @@ func (t *TUI) HasOverlay() bool {
 }
 
 func (t *TUI) removeOverlayLocked(entry *overlayEntry) {
+	index := -1
 	for i, overlay := range t.overlays {
 		if overlay == entry {
-			t.overlays = append(t.overlays[:i], t.overlays[i+1:]...)
+			index = i
 			break
 		}
 	}
+	if index < 0 {
+		return
+	}
+	t.clearOverlayFocusRestoreFor(entry)
+	t.retargetOverlayPreFocus(entry)
+	t.overlays = append(t.overlays[:index], t.overlays[index+1:]...)
 	if t.focusedComponent == entry.component {
+		fallback := entry.preFocus
 		if top := t.topVisibleOverlayLocked(); top != nil {
-			t.setFocusLocked(top.component)
-		} else {
-			t.setFocusLocked(entry.preFocus)
+			fallback = top.component
 		}
+		t.setFocusInternal(fallback, overlayFocusRestoreClear)
 	}
 }
 
@@ -503,12 +710,16 @@ func (t *TUI) overlayForComponentLocked(component Component) *overlayEntry {
 }
 
 func (t *TUI) topVisibleOverlayLocked() *overlayEntry {
-	for i := len(t.overlays) - 1; i >= 0; i-- {
-		if !t.overlays[i].options.NonCapturing && t.isOverlayVisibleLocked(t.overlays[i]) {
-			return t.overlays[i]
+	var top *overlayEntry
+	for _, overlay := range t.overlays {
+		if overlay.options.NonCapturing || !t.isOverlayVisibleLocked(overlay) {
+			continue
+		}
+		if top == nil || overlay.focusOrder > top.focusOrder {
+			top = overlay
 		}
 	}
-	return nil
+	return top
 }
 
 func (t *TUI) isOverlayVisibleLocked(entry *overlayEntry) bool {
@@ -678,12 +889,26 @@ func (t *TUI) HandleInput(data string) {
 	focused = t.focusedComponent
 	if focusedOverlay := t.overlayForComponentLocked(focused); focusedOverlay != nil && !t.isOverlayVisibleLocked(focusedOverlay) {
 		if top := t.topVisibleOverlayLocked(); top != nil {
-			t.setFocusLocked(top.component)
+			t.setFocusInternal(top.component, overlayFocusRestoreClear)
 		} else {
-			t.setFocusLocked(focusedOverlay.preFocus)
+			t.setFocusInternal(focusedOverlay.preFocus, overlayFocusRestorePreserve)
 		}
-		focused = t.focusedComponent
 	}
+	if t.overlayForComponentLocked(t.focusedComponent) == nil {
+		restoreState := t.getVisibleOverlayFocusRestore()
+		switch {
+		case restoreState.status == overlayFocusRestoreEligible:
+			t.setFocusInternal(restoreState.overlay.component, overlayFocusRestoreClear)
+		case restoreState.status == overlayFocusRestoreBlocked && restoreState.blockedBy != t.focusedComponent:
+			if restoreState.resume.status == overlayFocusResumeRestoreOverlay {
+				t.setFocusInternal(restoreState.overlay.component, overlayFocusRestoreClear)
+			} else {
+				t.clearOverlayFocusRestore()
+				t.setFocusInternal(restoreState.resume.target, overlayFocusRestoreClear)
+			}
+		}
+	}
+	focused = t.focusedComponent
 	t.mu.Unlock()
 	if handler, ok := focused.(InputHandler); ok {
 		if IsKeyRelease(data) && !wantsKeyRelease(focused) {
@@ -845,9 +1070,24 @@ func (t *TUI) fullRenderBuffer(lines []string, clear bool, height int) renderBuf
 		b.WriteString(deleteImageIDsFromLines(t.previousLines))
 		b.WriteString("\x1b[2J\x1b[H\x1b[3J")
 	}
-	for i, line := range lines {
+	for i := 0; i < len(lines); i++ {
 		if i > 0 {
 			b.WriteString("\r\n")
+		}
+		line := lines[i]
+		reservedRows := 1
+		if IsImageLine(line) {
+			reservedRows = t.getKittyImageReservedRows(lines, i)
+		}
+		if reservedRows > 1 && reservedRows <= height {
+			for row := 1; row < reservedRows; row++ {
+				b.WriteString("\r\n")
+			}
+			writeCursorUp(&b, reservedRows-1)
+			b.WriteString(line)
+			writeCursorDown(&b, reservedRows-1)
+			i += reservedRows - 1
+			continue
 		}
 		b.WriteString(line)
 	}
@@ -868,21 +1108,34 @@ func viewportTopForLineCount(lineCount, height int) int {
 }
 
 func (t *TUI) diffRenderBuffer(lines []string, height, previousViewportTop int) renderBuffer {
-	if isPureAppend(t.previousLines, lines) {
+	if isPureAppend(t.previousLines, lines) && !containsImageLine(lines[len(t.previousLines):]) {
 		return t.appendRenderBuffer(lines, height, previousViewportTop)
 	}
 	first, last := changedRange(t.previousLines, lines)
 	if first < 0 {
 		return renderBuffer{finalRow: t.hardwareCursorRow, viewportTop: previousViewportTop}
 	}
-	last = max(last, lastKittyImageLineFrom(t.previousLines, first))
+	first, last = t.expandChangedRangeForKittyImages(first, last, lines)
+	renderEnd := min(last, len(lines)-1)
+	for i := first; i <= renderEnd; i++ {
+		if !IsImageLine(lines[i]) {
+			continue
+		}
+		reservedRows := t.getKittyImageReservedRows(lines, i, renderEnd)
+		imageStartScreenRow := i - previousViewportTop
+		if reservedRows > 1 && (imageStartScreenRow < 0 || imageStartScreenRow+reservedRows > height) {
+			t.originAnchored = true
+			t.fullRedraws++
+			return t.fullRenderBuffer(lines, true, height)
+		}
+		i += reservedRows - 1
+	}
 	var b strings.Builder
 	b.WriteString("\x1b[?2026h")
 	if first < len(t.previousLines) {
 		b.WriteString(deleteImageIDsFromLines(t.previousLines[first:min(last+1, len(t.previousLines))]))
 	}
 	cursorRow, viewportTop := moveContentCursor(&b, t.hardwareCursorRow, first, previousViewportTop, height)
-	renderEnd := min(last, len(lines)-1)
 	finalRow := max(0, renderEnd)
 	if first < len(lines) {
 		for i := first; i <= renderEnd; i++ {
@@ -894,7 +1147,28 @@ func (t *TUI) diffRenderBuffer(lines []string, height, previousViewportTop int) 
 				}
 			}
 			b.WriteString("\x1b[2K\r")
-			b.WriteString(lines[i])
+			line := lines[i]
+			reservedRows := 1
+			if IsImageLine(line) {
+				reservedRows = t.getKittyImageReservedRows(lines, i, renderEnd)
+			}
+			if reservedRows > 1 {
+				for row := 1; row < reservedRows; row++ {
+					b.WriteString("\r\n\x1b[2K")
+					cursorRow++
+					if cursorRow >= viewportTop+height {
+						viewportTop = cursorRow - height + 1
+					}
+				}
+				writeCursorUp(&b, reservedRows-1)
+				cursorRow -= reservedRows - 1
+				b.WriteString(line)
+				writeCursorDown(&b, reservedRows-1)
+				cursorRow += reservedRows - 1
+				i += reservedRows - 1
+				continue
+			}
+			b.WriteString(line)
 		}
 	}
 	if len(t.previousLines) > len(lines) {
@@ -973,6 +1247,24 @@ func moveToLine(b *strings.Builder, row int) {
 	}
 	b.WriteString("\x1b[")
 	b.WriteString(strconv.Itoa(row))
+	b.WriteString("B")
+}
+
+func writeCursorUp(b *strings.Builder, rows int) {
+	if rows <= 0 {
+		return
+	}
+	b.WriteString("\x1b[")
+	b.WriteString(strconv.Itoa(rows))
+	b.WriteString("A")
+}
+
+func writeCursorDown(b *strings.Builder, rows int) {
+	if rows <= 0 {
+		return
+	}
+	b.WriteString("\x1b[")
+	b.WriteString(strconv.Itoa(rows))
 	b.WriteString("B")
 }
 
@@ -1058,14 +1350,97 @@ func changedRange(oldLines, newLines []string) (int, int) {
 	return first, last
 }
 
-func lastKittyImageLineFrom(lines []string, first int) int {
-	last := -1
-	for idx := max(0, first); idx < len(lines); idx++ {
-		if len(extractKittyImageIDs(lines[idx])) > 0 {
-			last = idx
+type kittyImageHeader struct {
+	ids  []uint32
+	rows int
+}
+
+func parseKittyImageHeader(line string) (kittyImageHeader, bool) {
+	const prefix = "\x1b_G"
+	sequenceStart := strings.Index(line, prefix)
+	if sequenceStart < 0 {
+		return kittyImageHeader{}, false
+	}
+	paramsStart := sequenceStart + len(prefix)
+	paramsEnd := strings.Index(line[paramsStart:], ";")
+	if paramsEnd < 0 {
+		return kittyImageHeader{}, false
+	}
+	paramsEnd += paramsStart
+
+	header := kittyImageHeader{rows: 1}
+	for _, param := range strings.Split(line[paramsStart:paramsEnd], ",") {
+		key, raw, ok := strings.Cut(param, "=")
+		if !ok {
+			continue
+		}
+		value, err := strconv.ParseUint(raw, 10, 32)
+		if err != nil || value == 0 {
+			continue
+		}
+		switch key {
+		case "i":
+			header.ids = append(header.ids, uint32(value))
+		case "r":
+			header.rows = int(value)
 		}
 	}
-	return last
+	return header, true
+}
+
+func extractKittyImageRows(line string) int {
+	header, ok := parseKittyImageHeader(line)
+	if !ok {
+		return 1
+	}
+	return header.rows
+}
+
+func (t *TUI) getKittyImageReservedRows(lines []string, index int, maxIndex ...int) int {
+	if index < 0 || index >= len(lines) {
+		return 1
+	}
+	rows := extractKittyImageRows(lines[index])
+	if rows <= 1 {
+		return 1
+	}
+	lastIndex := len(lines) - 1
+	if len(maxIndex) > 0 {
+		lastIndex = maxIndex[0]
+	}
+	maxRows := min(rows, min(lastIndex-index+1, len(lines)-index))
+	reservedRows := 1
+	for reservedRows < maxRows {
+		line := lines[index+reservedRows]
+		if IsImageLine(line) || VisibleWidth(line) > 0 {
+			break
+		}
+		reservedRows++
+	}
+	return reservedRows
+}
+
+func (t *TUI) expandChangedRangeForKittyImages(firstChanged, lastChanged int, newLines []string) (int, int) {
+	if firstChanged < 0 || lastChanged < firstChanged {
+		return firstChanged, lastChanged
+	}
+	expandedFirst := firstChanged
+	expandedLast := lastChanged
+	expandForLines := func(lines []string) {
+		for i, line := range lines {
+			if len(extractKittyImageIDs(line)) == 0 {
+				continue
+			}
+			blockEnd := i + t.getKittyImageReservedRows(lines, i) - 1
+			if i >= firstChanged || (i <= lastChanged && blockEnd >= firstChanged) {
+				expandedFirst = min(expandedFirst, i)
+				expandedLast = max(expandedLast, blockEnd)
+			}
+		}
+	}
+	expandForLines(t.previousLines)
+	expandForLines(newLines)
+	return expandedFirst, expandedLast
 }
 
 func deleteImageIDsFromLines(lines []string) string {
@@ -1090,23 +1465,28 @@ func extractKittyImageIDs(line string) []uint32 {
 		if start < 0 {
 			return ids
 		}
-		line = line[start+len(prefix):]
-		end := strings.Index(line, ";")
+		line = line[start:]
+		header, ok := parseKittyImageHeader(line)
+		if !ok {
+			return ids
+		}
+		ids = append(ids, header.ids...)
+		paramsStart := len(prefix)
+		end := strings.Index(line[paramsStart:], ";")
 		if end < 0 {
 			return ids
 		}
-		for _, param := range strings.Split(line[:end], ",") {
-			if !strings.HasPrefix(param, "i=") {
-				continue
-			}
-			raw := strings.TrimPrefix(param, "i=")
-			parsed, err := strconv.ParseUint(raw, 10, 32)
-			if err == nil && parsed > 0 {
-				ids = append(ids, uint32(parsed))
-			}
-		}
-		line = line[end+1:]
+		line = line[paramsStart+end+1:]
 	}
+}
+
+func containsImageLine(lines []string) bool {
+	for _, line := range lines {
+		if IsImageLine(line) {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *TUI) renderLocked() []string {

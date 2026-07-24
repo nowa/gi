@@ -142,6 +142,34 @@ func TestNormalizeTerminalOutput(t *testing.T) {
 	if VisibleWidth(NormalizeTerminalOutput("ำabc")) != VisibleWidth("ำabc") {
 		t.Fatalf("normalized Thai width changed")
 	}
+	for _, controlSequence := range []string{
+		"\x1b]8;;https://example.test/a\tb\x07",
+		"\x1b]0;window\ttitle\x1b\\",
+		"\x1b_payload\tdata\x1b\\",
+	} {
+		input := controlSequence + "label\ttext"
+		want := controlSequence + "label   text"
+		if got := NormalizeTerminalOutput(input); got != want {
+			t.Fatalf("control-string tabs changed: got %q want %q", got, want)
+		}
+	}
+}
+
+func TestTabWidthAccountingMatchesSlicesAndOverlaySegments(t *testing.T) {
+	text := "out 192M\t.pi/skill-tests/results-ha"
+	slice := SliceWithWidth(text, 0, 10, true)
+	if slice.Text != "out 192M" || slice.Width != 8 || VisibleWidth(slice.Text) != slice.Width {
+		t.Fatalf("strict tab slice = %#v, visible width %d", slice, VisibleWidth(slice.Text))
+	}
+
+	segments := ExtractSegments(text, 10, 13, 10, true)
+	if segments.Before != "out 192M" || segments.BeforeWidth != 8 || VisibleWidth(segments.Before) != segments.BeforeWidth {
+		t.Fatalf("tab-excluding segments = %#v", segments)
+	}
+	tabFits := ExtractSegments(text, 11, 13, 10, true)
+	if tabFits.Before != "out 192M\t" || tabFits.BeforeWidth != 11 || VisibleWidth(tabFits.Before) != tabFits.BeforeWidth {
+		t.Fatalf("tab-fitting segments = %#v", tabFits)
+	}
 }
 
 func TestWrapTextWithANSI(t *testing.T) {
@@ -397,5 +425,85 @@ func TestExtractSegmentsPreservesStyledAfterSegment(t *testing.T) {
 	}
 	if !strings.HasPrefix(segments.After, "\x1b[31m") {
 		t.Fatalf("after segment should inherit active style: %q", segments.After)
+	}
+}
+
+func TestExtractSegmentsExcludesWideGraphemeCrossingOverlayBoundary(t *testing.T) {
+	segments := ExtractSegments("abcd让EFGH", 5, 9, 11, true)
+	if segments.Before != "abcd" || segments.BeforeWidth != 4 {
+		t.Fatalf("wide before segment = %#v, want text abcd at width 4", segments)
+	}
+	if VisibleWidth(segments.Before) != segments.BeforeWidth {
+		t.Fatalf("reported before width %d differs from visible width %d", segments.BeforeWidth, VisibleWidth(segments.Before))
+	}
+	if segments.After != "H" || segments.AfterWidth != 1 {
+		t.Fatalf("wide after segment = %#v, want text H at width 1", segments)
+	}
+
+	ascii := ExtractSegments("abcdG EFGH", 5, 9, 11, true)
+	if ascii.Before != "abcdG" || ascii.BeforeWidth != 5 {
+		t.Fatalf("ASCII before segment = %#v, want text abcdG at width 5", ascii)
+	}
+}
+
+func TestCompositeLineExcludesWideGraphemeAtOverlayBoundary(t *testing.T) {
+	tests := []struct {
+		name     string
+		startCol int
+	}{
+		{name: "inside wide grapheme", startCol: 5},
+		{name: "at wide grapheme boundary", startCol: 4},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := compositeLineAt("abcd让EFGH", "│XX│", tt.startCol, 4, 20)
+			overlay := SliceByColumn(out, tt.startCol, 4, true)
+			if strings.Contains(out, "让") {
+				t.Fatalf("composite retained overlapped wide grapheme: %q", out)
+			}
+			if VisibleWidth(out) != 20 {
+				t.Fatalf("composite width = %d, want 20: %q", VisibleWidth(out), out)
+			}
+			if VisibleWidth(overlay) != 4 || !strings.Contains(overlay, "│XX│") {
+				t.Fatalf("overlay slice = %q at width %d", overlay, VisibleWidth(overlay))
+			}
+			if tt.startCol == 5 {
+				prefix := SliceByColumn(out, 0, 5, true)
+				if VisibleWidth(prefix) != 5 {
+					t.Fatalf("prefix width = %d, want 5: %q", VisibleWidth(prefix), prefix)
+				}
+			}
+		})
+	}
+}
+
+func TestTUITabContainingOverlayStaysOnOnePhysicalRow(t *testing.T) {
+	terminal := NewVirtualTerminal(16, 3)
+	ui := NewTUI(terminal)
+	ui.AddChild(&lineComponent{lines: []string{
+		"base 0          ",
+		"base 1          ",
+		"base 2          ",
+	}})
+	ui.ShowOverlay(&lineComponent{lines: []string{"\tX"}}, OverlayOptions{
+		Width: ptr(4),
+		Row:   ptr(1),
+		Col:   ptr(4),
+	})
+	ui.Start()
+	defer ui.Stop()
+
+	wantViewport := []string{"base 0", "base   X", "base 2"}
+	if got := terminal.GetViewport(); !equalLines(got, wantViewport) {
+		t.Fatalf("tab overlay viewport = %#v, want %#v", got, wantViewport)
+	}
+	ui.mu.Lock()
+	lines := ui.renderLocked()
+	ui.mu.Unlock()
+	if len(lines) != 3 || strings.Contains(strings.Join(lines, ""), "\t") {
+		t.Fatalf("normalized rendered lines should contain no visible tab: %#v", lines)
+	}
+	if got := stripANSI(lines[1]); got != "base   X        " {
+		t.Fatalf("tab overlay rendered line = %q, want one 16-cell row", got)
 	}
 }
