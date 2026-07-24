@@ -11,11 +11,10 @@ const (
 	AnthropicOAuthClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 )
 
-type OAuthCredentials struct {
-	Access  string
-	Refresh string
-	Expires int64
-}
+// OAuthCredentials remains as a compatibility alias for the canonical
+// credential shape. New code should persist Credential with Type set to
+// CredentialTypeOAuth.
+type OAuthCredentials = Credential
 
 type OAuthTokenRequest struct {
 	URL  string

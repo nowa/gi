@@ -83,6 +83,34 @@ const modules = [
 			],
 			"packages/ai/test/zen.test.ts": ["gi-llm-provider/model_catalog_test.go"],
 		},
+		caseAliases: {
+			"packages/ai/test/models-runtime.test.ts": {
+				"enumerates credential metadata without exposing secrets": [
+					"gi-llm-provider/credential_store_test.go",
+					"gi-coding-agent/auth_storage_test.go",
+				],
+				"resolves auth: stored credential owns the provider, ambient only when nothing stored": [
+					"gi-llm-provider/auth_test.go",
+				],
+				"a stored credential without a matching handler blocks ambient fallback": [
+					"gi-llm-provider/auth_test.go",
+				],
+				"refreshes expired oauth credentials and persists the rotated credential": [
+					"gi-llm-provider/auth_test.go",
+					"gi-coding-agent/auth_storage_test.go",
+				],
+				"rejects with code oauth when refresh fails, preserving the stored credential": [
+					"gi-llm-provider/auth_test.go",
+				],
+				"serializes concurrent OAuth refreshes through store.modify (no double refresh)": [
+					"gi-llm-provider/auth_test.go",
+					"gi-coding-agent/auth_storage_test.go",
+				],
+				"valid oauth tokens resolve without touching modify": [
+					"gi-llm-provider/auth_test.go",
+				],
+			},
+		},
 	},
 	{
 		name: "agent",
@@ -249,6 +277,12 @@ const modules = [
 				"gi-tui/utils_test.go",
 				"gi-coding-agent/pi_coding_agent_case_names_test.go",
 			],
+		},
+		caseAliases: {
+			"packages/coding-agent/test/runtime-credentials.test.ts": {
+				"enumeration merges overrides without exposing keys": ["gi-coding-agent/auth_storage_test.go"],
+				"delete clears both the override and persisted credential": ["gi-coding-agent/auth_storage_test.go"],
+			},
 		},
 	},
 ];
@@ -547,6 +581,7 @@ function collectModule(args, module, docsText) {
 		const relative = rel(args.piRoot, file);
 		const cases = extractPiCases(file);
 		const piTokens = normalizeTokens(path.basename(file));
+		const explicitCaseAliases = module.caseAliases?.[relative] || {};
 		const aliasCandidates = (module.aliases?.[relative] || [])
 			.map((candidateRelative) => {
 				const inModule = giEntryByRelative.get(candidateRelative);
@@ -573,19 +608,51 @@ function collectModule(args, module, docsText) {
 			.filter((entry) => entry.score > 0)
 			.sort((a, b) => b.score - a.score || a.relative.localeCompare(b.relative))
 			.slice(0, 5);
+		const explicitCandidatePaths = [...new Set(Object.values(explicitCaseAliases).flat())];
+		const explicitFileCandidates = explicitCandidatePaths
+			.map((candidateRelative) => {
+				const inModule = giEntryByRelative.get(candidateRelative);
+				if (inModule) {
+					return inModule;
+				}
+				const candidatePath = path.join(args.giRoot, candidateRelative);
+				return fs.existsSync(candidatePath) && isGoTestFile(candidatePath) ? buildGiEntry(args, candidatePath) : undefined;
+			})
+			.filter(Boolean)
+			.map((entry) => ({
+				relative: entry.relative,
+				score: Number.MAX_SAFE_INTEGER,
+				tests: entry.tests,
+				subtests: entry.subtests,
+			}));
 		const seenCandidates = new Set();
 		const candidates = [];
-		for (const candidate of [...aliasCandidates, ...tokenCandidates]) {
+		for (const candidate of [...aliasCandidates, ...tokenCandidates, ...explicitFileCandidates]) {
 			if (seenCandidates.has(candidate.relative)) {
 				continue;
 			}
 			seenCandidates.add(candidate.relative);
 			candidates.push(candidate);
 		}
-		const mappedCases = cases.map((piCase) => ({
-			...piCase,
-			candidates: caseCandidates(piCase, candidates),
-		}));
+		const automaticCandidates = [...aliasCandidates, ...tokenCandidates];
+		const mappedCases = cases.map((piCase) => {
+			const mapped = caseCandidates(piCase, automaticCandidates);
+			for (const candidateRelative of explicitCaseAliases[piCase.name] || []) {
+				if (mapped.some((candidate) => candidate.relative === candidateRelative)) {
+					continue;
+				}
+				mapped.push({
+					relative: candidateRelative,
+					name: piCase.name,
+					kind: "explicit",
+					score: Number.MAX_SAFE_INTEGER,
+				});
+			}
+			return {
+				...piCase,
+				candidates: mapped,
+			};
+		});
 		return {
 			relative,
 			cases: mappedCases,
@@ -743,6 +810,9 @@ function renderMarkdown(report) {
 		}
 	}
 	lines.push("");
+	while (lines.at(-1) === "") {
+		lines.pop();
+	}
 	return `${lines.join("\n")}\n`;
 }
 

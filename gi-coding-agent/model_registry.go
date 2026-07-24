@@ -883,28 +883,11 @@ func removeModelsForProvider(models []llm.Model, provider string) []llm.Model {
 }
 
 func resolveConfigValueOrError(config, description string) (string, error) {
-	if value, ok := ResolveConfigValueUncached(config); ok {
-		return value, nil
-	}
-	if strings.HasPrefix(config, "!") {
-		return "", fmt.Errorf("Failed to resolve %s from shell command: %s", description, strings.TrimPrefix(config, "!"))
-	}
-	return "", fmt.Errorf("Failed to resolve %s", description)
+	return ResolveConfigValueOrError(config, description, nil)
 }
 
 func resolveHeadersOrError(headers map[string]string, description string) (map[string]string, error) {
-	if len(headers) == 0 {
-		return nil, nil
-	}
-	resolved := map[string]string{}
-	for key, value := range headers {
-		headerValue, err := resolveConfigValueOrError(value, fmt.Sprintf(`%s header "%s"`, description, key))
-		if err != nil {
-			return nil, err
-		}
-		resolved[key] = headerValue
-	}
-	return resolved, nil
+	return ResolveConfigHeadersOrError(headers, description, nil)
 }
 
 func stripJSONCommentsAndTrailingCommas(input string) string {

@@ -45,8 +45,6 @@
         "api/pi-messages.ts",
         "api/simple-options.ts",
         "api/transform-messages.ts",
-        "auth/context.ts",
-        "auth/credential-store.ts",
         "auth/helpers.ts",
         "auth/oauth/anthropic.ts",
         "auth/oauth/device-code.ts",
@@ -59,7 +57,6 @@
         "auth/oauth/pkce.ts",
         "auth/oauth/radius.ts",
         "auth/oauth/xai.ts",
-        "auth/resolve.ts",
         "bun-oauth.ts",
         "compat.ts",
         "compat/extension-oauth-types.ts",
@@ -215,14 +212,6 @@
         "api/pi-messages.ts::parsePiMessagesEvent",
         "api/pi-messages.ts::truncateDiagnosticString",
         "api/simple-options.ts::clampMaxTokensToContext",
-        "auth/context.ts::defaultProviderAuthContext",
-        "auth/context.ts::getProcessEnv",
-        "auth/credential-store.ts::InMemoryCredentialStore",
-        "auth/credential-store.ts::InMemoryCredentialStore.delete",
-        "auth/credential-store.ts::InMemoryCredentialStore.enqueue",
-        "auth/credential-store.ts::InMemoryCredentialStore.list",
-        "auth/credential-store.ts::InMemoryCredentialStore.modify",
-        "auth/credential-store.ts::InMemoryCredentialStore.read",
         "auth/helpers.ts::envApiKeyAuth",
         "auth/helpers.ts::lazyOAuth",
         "auth/oauth/device-code.ts::pollOAuthDeviceCodeFlow",
@@ -277,12 +266,6 @@
         "auth/oauth/xai.ts::requestFailure",
         "auth/oauth/xai.ts::requiredString",
         "auth/oauth/xai.ts::validateVerificationUri",
-        "auth/resolve.ts::ModelsError",
-        "auth/resolve.ts::ModelsError.constructor",
-        "auth/resolve.ts::overlayEnvAuthContext",
-        "auth/resolve.ts::readCredential",
-        "auth/resolve.ts::resolveProviderAuth",
-        "auth/resolve.ts::resolveStoredOAuth",
         "bun-oauth.ts::registerBunOAuthFlows",
         "cli.ts::answerPrompt",
         "compat.ts::getBuiltinProviderForModel",
@@ -584,7 +567,6 @@
         "core/provider-composer.ts",
         "core/radius.ts",
         "core/remote-catalog-provider.ts",
-        "core/runtime-credentials.ts",
         "core/usage-totals.ts",
         "extensions/llama/client.ts",
         "extensions/llama/huggingface.ts",
@@ -636,10 +618,6 @@
         "core/agent-session.ts::AgentSession.waitForIdle",
         "core/agent-session.ts::estimateMessagesTokens",
         "core/agent-session.ts::withoutDeletedHeaders",
-        "core/auth-storage.ts::AuthStorage.delete",
-        "core/auth-storage.ts::AuthStorage.modify",
-        "core/auth-storage.ts::AuthStorage.read",
-        "core/auth-storage.ts::readStoredCredential",
         "core/cache-stats.ts::asPreviousRequest",
         "core/cache-stats.ts::collectCacheMisses",
         "core/cache-stats.ts::computeCacheWaste",
@@ -779,32 +757,12 @@
         "core/remote-catalog-provider.ts::parseCatalog",
         "core/remote-catalog-provider.ts::remoteModels",
         "core/remote-catalog-provider.ts::withRemoteCatalog",
-        "core/resolve-config-value.ts::appendLiteral",
-        "core/resolve-config-value.ts::getConfigValueEnvVarName",
-        "core/resolve-config-value.ts::getConfigValueEnvVarNames",
-        "core/resolve-config-value.ts::getMissingConfigValueEnvVarNames",
-        "core/resolve-config-value.ts::getTemplateEnvVarNames",
-        "core/resolve-config-value.ts::isCommandConfigValue",
-        "core/resolve-config-value.ts::isConfigValueConfigured",
-        "core/resolve-config-value.ts::parseConfigValueReference",
-        "core/resolve-config-value.ts::parseConfigValueTemplate",
-        "core/resolve-config-value.ts::resolveEnvConfigValue",
-        "core/resolve-config-value.ts::resolveTemplate",
         "core/resource-loader.ts::DefaultResourceLoader.addExtensionConflictDiagnostics",
         "core/resource-loader.ts::DefaultResourceLoader.loadCurrentExtensionSet",
         "core/resource-loader.ts::DefaultResourceLoader.loadFinalExtensionSet",
         "core/resource-loader.ts::DefaultResourceLoader.loadProjectTrustExtensions",
         "core/resource-loader.ts::DefaultResourceLoader.mapSkillPath",
         "core/resource-loader.ts::DefaultResourceLoader.resolveExtensionLoadPath",
-        "core/runtime-credentials.ts::RuntimeCredentials",
-        "core/runtime-credentials.ts::RuntimeCredentials.constructor",
-        "core/runtime-credentials.ts::RuntimeCredentials.delete",
-        "core/runtime-credentials.ts::RuntimeCredentials.hasRuntimeApiKey",
-        "core/runtime-credentials.ts::RuntimeCredentials.list",
-        "core/runtime-credentials.ts::RuntimeCredentials.modify",
-        "core/runtime-credentials.ts::RuntimeCredentials.read",
-        "core/runtime-credentials.ts::RuntimeCredentials.removeRuntimeApiKey",
-        "core/runtime-credentials.ts::RuntimeCredentials.setRuntimeApiKey",
         "core/session-manager.ts::SessionHeaderScanLimitError",
         "core/session-manager.ts::SessionHeaderScanLimitError.constructor",
         "core/session-manager.ts::SessionManager._setSessionFile",
@@ -1145,51 +1103,7 @@
   "tests": [
     {
       "module": "llm",
-      "undocumentedFiles": [
-        "packages/ai/test/anthropic-adaptive-thinking-models.test.ts",
-        "packages/ai/test/anthropic-cache-write-1h-cost.test.ts",
-        "packages/ai/test/anthropic-empty-thinking-signature-compat.test.ts",
-        "packages/ai/test/anthropic-force-adaptive-thinking.test.ts",
-        "packages/ai/test/anthropic-opus-4-8-smoke.test.ts",
-        "packages/ai/test/anthropic-temperature-compat.test.ts",
-        "packages/ai/test/azure-openai-responses-reasoning-replay.test.ts",
-        "packages/ai/test/bedrock-convert-messages.test.ts",
-        "packages/ai/test/bedrock-custom-headers.test.ts",
-        "packages/ai/test/cloudflare-stream.test.ts",
-        "packages/ai/test/compat-env.test.ts",
-        "packages/ai/test/constrained-sampling.test.ts",
-        "packages/ai/test/context-estimate.test.ts",
-        "packages/ai/test/deferred-tools.test.ts",
-        "packages/ai/test/image-model-data.test.ts",
-        "packages/ai/test/images-models.test.ts",
-        "packages/ai/test/kimi-coding-oauth.test.ts",
-        "packages/ai/test/lax-message-content.test.ts",
-        "packages/ai/test/max-thinking.test.ts",
-        "packages/ai/test/model-catalog-types.test.ts",
-        "packages/ai/test/model-data-validation.test.ts",
-        "packages/ai/test/models-runtime.test.ts",
-        "packages/ai/test/oauth-auth.test.ts",
-        "packages/ai/test/oauth-device-code.test.ts",
-        "packages/ai/test/openai-completions-reasoning-details.test.ts",
-        "packages/ai/test/openai-responses-compat.test.ts",
-        "packages/ai/test/openai-responses-empty-tool-result.test.ts",
-        "packages/ai/test/openai-responses-message-id.test.ts",
-        "packages/ai/test/openai-responses-terminal-event.test.ts",
-        "packages/ai/test/openrouter-cache-control-models.test.ts",
-        "packages/ai/test/openrouter-oauth.test.ts",
-        "packages/ai/test/pi-messages.test.ts",
-        "packages/ai/test/provider-error-body-passthrough.test.ts",
-        "packages/ai/test/provider-error-body-regression.test.ts",
-        "packages/ai/test/providers.test.ts",
-        "packages/ai/test/qwen-token-plan-models.test.ts",
-        "packages/ai/test/reasoning-options.test.ts",
-        "packages/ai/test/text.test.ts",
-        "packages/ai/test/uuid.test.ts",
-        "packages/ai/test/xai-oauth.test.ts",
-        "packages/ai/test/xai-responses.test.ts",
-        "packages/ai/test/xiaomi-models.test.ts",
-        "packages/ai/test/xiaomi-token-plan-ams-anthropic-empty-signature-smoke.test.ts"
-      ],
+      "undocumentedFiles": [],
       "noCandidateFiles": [
         "packages/ai/test/constrained-sampling.test.ts",
         "packages/ai/test/context-estimate.test.ts",
@@ -1414,11 +1328,6 @@
         },
         {
           "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 110,
-          "name": "enumerates credential metadata without exposing secrets"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
           "line": 126,
           "name": "applies request-wide pricing tiers above the configured input threshold"
         },
@@ -1444,38 +1353,8 @@
         },
         {
           "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 369,
-          "name": "resolves auth: stored credential owns the provider, ambient only when nothing stored"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
           "line": 432,
           "name": "runs provider login and logout through the credential store"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 450,
-          "name": "a stored credential without a matching handler blocks ambient fallback"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 460,
-          "name": "refreshes expired oauth credentials and persists the rotated credential"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 479,
-          "name": "rejects with code oauth when refresh fails, preserving the stored credential"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 495,
-          "name": "serializes concurrent OAuth refreshes through store.modify (no double refresh)"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 517,
-          "name": "valid oauth tokens resolve without touching modify"
         },
         {
           "file": "packages/ai/test/models-runtime.test.ts",
@@ -1721,11 +1600,7 @@
     },
     {
       "module": "agent",
-      "undocumentedFiles": [
-        "packages/agent/test/harness/sqlite-migrations.test.ts",
-        "packages/agent/test/harness/sqlite-node.test.ts",
-        "packages/agent/test/harness/tools.test.ts"
-      ],
+      "undocumentedFiles": [],
       "noCandidateFiles": [
         "packages/agent/test/harness/sqlite-migrations.test.ts",
         "packages/agent/test/harness/sqlite-node.test.ts",
@@ -1926,13 +1801,7 @@
     },
     {
       "module": "tui",
-      "undocumentedFiles": [
-        "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
-        "packages/tui/test/tab-width.test.ts",
-        "packages/tui/test/terminal-colors.test.ts",
-        "packages/tui/test/tui-shrink.test.ts",
-        "packages/tui/test/word-navigation.test.ts"
-      ],
+      "undocumentedFiles": [],
       "noCandidateFiles": [
         "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
         "packages/tui/test/word-navigation.test.ts"
@@ -2077,66 +1946,7 @@
     },
     {
       "module": "coding",
-      "undocumentedFiles": [
-        "packages/coding-agent/test/branch-summary-extensions.test.ts",
-        "packages/coding-agent/test/cache-stats.test.ts",
-        "packages/coding-agent/test/changelog.test.ts",
-        "packages/coding-agent/test/clipboard-native.test.ts",
-        "packages/coding-agent/test/config-value-migration.test.ts",
-        "packages/coding-agent/test/experimental.test.ts",
-        "packages/coding-agent/test/external-editor.test.ts",
-        "packages/coding-agent/test/first-time-setup-fork.test.ts",
-        "packages/coding-agent/test/first-time-setup.test.ts",
-        "packages/coding-agent/test/format-resume-command.test.ts",
-        "packages/coding-agent/test/git-merge-and-resolve-extension.test.ts",
-        "packages/coding-agent/test/http-dispatcher.test.ts",
-        "packages/coding-agent/test/image-process.test.ts",
-        "packages/coding-agent/test/input-transform-streaming-example.test.ts",
-        "packages/coding-agent/test/interactive-mode-startup-input.test.ts",
-        "packages/coding-agent/test/llama-extension.test.ts",
-        "packages/coding-agent/test/max-thinking.test.ts",
-        "packages/coding-agent/test/model-runtime-auth-options.test.ts",
-        "packages/coding-agent/test/model-runtime-cloudflare-compat.test.ts",
-        "packages/coding-agent/test/model-runtime-modify-models-compat.test.ts",
-        "packages/coding-agent/test/models-store.test.ts",
-        "packages/coding-agent/test/plan-mode-extension.test.ts",
-        "packages/coding-agent/test/radius.test.ts",
-        "packages/coding-agent/test/remote-catalog-provider.test.ts",
-        "packages/coding-agent/test/resolve-config-value.test.ts",
-        "packages/coding-agent/test/rpc-client-process-exit.test.ts",
-        "packages/coding-agent/test/runtime-credentials.test.ts",
-        "packages/coding-agent/test/sdk-stream-options.test.ts",
-        "packages/coding-agent/test/session-file-invalid.test.ts",
-        "packages/coding-agent/test/session-id-readonly.test.ts",
-        "packages/coding-agent/test/startup-session-name.test.ts",
-        "packages/coding-agent/test/status-indicator.test.ts",
-        "packages/coding-agent/test/suite/lax-message-content.test.ts",
-        "packages/coding-agent/test/suite/regressions/1717-2113-agent-session-event-settlement.test.ts",
-        "packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts",
-        "packages/coding-agent/test/suite/regressions/5109-exclude-tools.test.ts",
-        "packages/coding-agent/test/suite/regressions/5208-late-bash-output.test.ts",
-        "packages/coding-agent/test/suite/regressions/5217-compaction-reason.test.ts",
-        "packages/coding-agent/test/suite/regressions/5303-bash-output-truncation.test.ts",
-        "packages/coding-agent/test/suite/regressions/5433-extension-oauth-prompt-input.test.ts",
-        "packages/coding-agent/test/suite/regressions/5596-missing-theme-export.test.ts",
-        "packages/coding-agent/test/suite/regressions/5661-uppercase-header-values.test.ts",
-        "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts",
-        "packages/coding-agent/test/suite/regressions/5868-rpc-unknown-command-id.test.ts",
-        "packages/coding-agent/test/suite/regressions/5943-session-start-notify.test.ts",
-        "packages/coding-agent/test/suite/regressions/5996-session-name-newlines.test.ts",
-        "packages/coding-agent/test/suite/regressions/6019-explicit-provider-retry-message.test.ts",
-        "packages/coding-agent/test/suite/regressions/6162-extension-active-tools-next-turn.test.ts",
-        "packages/coding-agent/test/suite/regressions/6260-inline-extension-naming.test.ts",
-        "packages/coding-agent/test/suite/regressions/6324-branch-summary-ambient-auth.test.ts",
-        "packages/coding-agent/test/suite/regressions/6363-agent-settled-event.test.ts",
-        "packages/coding-agent/test/suite/regressions/6647-compaction-retries-transient-stream-drop.test.ts",
-        "packages/coding-agent/test/suite/regressions/6904-dns-transport-retry.test.ts",
-        "packages/coding-agent/test/suite/regressions/6999-models-json-hot-reload.test.ts",
-        "packages/coding-agent/test/suite/regressions/extension-factory-cache.test.ts",
-        "packages/coding-agent/test/suite/regressions/pre-prompt-compaction-no-continue.test.ts",
-        "packages/coding-agent/test/theme-detection.test.ts",
-        "packages/coding-agent/test/theme-picker.test.ts"
-      ],
+      "undocumentedFiles": [],
       "noCandidateFiles": [
         "packages/coding-agent/test/experimental.test.ts",
         "packages/coding-agent/test/external-editor.test.ts",
@@ -2149,16 +1959,6 @@
         "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts"
       ],
       "noCandidateCases": [
-        {
-          "file": "packages/coding-agent/test/auth-storage.test.ts",
-          "line": 96,
-          "name": "serializes concurrent modifications"
-        },
-        {
-          "file": "packages/coding-agent/test/auth-storage.test.ts",
-          "line": 110,
-          "name": "delete removes one credential while preserving others"
-        },
         {
           "file": "packages/coding-agent/test/cache-stats.test.ts",
           "line": 60,
@@ -2418,21 +2218,6 @@
           "file": "packages/coding-agent/test/remote-catalog-provider.test.ts",
           "line": 81,
           "name": "prefers the newer of the generated and remote catalogs"
-        },
-        {
-          "file": "packages/coding-agent/test/resolve-config-value.test.ts",
-          "line": 95,
-          "name": "uncached resolution executes a command on every call"
-        },
-        {
-          "file": "packages/coding-agent/test/runtime-credentials.test.ts",
-          "line": 18,
-          "name": "enumeration merges overrides without exposing keys"
-        },
-        {
-          "file": "packages/coding-agent/test/runtime-credentials.test.ts",
-          "line": 32,
-          "name": "delete clears both the override and persisted credential"
         },
         {
           "file": "packages/coding-agent/test/sdk-stream-options.test.ts",

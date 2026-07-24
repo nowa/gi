@@ -7,23 +7,26 @@ Gi's current catch-up target is the immutable Pi release:
 - repository: `https://github.com/earendil-works/pi.git`
 
 The machine-readable scope and intentional exclusions are in `baseline.json`.
-The initial debt snapshot is in `v0.82.0-open-gaps.json`.
+The current debt snapshot is in `v0.82.0-open-gaps.json`.
 
 ## Why the debt snapshot exists
 
 The source, module-boundary, and test-case verifiers predate Pi v0.82.0. The
-baseline opened with 1,545 audit items; the current snapshot contains 1,501:
+baseline opened with 1,545 audit items; the current snapshot contains 1,285:
 
 | Module | Open items |
 | --- | ---: |
-| LLM provider | 612 |
-| Agent core and harness | 124 |
-| TUI | 93 |
-| Coding agent | 672 |
+| LLM provider | 492 |
+| Agent core and harness | 121 |
+| TUI | 88 |
+| Coding agent | 584 |
 
 These are audit items, not 1,545 proven behavioral bugs. A source file, symbol,
 or test remains open until Gi either implements and verifies the behavior,
 records the Go-native equivalent, or makes an explicit product-scope decision.
+Refreshing the complete v0.82.0 test inventory closes only
+`test-undocumented-file` bookkeeping; it does not by itself claim behavioral
+coverage. Unmatched files/cases and source gaps remain in the snapshot.
 
 CI compares the live verifier output with the committed snapshot:
 

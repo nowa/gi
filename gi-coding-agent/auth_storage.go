@@ -5,23 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
-type AuthCredential struct {
-	Type          string `json:"type"`
-	Key           string `json:"key,omitempty"`
-	Access        string `json:"access,omitempty"`
-	Refresh       string `json:"refresh,omitempty"`
-	Expires       int64  `json:"expires,omitempty"`
-	EnterpriseURL string `json:"enterpriseUrl,omitempty"`
-}
+type AuthCredential = llm.Credential
 
 type AuthStorageData map[string]AuthCredential
 
@@ -50,12 +43,12 @@ func NewFileAuthStorageBackend(authPath string) *FileAuthStorageBackend {
 }
 
 func (b *FileAuthStorageBackend) WithLock(fn AuthStorageLockFunc) error {
-	if err := b.ensureFile(); err != nil {
-		return err
-	}
 	mutex := authFileMutex(b.authPath)
 	mutex.Lock()
 	defer mutex.Unlock()
+	if err := b.ensureFile(); err != nil {
+		return err
+	}
 
 	content, err := os.ReadFile(b.authPath)
 	if err != nil {
@@ -123,11 +116,12 @@ func (b *InMemoryAuthStorageBackend) WithLock(fn AuthStorageLockFunc) error {
 }
 
 type AuthStorage struct {
+	stateMu          sync.RWMutex
+	operationsMu     sync.Mutex
 	storage          AuthStorageBackend
 	data             AuthStorageData
 	runtimeOverrides map[string]string
 	fallbackResolver func(provider string) string
-	loadErr          error
 	errors           []error
 }
 
@@ -149,55 +143,111 @@ func NewInMemoryAuthStorage(data AuthStorageData) *AuthStorage {
 	return NewAuthStorageFromBackend(NewInMemoryAuthStorageBackend(data))
 }
 
+// ReadStoredCredential performs a one-off raw credential read without
+// constructing a store or resolving API-key commands and templates.
+func ReadStoredCredential(providerID string, authPath ...string) (AuthCredential, bool) {
+	path := GetAuthPath()
+	if len(authPath) > 0 && strings.TrimSpace(authPath[0]) != "" {
+		path = authPath[0]
+	}
+	content, err := os.ReadFile(ExpandPath(path))
+	if err != nil {
+		return AuthCredential{}, false
+	}
+	data, err := parseAuthStorageData(string(content))
+	if err != nil {
+		return AuthCredential{}, false
+	}
+	credential, ok := data[providerID]
+	return credential.Clone(), ok
+}
+
 func (s *AuthStorage) SetRuntimeAPIKey(provider, apiKey string) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	s.runtimeOverrides[provider] = apiKey
 }
 
 func (s *AuthStorage) RemoveRuntimeAPIKey(provider string) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	delete(s.runtimeOverrides, provider)
 }
 
+func (s *AuthStorage) HasRuntimeAPIKey(provider string) bool {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	_, ok := s.runtimeOverrides[provider]
+	return ok
+}
+
 func (s *AuthStorage) SetFallbackResolver(resolver func(provider string) string) {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	s.fallbackResolver = resolver
 }
 
 func (s *AuthStorage) Reload() {
+	s.operationsMu.Lock()
+	defer s.operationsMu.Unlock()
+
 	var content string
 	err := s.storage.WithLock(func(current string) (string, bool, error) {
 		content = current
 		return "", false, nil
 	})
 	if err != nil {
-		s.loadErr = err
 		s.recordError(err)
 		return
 	}
 	data, err := parseAuthStorageData(content)
 	if err != nil {
-		s.loadErr = err
 		s.recordError(err)
 		return
 	}
+	s.stateMu.Lock()
 	s.data = data
-	s.loadErr = nil
+	s.stateMu.Unlock()
 }
 
 func (s *AuthStorage) Get(provider string) (AuthCredential, bool) {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	credential, ok := s.data[provider]
-	return credential, ok
+	return credential.Clone(), ok
 }
 
 func (s *AuthStorage) Set(provider string, credential AuthCredential) {
-	s.data[provider] = credential
-	s.persistProviderChange(provider, &credential)
+	_, _, err := s.ModifyCredential(
+		context.Background(),
+		provider,
+		func(context.Context, llm.Credential, bool) (llm.Credential, bool, error) {
+			return credential.Clone(), true, nil
+		},
+	)
+	if err == nil {
+		return
+	}
+	s.stateMu.Lock()
+	s.data[provider] = credential.Clone()
+	s.stateMu.Unlock()
+	s.recordError(err)
 }
 
 func (s *AuthStorage) Remove(provider string) {
-	delete(s.data, provider)
-	s.persistProviderChange(provider, nil)
+	if err := s.DeleteCredential(context.Background(), provider); err == nil {
+		return
+	} else {
+		s.stateMu.Lock()
+		delete(s.data, provider)
+		s.stateMu.Unlock()
+		s.recordError(err)
+	}
 }
 
 func (s *AuthStorage) List() []string {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	providers := make([]string, 0, len(s.data))
 	for provider := range s.data {
 		providers = append(providers, provider)
@@ -207,47 +257,63 @@ func (s *AuthStorage) List() []string {
 }
 
 func (s *AuthStorage) Has(provider string) bool {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	_, ok := s.data[provider]
 	return ok
 }
 
 func (s *AuthStorage) HasAuth(provider string) bool {
+	s.stateMu.RLock()
 	if key := s.runtimeOverrides[provider]; key != "" {
+		s.stateMu.RUnlock()
 		return true
 	}
-	if s.Has(provider) {
+	if _, ok := s.data[provider]; ok {
+		s.stateMu.RUnlock()
 		return true
 	}
+	fallbackResolver := s.fallbackResolver
+	s.stateMu.RUnlock()
 	if getProviderEnvAPIKey(provider) != "" {
 		return true
 	}
-	if s.fallbackResolver != nil && s.fallbackResolver(provider) != "" {
+	if fallbackResolver != nil && fallbackResolver(provider) != "" {
 		return true
 	}
 	return false
 }
 
 func (s *AuthStorage) GetAuthStatus(provider string) AuthStatus {
-	if s.Has(provider) {
+	s.stateMu.RLock()
+	_, stored := s.data[provider]
+	_, runtimeOverride := s.runtimeOverrides[provider]
+	fallbackResolver := s.fallbackResolver
+	s.stateMu.RUnlock()
+	if stored {
 		return AuthStatus{Configured: true, Source: "stored"}
 	}
-	if _, ok := s.runtimeOverrides[provider]; ok {
+	if runtimeOverride {
 		return AuthStatus{Configured: false, Source: "runtime", Label: "--api-key"}
 	}
 	if keys := findProviderEnvKeys(provider); len(keys) > 0 {
 		return AuthStatus{Configured: false, Source: "environment", Label: keys[0]}
 	}
-	if s.fallbackResolver != nil && s.fallbackResolver(provider) != "" {
+	if fallbackResolver != nil && fallbackResolver(provider) != "" {
 		return AuthStatus{Configured: false, Source: "fallback", Label: "custom provider config"}
 	}
 	return AuthStatus{Configured: false}
 }
 
 func (s *AuthStorage) GetAll() AuthStorageData {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	return cloneAuthStorageData(s.data)
 }
 
 func (s *AuthStorage) DrainErrors() []error {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	drained := append([]error(nil), s.errors...)
 	s.errors = nil
 	return drained
@@ -258,17 +324,23 @@ func (s *AuthStorage) GetAPIKey(provider string) (string, bool) {
 }
 
 func (s *AuthStorage) GetAPIKeyWithOptions(provider string, options AuthStorageOptions) (string, bool) {
-	if runtimeKey := s.runtimeOverrides[provider]; runtimeKey != "" {
+	s.stateMu.RLock()
+	runtimeKey := s.runtimeOverrides[provider]
+	credential, stored := s.data[provider]
+	credential = credential.Clone()
+	fallbackResolver := s.fallbackResolver
+	s.stateMu.RUnlock()
+
+	if runtimeKey != "" {
 		return runtimeKey, true
 	}
 
-	credential, ok := s.data[provider]
-	if ok && credential.Type == "api_key" {
-		return ResolveConfigValue(credential.Key)
+	if stored && credential.Type == llm.CredentialTypeAPIKey {
+		return ResolveConfigValueWithEnv(credential.Key, credential.Env)
 	}
-	if ok && credential.Type == "oauth" {
-		oauthProvider, ok := GetOAuthProvider(provider)
-		if !ok {
+	if stored && credential.Type == llm.CredentialTypeOAuth {
+		oauthProvider, registered := GetOAuthProvider(provider)
+		if !registered {
 			return "", false
 		}
 		if nowUnixMilli() < credential.Expires {
@@ -280,7 +352,7 @@ func (s *AuthStorage) GetAPIKeyWithOptions(provider string, options AuthStorageO
 		}
 		s.recordError(err)
 		s.Reload()
-		if updated, ok := s.data[provider]; ok && updated.Type == "oauth" && nowUnixMilli() < updated.Expires {
+		if updated, ok := s.Get(provider); ok && updated.Type == llm.CredentialTypeOAuth && nowUnixMilli() < updated.Expires {
 			return oauthProvider.APIKey(updated), true
 		}
 		return "", false
@@ -289,73 +361,225 @@ func (s *AuthStorage) GetAPIKeyWithOptions(provider string, options AuthStorageO
 	if envKey := getProviderEnvAPIKey(provider); envKey != "" {
 		return envKey, true
 	}
-	if options.IncludeFallback && s.fallbackResolver != nil {
-		if fallback := s.fallbackResolver(provider); fallback != "" {
+	if options.IncludeFallback && fallbackResolver != nil {
+		if fallback := fallbackResolver(provider); fallback != "" {
 			return fallback, true
 		}
 	}
 	return "", false
 }
 
-func (s *AuthStorage) persistProviderChange(provider string, credential *AuthCredential) {
-	if s.loadErr != nil {
-		return
+var _ llm.CredentialStore = (*AuthStorage)(nil)
+
+func (s *AuthStorage) ReadCredential(
+	ctx context.Context,
+	providerID string,
+) (llm.Credential, bool, error) {
+	if err := authStorageContextError(ctx); err != nil {
+		return llm.Credential{}, false, err
 	}
+	s.stateMu.RLock()
+	if apiKey := s.runtimeOverrides[providerID]; apiKey != "" {
+		s.stateMu.RUnlock()
+		return llm.Credential{
+			Type: llm.CredentialTypeAPIKey,
+			Key:  apiKey,
+		}, true, nil
+	}
+	credential, ok := s.data[providerID]
+	s.stateMu.RUnlock()
+	credential = credential.Clone()
+	if ok && credential.Type == llm.CredentialTypeAPIKey && credential.Key != "" {
+		credential.Key, _ = ResolveConfigValueWithEnv(credential.Key, credential.Env)
+	}
+	return credential.Clone(), ok, nil
+}
+
+func (s *AuthStorage) ListCredentials(ctx context.Context) ([]llm.CredentialInfo, error) {
+	if err := authStorageContextError(ctx); err != nil {
+		return nil, err
+	}
+	s.stateMu.RLock()
+	entries := make(map[string]llm.CredentialInfo, len(s.data)+len(s.runtimeOverrides))
+	for providerID, credential := range s.data {
+		entries[providerID] = llm.CredentialInfo{
+			ProviderID: providerID,
+			Type:       credential.Type,
+		}
+	}
+	for providerID := range s.runtimeOverrides {
+		entries[providerID] = llm.CredentialInfo{
+			ProviderID: providerID,
+			Type:       llm.CredentialTypeAPIKey,
+		}
+	}
+	s.stateMu.RUnlock()
+	result := make([]llm.CredentialInfo, 0, len(entries))
+	for _, entry := range entries {
+		result = append(result, entry)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ProviderID < result[j].ProviderID
+	})
+	return result, nil
+}
+
+func (s *AuthStorage) ModifyCredential(
+	ctx context.Context,
+	providerID string,
+	modify llm.CredentialModifier,
+) (llm.Credential, bool, error) {
+	if modify == nil {
+		return llm.Credential{}, false, errors.New("credential modifier is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return llm.Credential{}, false, err
+	}
+	s.operationsMu.Lock()
+	defer s.operationsMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return llm.Credential{}, false, err
+	}
+
+	var (
+		post     llm.Credential
+		exists   bool
+		snapshot AuthStorageData
+	)
 	err := s.storage.WithLock(func(current string) (string, bool, error) {
+		if err := ctx.Err(); err != nil {
+			return "", false, err
+		}
 		currentData, err := parseAuthStorageData(current)
 		if err != nil {
 			return "", false, err
 		}
-		if credential == nil {
-			delete(currentData, provider)
-		} else {
-			currentData[provider] = *credential
+		stored, storedExists := currentData[providerID]
+		stored = stored.Clone()
+		next, write, err := modify(ctx, stored.Clone(), storedExists)
+		if err != nil {
+			return "", false, err
 		}
-		return serializeAuthStorageData(currentData), true, nil
+		if !write {
+			post = stored
+			exists = storedExists
+			snapshot = cloneAuthStorageData(currentData)
+			return "", false, nil
+		}
+		next = next.Clone()
+		currentData[providerID] = next
+		serialized, err := marshalAuthStorageData(currentData)
+		if err != nil {
+			return "", false, err
+		}
+		post = next
+		exists = true
+		snapshot = cloneAuthStorageData(currentData)
+		return serialized, true, nil
 	})
 	if err != nil {
-		s.recordError(err)
+		return llm.Credential{}, false, err
 	}
+	s.replaceCredentialSnapshot(snapshot)
+	return post.Clone(), exists, nil
+}
+
+func (s *AuthStorage) DeleteCredential(ctx context.Context, providerID string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.stateMu.Lock()
+	delete(s.runtimeOverrides, providerID)
+	s.stateMu.Unlock()
+	s.operationsMu.Lock()
+	defer s.operationsMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	var snapshot AuthStorageData
+	err := s.storage.WithLock(func(current string) (string, bool, error) {
+		if err := ctx.Err(); err != nil {
+			return "", false, err
+		}
+		currentData, err := parseAuthStorageData(current)
+		if err != nil {
+			return "", false, err
+		}
+		if _, exists := currentData[providerID]; !exists {
+			snapshot = cloneAuthStorageData(currentData)
+			return "", false, nil
+		}
+		delete(currentData, providerID)
+		serialized, err := marshalAuthStorageData(currentData)
+		if err != nil {
+			return "", false, err
+		}
+		snapshot = cloneAuthStorageData(currentData)
+		return serialized, true, nil
+	})
+	if err != nil {
+		return err
+	}
+	s.replaceCredentialSnapshot(snapshot)
+	return nil
+}
+
+func (s *AuthStorage) replaceCredentialSnapshot(snapshot AuthStorageData) {
+	if snapshot == nil {
+		snapshot = AuthStorageData{}
+	}
+	s.stateMu.Lock()
+	s.data = snapshot
+	s.stateMu.Unlock()
+}
+
+func authStorageContextError(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.Err()
 }
 
 func (s *AuthStorage) refreshOAuthTokenWithLock(providerID string, provider OAuthProvider) (string, bool, error) {
-	var apiKey string
-	var ok bool
-	err := s.storage.WithLock(func(current string) (string, bool, error) {
-		currentData, err := parseAuthStorageData(current)
-		if err != nil {
-			return "", false, err
-		}
-		s.data = currentData
-		s.loadErr = nil
-
-		credential, exists := currentData[providerID]
-		if !exists || credential.Type != "oauth" {
-			return "", false, nil
-		}
-		if nowUnixMilli() < credential.Expires {
-			apiKey = provider.APIKey(credential)
-			ok = true
-			return "", false, nil
-		}
-		refreshed, err := provider.RefreshToken(credential)
-		if err != nil {
-			return "", false, err
-		}
-		refreshed.Type = "oauth"
-		currentData[providerID] = refreshed
-		s.data = currentData
-		apiKey = provider.APIKey(refreshed)
-		ok = apiKey != ""
-		return serializeAuthStorageData(currentData), true, nil
-	})
-	return apiKey, ok, err
+	credential, exists, err := s.ModifyCredential(
+		context.Background(),
+		providerID,
+		func(_ context.Context, current llm.Credential, exists bool) (llm.Credential, bool, error) {
+			if !exists || current.Type != llm.CredentialTypeOAuth {
+				return llm.Credential{}, false, nil
+			}
+			if nowUnixMilli() < current.Expires {
+				return llm.Credential{}, false, nil
+			}
+			refreshed, err := provider.RefreshToken(current)
+			if err != nil {
+				return llm.Credential{}, false, err
+			}
+			refreshed.Type = llm.CredentialTypeOAuth
+			return refreshed, true, nil
+		},
+	)
+	if err != nil || !exists || credential.Type != llm.CredentialTypeOAuth {
+		return "", false, err
+	}
+	apiKey := provider.APIKey(credential)
+	return apiKey, apiKey != "", nil
 }
 
 func (s *AuthStorage) recordError(err error) {
-	if err != nil {
-		s.errors = append(s.errors, err)
+	if err == nil {
+		return
 	}
+	s.stateMu.Lock()
+	s.errors = append(s.errors, err)
+	s.stateMu.Unlock()
 }
 
 func parseAuthStorageData(content string) (AuthStorageData, error) {
@@ -373,94 +597,27 @@ func parseAuthStorageData(content string) (AuthStorageData, error) {
 }
 
 func serializeAuthStorageData(data AuthStorageData) string {
-	content, err := json.MarshalIndent(data, "", "  ")
+	content, err := marshalAuthStorageData(data)
 	if err != nil {
 		return "{}"
 	}
-	return string(content)
+	return content
+}
+
+func marshalAuthStorageData(data AuthStorageData) (string, error) {
+	content, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
 }
 
 func cloneAuthStorageData(data AuthStorageData) AuthStorageData {
 	cloned := make(AuthStorageData, len(data))
 	for provider, credential := range data {
-		cloned[provider] = credential
+		cloned[provider] = credential.Clone()
 	}
 	return cloned
-}
-
-type configValueCacheEntry struct {
-	value string
-	ok    bool
-}
-
-var (
-	configValueCacheMu sync.Mutex
-	configValueCache   = map[string]configValueCacheEntry{}
-)
-
-func ResolveConfigValue(config string) (string, bool) {
-	if strings.HasPrefix(config, "!") {
-		return resolveCommandConfigValue(config)
-	}
-	if value := os.Getenv(config); value != "" {
-		return value, true
-	}
-	return config, true
-}
-
-func ResolveConfigValueUncached(config string) (string, bool) {
-	if strings.HasPrefix(config, "!") {
-		return executeConfigCommand(config[1:])
-	}
-	if value := os.Getenv(config); value != "" {
-		return value, true
-	}
-	return config, true
-}
-
-func ClearConfigValueCache() {
-	configValueCacheMu.Lock()
-	defer configValueCacheMu.Unlock()
-	clear(configValueCache)
-}
-
-func resolveCommandConfigValue(commandConfig string) (string, bool) {
-	configValueCacheMu.Lock()
-	entry, ok := configValueCache[commandConfig]
-	configValueCacheMu.Unlock()
-	if ok {
-		return entry.value, entry.ok
-	}
-
-	value, resolved := executeConfigCommand(commandConfig[1:])
-	if !resolved {
-		return "", false
-	}
-	configValueCacheMu.Lock()
-	configValueCache[commandConfig] = configValueCacheEntry{value: value, ok: resolved}
-	configValueCacheMu.Unlock()
-	return value, resolved
-}
-
-func executeConfigCommand(command string) (string, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
-	} else {
-		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
-	}
-	output, err := cmd.Output()
-	if err != nil {
-		return "", false
-	}
-	value := strings.TrimSpace(string(output))
-	if value == "" {
-		return "", false
-	}
-	return value, true
 }
 
 type OAuthProvider struct {

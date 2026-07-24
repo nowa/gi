@@ -696,13 +696,11 @@ func TestCodingAgentPiModelRegistryCommandResolutionExactCaseNames(t *testing.T)
 		ClearConfigValueCache()
 		t.Cleanup(ClearConfigValueCache)
 		counterFile := writeCounterFile(t)
-		storage := newTestAuthStorage(t, AuthStorageData{
-			"anthropic": {Type: "api_key", Key: incrementCounterCommand(counterFile, "", true)},
-		})
-		if _, ok := storage.GetAPIKey("anthropic"); ok {
+		command := incrementCounterCommand(counterFile, "", true)
+		if _, ok := ResolveConfigValueUncached(command); ok {
 			t.Fatal("first failing command unexpectedly resolved")
 		}
-		if _, ok := storage.GetAPIKey("anthropic"); ok {
+		if _, ok := ResolveConfigValueUncached(command); ok {
 			t.Fatal("second failing command unexpectedly resolved")
 		}
 		if got := readCounterFile(t, counterFile); got != 2 {

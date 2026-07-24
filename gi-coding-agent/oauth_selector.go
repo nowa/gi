@@ -72,7 +72,7 @@ func (s OAuthSelector) Render(width int) []string {
 func (s OAuthSelector) statusIndicator(provider AuthSelectorProvider) string {
 	if s.AuthStorage != nil {
 		if credential, ok := s.AuthStorage.Get(provider.ID); ok {
-			if credential.Type == provider.AuthType {
+			if string(credential.Type) == provider.AuthType {
 				return tuiThemeSuccess(" ✓ configured")
 			}
 			if credential.Type == "oauth" {
@@ -304,7 +304,7 @@ func logoutAuthSelectorProviders(registry *ModelRegistry) []AuthSelectorProvider
 		if !ok {
 			continue
 		}
-		providers = append(providers, AuthSelectorProvider{ID: providerID, Name: registry.GetProviderDisplayName(providerID), AuthType: credential.Type})
+		providers = append(providers, AuthSelectorProvider{ID: providerID, Name: registry.GetProviderDisplayName(providerID), AuthType: string(credential.Type)})
 	}
 	sortAuthSelectorProviders(providers)
 	return providers
