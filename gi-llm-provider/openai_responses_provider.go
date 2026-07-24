@@ -174,6 +174,9 @@ func DecodeOpenAIResponsesSSEEvent(data []byte) (OpenAIResponsesStreamEvent, err
 					CachedTokens:     raw.Response.Usage.InputTokensDetails.CachedTokens,
 					CacheWriteTokens: raw.Response.Usage.InputTokensDetails.CacheWriteTokens,
 				},
+				OutputTokensDetails: OpenAIResponsesOutputTokenDetails{
+					ReasoningTokens: raw.Response.Usage.OutputTokensDetails.ReasoningTokens,
+				},
 			}
 		}
 		if raw.Response.IncompleteDetails != nil {
@@ -231,15 +234,20 @@ type openAIResponsesRawResponse struct {
 }
 
 type openAIResponsesRawUsage struct {
-	InputTokens        int                                  `json:"input_tokens"`
-	OutputTokens       int                                  `json:"output_tokens"`
-	TotalTokens        int                                  `json:"total_tokens"`
-	InputTokensDetails openAIResponsesRawInputTokensDetails `json:"input_tokens_details"`
+	InputTokens         int                                   `json:"input_tokens"`
+	OutputTokens        int                                   `json:"output_tokens"`
+	TotalTokens         int                                   `json:"total_tokens"`
+	InputTokensDetails  openAIResponsesRawInputTokensDetails  `json:"input_tokens_details"`
+	OutputTokensDetails openAIResponsesRawOutputTokensDetails `json:"output_tokens_details"`
 }
 
 type openAIResponsesRawInputTokensDetails struct {
 	CachedTokens     int `json:"cached_tokens"`
 	CacheWriteTokens int `json:"cache_write_tokens"`
+}
+
+type openAIResponsesRawOutputTokensDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
 }
 
 type openAIResponsesRawIncompleteDetails struct {

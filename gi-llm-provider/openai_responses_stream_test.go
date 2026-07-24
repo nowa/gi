@@ -292,3 +292,65 @@ func TestProcessOpenAIResponsesStreamIgnoresBareReasoningSummaryDeltaLikePi(t *t
 		t.Fatalf("bare summary delta should not emit thinking_delta: %#v", events)
 	}
 }
+
+func TestProcessOpenAIResponsesStreamFinalizesTerminalEvents(t *testing.T) {
+	model := Model{ID: "gpt-5-mini", Provider: "openai", API: "openai-responses"}
+
+	tests := []struct {
+		name       string
+		eventType  string
+		status     string
+		responseID string
+		wantReason string
+	}{
+		{
+			name:       "finalizes completed terminal events as stop",
+			eventType:  "response.completed",
+			status:     "completed",
+			responseID: "resp_completed",
+			wantReason: StopReasonStop,
+		},
+		{
+			name:       "finalizes incomplete terminal events as length stops",
+			eventType:  "response.incomplete",
+			status:     "incomplete",
+			responseID: "resp_incomplete",
+			wantReason: StopReasonLength,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			output := AssistantMessage(nil, StopReasonStop, model)
+			events := ProcessOpenAIResponsesStreamEvents(model, &output, []OpenAIResponsesStreamEvent{{
+				Type: tc.eventType,
+				Response: &OpenAIResponsesResponseEvent{
+					ID:     tc.responseID,
+					Status: tc.status,
+					Usage: &OpenAIResponsesUsage{
+						InputTokens:  20,
+						OutputTokens: 7,
+						TotalTokens:  27,
+						InputTokensDetails: OpenAIResponsesInputTokenDetails{
+							CachedTokens:     2,
+							CacheWriteTokens: 3,
+						},
+						OutputTokensDetails: OpenAIResponsesOutputTokenDetails{ReasoningTokens: 4},
+					},
+				},
+			}})
+			if output.ResponseID != tc.responseID || output.StopReason != tc.wantReason {
+				t.Fatalf("output = %#v", output)
+			}
+			if output.Usage.Input != 15 || output.Usage.CacheRead != 2 ||
+				output.Usage.CacheWrite != 3 || output.Usage.Output != 7 ||
+				output.Usage.Reasoning == nil || *output.Usage.Reasoning != 4 ||
+				output.Usage.TotalTokens != 27 {
+				t.Fatalf("usage = %#v", output.Usage)
+			}
+			if !containsAssistantEvent(events, "done") {
+				t.Fatalf("events = %#v", events)
+			}
+		})
+	}
+}

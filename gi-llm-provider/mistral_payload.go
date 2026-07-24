@@ -6,10 +6,12 @@ import (
 )
 
 type MistralPayloadOptions struct {
-	MaxTokens   int
-	Temperature *float64
-	Reasoning   string
-	ToolChoice  any
+	MaxTokens      int
+	Temperature    *float64
+	Reasoning      string
+	ToolChoice     any
+	SessionID      string
+	CacheRetention string
 }
 
 type MistralPayload struct {
@@ -22,6 +24,7 @@ type MistralPayload struct {
 	ToolChoice      any              `json:"tool_choice,omitempty"`
 	PromptMode      string           `json:"prompt_mode,omitempty"`
 	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
+	PromptCacheKey  string           `json:"prompt_cache_key,omitempty"`
 }
 
 type MistralMessage struct {
@@ -90,6 +93,9 @@ func BuildMistralPayload(model Model, context Context, options MistralPayloadOpt
 	if options.ToolChoice != nil {
 		payload.ToolChoice = options.ToolChoice
 	}
+	if shouldUseMistralPromptCaching(options.SessionID, options.CacheRetention) {
+		payload.PromptCacheKey = options.SessionID
+	}
 	if model.Reasoning && level != "" {
 		if UsesMistralReasoningEffort(model) {
 			payload.ReasoningEffort = MapMistralReasoningEffort(model, level)
@@ -98,6 +104,10 @@ func BuildMistralPayload(model Model, context Context, options MistralPayloadOpt
 		}
 	}
 	return payload
+}
+
+func shouldUseMistralPromptCaching(sessionID, cacheRetention string) bool {
+	return sessionID != "" && resolveCacheRetention(cacheRetention) != "none"
 }
 
 func ConvertMistralTools(tools []Tool) []MistralTool {

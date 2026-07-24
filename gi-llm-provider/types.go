@@ -35,6 +35,7 @@ type Usage struct {
 	CacheRead    int       `json:"cacheRead"`
 	CacheWrite   int       `json:"cacheWrite"`
 	CacheWrite1h int       `json:"cacheWrite1h,omitempty"`
+	Reasoning    *int      `json:"reasoning,omitempty"`
 	TotalTokens  int       `json:"totalTokens"`
 	Cost         UsageCost `json:"cost"`
 }

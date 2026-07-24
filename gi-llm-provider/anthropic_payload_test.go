@@ -1,6 +1,7 @@
 package gillmprovider
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -80,6 +81,44 @@ func TestAnthropicOmitsTemperatureForCustomModelsWithSupportsTemperatureDisabled
 	)
 	if payload.Temperature != nil {
 		t.Fatalf("temperature = %#v, want omitted", payload.Temperature)
+	}
+}
+
+func TestBuildAnthropicPayloadEmptyThinkingSignatureCompatibility(t *testing.T) {
+	thinking := Thinking("internal reasoning")
+	thinking.ThinkingSignature = " "
+
+	defaultModel := Model{ID: "custom-claude", Provider: "anthropic-proxy", API: "anthropic-messages"}
+	defaultPayload := BuildAnthropicPayload(
+		defaultModel,
+		Context{Messages: []Message{AssistantMessage([]ContentPart{thinking}, StopReasonStop, defaultModel)}},
+		AnthropicPayloadOptions{},
+	)
+	defaultBlocks := defaultPayload.Messages[0].Content.([]AnthropicContentBlock)
+	if len(defaultBlocks) != 1 || defaultBlocks[0].Type != "text" || defaultBlocks[0].Text != "internal reasoning" {
+		t.Fatalf("default blocks = %#v", defaultBlocks)
+	}
+
+	kimi := MustGetModel("kimi-coding", "k3")
+	if kimi.Compat.AllowEmptySignature == nil || !*kimi.Compat.AllowEmptySignature {
+		t.Fatalf("Kimi compatibility metadata = %#v", kimi.Compat)
+	}
+	kimiPayload := BuildAnthropicPayload(
+		kimi,
+		Context{Messages: []Message{AssistantMessage([]ContentPart{thinking}, StopReasonStop, kimi)}},
+		AnthropicPayloadOptions{},
+	)
+	kimiBlocks := kimiPayload.Messages[0].Content.([]AnthropicContentBlock)
+	if len(kimiBlocks) != 1 || kimiBlocks[0].Type != "thinking" ||
+		kimiBlocks[0].Signature == nil || *kimiBlocks[0].Signature != "" {
+		t.Fatalf("Kimi blocks = %#v", kimiBlocks)
+	}
+	wire, err := json.Marshal(kimiPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(wire), `"signature":""`) {
+		t.Fatalf("payload omitted the intentional empty signature: %s", wire)
 	}
 }
 

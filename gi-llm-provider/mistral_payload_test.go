@@ -47,6 +47,24 @@ func TestBuildMistralPayloadReasoningModeSelection(t *testing.T) {
 	}
 }
 
+func TestBuildMistralPayloadPromptCaching(t *testing.T) {
+	model := MustGetModel("mistral", "mistral-large-latest")
+	contextValue := Context{Messages: []Message{UserMessageText("Hello")}}
+
+	payload := BuildMistralPayload(model, contextValue, MistralPayloadOptions{SessionID: "session-123"})
+	if payload.PromptCacheKey != "session-123" {
+		t.Fatalf("prompt cache key = %q", payload.PromptCacheKey)
+	}
+
+	payload = BuildMistralPayload(model, contextValue, MistralPayloadOptions{
+		SessionID:      "session-123",
+		CacheRetention: "none",
+	})
+	if payload.PromptCacheKey != "" {
+		t.Fatalf("prompt cache key with disabled retention = %q", payload.PromptCacheKey)
+	}
+}
+
 func TestConvertMistralToolsSerializesPlainJSONSchema(t *testing.T) {
 	payload := BuildMistralPayload(
 		MustGetModel("mistral", "devstral-medium-latest"),

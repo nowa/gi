@@ -11,6 +11,10 @@ const modules = [
 		label: "LLM provider",
 		piTests: ["packages/ai/test"],
 		giTests: ["gi-llm-provider"],
+		excludedTests: {
+			"packages/ai/test/reasoning-options.test.ts":
+				"Exercises Pi's TypeScript-only models.dev source generator. Gi intentionally consumes Pi's published provider JSON, strictly decodes thinkingLevelMap, and preserves that verified metadata in its generated Go catalog.",
+		},
 		aliases: {
 			"packages/ai/test/anthropic-oauth.test.ts": ["gi-llm-provider/oauth_test.go"],
 			"packages/ai/test/azure-openai-base-url.test.ts": [

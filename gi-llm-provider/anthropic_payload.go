@@ -43,6 +43,7 @@ type AnthropicCompat struct {
 	SupportsToolReferences          bool
 	SupportsTemperature             bool
 	SendSessionAffinityHeaders      bool
+	AllowEmptySignature             bool
 }
 
 type AnthropicPayloadOptions struct {
@@ -89,7 +90,7 @@ type AnthropicContentBlock struct {
 	Content      any                       `json:"content,omitempty"`
 	IsError      bool                      `json:"is_error,omitempty"`
 	Thinking     string                    `json:"thinking,omitempty"`
-	Signature    string                    `json:"signature,omitempty"`
+	Signature    *string                   `json:"signature,omitempty"`
 	Data         string                    `json:"data,omitempty"`
 	CacheControl *OpenAICompatCacheControl `json:"cache_control,omitempty"`
 }
@@ -185,6 +186,7 @@ func buildAnthropicPayload(model Model, context Context, options AnthropicPayloa
 			transformed,
 			options.IsOAuthToken,
 			cacheControl,
+			compat.AllowEmptySignature,
 			state.DeferredToolNames,
 			state.NormalizeToolName,
 		),
@@ -292,6 +294,7 @@ func ConvertAnthropicMessages(model Model, context Context, isOAuthToken bool, c
 		transformed,
 		isOAuthToken,
 		cacheControl,
+		state.Compat.AllowEmptySignature,
 		state.DeferredToolNames,
 		state.NormalizeToolName,
 	)
@@ -307,6 +310,7 @@ func convertAnthropicMessages(
 	transformed []Message,
 	isOAuthToken bool,
 	cacheControl *OpenAICompatCacheControl,
+	allowEmptySignature bool,
 	deferredToolNames map[string]struct{},
 	normalizeToolName ToolNameNormalizer,
 ) []AnthropicMessage {
@@ -324,7 +328,7 @@ func convertAnthropicMessages(
 				result = append(result, AnthropicMessage{Role: "user", Content: blocks})
 			}
 		case RoleAssistant:
-			blocks := convertAnthropicAssistantContent(message, isOAuthToken)
+			blocks := convertAnthropicAssistantContent(message, isOAuthToken, allowEmptySignature)
 			if len(blocks) > 0 {
 				result = append(result, AnthropicMessage{Role: "assistant", Content: blocks})
 			}
@@ -448,6 +452,9 @@ func ResolveAnthropicCompat(model Model) AnthropicCompat {
 	if model.Compat.SendSessionAffinityHeaders != nil {
 		compat.SendSessionAffinityHeaders = *model.Compat.SendSessionAffinityHeaders
 	}
+	if model.Compat.AllowEmptySignature != nil {
+		compat.AllowEmptySignature = *model.Compat.AllowEmptySignature
+	}
 	return compat
 }
 
@@ -559,7 +566,7 @@ func convertAnthropicUserContent(content []ContentPart) []AnthropicContentBlock 
 	return blocks
 }
 
-func convertAnthropicAssistantContent(message Message, isOAuthToken bool) []AnthropicContentBlock {
+func convertAnthropicAssistantContent(message Message, isOAuthToken, allowEmptySignature bool) []AnthropicContentBlock {
 	blocks := make([]AnthropicContentBlock, 0, len(message.Content))
 	for _, part := range message.Content {
 		switch part.Type {
@@ -576,9 +583,21 @@ func convertAnthropicAssistantContent(message Message, isOAuthToken bool) []Anth
 				continue
 			}
 			if strings.TrimSpace(part.ThinkingSignature) == "" {
-				blocks = append(blocks, AnthropicContentBlock{Type: "text", Text: SanitizeSurrogates(part.Thinking)})
+				if allowEmptySignature {
+					blocks = append(blocks, AnthropicContentBlock{
+						Type:      "thinking",
+						Thinking:  SanitizeSurrogates(part.Thinking),
+						Signature: ptrString(""),
+					})
+				} else {
+					blocks = append(blocks, AnthropicContentBlock{Type: "text", Text: SanitizeSurrogates(part.Thinking)})
+				}
 			} else {
-				blocks = append(blocks, AnthropicContentBlock{Type: "thinking", Thinking: SanitizeSurrogates(part.Thinking), Signature: part.ThinkingSignature})
+				blocks = append(blocks, AnthropicContentBlock{
+					Type:      "thinking",
+					Thinking:  SanitizeSurrogates(part.Thinking),
+					Signature: ptrString(part.ThinkingSignature),
+				})
 			}
 		case ContentToolCall:
 			name := part.Name

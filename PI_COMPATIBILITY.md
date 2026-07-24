@@ -199,6 +199,8 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/anthropic-long-cache-retention-e2e.test.ts` | `gi-llm-provider/anthropic_e2e_contracts_test.go` |
 | `packages/ai/test/anthropic-oauth.test.ts` | `gi-llm-provider/oauth_test.go` |
 | `packages/ai/test/anthropic-opus-4-7-smoke.test.ts` | `gi-llm-provider/anthropic_e2e_contracts_test.go` |
+| `packages/ai/test/anthropic-cache-write-1h-cost.test.ts` | `gi-llm-provider/anthropic_stream_test.go` for presence-aware 1h cache-write usage and mixed 5m/1h pricing |
+| `packages/ai/test/anthropic-empty-thinking-signature-compat.test.ts` | `gi-llm-provider/anthropic_payload_test.go` for default text fallback and model-gated empty-signature wire preservation |
 | `packages/ai/test/anthropic-sse-parsing.test.ts` | `gi-llm-provider/anthropic_stream_test.go` |
 | `packages/ai/test/anthropic-thinking-disable.test.ts` | `gi-llm-provider/anthropic_payload_test.go` |
 | `packages/ai/test/anthropic-tool-name-normalization.test.ts` | `gi-llm-provider/anthropic_payload_test.go` |
@@ -225,7 +227,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/interleaved-thinking.test.ts` | `gi-llm-provider/anthropic_payload_test.go`, `gi-llm-provider/bedrock_payload_test.go` |
 | `packages/ai/test/bedrock-thinking-payload.test.ts` | `gi-llm-provider/bedrock_payload_test.go` |
 | Bedrock Converse stream cases in `packages/ai/test/stream.test.ts` | `gi-llm-provider/bedrock_stream_test.go` for injected stream event processing; live AWS credential tests remain out of default scope |
-| `packages/ai/test/mistral-reasoning-mode.test.ts` | `gi-llm-provider/mistral_payload_test.go` |
+| `packages/ai/test/mistral-reasoning-mode.test.ts` | `gi-llm-provider/mistral_payload_test.go`, `gi-llm-provider/mistral_provider_test.go` for reasoning controls, session prompt-cache keys/affinity, and cached-token usage aliases |
 | `packages/ai/test/mistral-tool-schema.test.ts` | `gi-llm-provider/mistral_payload_test.go` |
 | `packages/ai/test/node-http-proxy.test.ts` | `gi-llm-provider/config_test.go` |
 | `packages/ai/test/text.test.ts` | `gi-llm-provider/text_test.go` for ordered text-block extraction, custom separators, identity content, and tool-result image exclusion |
@@ -245,6 +247,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/openai-responses-foreign-toolcall-id.test.ts` | `gi-llm-provider/openai_responses_convert_test.go` |
 | `packages/ai/test/openai-responses-partial-json-cleanup.test.ts` | `gi-llm-provider/openai_responses_stream_test.go` |
 | `packages/ai/test/openai-responses-reasoning-replay-e2e.test.ts` | `gi-llm-provider/openai_responses_replay_test.go` |
+| `packages/ai/test/openai-responses-terminal-event.test.ts` | `gi-llm-provider/openai_responses_stream_test.go` for completed/incomplete stop mapping and final usage |
 | `packages/ai/test/openai-responses-tool-result-images.test.ts` | `gi-llm-provider/openai_responses_stream_test.go` |
 | `packages/ai/test/openrouter-images.test.ts` | `gi-llm-provider/openrouter_images_test.go` |
 | `packages/ai/test/openrouter-cache-write-repro.test.ts` | `gi-llm-provider/openai_completions_stream_test.go` |
@@ -253,6 +256,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/tool-call-id-normalization.test.ts` | `gi-llm-provider/message_transform_test.go` |
 | `packages/ai/test/tool-call-without-result.test.ts` | `gi-llm-provider/provider_contracts_test.go`, `gi-llm-provider/message_transform_test.go` |
 | `packages/ai/test/total-tokens.test.ts` | `gi-llm-provider/provider_contracts_test.go` |
+| `packages/ai/test/reasoning-options.test.ts` | Not applicable: Pi-only models.dev source-generation policy; Gi strictly consumes and preserves the published `thinkingLevelMap` metadata in `internal/cmd/modelgen` |
 | `packages/ai/test/tokens.test.ts` | `gi-llm-provider/abort_usage_test.go`, `gi-llm-provider/event_stream_test.go` |
 | `packages/ai/test/together-models.test.ts` | `gi-llm-provider/model_catalog_test.go` |
 | `packages/ai/test/transform-messages-copilot-openai-to-anthropic.test.ts` | `gi-llm-provider/message_transform_test.go` |

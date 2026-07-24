@@ -7,6 +7,7 @@ import (
 
 func ptrString(value string) *string { return &value }
 func ptrBool(value bool) *bool       { return &value }
+func ptrInt(value int) *int          { return &value }
 
 var (
 	modelRegistryMu    sync.RWMutex

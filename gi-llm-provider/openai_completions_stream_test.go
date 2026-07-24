@@ -360,9 +360,11 @@ func TestParseOpenAIChatUsagePreservesCacheReadWrite(t *testing.T) {
 				CachedTokens:     50,
 				CacheWriteTokens: 30,
 			},
+			CompletionTokenDetails: OpenAIChatCompletionTokenDetails{ReasoningTokens: 2},
 		}, Model{})
 
-		if usage.Input != 20 || usage.CacheRead != 50 || usage.CacheWrite != 30 || usage.TotalTokens != 105 {
+		if usage.Input != 20 || usage.CacheRead != 50 || usage.CacheWrite != 30 ||
+			usage.Reasoning == nil || *usage.Reasoning != 2 || usage.TotalTokens != 105 {
 			t.Fatalf("usage = %#v", usage)
 		}
 	})

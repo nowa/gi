@@ -26,15 +26,20 @@ type OpenAIResponsesResponseEvent struct {
 }
 
 type OpenAIResponsesUsage struct {
-	InputTokens        int
-	OutputTokens       int
-	TotalTokens        int
-	InputTokensDetails OpenAIResponsesInputTokenDetails
+	InputTokens         int
+	OutputTokens        int
+	TotalTokens         int
+	InputTokensDetails  OpenAIResponsesInputTokenDetails
+	OutputTokensDetails OpenAIResponsesOutputTokenDetails
 }
 
 type OpenAIResponsesInputTokenDetails struct {
 	CachedTokens     int
 	CacheWriteTokens int
+}
+
+type OpenAIResponsesOutputTokenDetails struct {
+	ReasoningTokens int
 }
 
 type OpenAIResponsesIncompleteDetails struct {
@@ -565,6 +570,7 @@ func ParseOpenAIResponsesUsage(raw OpenAIResponsesUsage, model Model) Usage {
 		Output:      raw.OutputTokens,
 		CacheRead:   cacheRead,
 		CacheWrite:  cacheWrite,
+		Reasoning:   ptrInt(raw.OutputTokensDetails.ReasoningTokens),
 		TotalTokens: total,
 	}
 	usage.Cost = CalculateCost(model, usage)

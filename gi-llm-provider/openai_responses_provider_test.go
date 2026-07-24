@@ -260,6 +260,15 @@ func TestDecodeOpenAIResponsesSSEEvent(t *testing.T) {
 		reasoning.Item.EncryptedContent != "opaque" {
 		t.Fatalf("reasoning event = %#v", reasoning)
 	}
+
+	terminal, err := DecodeOpenAIResponsesSSEEvent([]byte(`{"type":"response.completed","response":{"id":"resp_1","status":"completed","usage":{"input_tokens":20,"output_tokens":7,"total_tokens":27,"input_tokens_details":{"cached_tokens":2,"cache_write_tokens":3},"output_tokens_details":{"reasoning_tokens":4}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminal.Response == nil || terminal.Response.Usage == nil ||
+		terminal.Response.Usage.OutputTokensDetails.ReasoningTokens != 4 {
+		t.Fatalf("terminal event = %#v", terminal)
+	}
 }
 
 func writeSSE(t *testing.T, w http.ResponseWriter, data string) {

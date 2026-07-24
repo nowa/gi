@@ -15,8 +15,8 @@ type rawAnthropicEvent struct {
 	Type    string `json:"type"`
 	Index   int    `json:"index"`
 	Message struct {
-		ID    string            `json:"id"`
-		Usage AnthropicRawUsage `json:"usage"`
+		ID    string              `json:"id"`
+		Usage *anthropicWireUsage `json:"usage"`
 	} `json:"message"`
 	ContentBlock struct {
 		Type  string         `json:"type"`
@@ -34,14 +34,43 @@ type rawAnthropicEvent struct {
 		PartialJSON string `json:"partial_json"`
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
-	Usage AnthropicRawUsage `json:"usage"`
+	Usage *anthropicWireUsage `json:"usage"`
 }
 
 type AnthropicRawUsage struct {
-	InputTokens              int `json:"input_tokens"`
-	OutputTokens             int `json:"output_tokens"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	InputTokens              int                          `json:"input_tokens"`
+	OutputTokens             int                          `json:"output_tokens"`
+	CacheReadInputTokens     int                          `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int                          `json:"cache_creation_input_tokens"`
+	CacheCreation            AnthropicCacheCreationUsage  `json:"cache_creation"`
+	OutputTokensDetails      AnthropicOutputTokensDetails `json:"output_tokens_details"`
+}
+
+type AnthropicCacheCreationUsage struct {
+	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
+}
+
+type AnthropicOutputTokensDetails struct {
+	ThinkingTokens *int `json:"thinking_tokens"`
+}
+
+type anthropicWireUsage struct {
+	InputTokens              *int                              `json:"input_tokens"`
+	OutputTokens             *int                              `json:"output_tokens"`
+	CacheReadInputTokens     *int                              `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens *int                              `json:"cache_creation_input_tokens"`
+	CacheCreation            *anthropicWireCacheCreation       `json:"cache_creation"`
+	OutputTokensDetails      *anthropicWireOutputTokensDetails `json:"output_tokens_details"`
+}
+
+type anthropicWireCacheCreation struct {
+	Ephemeral5mInputTokens *int `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1hInputTokens *int `json:"ephemeral_1h_input_tokens"`
+}
+
+type anthropicWireOutputTokensDetails struct {
+	ThinkingTokens *int `json:"thinking_tokens"`
 }
 
 func ProcessAnthropicSSEEvents(model Model, events []AnthropicSSEEvent) (Message, error) {
@@ -67,7 +96,7 @@ func ProcessAnthropicSSEEvents(model Model, events []AnthropicSSEEvent) (Message
 		switch event.Type {
 		case "message_start":
 			output.ResponseID = event.Message.ID
-			output.Usage = usageFromAnthropicRaw(event.Message.Usage, model)
+			output.Usage = mergeAnthropicWireUsage(output.Usage, event.Message.Usage, model)
 		case "content_block_start":
 			switch event.ContentBlock.Type {
 			case "text":
@@ -114,8 +143,10 @@ func ProcessAnthropicSSEEvents(model Model, events []AnthropicSSEEvent) (Message
 				}
 			}
 		case "message_delta":
-			output.StopReason = mapAnthropicStopReason(event.Delta.StopReason)
-			output.Usage = usageFromAnthropicRaw(event.Usage, model)
+			if event.Delta.StopReason != "" {
+				output.StopReason = mapAnthropicStopReason(event.Delta.StopReason)
+			}
+			output.Usage = mergeAnthropicWireUsage(output.Usage, event.Usage, model)
 		}
 	}
 	return output, nil
@@ -234,14 +265,45 @@ func mapAnthropicStopReason(reason string) string {
 
 func usageFromAnthropicRaw(raw AnthropicRawUsage, model Model) Usage {
 	usage := Usage{
-		Input:       raw.InputTokens,
-		Output:      raw.OutputTokens,
-		CacheRead:   raw.CacheReadInputTokens,
-		CacheWrite:  raw.CacheCreationInputTokens,
-		TotalTokens: raw.InputTokens + raw.OutputTokens + raw.CacheReadInputTokens + raw.CacheCreationInputTokens,
+		Input:        raw.InputTokens,
+		Output:       raw.OutputTokens,
+		CacheRead:    raw.CacheReadInputTokens,
+		CacheWrite:   raw.CacheCreationInputTokens,
+		CacheWrite1h: raw.CacheCreation.Ephemeral1hInputTokens,
+		TotalTokens:  raw.InputTokens + raw.OutputTokens + raw.CacheReadInputTokens + raw.CacheCreationInputTokens,
+	}
+	if raw.OutputTokensDetails.ThinkingTokens != nil {
+		usage.Reasoning = ptrInt(*raw.OutputTokensDetails.ThinkingTokens)
 	}
 	usage.Cost = CalculateCost(model, usage)
 	return usage
+}
+
+func mergeAnthropicWireUsage(current Usage, raw *anthropicWireUsage, model Model) Usage {
+	if raw == nil {
+		return current
+	}
+	if raw.InputTokens != nil {
+		current.Input = *raw.InputTokens
+	}
+	if raw.OutputTokens != nil {
+		current.Output = *raw.OutputTokens
+	}
+	if raw.CacheReadInputTokens != nil {
+		current.CacheRead = *raw.CacheReadInputTokens
+	}
+	if raw.CacheCreationInputTokens != nil {
+		current.CacheWrite = *raw.CacheCreationInputTokens
+	}
+	if raw.CacheCreation != nil && raw.CacheCreation.Ephemeral1hInputTokens != nil {
+		current.CacheWrite1h = *raw.CacheCreation.Ephemeral1hInputTokens
+	}
+	if raw.OutputTokensDetails != nil && raw.OutputTokensDetails.ThinkingTokens != nil {
+		current.Reasoning = ptrInt(*raw.OutputTokensDetails.ThinkingTokens)
+	}
+	current.TotalTokens = current.Input + current.Output + current.CacheRead + current.CacheWrite
+	current.Cost = CalculateCost(model, current)
+	return current
 }
 
 func IsMalformedJSONError(err error) bool {

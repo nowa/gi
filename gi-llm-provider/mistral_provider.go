@@ -39,9 +39,73 @@ type MistralStreamToolCall struct {
 }
 
 type MistralUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens       int `json:"prompt_tokens"`
+	CompletionTokens   int `json:"completion_tokens"`
+	TotalTokens        int `json:"total_tokens"`
+	CachedPromptTokens int `json:"-"`
+}
+
+type mistralUsageDetails struct {
+	CachedTokens      *int `json:"cached_tokens"`
+	CachedTokensCamel *int `json:"cachedTokens"`
+}
+
+func (d *mistralUsageDetails) cachedTokens() (*int, bool) {
+	if d == nil {
+		return nil, false
+	}
+	if d.CachedTokensCamel != nil {
+		return d.CachedTokensCamel, true
+	}
+	if d.CachedTokens != nil {
+		return d.CachedTokens, true
+	}
+	return nil, false
+}
+
+func (u *MistralUsage) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		PromptTokens            *int                 `json:"prompt_tokens"`
+		PromptTokensCamel       *int                 `json:"promptTokens"`
+		CompletionTokens        *int                 `json:"completion_tokens"`
+		CompletionTokensCamel   *int                 `json:"completionTokens"`
+		TotalTokens             *int                 `json:"total_tokens"`
+		TotalTokensCamel        *int                 `json:"totalTokens"`
+		PromptTokensDetails     *mistralUsageDetails `json:"promptTokensDetails"`
+		PromptTokensDetailsWire *mistralUsageDetails `json:"prompt_tokens_details"`
+		PromptTokenDetails      *mistralUsageDetails `json:"promptTokenDetails"`
+		PromptTokenDetailsWire  *mistralUsageDetails `json:"prompt_token_details"`
+		NumCachedTokens         *int                 `json:"numCachedTokens"`
+		NumCachedTokensWire     *int                 `json:"num_cached_tokens"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	u.PromptTokens = firstInt(wire.PromptTokens, wire.PromptTokensCamel)
+	u.CompletionTokens = firstInt(wire.CompletionTokens, wire.CompletionTokensCamel)
+	u.TotalTokens = firstInt(wire.TotalTokens, wire.TotalTokensCamel)
+	for _, details := range []*mistralUsageDetails{
+		wire.PromptTokensDetails,
+		wire.PromptTokensDetailsWire,
+		wire.PromptTokenDetails,
+		wire.PromptTokenDetailsWire,
+	} {
+		if cached, ok := details.cachedTokens(); ok {
+			u.CachedPromptTokens = *cached
+			return nil
+		}
+	}
+	u.CachedPromptTokens = firstInt(wire.NumCachedTokens, wire.NumCachedTokensWire)
+	return nil
+}
+
+func firstInt(values ...*int) int {
+	for _, value := range values {
+		if value != nil {
+			return *value
+		}
+	}
+	return 0
 }
 
 type mistralStreamProcessor struct {
@@ -74,9 +138,11 @@ func (p MistralProvider) StreamSimple(model Model, llmContext Context, options S
 		ctx = context.Background()
 	}
 	payload := any(BuildMistralPayload(model, llmContext, MistralPayloadOptions{
-		MaxTokens:   options.MaxTokens,
-		Temperature: options.Temperature,
-		Reasoning:   options.Reasoning,
+		MaxTokens:      options.MaxTokens,
+		Temperature:    options.Temperature,
+		Reasoning:      options.Reasoning,
+		SessionID:      options.SessionID,
+		CacheRetention: options.CacheRetention,
 	}))
 	if options.OnPayload != nil {
 		next, replace, err := options.OnPayload(payload, model)
@@ -270,11 +336,18 @@ func DecodeMistralCompletionChunk(data []byte) (MistralCompletionChunk, error) {
 }
 
 func ParseMistralUsage(raw MistralUsage, model Model) Usage {
+	cacheRead := min(raw.PromptTokens, max(0, raw.CachedPromptTokens))
+	input := raw.PromptTokens - cacheRead
 	total := raw.TotalTokens
 	if total == 0 {
 		total = raw.PromptTokens + raw.CompletionTokens
 	}
-	usage := Usage{Input: raw.PromptTokens, Output: raw.CompletionTokens, TotalTokens: total}
+	usage := Usage{
+		Input:       input,
+		Output:      raw.CompletionTokens,
+		CacheRead:   cacheRead,
+		TotalTokens: total,
+	}
 	usage.Cost = CalculateCost(model, usage)
 	return usage
 }
@@ -321,7 +394,7 @@ func mistralHeaders(model Model, options SimpleStreamOptions, apiKey string) map
 	for key, value := range options.Headers {
 		headers[key] = value
 	}
-	if options.SessionID != "" && headers["x-affinity"] == "" {
+	if shouldUseMistralPromptCaching(options.SessionID, options.CacheRetention) && headers["x-affinity"] == "" {
 		headers["x-affinity"] = options.SessionID
 	}
 	headers["Authorization"] = "Bearer " + apiKey

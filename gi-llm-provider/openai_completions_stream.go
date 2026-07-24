@@ -218,6 +218,7 @@ func ParseOpenAIChatUsage(raw OpenAIChatUsage, model Model) Usage {
 		Output:      raw.CompletionTokens,
 		CacheRead:   cacheReadTokens,
 		CacheWrite:  cacheWriteTokens,
+		Reasoning:   ptrInt(raw.CompletionTokenDetails.ReasoningTokens),
 		TotalTokens: input + raw.CompletionTokens + cacheReadTokens + cacheWriteTokens,
 	}
 	usage.Cost = CalculateCost(model, usage)

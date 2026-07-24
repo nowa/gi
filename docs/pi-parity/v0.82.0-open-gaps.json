@@ -576,39 +576,12 @@
     {
       "module": "llm",
       "undocumentedFiles": [],
-      "noCandidateFiles": [
-        "packages/ai/test/reasoning-options.test.ts"
-      ],
+      "noCandidateFiles": [],
       "noCandidateCases": [
-        {
-          "file": "packages/ai/test/anthropic-cache-write-1h-cost.test.ts",
-          "line": 76,
-          "name": "falls back to the 5m rate when no breakdown is reported"
-        },
-        {
-          "file": "packages/ai/test/anthropic-empty-thinking-signature-compat.test.ts",
-          "line": 100,
-          "name": "allows empty signatures for Kimi Coding %s"
-        },
-        {
-          "file": "packages/ai/test/anthropic-sse-parsing.test.ts",
-          "line": 227,
-          "name": "treats message_delta without usage as a no-op for usage accumulation"
-        },
         {
           "file": "packages/ai/test/github-copilot-oauth.test.ts",
           "line": 62,
           "name": "filters models to the authenticated account picker catalog"
-        },
-        {
-          "file": "packages/ai/test/mistral-reasoning-mode.test.ts",
-          "line": 81,
-          "name": "uses the session id as prompt cache key"
-        },
-        {
-          "file": "packages/ai/test/mistral-reasoning-mode.test.ts",
-          "line": 89,
-          "name": "omits prompt cache key when cache retention is disabled"
         },
         {
           "file": "packages/ai/test/openai-codex-stream.test.ts",
@@ -626,34 +599,9 @@
           "name": "uses Ant Ling compatibility metadata"
         },
         {
-          "file": "packages/ai/test/openai-responses-terminal-event.test.ts",
-          "line": 188,
-          "name": "finalizes completed terminal events as stop"
-        },
-        {
-          "file": "packages/ai/test/openai-responses-terminal-event.test.ts",
-          "line": 206,
-          "name": "finalizes incomplete terminal events as length stops"
-        },
-        {
           "file": "packages/ai/test/openrouter-cache-control-models.test.ts",
           "line": 12,
           "name": "enables cache control for %s"
-        },
-        {
-          "file": "packages/ai/test/reasoning-options.test.ts",
-          "line": 5,
-          "name": "exposes only verified effort values and none"
-        },
-        {
-          "file": "packages/ai/test/reasoning-options.test.ts",
-          "line": 19,
-          "name": "does not infer thinking-off from an effort list"
-        },
-        {
-          "file": "packages/ai/test/reasoning-options.test.ts",
-          "line": 31,
-          "name": "leaves toggle and budget controls for their adapter-specific implementations"
         },
         {
           "file": "packages/ai/test/xai-responses.test.ts",
