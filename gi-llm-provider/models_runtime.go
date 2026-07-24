@@ -507,6 +507,10 @@ func (m *Models) GetModelAuth(
 	}
 	cloned := cloneAuthResult(*result)
 	cloned.Auth.Headers = mergeHeadersCaseInsensitive(cloned.Auth.Headers, model.Headers)
+	cloned.Auth.HeaderRemovals = clearOverriddenHeaderRemovals(
+		cloned.Auth.HeaderRemovals,
+		model.Headers,
+	)
 	return &cloned, nil
 }
 
@@ -713,6 +717,14 @@ func (m *Models) applyAuth(
 		resolution.Auth.Headers,
 		options.StreamOptions.Headers,
 	)
+	requestOptions.HeaderRemovals = clearOverriddenHeaderRemovals(
+		resolution.Auth.HeaderRemovals,
+		options.StreamOptions.Headers,
+	)
+	requestOptions.HeaderRemovals = appendUniqueHeaderRemovals(
+		requestOptions.HeaderRemovals,
+		options.StreamOptions.HeaderRemovals,
+	)
 	if options.TransformHeaders != nil {
 		requestOptions.Headers, err = options.TransformHeaders(
 			ctx,
@@ -722,6 +734,10 @@ func (m *Models) applyAuth(
 			return nil, Model{}, StreamOptions{}, err
 		}
 		requestOptions.Headers = cloneStringMap(requestOptions.Headers)
+		requestOptions.HeaderRemovals = clearOverriddenHeaderRemovals(
+			requestOptions.HeaderRemovals,
+			requestOptions.Headers,
+		)
 	}
 	requestOptions.Env = mergeProviderEnv(resolution.Env, options.StreamOptions.Env)
 
@@ -772,6 +788,7 @@ func mergeHeadersCaseInsensitive(base, override map[string]string) map[string]st
 func cloneStreamOptions(options StreamOptions) StreamOptions {
 	options.ThinkingBudgets = cloneIntMap(options.ThinkingBudgets)
 	options.Headers = cloneStringMap(options.Headers)
+	options.HeaderRemovals = append([]string(nil), options.HeaderRemovals...)
 	options.Env = cloneProviderEnv(options.Env)
 	options.Metadata = cloneCredentialMetadata(options.Metadata)
 	return options

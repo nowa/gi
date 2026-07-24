@@ -20,6 +20,35 @@ func IsCloudflareProvider(provider string) bool {
 	return provider == "cloudflare-workers-ai" || provider == "cloudflare-ai-gateway"
 }
 
+func hasCloudflareAIGatewayAuthorization(model Model, headers map[string]string) bool {
+	if model.Provider != "cloudflare-ai-gateway" {
+		return false
+	}
+	value, ok := headerValueCaseInsensitive(headers, "cf-aig-authorization")
+	return ok && strings.TrimSpace(value) != ""
+}
+
+// ResolveCloudflareModel materializes account-scoped endpoint placeholders
+// from the request-scoped provider environment without mutating the catalog
+// model or process environment.
+func ResolveCloudflareModel(model Model, env ProviderEnv) Model {
+	if len(env) == 0 || !strings.Contains(model.BaseURL, "{") {
+		return model
+	}
+	resolved := model.BaseURL
+	for _, name := range []string{"CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_GATEWAY_ID"} {
+		if value := env[name]; value != "" {
+			resolved = strings.ReplaceAll(resolved, "{"+name+"}", value)
+		}
+	}
+	if resolved == model.BaseURL {
+		return model
+	}
+	cloned := cloneModel(model)
+	cloned.BaseURL = resolved
+	return cloned
+}
+
 func ResolveCloudflareBaseURL(model Model) (string, error) {
 	baseURL := model.BaseURL
 	if !strings.Contains(baseURL, "{") {

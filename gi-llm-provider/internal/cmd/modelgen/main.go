@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -17,7 +18,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
+
+const sourceManifestSchemaVersion = 3
 
 type options struct {
 	dataDir string
@@ -100,6 +104,13 @@ type providerCatalog struct {
 	models []sourceModel
 }
 
+type sourceManifest struct {
+	SchemaVersion int               `json:"schemaVersion"`
+	GeneratedAt   string            `json:"generatedAt"`
+	StructureHash string            `json:"structureHash"`
+	Files         map[string]string `json:"files"`
+}
+
 func main() {
 	var opts options
 	flag.StringVar(&opts.dataDir, "data-dir", "", "Pi package dist/providers/data directory")
@@ -151,8 +162,17 @@ func run(opts options) error {
 	if err := verifyNoUnindexedCatalogs(dataDir, providerOrder); err != nil {
 		return err
 	}
+	manifest, err := readSourceManifest(dataDir, catalogs)
+	if err != nil {
+		return err
+	}
 
-	generated, err := renderCatalog(opts.pkg, opts.source, catalogs)
+	generated, err := renderCatalog(
+		opts.pkg,
+		opts.source,
+		manifest.GeneratedAt,
+		catalogs,
+	)
 	if err != nil {
 		return err
 	}
@@ -206,6 +226,165 @@ func verifyNoUnindexedCatalogs(dataDir string, providerOrder []string) error {
 		return fmt.Errorf("catalogs absent from model index: %s", strings.Join(unexpected, ", "))
 	}
 	return nil
+}
+
+func readSourceManifest(dataDir string, catalogs []providerCatalog) (sourceManifest, error) {
+	path := filepath.Join(dataDir, ".manifest.json")
+	file, err := os.Open(path)
+	if err != nil {
+		return sourceManifest{}, fmt.Errorf("open model data manifest: %w", err)
+	}
+	defer file.Close()
+
+	var manifest sourceManifest
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&manifest); err != nil {
+		return sourceManifest{}, fmt.Errorf("decode model data manifest: %w", err)
+	}
+	if token, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return sourceManifest{}, fmt.Errorf(
+				"unexpected trailing token %v in model data manifest",
+				token,
+			)
+		}
+		return sourceManifest{}, fmt.Errorf(
+			"decode trailing model data manifest: %w",
+			err,
+		)
+	}
+
+	if manifest.SchemaVersion != sourceManifestSchemaVersion {
+		return sourceManifest{}, fmt.Errorf(
+			"model data schema is %d, expected %d",
+			manifest.SchemaVersion,
+			sourceManifestSchemaVersion,
+		)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, manifest.GeneratedAt); err != nil {
+		return sourceManifest{}, fmt.Errorf(
+			"model data manifest has invalid generation timestamp %q: %w",
+			manifest.GeneratedAt,
+			err,
+		)
+	}
+
+	expectedFiles := make([]string, 0, len(catalogs))
+	for _, catalog := range catalogs {
+		expectedFiles = append(expectedFiles, catalog.id+".json")
+	}
+	actualFiles := sortedKeys(manifest.Files)
+	sortedExpectedFiles := append([]string(nil), expectedFiles...)
+	sort.Strings(sortedExpectedFiles)
+	if !equalStrings(sortedExpectedFiles, actualFiles) {
+		return sourceManifest{}, fmt.Errorf(
+			"manifest file hashes do not match provider data files (%s)",
+			describeSetDifference(sortedExpectedFiles, actualFiles),
+		)
+	}
+	for _, filename := range expectedFiles {
+		content, err := os.ReadFile(filepath.Join(dataDir, filename))
+		if err != nil {
+			return sourceManifest{}, fmt.Errorf("read %s for manifest validation: %w", filename, err)
+		}
+		actualHash := sha256Hex(content)
+		if manifest.Files[filename] != actualHash {
+			return sourceManifest{}, fmt.Errorf(
+				"%s does not match its manifest hash: got %s, want %s",
+				filename,
+				actualHash,
+				manifest.Files[filename],
+			)
+		}
+	}
+
+	actualStructureHash, err := modelDataStructureHash(catalogs)
+	if err != nil {
+		return sourceManifest{}, err
+	}
+	if manifest.StructureHash != actualStructureHash {
+		return sourceManifest{}, fmt.Errorf(
+			"model data generation stamp does not match the generated catalog: got %s, want %s",
+			actualStructureHash,
+			manifest.StructureHash,
+		)
+	}
+	return manifest, nil
+}
+
+func modelDataStructureHash(catalogs []providerCatalog) (string, error) {
+	structure := make(map[string]map[string]string, len(catalogs))
+	for _, catalog := range catalogs {
+		models := make(map[string]string, len(catalog.models))
+		for _, model := range catalog.models {
+			if _, exists := models[model.ID]; exists {
+				return "", fmt.Errorf(
+					"%s catalog contains model %q in more than one API group",
+					catalog.id,
+					model.ID,
+				)
+			}
+			models[model.ID] = model.API
+		}
+		if len(models) == 0 {
+			return "", fmt.Errorf("%s catalog contains no generated model data", catalog.id)
+		}
+		structure[catalog.id] = models
+	}
+	normalized, err := json.Marshal(structure)
+	if err != nil {
+		return "", fmt.Errorf("encode model data structure: %w", err)
+	}
+	return sha256Hex(normalized), nil
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func describeSetDifference(expected, actual []string) string {
+	expectedSet := make(map[string]struct{}, len(expected))
+	actualSet := make(map[string]struct{}, len(actual))
+	for _, value := range expected {
+		expectedSet[value] = struct{}{}
+	}
+	for _, value := range actual {
+		actualSet[value] = struct{}{}
+	}
+	var missing []string
+	for _, value := range expected {
+		if _, exists := actualSet[value]; !exists {
+			missing = append(missing, value)
+		}
+	}
+	var extra []string
+	for _, value := range actual {
+		if _, exists := expectedSet[value]; !exists {
+			extra = append(extra, value)
+		}
+	}
+	parts := make([]string, 0, 2)
+	if len(missing) > 0 {
+		parts = append(parts, "missing: "+strings.Join(missing, ", "))
+	}
+	if len(extra) > 0 {
+		parts = append(parts, "extra: "+strings.Join(extra, ", "))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func sha256Hex(content []byte) string {
+	sum := sha256.Sum256(content)
+	return fmt.Sprintf("%x", sum)
 }
 
 func readProviderModels(path, providerID string) ([]sourceModel, error) {
@@ -305,15 +484,23 @@ func expectDelimiter(decoder *json.Decoder, want json.Delim) error {
 	return nil
 }
 
-func renderCatalog(pkg, source string, catalogs []providerCatalog) ([]byte, error) {
+func renderCatalog(
+	pkg string,
+	source string,
+	generatedAt string,
+	catalogs []providerCatalog,
+) ([]byte, error) {
 	var output bytes.Buffer
 	fmt.Fprintf(
 		&output,
 		"// Code generated by go run ./internal/cmd/modelgen; DO NOT EDIT.\n"+
-			"// Source: %s\n\npackage %s\n\nfunc registerPiGeneratedModels() {\n"+
+			"// Source: %s\n\npackage %s\n\n"+
+			"const piGeneratedModelDataGeneratedAt = %s\n\n"+
+			"func registerPiGeneratedModels() {\n"+
 			"\tresetModelRegistry()\n",
 		source,
 		pkg,
+		strconv.Quote(generatedAt),
 	)
 	for _, catalog := range catalogs {
 		for _, model := range catalog.models {

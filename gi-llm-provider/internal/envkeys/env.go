@@ -4,6 +4,8 @@ import "os"
 
 func apiKeyEnvVars(provider string) []string {
 	switch provider {
+	case "ant-ling":
+		return []string{"ANT_LING_API_KEY"}
 	case "github-copilot":
 		return []string{"COPILOT_GITHUB_TOKEN"}
 	case "anthropic":
@@ -30,6 +32,8 @@ func apiKeyEnvVars(provider string) []string {
 		return []string{"AI_GATEWAY_API_KEY"}
 	case "zai":
 		return []string{"ZAI_API_KEY"}
+	case "zai-coding-cn":
+		return []string{"ZAI_CODING_CN_API_KEY"}
 	case "mistral":
 		return []string{"MISTRAL_API_KEY"}
 	case "minimax":
@@ -48,6 +52,12 @@ func apiKeyEnvVars(provider string) []string {
 		return []string{"OPENCODE_API_KEY"}
 	case "kimi-coding":
 		return []string{"KIMI_API_KEY"}
+	case "qwen-token-plan":
+		return []string{"QWEN_TOKEN_PLAN_API_KEY"}
+	case "qwen-token-plan-cn":
+		return []string{"QWEN_TOKEN_PLAN_CN_API_KEY"}
+	case "radius":
+		return []string{"RADIUS_API_KEY"}
 	case "cloudflare-workers-ai", "cloudflare-ai-gateway":
 		return []string{"CLOUDFLARE_API_KEY"}
 	case "xiaomi":

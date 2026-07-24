@@ -25,7 +25,7 @@ func (p OpenAIResponsesProvider) Stream(model Model, llmContext Context, options
 
 func (p OpenAIResponsesProvider) StreamSimple(model Model, llmContext Context, options SimpleStreamOptions) (*AssistantMessageEventStream, error) {
 	apiKey := apiKeyOrEnv(model.Provider, options.APIKey)
-	if apiKey == "" {
+	if apiKey == "" && !hasCloudflareAIGatewayAuthorization(model, options.Headers) {
 		return streamError(model, "missing API key for provider %s", model.Provider), nil
 	}
 	ctx := options.Context
@@ -65,7 +65,10 @@ func (p OpenAIResponsesProvider) StreamSimple(model Model, llmContext Context, o
 		CacheRetention: options.CacheRetention,
 		Headers:        options.Headers,
 	})
-	headers["Authorization"] = "Bearer " + apiKey
+	if apiKey != "" {
+		headers["Authorization"] = "Bearer " + apiKey
+	}
+	headers = applyHeaderRemovals(headers, options.HeaderRemovals)
 
 	baseURL := model.BaseURL
 	if IsCloudflareProvider(model.Provider) {

@@ -14,9 +14,10 @@ import (
 // request. Provider-specific configuration that cannot be expressed here
 // belongs on the provider itself.
 type ModelAuth struct {
-	APIKey  string
-	Headers map[string]string
-	BaseURL string
+	APIKey         string
+	Headers        map[string]string
+	HeaderRemovals []string
+	BaseURL        string
 }
 
 // AuthContext isolates ambient process state so auth resolution remains
@@ -489,6 +490,7 @@ func cloneModelAuth(auth ModelAuth) ModelAuth {
 			cloned.Headers[key] = value
 		}
 	}
+	cloned.HeaderRemovals = append([]string(nil), auth.HeaderRemovals...)
 	return cloned
 }
 

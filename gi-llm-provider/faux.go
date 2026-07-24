@@ -122,6 +122,12 @@ func FauxAssistantText(text string) Message {
 }
 
 func RegisterFauxProvider(options ...FauxOption) *FauxProviderRegistration {
+	registration := newFauxProviderRegistration(options...)
+	RegisterAPIProvider(registration.API, registration)
+	return registration
+}
+
+func newFauxProviderRegistration(options ...FauxOption) *FauxProviderRegistration {
 	opts := FauxOptions{API: defaultFauxAPI, Provider: defaultFauxProvider}
 	for _, option := range options {
 		option(&opts)
@@ -178,8 +184,78 @@ func RegisterFauxProvider(options ...FauxOption) *FauxProviderRegistration {
 			MaxTokens:     maxTokens,
 		})
 	}
-	RegisterAPIProvider(opts.API, registration)
 	return registration
+}
+
+// FauxProviderHandle owns an isolated provider and its deterministic response
+// queue. It avoids the process-wide API registry and is safe to use alongside
+// other Models collections.
+type FauxProviderHandle struct {
+	Provider     *Provider
+	registration *FauxProviderRegistration
+}
+
+// NewFauxProvider constructs an instance-scoped faux provider for integration
+// tests and embedding applications.
+func NewFauxProvider(options ...FauxOption) (*FauxProviderHandle, error) {
+	registration := newFauxProviderRegistration(options...)
+	provider, err := CreateProvider(CreateProviderOptions{
+		ID:     registration.Provider,
+		Name:   "Faux",
+		Auth:   ProviderAuth{APIKey: ambientAPIKeyAuth()},
+		Models: registration.Models,
+		APIs: map[string]APIProvider{
+			registration.API: registration,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &FauxProviderHandle{
+		Provider:     provider,
+		registration: registration,
+	}, nil
+}
+
+// SetResponses replaces the queued faux responses.
+func (f *FauxProviderHandle) SetResponses(responses []FauxResponseStep) {
+	if f != nil && f.registration != nil {
+		f.registration.SetResponses(responses)
+	}
+}
+
+// AppendResponses appends responses to the faux queue.
+func (f *FauxProviderHandle) AppendResponses(responses []FauxResponseStep) {
+	if f != nil && f.registration != nil {
+		f.registration.AppendResponses(responses)
+	}
+}
+
+// PendingResponseCount returns the number of responses not yet consumed.
+func (f *FauxProviderHandle) PendingResponseCount() int {
+	if f == nil || f.registration == nil {
+		return 0
+	}
+	return f.registration.PendingResponseCount()
+}
+
+// State returns a consistent snapshot of the faux provider state.
+func (f *FauxProviderHandle) State() FauxState {
+	if f == nil || f.registration == nil {
+		return FauxState{}
+	}
+	f.registration.mu.Lock()
+	defer f.registration.mu.Unlock()
+	return f.registration.State
+}
+
+// GetModel returns a detached model from the faux provider catalog.
+func (f *FauxProviderHandle) GetModel(modelID ...string) (Model, bool) {
+	if f == nil || f.registration == nil {
+		return Model{}, false
+	}
+	model, ok := f.registration.GetModel(modelID...)
+	return cloneModel(model), ok
 }
 
 func (r *FauxProviderRegistration) GetModel(modelID ...string) (Model, bool) {

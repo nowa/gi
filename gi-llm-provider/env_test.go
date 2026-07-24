@@ -28,3 +28,24 @@ func TestEnvironmentAPIKeysResolvesCopilotToken(t *testing.T) {
 		t.Fatalf("GetEnvAPIKey(github-copilot) = %q, want copilot-token", got)
 	}
 }
+
+func TestEnvironmentAPIKeysCoverPiV082Providers(t *testing.T) {
+	cases := map[string]string{
+		"ant-ling":           "ANT_LING_API_KEY",
+		"qwen-token-plan":    "QWEN_TOKEN_PLAN_API_KEY",
+		"qwen-token-plan-cn": "QWEN_TOKEN_PLAN_CN_API_KEY",
+		"radius":             "RADIUS_API_KEY",
+		"zai-coding-cn":      "ZAI_CODING_CN_API_KEY",
+	}
+	for providerID, envVar := range cases {
+		t.Run(providerID, func(t *testing.T) {
+			t.Setenv(envVar, "test-key")
+			if got := FindEnvKeys(providerID); len(got) != 1 || got[0] != envVar {
+				t.Fatalf("FindEnvKeys(%s) = %#v, want %s", providerID, got, envVar)
+			}
+			if got := GetEnvAPIKey(providerID); got != "test-key" {
+				t.Fatalf("GetEnvAPIKey(%s) = %q, want test-key", providerID, got)
+			}
+		})
+	}
+}

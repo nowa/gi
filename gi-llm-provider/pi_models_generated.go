@@ -3,6 +3,8 @@
 
 package gillmprovider
 
+const piGeneratedModelDataGeneratedAt = "2026-07-24T06:08:59.429Z"
+
 func registerPiGeneratedModels() {
 	resetModelRegistry()
 	RegisterModel(Model{

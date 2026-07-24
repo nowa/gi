@@ -17,6 +17,7 @@ var (
 
 func init() {
 	registerPiGeneratedModels()
+	captureBuiltinCatalog()
 }
 
 func RegisterModel(model Model) {

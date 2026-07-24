@@ -244,6 +244,7 @@ type StreamOptions struct {
 	Reasoning        string
 	ThinkingBudgets  map[string]int
 	Headers          map[string]string
+	HeaderRemovals   []string
 	Env              ProviderEnv
 	TimeoutMillis    int
 	MaxRetries       int

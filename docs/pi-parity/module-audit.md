@@ -147,7 +147,7 @@ The member-level source inventory currently reports:
 
 | Module | Pi source files | Gi production files | Pi symbols | Missing Pi files | Missing Pi symbols |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 169 | 57 | 632 | 129 | 220 |
+| LLM provider | 169 | 62 | 632 | 51 | 155 |
 | Agent core | 35 | 22 | 327 | 11 | 68 |
 | TUI | 28 | 27 | 449 | 3 | 56 |
 | Coding agent | 177 | 161 | 2115 | 31 | 480 |
@@ -171,7 +171,7 @@ The test-case inventory currently reports:
 
 | Module | Pi test files | Pi cases | Candidate files | Candidate cases | No-candidate files | No-candidate cases |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 112 | 1189 | 104 | 1107 | 8 | 82 |
+| LLM provider | 112 | 1189 | 105 | 1126 | 7 | 63 |
 | Agent core | 18 | 224 | 15 | 186 | 3 | 38 |
 | TUI | 27 | 700 | 25 | 673 | 2 | 27 |
 | Coding agent | 181 | 1649 | 172 | 1587 | 9 | 62 |
@@ -358,8 +358,11 @@ Observed direct coverage:
   `@earendil-works/pi-ai@0.82.0` release package (npm shasum
   `b1f33e7cb81ef6a55918baaef2764ff03c37a925`). The tag intentionally omits the
   generated provider JSON, so Gi's checked-in `internal/cmd/modelgen` consumes
-  the published data, preserves source order, and rejects unknown fields. This
-  aligns the catalog with v0.82.0, including the Fireworks
+  the published data, preserves source order, rejects unknown fields, and
+  verifies the published manifest schema/timestamp, exact shard set, per-file
+  SHA-256 values, and normalized model/API structure hash. The validated
+  generation timestamp is embedded into the generated Go catalog. This aligns
+  the catalog with v0.82.0, including the Fireworks
   `kimi-k2p6-turbo` router, GPT-5.6 pricing tiers, and `max` thinking metadata.
 - Gi model registry initialization now mirrors Pi's generated-catalog path:
   `models.go` calls `registerPiGeneratedModels()` directly instead of first
