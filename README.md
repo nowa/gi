@@ -39,7 +39,9 @@ the parent packages keep
 compatibility facades for existing callers and tests.
 
 Pi's `pi-web-ui` package is not ported here. The `pi-coding-agent` migration is
-active and scoped by the per-case parity table.
+active. The current catch-up target is the immutable Pi `v0.82.0` release at
+`083e6162`; scope, known debt, and reproducible verification commands are in
+[docs/pi-parity/README.md](docs/pi-parity/README.md).
 
 ## Compatibility Status
 

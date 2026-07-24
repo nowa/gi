@@ -2,6 +2,11 @@
 
 # Pi Coding Agent Source Audit
 
+> This document records the v0.78.0-era detailed source audit. The active
+> catch-up target is Pi v0.82.0 at `083e6162`; current machine-readable debt is
+> tracked in [`docs/pi-parity/v0.82.0-open-gaps.json`](docs/pi-parity/v0.82.0-open-gaps.json).
+> The historical green case table is not a v0.82.0 completion claim.
+
 This document tracks source-level parity for Pi `packages/coding-agent/src` in the current local Pi checkout. It complements `PI_CODING_AGENT_TEST_CASE_PARITY.md`: test-case parity is green, but this file is the guardrail for behavior that Pi source implements without an explicit test.
 
 ## Completion Criteria

@@ -1,0 +1,2711 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "tag": "v0.82.0",
+    "commit": "083e61621276bff9f6faefab87ce07fcd98734e2"
+  },
+  "generatedBy": {
+    "sourceScope": "members",
+    "sourceVerifier": "docs/pi-parity/verify-source-map.mjs",
+    "boundaryVerifier": "docs/pi-parity/verify-module-boundaries.mjs",
+    "testVerifier": "docs/pi-parity/verify-test-case-map.mjs"
+  },
+  "source": [
+    {
+      "module": "llm",
+      "missingFiles": [
+        "api/anthropic-messages.lazy.ts",
+        "api/anthropic-messages.ts",
+        "api/azure-openai-responses.lazy.ts",
+        "api/azure-openai-responses.ts",
+        "api/bedrock-converse-stream.lazy.ts",
+        "api/bedrock-converse-stream.ts",
+        "api/cloudflare.ts",
+        "api/constrained-sampling.ts",
+        "api/github-copilot-headers.ts",
+        "api/google-generative-ai.lazy.ts",
+        "api/google-generative-ai.ts",
+        "api/google-shared.ts",
+        "api/google-vertex.lazy.ts",
+        "api/google-vertex.ts",
+        "api/lazy.ts",
+        "api/mistral-conversations.lazy.ts",
+        "api/mistral-conversations.ts",
+        "api/openai-codex-responses.lazy.ts",
+        "api/openai-codex-responses.ts",
+        "api/openai-completions.lazy.ts",
+        "api/openai-completions.ts",
+        "api/openai-prompt-cache.ts",
+        "api/openai-responses-shared.ts",
+        "api/openai-responses.lazy.ts",
+        "api/openai-responses.ts",
+        "api/openrouter-images.lazy.ts",
+        "api/openrouter-images.ts",
+        "api/pi-messages.lazy.ts",
+        "api/pi-messages.ts",
+        "api/simple-options.ts",
+        "api/transform-messages.ts",
+        "auth/context.ts",
+        "auth/credential-store.ts",
+        "auth/helpers.ts",
+        "auth/oauth/anthropic.ts",
+        "auth/oauth/device-code.ts",
+        "auth/oauth/github-copilot.ts",
+        "auth/oauth/kimi-coding.ts",
+        "auth/oauth/load.ts",
+        "auth/oauth/oauth-page.ts",
+        "auth/oauth/openai-codex.ts",
+        "auth/oauth/openrouter.ts",
+        "auth/oauth/pkce.ts",
+        "auth/oauth/radius.ts",
+        "auth/oauth/xai.ts",
+        "auth/resolve.ts",
+        "bun-oauth.ts",
+        "compat.ts",
+        "compat/extension-oauth-types.ts",
+        "images-models.ts",
+        "legacy-api-aliases.ts",
+        "model-catalog.ts",
+        "models-store.ts",
+        "providers/all.ts",
+        "providers/amazon-bedrock.models.ts",
+        "providers/ant-ling.models.ts",
+        "providers/ant-ling.ts",
+        "providers/anthropic.models.ts",
+        "providers/azure-openai-responses.models.ts",
+        "providers/cerebras.models.ts",
+        "providers/cerebras.ts",
+        "providers/cloudflare-ai-gateway.models.ts",
+        "providers/cloudflare-ai-gateway.ts",
+        "providers/cloudflare-auth.ts",
+        "providers/cloudflare-stream.ts",
+        "providers/cloudflare-workers-ai.models.ts",
+        "providers/cloudflare-workers-ai.ts",
+        "providers/data-json.d.ts",
+        "providers/deepseek.models.ts",
+        "providers/deepseek.ts",
+        "providers/fireworks.models.ts",
+        "providers/fireworks.ts",
+        "providers/github-copilot.models.ts",
+        "providers/github-copilot.ts",
+        "providers/google-vertex.models.ts",
+        "providers/google.models.ts",
+        "providers/groq.models.ts",
+        "providers/groq.ts",
+        "providers/huggingface.models.ts",
+        "providers/huggingface.ts",
+        "providers/kimi-coding.models.ts",
+        "providers/kimi-coding.ts",
+        "providers/minimax-cn.models.ts",
+        "providers/minimax-cn.ts",
+        "providers/minimax.models.ts",
+        "providers/minimax.ts",
+        "providers/mistral.models.ts",
+        "providers/moonshotai-cn.models.ts",
+        "providers/moonshotai-cn.ts",
+        "providers/moonshotai.models.ts",
+        "providers/moonshotai.ts",
+        "providers/nvidia.models.ts",
+        "providers/nvidia.ts",
+        "providers/openai-codex.models.ts",
+        "providers/openai-codex.ts",
+        "providers/openai.models.ts",
+        "providers/openai.ts",
+        "providers/opencode-go.models.ts",
+        "providers/opencode-go.ts",
+        "providers/opencode.models.ts",
+        "providers/opencode.ts",
+        "providers/openrouter-images.ts",
+        "providers/openrouter.models.ts",
+        "providers/openrouter.ts",
+        "providers/qwen-token-plan-cn.models.ts",
+        "providers/qwen-token-plan-cn.ts",
+        "providers/qwen-token-plan.models.ts",
+        "providers/qwen-token-plan.ts",
+        "providers/radius-config.ts",
+        "providers/radius.ts",
+        "providers/together.models.ts",
+        "providers/together.ts",
+        "providers/vercel-ai-gateway.models.ts",
+        "providers/vercel-ai-gateway.ts",
+        "providers/xai.models.ts",
+        "providers/xai.ts",
+        "providers/xiaomi-token-plan-ams.models.ts",
+        "providers/xiaomi-token-plan-ams.ts",
+        "providers/xiaomi-token-plan-cn.models.ts",
+        "providers/xiaomi-token-plan-cn.ts",
+        "providers/xiaomi-token-plan-sgp.models.ts",
+        "providers/xiaomi-token-plan-sgp.ts",
+        "providers/xiaomi.models.ts",
+        "providers/xiaomi.ts",
+        "providers/zai-coding-cn.models.ts",
+        "providers/zai-coding-cn.ts",
+        "providers/zai.models.ts",
+        "providers/zai.ts",
+        "utils/abort-signals.ts",
+        "utils/deferred-tools.ts",
+        "utils/error-body.ts",
+        "utils/estimate.ts",
+        "utils/provider-env.ts",
+        "utils/provider-retry.ts",
+        "utils/retry.ts",
+        "utils/text.ts",
+        "utils/uuid.ts"
+      ],
+      "missingSymbols": [
+        "api/anthropic-messages.ts::assertRequestAuth",
+        "api/anthropic-messages.ts::convertToolResult",
+        "api/anthropic-messages.ts::defaultSupportsToolReferences",
+        "api/anthropic-messages.ts::hasHeader",
+        "api/azure-openai-responses.ts::formatAzureOpenAIError",
+        "api/bedrock-converse-stream.ts::addCustomHeadersMiddleware",
+        "api/bedrock-converse-stream.ts::convertToolResultContent",
+        "api/bedrock-converse-stream.ts::createNonBlankTextBlock",
+        "api/bedrock-converse-stream.ts::createRequiredTextBlock",
+        "api/bedrock-converse-stream.ts::getConfiguredBedrockCredentials",
+        "api/bedrock-converse-stream.ts::isReservedHeader",
+        "api/constrained-sampling.ts::appendGrammarToolInputJsonDelta",
+        "api/constrained-sampling.ts::createGrammarToolInputProperties",
+        "api/constrained-sampling.ts::getGrammarToolInput",
+        "api/constrained-sampling.ts::inferGrammarInputProperty",
+        "api/constrained-sampling.ts::resolveGrammarConstrainedSampling",
+        "api/constrained-sampling.ts::resolveJsonSchemaStrictSampling",
+        "api/google-shared.ts::resolveGoogleFunctionCallingMode",
+        "api/google-shared.ts::supportsGoogleStrictToolSampling",
+        "api/google-vertex.ts::buildGoogleAuthOptions",
+        "api/lazy.ts::createSetupErrorMessage",
+        "api/lazy.ts::hasResult",
+        "api/lazy.ts::lazyApi",
+        "api/lazy.ts::lazyStream",
+        "api/mistral-conversations.ts::getMistralCachedPromptTokens",
+        "api/mistral-conversations.ts::shouldUsePromptCaching",
+        "api/openai-codex-responses.ts::RetryDelayExceededError",
+        "api/openai-codex-responses.ts::compressRequestBodyZstd",
+        "api/openai-codex-responses.ts::extractCodexEventError",
+        "api/openai-codex-responses.ts::getRetryAfterDelayMs",
+        "api/openai-codex-responses.ts::isPreviousResponseNotFoundError",
+        "api/openai-codex-responses.ts::isTerminalRateLimitError",
+        "api/openai-codex-responses.ts::isWebSocketConnectionLimitReachedError",
+        "api/openai-codex-responses.ts::isWebSocketSessionExpired",
+        "api/openai-codex-responses.ts::loadNodeOs",
+        "api/openai-codex-responses.ts::loadNodeZlib",
+        "api/openai-codex-responses.ts::normalizeTimeoutMs",
+        "api/openai-codex-responses.ts::validateRetryDelayMs",
+        "api/openai-completions.ts::buildChatTemplateKwargs",
+        "api/openai-completions.ts::getClientApiKey",
+        "api/openai-completions.ts::getDeferredToolNames",
+        "api/openai-completions.ts::getToolsByName",
+        "api/openai-completions.ts::hasHeader",
+        "api/openai-completions.ts::isEncryptedReasoningDetail",
+        "api/openai-completions.ts::resolveChatTemplateKwargValue",
+        "api/openai-prompt-cache.ts::clampOpenAIPromptCacheKey",
+        "api/openai-responses-shared.ts::appendCustomToolCallInput",
+        "api/openai-responses-shared.ts::convertToolResultOutput",
+        "api/openai-responses-shared.ts::getCustomToolCallInput",
+        "api/openai-responses.ts::detectSessionAffinityFormat",
+        "api/openai-responses.ts::formatOpenAIResponsesError",
+        "api/openai-responses.ts::getClientApiKey",
+        "api/openai-responses.ts::hasHeader",
+        "api/pi-messages.ts::PiMessagesResponseError",
+        "api/pi-messages.ts::PiMessagesResponseError.constructor",
+        "api/pi-messages.ts::appendRewriteDiagnostic",
+        "api/pi-messages.ts::createEmptyUsage",
+        "api/pi-messages.ts::createErrorEvent",
+        "api/pi-messages.ts::createEventConverter",
+        "api/pi-messages.ts::createPiMessagesResponseError",
+        "api/pi-messages.ts::formatPiMessagesResponseError",
+        "api/pi-messages.ts::parsePiMessagesErrorBody",
+        "api/pi-messages.ts::parsePiMessagesEvent",
+        "api/pi-messages.ts::truncateDiagnosticString",
+        "api/simple-options.ts::clampMaxTokensToContext",
+        "auth/context.ts::defaultProviderAuthContext",
+        "auth/context.ts::getProcessEnv",
+        "auth/credential-store.ts::InMemoryCredentialStore",
+        "auth/credential-store.ts::InMemoryCredentialStore.delete",
+        "auth/credential-store.ts::InMemoryCredentialStore.enqueue",
+        "auth/credential-store.ts::InMemoryCredentialStore.list",
+        "auth/credential-store.ts::InMemoryCredentialStore.modify",
+        "auth/credential-store.ts::InMemoryCredentialStore.read",
+        "auth/helpers.ts::envApiKeyAuth",
+        "auth/helpers.ts::lazyOAuth",
+        "auth/oauth/device-code.ts::pollOAuthDeviceCodeFlow",
+        "auth/oauth/github-copilot.ts::asRecord",
+        "auth/oauth/github-copilot.ts::copilotEnterpriseDomain",
+        "auth/oauth/github-copilot.ts::fetchAvailableGitHubCopilotModelIds",
+        "auth/oauth/github-copilot.ts::isSelectableCopilotModel",
+        "auth/oauth/github-copilot.ts::parseAvailableCopilotModelIds",
+        "auth/oauth/github-copilot.ts::refreshGitHubCopilotAccessToken",
+        "auth/oauth/kimi-coding.ts::formUrlEncode",
+        "auth/oauth/kimi-coding.ts::getOauthHost",
+        "auth/oauth/kimi-coding.ts::isRetryableRefreshFailure",
+        "auth/oauth/kimi-coding.ts::loginKimiCoding",
+        "auth/oauth/kimi-coding.ts::parseTokenResponse",
+        "auth/oauth/kimi-coding.ts::pollForToken",
+        "auth/oauth/kimi-coding.ts::readJson",
+        "auth/oauth/kimi-coding.ts::refreshToken",
+        "auth/oauth/kimi-coding.ts::requestSignal",
+        "auth/oauth/kimi-coding.ts::startDeviceAuthorization",
+        "auth/oauth/kimi-coding.ts::trustedHttpUrl",
+        "auth/oauth/load.ts::registerBundledOAuthFlowLoaders",
+        "auth/oauth/openai-codex.ts::credentialsFromToken",
+        "auth/oauth/openai-codex.ts::exchangeAuthorizationCodeForCredentials",
+        "auth/oauth/openai-codex.ts::fetchWithLoginCancellation",
+        "auth/oauth/openai-codex.ts::getCallbackHost",
+        "auth/oauth/openai-codex.ts::loginOpenAICodexDeviceCode",
+        "auth/oauth/openai-codex.ts::pollOpenAICodexDeviceAuth",
+        "auth/oauth/openai-codex.ts::readTokenResponse",
+        "auth/oauth/openai-codex.ts::startOpenAICodexDeviceAuth",
+        "auth/oauth/openrouter.ts::errorDetail",
+        "auth/oauth/openrouter.ts::getCallbackHost",
+        "auth/oauth/openrouter.ts::loginOpenRouter",
+        "auth/oauth/openrouter.ts::sendHtml",
+        "auth/oauth/radius.ts::OAuthResponseError",
+        "auth/oauth/radius.ts::OAuthResponseError.constructor",
+        "auth/oauth/radius.ts::createRadiusOAuth",
+        "auth/oauth/radius.ts::loadRadiusOAuthConfig",
+        "auth/oauth/radius.ts::loginWithBrowser",
+        "auth/oauth/radius.ts::loginWithDeviceCode",
+        "auth/oauth/radius.ts::readOAuthResponseError",
+        "auth/oauth/radius.ts::requestDeviceAuthorization",
+        "auth/oauth/radius.ts::requestOAuthToken",
+        "auth/oauth/radius.ts::startOAuthCallbackServer",
+        "auth/oauth/xai.ts::credentialsFromTokenResponse",
+        "auth/oauth/xai.ts::loginXai",
+        "auth/oauth/xai.ts::parseDeviceCode",
+        "auth/oauth/xai.ts::pollForTokens",
+        "auth/oauth/xai.ts::positiveNumber",
+        "auth/oauth/xai.ts::postForm",
+        "auth/oauth/xai.ts::refreshXaiToken",
+        "auth/oauth/xai.ts::requestDeviceCode",
+        "auth/oauth/xai.ts::requestFailure",
+        "auth/oauth/xai.ts::requiredString",
+        "auth/oauth/xai.ts::validateVerificationUri",
+        "auth/resolve.ts::ModelsError",
+        "auth/resolve.ts::ModelsError.constructor",
+        "auth/resolve.ts::overlayEnvAuthContext",
+        "auth/resolve.ts::readCredential",
+        "auth/resolve.ts::resolveProviderAuth",
+        "auth/resolve.ts::resolveStoredOAuth",
+        "bun-oauth.ts::registerBunOAuthFlows",
+        "cli.ts::answerPrompt",
+        "compat.ts::getBuiltinProviderForModel",
+        "compat.ts::hasExplicitApiKey",
+        "compat.ts::hasResolvedCloudflareAuth",
+        "compat.ts::withEnvApiKey",
+        "images-models.ts::ImagesModelsImpl",
+        "images-models.ts::ImagesModelsImpl.clearProviders",
+        "images-models.ts::ImagesModelsImpl.constructor",
+        "images-models.ts::ImagesModelsImpl.deleteProvider",
+        "images-models.ts::ImagesModelsImpl.generateImages",
+        "images-models.ts::ImagesModelsImpl.getAuth",
+        "images-models.ts::ImagesModelsImpl.getModel",
+        "images-models.ts::ImagesModelsImpl.getModels",
+        "images-models.ts::ImagesModelsImpl.getProvider",
+        "images-models.ts::ImagesModelsImpl.getProviders",
+        "images-models.ts::ImagesModelsImpl.refresh",
+        "images-models.ts::ImagesModelsImpl.setProvider",
+        "images-models.ts::createImagesModels",
+        "images-models.ts::createImagesProvider",
+        "model-catalog.ts::flattenModelCatalog",
+        "models-store.ts::InMemoryModelsStore",
+        "models-store.ts::InMemoryModelsStore.delete",
+        "models-store.ts::InMemoryModelsStore.read",
+        "models-store.ts::InMemoryModelsStore.write",
+        "models.ts::ModelsImpl",
+        "models.ts::ModelsImpl.applyAuth",
+        "models.ts::ModelsImpl.checkAuth",
+        "models.ts::ModelsImpl.checkProviderAuth",
+        "models.ts::ModelsImpl.clearProviders",
+        "models.ts::ModelsImpl.complete",
+        "models.ts::ModelsImpl.completeSimple",
+        "models.ts::ModelsImpl.constructor",
+        "models.ts::ModelsImpl.deleteProvider",
+        "models.ts::ModelsImpl.getAuth",
+        "models.ts::ModelsImpl.getAvailable",
+        "models.ts::ModelsImpl.getModel",
+        "models.ts::ModelsImpl.getModels",
+        "models.ts::ModelsImpl.getProvider",
+        "models.ts::ModelsImpl.getProviders",
+        "models.ts::ModelsImpl.login",
+        "models.ts::ModelsImpl.logout",
+        "models.ts::ModelsImpl.readCredential",
+        "models.ts::ModelsImpl.refresh",
+        "models.ts::ModelsImpl.requireProvider",
+        "models.ts::ModelsImpl.resolveRefreshCredential",
+        "models.ts::ModelsImpl.setProvider",
+        "models.ts::ModelsImpl.stream",
+        "models.ts::ModelsImpl.streamSimple",
+        "models.ts::createModels",
+        "models.ts::createProvider",
+        "models.ts::hasApi",
+        "providers/all.ts::builtinImagesModels",
+        "providers/all.ts::builtinImagesProviders",
+        "providers/all.ts::builtinModels",
+        "providers/all.ts::builtinProviders",
+        "providers/all.ts::getBuiltinModel",
+        "providers/all.ts::getBuiltinModelDataGeneratedAt",
+        "providers/all.ts::getBuiltinModels",
+        "providers/all.ts::getBuiltinProviders",
+        "providers/amazon-bedrock.ts::amazonBedrockProvider",
+        "providers/ant-ling.ts::antLingProvider",
+        "providers/anthropic.ts::anthropicProvider",
+        "providers/azure-openai-responses.ts::azureOpenAIResponsesProvider",
+        "providers/cerebras.ts::cerebrasProvider",
+        "providers/cloudflare-ai-gateway.ts::cloudflareAIGatewayProvider",
+        "providers/cloudflare-auth.ts::cloudflareAIGatewayAuth",
+        "providers/cloudflare-auth.ts::cloudflareWorkersAIAuth",
+        "providers/cloudflare-auth.ts::resolveCloudflareEnv",
+        "providers/cloudflare-auth.ts::resolveValue",
+        "providers/cloudflare-stream.ts::cloudflareStreams",
+        "providers/cloudflare-stream.ts::resolveCloudflareModel",
+        "providers/cloudflare-workers-ai.ts::cloudflareWorkersAIProvider",
+        "providers/deepseek.ts::deepseekProvider",
+        "providers/faux.ts::createFauxCore",
+        "providers/faux.ts::fauxProvider",
+        "providers/fireworks.ts::fireworksProvider",
+        "providers/github-copilot.ts::githubCopilotProvider",
+        "providers/google-vertex.ts::googleVertexProvider",
+        "providers/google.ts::googleProvider",
+        "providers/groq.ts::groqProvider",
+        "providers/huggingface.ts::huggingfaceProvider",
+        "providers/kimi-coding.ts::kimiCodingProvider",
+        "providers/minimax-cn.ts::minimaxCnProvider",
+        "providers/minimax.ts::minimaxProvider",
+        "providers/mistral.ts::mistralProvider",
+        "providers/moonshotai-cn.ts::moonshotaiCnProvider",
+        "providers/moonshotai.ts::moonshotaiProvider",
+        "providers/nvidia.ts::nvidiaProvider",
+        "providers/openai-codex.ts::openaiCodexProvider",
+        "providers/openai.ts::openaiProvider",
+        "providers/opencode-go.ts::opencodeGoProvider",
+        "providers/opencode.ts::opencodeProvider",
+        "providers/openrouter-images.ts::openrouterImagesProvider",
+        "providers/openrouter.ts::openrouterProvider",
+        "providers/qwen-token-plan-cn.ts::qwenTokenPlanCnProvider",
+        "providers/qwen-token-plan.ts::qwenTokenPlanProvider",
+        "providers/radius-config.ts::getRadiusCredentialConfig",
+        "providers/radius-config.ts::getRadiusModels",
+        "providers/radius-config.ts::getRadiusModelsFromConfig",
+        "providers/radius-config.ts::isRadiusGatewayModel",
+        "providers/radius-config.ts::loadRadiusGatewayConfig",
+        "providers/radius-config.ts::normalizeRadiusGatewayUrl",
+        "providers/radius-config.ts::sanitizeRadiusGatewayConfig",
+        "providers/radius-config.ts::truncateHttpBody",
+        "providers/radius.ts::radiusProvider",
+        "providers/together.ts::togetherProvider",
+        "providers/vercel-ai-gateway.ts::vercelAIGatewayProvider",
+        "providers/xai.ts::xaiProvider",
+        "providers/xiaomi-token-plan-ams.ts::xiaomiTokenPlanAmsProvider",
+        "providers/xiaomi-token-plan-cn.ts::xiaomiTokenPlanCnProvider",
+        "providers/xiaomi-token-plan-sgp.ts::xiaomiTokenPlanSgpProvider",
+        "providers/xiaomi.ts::xiaomiProvider",
+        "providers/zai-coding-cn.ts::zaiCodingCnProvider",
+        "providers/zai.ts::zaiProvider",
+        "utils/abort-signals.ts::combineAbortSignals",
+        "utils/deferred-tools.ts::splitDeferredTools",
+        "utils/error-body.ts::extractBody",
+        "utils/error-body.ts::extractStatus",
+        "utils/error-body.ts::formatProviderError",
+        "utils/error-body.ts::isNonEmptyObject",
+        "utils/error-body.ts::normalizeProviderError",
+        "utils/error-body.ts::pickBodyText",
+        "utils/estimate.ts::calculateContextTokens",
+        "utils/estimate.ts::estimateContextTokens",
+        "utils/estimate.ts::estimateMessageTokens",
+        "utils/estimate.ts::estimateMessages",
+        "utils/estimate.ts::estimateTextAndImageContentChars",
+        "utils/estimate.ts::estimateTextAndImageContentTokens",
+        "utils/estimate.ts::estimateTextTokens",
+        "utils/estimate.ts::estimateToolsTokens",
+        "utils/estimate.ts::getLastAssistantUsageInfo",
+        "utils/estimate.ts::isMessageArray",
+        "utils/headers.ts::providerHeadersToRecord",
+        "utils/provider-env.ts::getBunSandboxEnvValue",
+        "utils/provider-env.ts::getProviderEnvValue",
+        "utils/provider-retry.ts::createAbortError",
+        "utils/provider-retry.ts::getRetryDelayMs",
+        "utils/provider-retry.ts::isProviderError",
+        "utils/provider-retry.ts::isRetryableProviderError",
+        "utils/provider-retry.ts::retryProviderRequest",
+        "utils/provider-retry.ts::validateServerRetryDelayMs",
+        "utils/retry.ts::RetrySleepAbortError",
+        "utils/retry.ts::RetrySleepAbortError.constructor",
+        "utils/retry.ts::buildProviderErrorPattern",
+        "utils/retry.ts::isRetryableAssistantError",
+        "utils/retry.ts::retryAssistantCall",
+        "utils/text.ts::contentText",
+        "utils/uuid.ts::fillRandomBytes",
+        "utils/uuid.ts::uuidv7"
+      ]
+    },
+    {
+      "module": "agent",
+      "missingFiles": [
+        "harness/tools/bash.ts",
+        "harness/tools/edit-diff.ts",
+        "harness/tools/edit.ts",
+        "harness/tools/file-mutation-queue.ts",
+        "harness/tools/image.ts",
+        "harness/tools/index.ts",
+        "harness/tools/path-utils.ts",
+        "harness/tools/read.ts",
+        "harness/tools/tool-context.ts",
+        "harness/tools/write.ts",
+        "stream-fn.ts"
+      ],
+      "missingSymbols": [
+        "agent-loop.ts::failToolCallsFromTruncatedMessage",
+        "harness/agent-harness.ts::findDuplicateNames",
+        "harness/compaction/compaction.ts::combineUsage",
+        "harness/compaction/compaction.ts::completeSimpleWithRetries",
+        "harness/compaction/compaction.ts::estimateTextAndImageContentChars",
+        "harness/compaction/compaction.ts::generateSummaryWithUsage",
+        "harness/env/nodejs.ts::getBashShellConfig",
+        "harness/env/nodejs.ts::isLegacyWslBashPath",
+        "harness/env/nodejs.ts::resolveTimeoutMs",
+        "harness/env/nodejs.ts::waitForChildProcess",
+        "harness/session/jsonl-storage.ts::JsonlSessionStorage.getPathToRootOrCompaction",
+        "harness/session/jsonl-storage.ts::JsonlSessionStorage.getSessionName",
+        "harness/session/jsonl-storage.ts::JsonlSessionStorage.getSessionStats",
+        "harness/session/session.ts::Session.appendActiveToolsChange",
+        "harness/session/session.ts::Session.buildContextEntries",
+        "harness/session/session.ts::Session.getSessionStats",
+        "harness/session/session.ts::Session.mergeContextBuildOptions",
+        "harness/session/session.ts::buildContextEntries",
+        "harness/session/session.ts::defaultContextEntryTransform",
+        "harness/session/session.ts::deriveSessionContextState",
+        "harness/session/session.ts::sessionEntryToContextMessages",
+        "harness/tools/bash.ts::createBashTool",
+        "harness/tools/bash.ts::validateTimeout",
+        "harness/tools/edit-diff.ts::applyEditsToNormalizedContent",
+        "harness/tools/edit-diff.ts::applyReplacements",
+        "harness/tools/edit-diff.ts::applyReplacementsPreservingUnchangedLines",
+        "harness/tools/edit-diff.ts::countOccurrences",
+        "harness/tools/edit-diff.ts::detectLineEnding",
+        "harness/tools/edit-diff.ts::fuzzyFindText",
+        "harness/tools/edit-diff.ts::generateDiffString",
+        "harness/tools/edit-diff.ts::generateUnifiedPatch",
+        "harness/tools/edit-diff.ts::getDuplicateError",
+        "harness/tools/edit-diff.ts::getEmptyOldTextError",
+        "harness/tools/edit-diff.ts::getLineSpans",
+        "harness/tools/edit-diff.ts::getNoChangeError",
+        "harness/tools/edit-diff.ts::getNotFoundError",
+        "harness/tools/edit-diff.ts::getReplacementLineRange",
+        "harness/tools/edit-diff.ts::normalizeForFuzzyMatch",
+        "harness/tools/edit-diff.ts::normalizeToLF",
+        "harness/tools/edit-diff.ts::restoreLineEndings",
+        "harness/tools/edit-diff.ts::splitLinesWithEndings",
+        "harness/tools/edit-diff.ts::stripBom",
+        "harness/tools/edit.ts::createEditTool",
+        "harness/tools/edit.ts::editAccessError",
+        "harness/tools/edit.ts::prepareEditArguments",
+        "harness/tools/edit.ts::validateEditInput",
+        "harness/tools/file-mutation-queue.ts::getMutationQueueKey",
+        "harness/tools/file-mutation-queue.ts::getState",
+        "harness/tools/file-mutation-queue.ts::withFileMutationQueue",
+        "harness/tools/image.ts::detectSupportedImageMimeType",
+        "harness/tools/image.ts::encodeBase64",
+        "harness/tools/image.ts::isAnimatedPng",
+        "harness/tools/image.ts::isBmp",
+        "harness/tools/image.ts::isPng",
+        "harness/tools/image.ts::readUint16LE",
+        "harness/tools/image.ts::readUint32BE",
+        "harness/tools/image.ts::readUint32LE",
+        "harness/tools/image.ts::startsWith",
+        "harness/tools/image.ts::startsWithAscii",
+        "harness/tools/path-utils.ts::normalizeToolPath",
+        "harness/tools/path-utils.ts::resolveReadToolPath",
+        "harness/tools/path-utils.ts::resolveToolPath",
+        "harness/tools/read.ts::createReadTool",
+        "harness/tools/write.ts::createWriteTool",
+        "harness/utils/shell-output.ts::trimToLastUtf8Bytes",
+        "harness/utils/truncate.ts::splitLinesForCounting",
+        "stream-fn.ts::getDefaultStreamFn",
+        "stream-fn.ts::setDefaultStreamFn"
+      ]
+    },
+    {
+      "module": "tui",
+      "missingFiles": [
+        "native-modifiers.ts",
+        "terminal-colors.ts",
+        "word-navigation.ts"
+      ],
+      "missingSymbols": [
+        "components/editor.ts::Editor.exitHistoryBrowsing",
+        "components/editor.ts::Editor.setAutocompleteTriggerCharacters",
+        "components/editor.ts::buildDebouncePattern",
+        "components/editor.ts::buildTriggerPattern",
+        "components/editor.ts::createScrollBorder",
+        "components/editor.ts::escapeCharacterClass",
+        "components/markdown.ts::Markdown.getOrderedListMarker",
+        "components/markdown.ts::Markdown.getUnorderedListMarker",
+        "components/markdown.ts::trimPartialClosingFences",
+        "native-modifiers.ts::isNativeModifierPressed",
+        "native-modifiers.ts::isNativeModifiersHelper",
+        "native-modifiers.ts::loadNativeModifiersHelper",
+        "terminal-colors.ts::hexToRgb",
+        "terminal-colors.ts::isOsc11BackgroundColorResponse",
+        "terminal-colors.ts::parseOsc11BackgroundColor",
+        "terminal-colors.ts::parseOscHexChannel",
+        "terminal-colors.ts::parseTerminalColorSchemeReport",
+        "terminal-image.ts::probeTmuxHyperlinks",
+        "terminal.ts::ProcessTerminal.clearKeyboardProtocolNegotiationBuffer",
+        "terminal.ts::ProcessTerminal.clearKeyboardProtocolNegotiationBufferFlushTimer",
+        "terminal.ts::ProcessTerminal.disableModifyOtherKeys",
+        "terminal.ts::ProcessTerminal.enableModifyOtherKeys",
+        "terminal.ts::ProcessTerminal.flushKeyboardProtocolNegotiationBufferAsInput",
+        "terminal.ts::ProcessTerminal.forwardInputSequence",
+        "terminal.ts::ProcessTerminal.handleKeyboardProtocolNegotiationSequence",
+        "terminal.ts::ProcessTerminal.modifyOtherKeysActive",
+        "terminal.ts::ProcessTerminal.readKeyboardProtocolNegotiationSequence",
+        "terminal.ts::ProcessTerminal.scheduleKeyboardProtocolNegotiationBufferFlush",
+        "terminal.ts::ProcessTerminal.setKeyboardProtocolNegotiationBuffer",
+        "terminal.ts::isAppleTerminalSession",
+        "terminal.ts::isKeyboardProtocolNegotiationSequencePrefix",
+        "terminal.ts::normalizeAppleTerminalInput",
+        "terminal.ts::parseKeyboardProtocolNegotiationSequence",
+        "tui.ts::TUI.clearOverlayFocusRestore",
+        "tui.ts::TUI.clearOverlayFocusRestoreFor",
+        "tui.ts::TUI.consumeOsc11BackgroundResponse",
+        "tui.ts::TUI.consumeTerminalColorSchemeReport",
+        "tui.ts::TUI.containsComponent",
+        "tui.ts::TUI.expandChangedRangeForKittyImages",
+        "tui.ts::TUI.getKittyImageReservedRows",
+        "tui.ts::TUI.getVisibleOverlayFocusRestore",
+        "tui.ts::TUI.isComponentMounted",
+        "tui.ts::TUI.isOverlayFocusAncestor",
+        "tui.ts::TUI.onTerminalColorSchemeChange",
+        "tui.ts::TUI.queryTerminalBackgroundColor",
+        "tui.ts::TUI.queryTerminalColorScheme",
+        "tui.ts::TUI.resolveBlockedOverlayFocusResume",
+        "tui.ts::TUI.retargetOverlayPreFocus",
+        "tui.ts::TUI.setFocusInternal",
+        "tui.ts::TUI.setTerminalColorSchemeNotifications",
+        "tui.ts::extractKittyImageRows",
+        "tui.ts::parseKittyImageHeader",
+        "utils.ts::getGraphemeSegmenter",
+        "utils.ts::getWordSegmenter",
+        "word-navigation.ts::findWordBackward",
+        "word-navigation.ts::findWordForward"
+      ]
+    },
+    {
+      "module": "coding",
+      "missingFiles": [
+        "cli/project-trust.ts",
+        "cli/startup-ui.ts",
+        "core/cache-stats.ts",
+        "core/experimental.ts",
+        "core/http-dispatcher.ts",
+        "core/model-config.ts",
+        "core/model-runtime.ts",
+        "core/models-store.ts",
+        "core/project-trust.ts",
+        "core/provider-attribution.ts",
+        "core/provider-composer.ts",
+        "core/radius.ts",
+        "core/remote-catalog-provider.ts",
+        "core/runtime-credentials.ts",
+        "core/trust-manager.ts",
+        "core/usage-totals.ts",
+        "extensions/llama/client.ts",
+        "extensions/llama/huggingface.ts",
+        "extensions/llama/index.ts",
+        "extensions/llama/provider.ts",
+        "extensions/llama/ui.ts",
+        "modes/interactive/components/custom-entry.ts",
+        "modes/interactive/components/first-time-setup.ts",
+        "modes/interactive/components/status-indicator.ts",
+        "modes/interactive/components/trust-selector.ts",
+        "modes/interactive/external-editor.ts",
+        "modes/interactive/model-search.ts",
+        "modes/interactive/theme/theme-controller.ts",
+        "rpc-entry.ts",
+        "utils/deprecation.ts",
+        "utils/image-process.ts",
+        "utils/image-resize-core.ts",
+        "utils/image-resize-worker.ts",
+        "utils/json.ts",
+        "utils/open-browser.ts",
+        "utils/windows-self-update.ts"
+      ],
+      "missingSymbols": [
+        "cli/project-trust.ts::createProjectTrustContext",
+        "cli/startup-ui.ts::applyDetectedStartupTheme",
+        "cli/startup-ui.ts::clearStartupTui",
+        "cli/startup-ui.ts::createStartupTui",
+        "cli/startup-ui.ts::isOfficialDistribution",
+        "cli/startup-ui.ts::loadStartupThemes",
+        "cli/startup-ui.ts::shouldRunFirstTimeSetup",
+        "cli/startup-ui.ts::showFirstTimeSetup",
+        "cli/startup-ui.ts::showStartupInput",
+        "cli/startup-ui.ts::showStartupSelector",
+        "cli/startup-ui.ts::startStartupTui",
+        "config.ts::getEntrypointPackageDir",
+        "config.ts::getPathComparisonCandidates",
+        "config.ts::normalizeSelfUpdatePackageTarget",
+        "core/agent-session.ts::AgentSession._emitAgentSettled",
+        "core/agent-session.ts::AgentSession._getIdleWaitPromise",
+        "core/agent-session.ts::AgentSession._getSummarizationRequestAuth",
+        "core/agent-session.ts::AgentSession._handlePostAgentRun",
+        "core/agent-session.ts::AgentSession._installAgentNextTurnRefresh",
+        "core/agent-session.ts::AgentSession._prepareRetry",
+        "core/agent-session.ts::AgentSession._resolveIdleWaitIfIdle",
+        "core/agent-session.ts::AgentSession._runAgentPrompt",
+        "core/agent-session.ts::AgentSession._summarizationRetryCallbacks",
+        "core/agent-session.ts::AgentSession._willRetryAfterAgentEnd",
+        "core/agent-session.ts::AgentSession.isIdle",
+        "core/agent-session.ts::AgentSession.modelRuntime",
+        "core/agent-session.ts::AgentSession.syncQueueModesFromSettings",
+        "core/agent-session.ts::AgentSession.waitForIdle",
+        "core/agent-session.ts::estimateMessagesTokens",
+        "core/agent-session.ts::withoutDeletedHeaders",
+        "core/auth-storage.ts::AuthStorage.delete",
+        "core/auth-storage.ts::AuthStorage.modify",
+        "core/auth-storage.ts::AuthStorage.read",
+        "core/auth-storage.ts::readStoredCredential",
+        "core/cache-stats.ts::asPreviousRequest",
+        "core/cache-stats.ts::collectCacheMisses",
+        "core/cache-stats.ts::computeCacheWaste",
+        "core/cache-stats.ts::detectCacheMiss",
+        "core/cache-stats.ts::detectMiss",
+        "core/compaction/compaction.ts::combineUsage",
+        "core/compaction/compaction.ts::completeSummarization",
+        "core/compaction/compaction.ts::createSummarizationOptions",
+        "core/compaction/compaction.ts::estimateTextAndImageContentChars",
+        "core/compaction/compaction.ts::generateSummaryWithUsage",
+        "core/compaction/compaction.ts::isCutPointMessage",
+        "core/compaction/compaction.ts::isTurnStartEntry",
+        "core/compaction/compaction.ts::isTurnStartMessage",
+        "core/experimental.ts::areExperimentalFeaturesEnabled",
+        "core/extensions/loader.ts::clearExtensionCache",
+        "core/extensions/loader.ts::isCurrentCacheToken",
+        "core/extensions/loader.ts::loadExtensionsCached",
+        "core/extensions/loader.ts::loadExtensionsInternal",
+        "core/extensions/loader.ts::useExtensionCacheCwd",
+        "core/extensions/runner.ts::ExtensionRunner.emitBeforeProviderHeaders",
+        "core/extensions/runner.ts::ExtensionRunner.getActiveTools",
+        "core/extensions/runner.ts::ExtensionRunner.getEntryRenderer",
+        "core/extensions/runner.ts::ExtensionRunner.getModelRegistry",
+        "core/extensions/runner.ts::emitProjectTrustEvent",
+        "core/footer-data-provider.ts::isWindowsMountedRepoPath",
+        "core/footer-data-provider.ts::isWslEnvironment",
+        "core/footer-data-provider.ts::shouldPollGitHead",
+        "core/http-dispatcher.ts::applyHttpProxySettings",
+        "core/http-dispatcher.ts::configureHttpDispatcher",
+        "core/http-dispatcher.ts::createUndiciClient",
+        "core/http-dispatcher.ts::createUndiciOriginDispatcher",
+        "core/http-dispatcher.ts::formatHttpIdleTimeoutMs",
+        "core/http-dispatcher.ts::parseHttpIdleTimeoutMs",
+        "core/http-dispatcher.ts::withUndiciErrorListener",
+        "core/model-config.ts::ModelConfig.constructor",
+        "core/model-config.ts::ModelConfig.getError",
+        "core/model-config.ts::ModelConfig.getProvider",
+        "core/model-config.ts::ModelConfig.getProviderIds",
+        "core/model-config.ts::ModelConfig.load",
+        "core/model-config.ts::deepFreeze",
+        "core/model-registry.ts::ModelRegistry.getRegisteredNativeProvider",
+        "core/model-registry.ts::ModelRegistry.getRegisteredProviderConfig",
+        "core/model-registry.ts::ModelRegistry.getRegisteredProviderIds",
+        "core/model-resolver.ts::resolveModelScopeWithDiagnostics",
+        "core/model-runtime.ts::ModelRuntime",
+        "core/model-runtime.ts::ModelRuntime.checkAuth",
+        "core/model-runtime.ts::ModelRuntime.complete",
+        "core/model-runtime.ts::ModelRuntime.completeSimple",
+        "core/model-runtime.ts::ModelRuntime.configureRadiusProviders",
+        "core/model-runtime.ts::ModelRuntime.constructor",
+        "core/model-runtime.ts::ModelRuntime.create",
+        "core/model-runtime.ts::ModelRuntime.forceRefreshAvailability",
+        "core/model-runtime.ts::ModelRuntime.getAuth",
+        "core/model-runtime.ts::ModelRuntime.getAvailable",
+        "core/model-runtime.ts::ModelRuntime.getAvailableSnapshot",
+        "core/model-runtime.ts::ModelRuntime.getCompatibilityRequestConfig",
+        "core/model-runtime.ts::ModelRuntime.getError",
+        "core/model-runtime.ts::ModelRuntime.getModel",
+        "core/model-runtime.ts::ModelRuntime.getModels",
+        "core/model-runtime.ts::ModelRuntime.getProvider",
+        "core/model-runtime.ts::ModelRuntime.getProviderAuthStatus",
+        "core/model-runtime.ts::ModelRuntime.getProviders",
+        "core/model-runtime.ts::ModelRuntime.getRegisteredNativeProvider",
+        "core/model-runtime.ts::ModelRuntime.getRegisteredProviderConfig",
+        "core/model-runtime.ts::ModelRuntime.getRegisteredProviderIds",
+        "core/model-runtime.ts::ModelRuntime.hasConfiguredAuth",
+        "core/model-runtime.ts::ModelRuntime.isUsingOAuth",
+        "core/model-runtime.ts::ModelRuntime.listCredentials",
+        "core/model-runtime.ts::ModelRuntime.login",
+        "core/model-runtime.ts::ModelRuntime.logout",
+        "core/model-runtime.ts::ModelRuntime.prepareRequest",
+        "core/model-runtime.ts::ModelRuntime.providerIds",
+        "core/model-runtime.ts::ModelRuntime.queueAvailabilityRefresh",
+        "core/model-runtime.ts::ModelRuntime.rebuildProviders",
+        "core/model-runtime.ts::ModelRuntime.recomposeProvider",
+        "core/model-runtime.ts::ModelRuntime.refresh",
+        "core/model-runtime.ts::ModelRuntime.refreshAvailability",
+        "core/model-runtime.ts::ModelRuntime.registerNativeProvider",
+        "core/model-runtime.ts::ModelRuntime.registerProvider",
+        "core/model-runtime.ts::ModelRuntime.removeRuntimeApiKey",
+        "core/model-runtime.ts::ModelRuntime.runAvailabilityRefresh",
+        "core/model-runtime.ts::ModelRuntime.setRuntimeApiKey",
+        "core/model-runtime.ts::ModelRuntime.stream",
+        "core/model-runtime.ts::ModelRuntime.streamSimple",
+        "core/model-runtime.ts::ModelRuntime.unregisterProvider",
+        "core/model-runtime.ts::ModelRuntime.updateModelSnapshot",
+        "core/model-runtime.ts::mergeHeaders",
+        "core/models-store.ts::FileModelsStore",
+        "core/models-store.ts::FileModelsStore.constructor",
+        "core/models-store.ts::FileModelsStore.delete",
+        "core/models-store.ts::FileModelsStore.parse",
+        "core/models-store.ts::FileModelsStore.read",
+        "core/models-store.ts::FileModelsStore.write",
+        "core/models-store.ts::InMemoryCodingAgentModelsStore",
+        "core/models-store.ts::InMemoryCodingAgentModelsStore.delete",
+        "core/models-store.ts::InMemoryCodingAgentModelsStore.read",
+        "core/models-store.ts::InMemoryCodingAgentModelsStore.write",
+        "core/output-guard.ts::getRawStdoutWrite",
+        "core/output-guard.ts::waitForRawStdoutBackpressure",
+        "core/output-guard.ts::writeRawStdoutChunk",
+        "core/package-manager.ts::DefaultPackageManager.applyPackageDeltaFilter",
+        "core/package-manager.ts::DefaultPackageManager.assertProjectTrustedForScope",
+        "core/package-manager.ts::DefaultPackageManager.ensureGitRef",
+        "core/package-manager.ts::DefaultPackageManager.findAutoloadDeltaBase",
+        "core/package-manager.ts::DefaultPackageManager.getLegacyGlobalNpmInstallPath",
+        "core/package-manager.ts::DefaultPackageManager.getManagedNpmInstallPath",
+        "core/package-manager.ts::DefaultPackageManager.getNpmInstallArgs",
+        "core/package-manager.ts::DefaultPackageManager.getPackageManagerName",
+        "core/package-manager.ts::DefaultPackageManager.installedNpmMatchesConfiguredVersion",
+        "core/package-manager.ts::DefaultPackageManager.resolveManagedPath",
+        "core/package-manager.ts::applyAutoloadDisabledPatterns",
+        "core/package-manager.ts::getExtensionTempFolder",
+        "core/package-manager.ts::getNpmVersionRange",
+        "core/package-manager.ts::isExactNpmVersion",
+        "core/project-trust.ts::formatProjectTrustPrompt",
+        "core/project-trust.ts::resolveProjectTrusted",
+        "core/project-trust.ts::saveProjectTrustPromptResult",
+        "core/project-trust.ts::selectProjectTrustOption",
+        "core/provider-attribution.ts::getDefaultAttributionHeaders",
+        "core/provider-attribution.ts::getSessionHeaders",
+        "core/provider-attribution.ts::isCloudflareModel",
+        "core/provider-attribution.ts::isNvidiaNimModel",
+        "core/provider-attribution.ts::isOpenRouterModel",
+        "core/provider-attribution.ts::matchesHost",
+        "core/provider-attribution.ts::mergeProviderAttributionHeaders",
+        "core/provider-composer.ts::adaptOAuth",
+        "core/provider-composer.ts::applyModelsJson",
+        "core/provider-composer.ts::composeApiKeyAuth",
+        "core/provider-composer.ts::composeModelProvider",
+        "core/provider-composer.ts::composeOAuthAuth",
+        "core/provider-composer.ts::configContextEnv",
+        "core/provider-composer.ts::configuredApiKey",
+        "core/provider-composer.ts::configuredHeaders",
+        "core/provider-composer.ts::configuredRequestAuthStatus",
+        "core/provider-composer.ts::modelFromJson",
+        "core/provider-composer.ts::rawModelHeaders",
+        "core/provider-composer.ts::resolveCompatibilityRequestConfig",
+        "core/provider-composer.ts::resolveConfiguredModelHeaders",
+        "core/provider-composer.ts::validateExtensionProvider",
+        "core/provider-composer.ts::withConfiguredAuth",
+        "core/remote-catalog-provider.ts::mergeModels",
+        "core/remote-catalog-provider.ts::parseCatalog",
+        "core/remote-catalog-provider.ts::remoteModels",
+        "core/remote-catalog-provider.ts::withRemoteCatalog",
+        "core/resolve-config-value.ts::appendLiteral",
+        "core/resolve-config-value.ts::getConfigValueEnvVarName",
+        "core/resolve-config-value.ts::getConfigValueEnvVarNames",
+        "core/resolve-config-value.ts::getMissingConfigValueEnvVarNames",
+        "core/resolve-config-value.ts::getTemplateEnvVarNames",
+        "core/resolve-config-value.ts::isCommandConfigValue",
+        "core/resolve-config-value.ts::isConfigValueConfigured",
+        "core/resolve-config-value.ts::parseConfigValueReference",
+        "core/resolve-config-value.ts::parseConfigValueTemplate",
+        "core/resolve-config-value.ts::resolveEnvConfigValue",
+        "core/resolve-config-value.ts::resolveTemplate",
+        "core/resource-loader.ts::DefaultResourceLoader.addExtensionConflictDiagnostics",
+        "core/resource-loader.ts::DefaultResourceLoader.loadCurrentExtensionSet",
+        "core/resource-loader.ts::DefaultResourceLoader.loadFinalExtensionSet",
+        "core/resource-loader.ts::DefaultResourceLoader.loadProjectTrustExtensions",
+        "core/resource-loader.ts::DefaultResourceLoader.mapSkillPath",
+        "core/resource-loader.ts::DefaultResourceLoader.resolveExtensionLoadPath",
+        "core/runtime-credentials.ts::RuntimeCredentials",
+        "core/runtime-credentials.ts::RuntimeCredentials.constructor",
+        "core/runtime-credentials.ts::RuntimeCredentials.delete",
+        "core/runtime-credentials.ts::RuntimeCredentials.hasRuntimeApiKey",
+        "core/runtime-credentials.ts::RuntimeCredentials.list",
+        "core/runtime-credentials.ts::RuntimeCredentials.modify",
+        "core/runtime-credentials.ts::RuntimeCredentials.read",
+        "core/runtime-credentials.ts::RuntimeCredentials.removeRuntimeApiKey",
+        "core/runtime-credentials.ts::RuntimeCredentials.setRuntimeApiKey",
+        "core/session-manager.ts::SessionHeaderScanLimitError",
+        "core/session-manager.ts::SessionHeaderScanLimitError.constructor",
+        "core/session-manager.ts::SessionManager._setSessionFile",
+        "core/session-manager.ts::SessionManager.buildContextEntries",
+        "core/session-manager.ts::SessionManager.usesDefaultSessionDir",
+        "core/session-manager.ts::assertValidSessionId",
+        "core/session-manager.ts::buildContextEntries",
+        "core/session-manager.ts::buildEntryIndex",
+        "core/session-manager.ts::buildSessionPath",
+        "core/session-manager.ts::getDefaultSessionDirPath",
+        "core/session-manager.ts::getMessageActivityTime",
+        "core/session-manager.ts::getSessionContextSettings",
+        "core/session-manager.ts::getSessionHeaderCwd",
+        "core/session-manager.ts::parseSessionEntryLine",
+        "core/session-manager.ts::parseSessionHeaderCandidate",
+        "core/session-manager.ts::readSessionHeader",
+        "core/session-manager.ts::readSessionHeaderForDiscovery",
+        "core/session-manager.ts::sessionCwdMatches",
+        "core/session-manager.ts::sessionEntryToContextMessages",
+        "core/settings-manager.ts::SettingsManager.assertProjectTrustedForWrite",
+        "core/settings-manager.ts::SettingsManager.getDefaultProjectTrust",
+        "core/settings-manager.ts::SettingsManager.getEnableAnalytics",
+        "core/settings-manager.ts::SettingsManager.getExternalEditorCommand",
+        "core/settings-manager.ts::SettingsManager.getHttpIdleTimeoutMs",
+        "core/settings-manager.ts::SettingsManager.getOutputPad",
+        "core/settings-manager.ts::SettingsManager.getShowCacheMissNotices",
+        "core/settings-manager.ts::SettingsManager.getThemeSetting",
+        "core/settings-manager.ts::SettingsManager.getTrackingId",
+        "core/settings-manager.ts::SettingsManager.getWebSocketConnectTimeoutMs",
+        "core/settings-manager.ts::SettingsManager.isProjectTrusted",
+        "core/settings-manager.ts::SettingsManager.setDefaultProjectTrust",
+        "core/settings-manager.ts::SettingsManager.setEnableAnalytics",
+        "core/settings-manager.ts::SettingsManager.setHttpIdleTimeoutMs",
+        "core/settings-manager.ts::SettingsManager.setOutputPad",
+        "core/settings-manager.ts::SettingsManager.setProjectTrusted",
+        "core/settings-manager.ts::SettingsManager.setShowCacheMissNotices",
+        "core/settings-manager.ts::SettingsManager.updateProjectSettings",
+        "core/settings-manager.ts::parseTimeoutSetting",
+        "core/timings.ts::printTimingGroup",
+        "core/tools/bash.ts::resolveTimeoutMs",
+        "core/tools/edit-diff.ts::applyReplacements",
+        "core/tools/edit-diff.ts::applyReplacementsPreservingUnchangedLines",
+        "core/tools/edit-diff.ts::generateUnifiedPatch",
+        "core/tools/edit-diff.ts::getLineSpans",
+        "core/tools/edit-diff.ts::getReplacementLineRange",
+        "core/tools/edit-diff.ts::splitLinesWithEndings",
+        "core/tools/file-mutation-queue.ts::isMissingPathError",
+        "core/tools/path-utils.ts::pathExists",
+        "core/tools/path-utils.ts::resolveReadPathAsync",
+        "core/tools/render-utils.ts::linkPath",
+        "core/tools/render-utils.ts::renderToolPath",
+        "core/tools/truncate.ts::splitLinesForCounting",
+        "core/trust-manager.ts::ProjectTrustStore",
+        "core/trust-manager.ts::ProjectTrustStore.constructor",
+        "core/trust-manager.ts::ProjectTrustStore.get",
+        "core/trust-manager.ts::ProjectTrustStore.getEntry",
+        "core/trust-manager.ts::ProjectTrustStore.set",
+        "core/trust-manager.ts::ProjectTrustStore.setMany",
+        "core/trust-manager.ts::acquireTrustLockSync",
+        "core/trust-manager.ts::findNearestTrustEntry",
+        "core/trust-manager.ts::getProjectTrustOptions",
+        "core/trust-manager.ts::getProjectTrustParentPath",
+        "core/trust-manager.ts::hasTrustRequiringProjectResources",
+        "core/trust-manager.ts::normalizeCwd",
+        "core/trust-manager.ts::readTrustFile",
+        "core/trust-manager.ts::withTrustFileLock",
+        "core/trust-manager.ts::writeTrustFile",
+        "core/usage-totals.ts::addUsageToTotals",
+        "core/usage-totals.ts::createUsageTotals",
+        "core/usage-totals.ts::getUsageCostBreakdown",
+        "extensions/llama/client.ts::LlamaClient",
+        "extensions/llama/client.ts::LlamaClient.constructor",
+        "extensions/llama/client.ts::LlamaClient.download",
+        "extensions/llama/client.ts::LlamaClient.downloadAndWait",
+        "extensions/llama/client.ts::LlamaClient.list",
+        "extensions/llama/client.ts::LlamaClient.load",
+        "extensions/llama/client.ts::LlamaClient.loadAndWait",
+        "extensions/llama/client.ts::LlamaClient.request",
+        "extensions/llama/client.ts::LlamaClient.unload",
+        "extensions/llama/client.ts::LlamaClient.unloadAndWait",
+        "extensions/llama/client.ts::LlamaClient.watch",
+        "extensions/llama/client.ts::errorMessage",
+        "extensions/llama/client.ts::formatBytes",
+        "extensions/llama/client.ts::isModelInfo",
+        "extensions/llama/client.ts::linkSignal",
+        "extensions/llama/client.ts::llamaInferenceUrl",
+        "extensions/llama/client.ts::normalizeLlamaServerUrl",
+        "extensions/llama/client.ts::parseDownloadProgress",
+        "extensions/llama/client.ts::parseLoadProgress",
+        "extensions/llama/huggingface.ts::HuggingFaceClient",
+        "extensions/llama/huggingface.ts::HuggingFaceClient.constructor",
+        "extensions/llama/huggingface.ts::HuggingFaceClient.details",
+        "extensions/llama/huggingface.ts::HuggingFaceClient.request",
+        "extensions/llama/huggingface.ts::HuggingFaceClient.search",
+        "extensions/llama/huggingface.ts::findHuggingFaceToken",
+        "extensions/llama/huggingface.ts::parseRateLimitDelay",
+        "extensions/llama/huggingface.ts::payloadError",
+        "extensions/llama/huggingface.ts::readToken",
+        "extensions/llama/index.ts::configuredClient",
+        "extensions/llama/index.ts::connectionErrorMessage",
+        "extensions/llama/index.ts::isConnectionError",
+        "extensions/llama/index.ts::modelIsLoaded",
+        "extensions/llama/index.ts::parseHuggingFaceModel",
+        "extensions/llama/provider.ts::createLlamaProvider",
+        "extensions/llama/provider.ts::credentialServerUrl",
+        "extensions/llama/provider.ts::resolveServerUrl",
+        "extensions/llama/provider.ts::toPiModel",
+        "extensions/llama/ui.ts::HuggingFaceSearch",
+        "extensions/llama/ui.ts::HuggingFaceSearch.close",
+        "extensions/llama/ui.ts::HuggingFaceSearch.constructor",
+        "extensions/llama/ui.ts::HuggingFaceSearch.filterResults",
+        "extensions/llama/ui.ts::HuggingFaceSearch.focused",
+        "extensions/llama/ui.ts::HuggingFaceSearch.handleInput",
+        "extensions/llama/ui.ts::HuggingFaceSearch.runSearch",
+        "extensions/llama/ui.ts::HuggingFaceSearch.scheduleSearch",
+        "extensions/llama/ui.ts::HuggingFaceSearch.updateResults",
+        "extensions/llama/ui.ts::LlamaView",
+        "extensions/llama/ui.ts::LlamaView.confirm",
+        "extensions/llama/ui.ts::LlamaView.connectionError",
+        "extensions/llama/ui.ts::LlamaView.constructor",
+        "extensions/llama/ui.ts::LlamaView.focused",
+        "extensions/llama/ui.ts::LlamaView.handleInput",
+        "extensions/llama/ui.ts::LlamaView.invalidate",
+        "extensions/llama/ui.ts::LlamaView.progress",
+        "extensions/llama/ui.ts::LlamaView.render",
+        "extensions/llama/ui.ts::LlamaView.searchModels",
+        "extensions/llama/ui.ts::LlamaView.select",
+        "extensions/llama/ui.ts::LlamaView.setContent",
+        "extensions/llama/ui.ts::LlamaView.showModels",
+        "extensions/llama/ui.ts::LlamaView.showStatus",
+        "extensions/llama/ui.ts::LlamaView.updateProgress",
+        "extensions/llama/ui.ts::compactCount",
+        "extensions/llama/ui.ts::contextLabel",
+        "extensions/llama/ui.ts::frame",
+        "extensions/llama/ui.ts::modelDescription",
+        "extensions/llama/ui.ts::runWithProgress",
+        "extensions/llama/ui.ts::selectTheme",
+        "extensions/llama/ui.ts::showLlamaUi",
+        "main.ts::findLocalSessionByExactId",
+        "main.ts::isPlainRuntimeMetadataCommand",
+        "main.ts::openSessionOrExit",
+        "main.ts::validateSessionIdFlags",
+        "modes/interactive/components/assistant-message.ts::AssistantMessageComponent.setOutputPad",
+        "modes/interactive/components/config-selector.ts::ConfigSelectorComponent.switchWriteScope",
+        "modes/interactive/components/config-selector.ts::ConfigSelectorHeader.constructor",
+        "modes/interactive/components/config-selector.ts::ConfigSelectorHeader.setWriteScope",
+        "modes/interactive/components/config-selector.ts::ResourceList.buildInheritedEnabledMap",
+        "modes/interactive/components/config-selector.ts::ResourceList.createPackageOverrideSource",
+        "modes/interactive/components/config-selector.ts::ResourceList.findMatchingPackageSource",
+        "modes/interactive/components/config-selector.ts::ResourceList.getInheritedEnabled",
+        "modes/interactive/components/config-selector.ts::ResourceList.getItemScope",
+        "modes/interactive/components/config-selector.ts::ResourceList.getItemSuffix",
+        "modes/interactive/components/config-selector.ts::ResourceList.getNextOverrideState",
+        "modes/interactive/components/config-selector.ts::ResourceList.getOverrideStateFromEntries",
+        "modes/interactive/components/config-selector.ts::ResourceList.getPatternEntryTarget",
+        "modes/interactive/components/config-selector.ts::ResourceList.getProjectOverrideState",
+        "modes/interactive/components/config-selector.ts::ResourceList.getResourceItemKey",
+        "modes/interactive/components/config-selector.ts::ResourceList.getResourcePatternForScope",
+        "modes/interactive/components/config-selector.ts::ResourceList.getTopLevelOverridePatterns",
+        "modes/interactive/components/config-selector.ts::ResourceList.groups",
+        "modes/interactive/components/config-selector.ts::ResourceList.isDimmedItem",
+        "modes/interactive/components/config-selector.ts::ResourceList.isInheritedGlobalItem",
+        "modes/interactive/components/config-selector.ts::ResourceList.packageSourceStringMatches",
+        "modes/interactive/components/config-selector.ts::ResourceList.renderCheckbox",
+        "modes/interactive/components/config-selector.ts::ResourceList.setProjectPackageOverride",
+        "modes/interactive/components/config-selector.ts::ResourceList.setProjectResourceOverride",
+        "modes/interactive/components/config-selector.ts::ResourceList.setProjectTopLevelOverride",
+        "modes/interactive/components/config-selector.ts::ResourceList.setProjectTopLevelPaths",
+        "modes/interactive/components/config-selector.ts::ResourceList.setWriteScope",
+        "modes/interactive/components/custom-entry.ts::CustomEntryComponent",
+        "modes/interactive/components/custom-entry.ts::CustomEntryComponent.constructor",
+        "modes/interactive/components/custom-entry.ts::CustomEntryComponent.hasContent",
+        "modes/interactive/components/custom-entry.ts::CustomEntryComponent.invalidate",
+        "modes/interactive/components/custom-entry.ts::CustomEntryComponent.rebuild",
+        "modes/interactive/components/custom-entry.ts::CustomEntryComponent.setExpanded",
+        "modes/interactive/components/extension-editor.ts::ExtensionEditorComponent.handleOpenExternalEditor",
+        "modes/interactive/components/first-time-setup.ts::FirstTimeSetupComponent",
+        "modes/interactive/components/first-time-setup.ts::FirstTimeSetupComponent.addOptionList",
+        "modes/interactive/components/first-time-setup.ts::FirstTimeSetupComponent.constructor",
+        "modes/interactive/components/first-time-setup.ts::FirstTimeSetupComponent.handleInput",
+        "modes/interactive/components/first-time-setup.ts::FirstTimeSetupComponent.moveSelection",
+        "modes/interactive/components/first-time-setup.ts::FirstTimeSetupComponent.update",
+        "modes/interactive/components/footer.ts::formatCwdForFooter",
+        "modes/interactive/components/login-dialog.ts::LoginDialogComponent.replaceInputWithSubmittedText",
+        "modes/interactive/components/login-dialog.ts::LoginDialogComponent.showDetails",
+        "modes/interactive/components/login-dialog.ts::LoginDialogComponent.showDeviceCode",
+        "modes/interactive/components/model-selector.ts::ModelSelectorComponent.close",
+        "modes/interactive/components/model-selector.ts::ModelSelectorComponent.loadModelsFromSnapshot",
+        "modes/interactive/components/model-selector.ts::ModelSelectorComponent.refreshModels",
+        "modes/interactive/components/oauth-selector.ts::formatAuthSelectorProviderType",
+        "modes/interactive/components/settings-selector.ts::ThemeSubmenu",
+        "modes/interactive/components/settings-selector.ts::ThemeSubmenu.apply",
+        "modes/interactive/components/settings-selector.ts::ThemeSubmenu.cancel",
+        "modes/interactive/components/settings-selector.ts::ThemeSubmenu.constructor",
+        "modes/interactive/components/settings-selector.ts::ThemeSubmenu.createThemeSelect",
+        "modes/interactive/components/settings-selector.ts::ThemeSubmenu.getActiveAutomaticTheme",
+        "modes/interactive/components/settings-selector.ts::ThemeSubmenu.getAutomaticThemeSetting",
+        "modes/interactive/components/settings-selector.ts::ThemeSubmenu.getThemeSetting",
+        "modes/interactive/components/settings-selector.ts::ThemeSubmenu.handleInput",
+        "modes/interactive/components/settings-selector.ts::ThemeSubmenu.setContent",
+        "modes/interactive/components/settings-selector.ts::ThemeSubmenu.showAutomaticMenu",
+        "modes/interactive/components/settings-selector.ts::ThemeSubmenu.showSingleMenu",
+        "modes/interactive/components/settings-selector.ts::defaultAutomaticThemes",
+        "modes/interactive/components/settings-selector.ts::preferredTheme",
+        "modes/interactive/components/settings-selector.ts::singleModeThemeItems",
+        "modes/interactive/components/settings-selector.ts::themeItems",
+        "modes/interactive/components/status-indicator.ts::BranchSummaryStatusIndicator",
+        "modes/interactive/components/status-indicator.ts::BranchSummaryStatusIndicator.constructor",
+        "modes/interactive/components/status-indicator.ts::CompactionStatusIndicator",
+        "modes/interactive/components/status-indicator.ts::CompactionStatusIndicator.constructor",
+        "modes/interactive/components/status-indicator.ts::IdleStatus",
+        "modes/interactive/components/status-indicator.ts::IdleStatus.invalidate",
+        "modes/interactive/components/status-indicator.ts::IdleStatus.render",
+        "modes/interactive/components/status-indicator.ts::RetryStatusIndicator",
+        "modes/interactive/components/status-indicator.ts::RetryStatusIndicator.constructor",
+        "modes/interactive/components/status-indicator.ts::RetryStatusIndicator.dispose",
+        "modes/interactive/components/status-indicator.ts::StatusIndicator.constructor",
+        "modes/interactive/components/status-indicator.ts::StatusIndicator.dispose",
+        "modes/interactive/components/status-indicator.ts::WorkingStatusIndicator",
+        "modes/interactive/components/status-indicator.ts::WorkingStatusIndicator.constructor",
+        "modes/interactive/components/tree-selector.ts::TreeHelp",
+        "modes/interactive/components/tree-selector.ts::TreeHelp.invalidate",
+        "modes/interactive/components/tree-selector.ts::TreeHelp.render",
+        "modes/interactive/components/tree-selector.ts::TreeList.copySelected",
+        "modes/interactive/components/tree-selector.ts::TreeList.extractFullContent",
+        "modes/interactive/components/tree-selector.ts::TreeList.getEntryCopyText",
+        "modes/interactive/components/tree-selector.ts::compactRawKeys",
+        "modes/interactive/components/tree-selector.ts::formatHelpKeys",
+        "modes/interactive/components/tree-selector.ts::renderHorizontalViewport",
+        "modes/interactive/components/trust-selector.ts::TrustSelectorComponent",
+        "modes/interactive/components/trust-selector.ts::TrustSelectorComponent.constructor",
+        "modes/interactive/components/trust-selector.ts::TrustSelectorComponent.handleInput",
+        "modes/interactive/components/trust-selector.ts::TrustSelectorComponent.isSavedOption",
+        "modes/interactive/components/trust-selector.ts::TrustSelectorComponent.updateList",
+        "modes/interactive/components/trust-selector.ts::formatDecision",
+        "modes/interactive/components/user-message.ts::UserMessageComponent.rebuild",
+        "modes/interactive/components/user-message.ts::UserMessageComponent.setOutputPad",
+        "modes/interactive/external-editor.ts::editInExternalEditor",
+        "modes/interactive/interactive-mode.ts::InteractiveMode.addCacheMissNotice",
+        "modes/interactive/interactive-mode.ts::InteractiveMode.addCustomEntryToChat",
+        "modes/interactive/interactive-mode.ts::InteractiveMode.clearStatusIndicator",
+        "modes/interactive/interactive-mode.ts::InteractiveMode.createProjectTrustContext",
+        "modes/interactive/interactive-mode.ts::InteractiveMode.handleClipboardPaste",
+        "modes/interactive/interactive-mode.ts::InteractiveMode.handleOpenExternalEditor",
+        "modes/interactive/interactive-mode.ts::InteractiveMode.maybeShowCacheMissNotice",
+        "modes/interactive/interactive-mode.ts::InteractiveMode.renderProjectTrustWarningIfNeeded",
+        "modes/interactive/interactive-mode.ts::InteractiveMode.renderSessionEntries",
+        "modes/interactive/interactive-mode.ts::InteractiveMode.renderSessionItems",
+        "modes/interactive/interactive-mode.ts::InteractiveMode.showStatusIndicator",
+        "modes/interactive/interactive-mode.ts::createFuzzyAutocompleteItems",
+        "modes/interactive/interactive-mode.ts::formatLoginProviderCompletionDescription",
+        "modes/interactive/interactive-mode.ts::formatResumeCommand",
+        "modes/interactive/interactive-mode.ts::getLoginProviderCompletionOptions",
+        "modes/interactive/interactive-mode.ts::getLoginProviderSearchText",
+        "modes/interactive/interactive-mode.ts::isCustomSessionEntry",
+        "modes/interactive/interactive-mode.ts::quoteIfNeeded",
+        "modes/interactive/model-search.ts::getModelSearchText",
+        "modes/interactive/model-search.ts::getModelSelectorSearchText",
+        "modes/interactive/theme/theme-controller.ts::InteractiveThemeController",
+        "modes/interactive/theme/theme-controller.ts::InteractiveThemeController.applyFromSettings",
+        "modes/interactive/theme/theme-controller.ts::InteractiveThemeController.applyTerminalTheme",
+        "modes/interactive/theme/theme-controller.ts::InteractiveThemeController.applyThemeName",
+        "modes/interactive/theme/theme-controller.ts::InteractiveThemeController.constructor",
+        "modes/interactive/theme/theme-controller.ts::InteractiveThemeController.disableAutoSync",
+        "modes/interactive/theme/theme-controller.ts::InteractiveThemeController.getTerminalTheme",
+        "modes/interactive/theme/theme-controller.ts::InteractiveThemeController.notifyChanged",
+        "modes/interactive/theme/theme-controller.ts::InteractiveThemeController.preview",
+        "modes/interactive/theme/theme-controller.ts::InteractiveThemeController.setAutoSync",
+        "modes/interactive/theme/theme-controller.ts::InteractiveThemeController.setThemeInstance",
+        "modes/interactive/theme/theme-controller.ts::InteractiveThemeController.setThemeName",
+        "modes/interactive/theme/theme.ts::assertThemeNameIsValid",
+        "modes/interactive/theme/theme.ts::detectTerminalBackgroundFromEnv",
+        "modes/interactive/theme/theme.ts::detectTerminalBackgroundTheme",
+        "modes/interactive/theme/theme.ts::detectTerminalThemeForAuto",
+        "modes/interactive/theme/theme.ts::getAnsiColorLuminance",
+        "modes/interactive/theme/theme.ts::getColorFgBgBackgroundIndex",
+        "modes/interactive/theme/theme.ts::getCustomThemeInfos",
+        "modes/interactive/theme/theme.ts::getRgbColorLuminance",
+        "modes/interactive/theme/theme.ts::getThemeForRgbColor",
+        "modes/interactive/theme/theme.ts::parseAutoThemeSetting",
+        "modes/interactive/theme/theme.ts::resolveThemeSetting",
+        "modes/interactive/theme/theme.ts::withThemeColorFallbacks",
+        "modes/rpc/rpc-client.ts::RpcClient.createProcessExitError",
+        "modes/rpc/rpc-client.ts::RpcClient.getAvailableThinkingLevels",
+        "modes/rpc/rpc-client.ts::RpcClient.getEntries",
+        "modes/rpc/rpc-client.ts::RpcClient.getTree",
+        "modes/rpc/rpc-client.ts::RpcClient.rejectPendingRequests",
+        "package-manager-cli.ts::createCommandSettingsManager",
+        "package-manager-cli.ts::getCommandAppMode",
+        "package-manager-cli.ts::prepareWindowsNpmSelfUpdate",
+        "package-manager-cli.ts::printConfigCommandHelp",
+        "package-manager-cli.ts::printPnpmSelfUpdateMetadataHint",
+        "package-manager-cli.ts::printSelfUpdateNote",
+        "package-manager-cli.ts::refreshModelCatalogs",
+        "package-manager-cli.ts::reportProjectTrustWarnings",
+        "utils/changelog.ts::entryVersion",
+        "utils/changelog.ts::isDirectoryTarget",
+        "utils/changelog.ts::normalizeChangelogLinkTarget",
+        "utils/changelog.ts::normalizeChangelogLinks",
+        "utils/changelog.ts::normalizePathPart",
+        "utils/changelog.ts::normalizeTag",
+        "utils/changelog.ts::resolveRepositoryPath",
+        "utils/changelog.ts::splitLocalTarget",
+        "utils/child-process.ts::spawnProcess",
+        "utils/child-process.ts::spawnProcessSync",
+        "utils/clipboard-native.ts::loadClipboardNative",
+        "utils/clipboard.ts::readClipboardText",
+        "utils/deprecation.ts::clearDeprecationWarningsForTests",
+        "utils/deprecation.ts::warnDeprecation",
+        "utils/git.ts::buildGitSource",
+        "utils/git.ts::decodeForValidation",
+        "utils/git.ts::hasUnsafeGitInstallPart",
+        "utils/image-convert.ts::convertImageBytesToPng",
+        "utils/image-process.ts::conversionHint",
+        "utils/image-process.ts::normalizeImage",
+        "utils/image-process.ts::normalizeSupportedImageMimeType",
+        "utils/image-process.ts::processImage",
+        "utils/image-resize-core.ts::resizeImageInProcess",
+        "utils/image-resize-worker.ts::isResizeImageWorkerRequest",
+        "utils/image-resize.ts::createResizeWorker",
+        "utils/image-resize.ts::isResizeImageWorkerResponse",
+        "utils/image-resize.ts::resizeImageInWorker",
+        "utils/image-resize.ts::toTransferableBytes",
+        "utils/mime.ts::isBmp",
+        "utils/mime.ts::readUint16LE",
+        "utils/mime.ts::readUint32LE",
+        "utils/open-browser.ts::openBrowser",
+        "utils/paths.ts::markPathIgnoredByCloudSync",
+        "utils/shell.ts::getBashShellConfig",
+        "utils/shell.ts::isLegacyWslBashPath",
+        "utils/windows-self-update.ts::cleanupWindowsSelfUpdateQuarantine",
+        "utils/windows-self-update.ts::getLoadedSharedObjectsInPackageDir",
+        "utils/windows-self-update.ts::getQuarantineRoot",
+        "utils/windows-self-update.ts::quarantineWindowsNativeDependencies"
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "module": "llm",
+      "missingDirectories": [
+        "packages/ai/src/api",
+        "packages/ai/src/auth",
+        "packages/ai/src/auth/oauth",
+        "packages/ai/src/compat"
+      ]
+    },
+    {
+      "module": "agent",
+      "missingDirectories": [
+        "packages/agent/src/harness/tools"
+      ]
+    },
+    {
+      "module": "tui",
+      "missingDirectories": []
+    },
+    {
+      "module": "coding",
+      "missingDirectories": [
+        "packages/coding-agent/src/extensions",
+        "packages/coding-agent/src/extensions/llama"
+      ]
+    }
+  ],
+  "tests": [
+    {
+      "module": "llm",
+      "undocumentedFiles": [
+        "packages/ai/test/anthropic-adaptive-thinking-models.test.ts",
+        "packages/ai/test/anthropic-cache-write-1h-cost.test.ts",
+        "packages/ai/test/anthropic-empty-thinking-signature-compat.test.ts",
+        "packages/ai/test/anthropic-force-adaptive-thinking.test.ts",
+        "packages/ai/test/anthropic-opus-4-8-smoke.test.ts",
+        "packages/ai/test/anthropic-temperature-compat.test.ts",
+        "packages/ai/test/azure-openai-responses-reasoning-replay.test.ts",
+        "packages/ai/test/bedrock-convert-messages.test.ts",
+        "packages/ai/test/bedrock-custom-headers.test.ts",
+        "packages/ai/test/cloudflare-stream.test.ts",
+        "packages/ai/test/compat-env.test.ts",
+        "packages/ai/test/constrained-sampling.test.ts",
+        "packages/ai/test/context-estimate.test.ts",
+        "packages/ai/test/deferred-tools.test.ts",
+        "packages/ai/test/error-body.test.ts",
+        "packages/ai/test/image-model-data.test.ts",
+        "packages/ai/test/images-models.test.ts",
+        "packages/ai/test/kimi-coding-oauth.test.ts",
+        "packages/ai/test/lax-message-content.test.ts",
+        "packages/ai/test/max-thinking.test.ts",
+        "packages/ai/test/model-catalog-types.test.ts",
+        "packages/ai/test/model-data-validation.test.ts",
+        "packages/ai/test/models-runtime.test.ts",
+        "packages/ai/test/oauth-auth.test.ts",
+        "packages/ai/test/oauth-device-code.test.ts",
+        "packages/ai/test/openai-completions-reasoning-details.test.ts",
+        "packages/ai/test/openai-completions-retry.test.ts",
+        "packages/ai/test/openai-responses-compat.test.ts",
+        "packages/ai/test/openai-responses-empty-tool-result.test.ts",
+        "packages/ai/test/openai-responses-message-id.test.ts",
+        "packages/ai/test/openai-responses-terminal-event.test.ts",
+        "packages/ai/test/openrouter-cache-control-models.test.ts",
+        "packages/ai/test/openrouter-oauth.test.ts",
+        "packages/ai/test/pi-messages.test.ts",
+        "packages/ai/test/provider-error-body-passthrough.test.ts",
+        "packages/ai/test/provider-error-body-regression.test.ts",
+        "packages/ai/test/provider-retry.test.ts",
+        "packages/ai/test/providers.test.ts",
+        "packages/ai/test/qwen-token-plan-models.test.ts",
+        "packages/ai/test/reasoning-options.test.ts",
+        "packages/ai/test/retry.test.ts",
+        "packages/ai/test/text.test.ts",
+        "packages/ai/test/uuid.test.ts",
+        "packages/ai/test/xai-oauth.test.ts",
+        "packages/ai/test/xai-responses.test.ts",
+        "packages/ai/test/xiaomi-models.test.ts",
+        "packages/ai/test/xiaomi-token-plan-ams-anthropic-empty-signature-smoke.test.ts"
+      ],
+      "noCandidateFiles": [
+        "packages/ai/test/constrained-sampling.test.ts",
+        "packages/ai/test/context-estimate.test.ts",
+        "packages/ai/test/deferred-tools.test.ts",
+        "packages/ai/test/error-body.test.ts",
+        "packages/ai/test/max-thinking.test.ts",
+        "packages/ai/test/pi-messages.test.ts",
+        "packages/ai/test/providers.test.ts",
+        "packages/ai/test/reasoning-options.test.ts",
+        "packages/ai/test/retry.test.ts",
+        "packages/ai/test/text.test.ts",
+        "packages/ai/test/uuid.test.ts"
+      ],
+      "noCandidateCases": [
+        {
+          "file": "packages/ai/test/anthropic-cache-write-1h-cost.test.ts",
+          "line": 76,
+          "name": "falls back to the 5m rate when no breakdown is reported"
+        },
+        {
+          "file": "packages/ai/test/anthropic-empty-thinking-signature-compat.test.ts",
+          "line": 100,
+          "name": "allows empty signatures for Kimi Coding %s"
+        },
+        {
+          "file": "packages/ai/test/anthropic-sse-parsing.test.ts",
+          "line": 227,
+          "name": "treats message_delta without usage as a no-op for usage accumulation"
+        },
+        {
+          "file": "packages/ai/test/anthropic-temperature-compat.test.ts",
+          "line": 98,
+          "name": "omits temperature for custom models with supportsTemperature disabled"
+        },
+        {
+          "file": "packages/ai/test/azure-openai-base-url.test.ts",
+          "line": 160,
+          "name": "disables server-side response storage"
+        },
+        {
+          "file": "packages/ai/test/cloudflare-stream.test.ts",
+          "line": 22,
+          "name": "materializes the model endpoint before dispatch"
+        },
+        {
+          "file": "packages/ai/test/constrained-sampling.test.ts",
+          "line": 78,
+          "name": "converts supported constraints and falls back when unsupported"
+        },
+        {
+          "file": "packages/ai/test/constrained-sampling.test.ts",
+          "line": 117,
+          "name": "replays grammar calls as custom Responses items"
+        },
+        {
+          "file": "packages/ai/test/constrained-sampling.test.ts",
+          "line": 174,
+          "name": "keeps grammar input JSON deltas append-only"
+        },
+        {
+          "file": "packages/ai/test/constrained-sampling.test.ts",
+          "line": 186,
+          "name": "streams custom Responses tool calls as string arguments"
+        },
+        {
+          "file": "packages/ai/test/context-estimate.test.ts",
+          "line": 44,
+          "name": "ignores stale assistant usage after a newer message is inserted before it"
+        },
+        {
+          "file": "packages/ai/test/context-estimate.test.ts",
+          "line": 63,
+          "name": "uses assistant usage again after a response to the inserted context"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 180,
+          "name": "loads an Anthropic tool at its tool-result marker"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 188,
+          "name": "preserves tool output as sibling content after emitting references"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 223,
+          "name": "loads a tool introduced by OpenAI history after switching to Anthropic"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 236,
+          "name": "does not resurrect a marked tool missing from Context.tools"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 245,
+          "name": "keeps a tool immediate when it was used before its marker"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 255,
+          "name": "normalizes OAuth names before checking prior tool usage"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 271,
+          "name": "matches OAuth-canonicalized markers to active tools"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 287,
+          "name": "deduplicates active tools after OAuth canonicalization"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 301,
+          "name": "uses the normal tool list when Anthropic tool references are unsupported"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 315,
+          "name": "keeps one immediate Anthropic tool when every current tool is marked"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 325,
+          "name": "supports explicit Anthropic compatibility overrides"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 337,
+          "name": "serializes Kimi deferred tools as system tool definitions"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 349,
+          "name": "emits Kimi deferred schemas after all tool results in a batch"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 387,
+          "name": "leaves OpenAI Completions tools unchanged without Kimi mode"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 395,
+          "name": "loads an OpenAI Responses tool through client tool search"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 420,
+          "name": "uses the normal tool list when OpenAI tool search is explicitly disabled"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 433,
+          "name": "uses tool search only for supported Codex models"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 452,
+          "name": "leaves providers without deferred loading unchanged"
+        },
+        {
+          "file": "packages/ai/test/deferred-tools.test.ts",
+          "line": 458,
+          "name": "counts definitions marked after the latest usage checkpoint"
+        },
+        {
+          "file": "packages/ai/test/error-body.test.ts",
+          "line": 12,
+          "name": "extracts status and body from a Mistral-shaped error"
+        },
+        {
+          "file": "packages/ai/test/error-body.test.ts",
+          "line": 25,
+          "name": "reads the parsed body off an openai APIError when the message is opaque"
+        },
+        {
+          "file": "packages/ai/test/error-body.test.ts",
+          "line": 40,
+          "name": "preserves the message when @google/genai already folds the body into it"
+        },
+        {
+          "file": "packages/ai/test/error-body.test.ts",
+          "line": 53,
+          "name": "extracts status and body from a Bedrock-shaped ServiceException"
+        },
+        {
+          "file": "packages/ai/test/error-body.test.ts",
+          "line": 67,
+          "name": "JSON-stringifies a non-Error thrown value"
+        },
+        {
+          "file": "packages/ai/test/error-body.test.ts",
+          "line": 76,
+          "name": "treats an empty parsed body object as no body"
+        },
+        {
+          "file": "packages/ai/test/error-body.test.ts",
+          "line": 88,
+          "name": "truncates the body at the cap"
+        },
+        {
+          "file": "packages/ai/test/error-body.test.ts",
+          "line": 101,
+          "name": "sets messageCarriesBody when the message already contains the extracted body"
+        },
+        {
+          "file": "packages/ai/test/error-body.test.ts",
+          "line": 114,
+          "name": "surfaces status and body without a prefix"
+        },
+        {
+          "file": "packages/ai/test/error-body.test.ts",
+          "line": 129,
+          "name": "applies a provider prefix with status and body"
+        },
+        {
+          "file": "packages/ai/test/error-body.test.ts",
+          "line": 142,
+          "name": "preserves the message (with prefix + status) when it already carries the body"
+        },
+        {
+          "file": "packages/ai/test/error-body.test.ts",
+          "line": 149,
+          "name": "returns the bare message for a non-Error value"
+        },
+        {
+          "file": "packages/ai/test/github-copilot-oauth.test.ts",
+          "line": 62,
+          "name": "filters models to the authenticated account picker catalog"
+        },
+        {
+          "file": "packages/ai/test/github-copilot-oauth.test.ts",
+          "line": 119,
+          "name": "reports device-code details through onDeviceCode"
+        },
+        {
+          "file": "packages/ai/test/images-models.test.ts",
+          "line": 161,
+          "name": "supports dynamic providers via refresh with in-flight dedupe"
+        },
+        {
+          "file": "packages/ai/test/kimi-coding-oauth.test.ts",
+          "line": 51,
+          "name": "logs in with the device authorization flow"
+        },
+        {
+          "file": "packages/ai/test/kimi-coding-oauth.test.ts",
+          "line": 120,
+          "name": "fails when the device code expires"
+        },
+        {
+          "file": "packages/ai/test/kimi-coding-oauth.test.ts",
+          "line": 164,
+          "name": "honors the KIMI_CODE_OAUTH_HOST override"
+        },
+        {
+          "file": "packages/ai/test/max-thinking.test.ts",
+          "line": 15,
+          "name": "is opt-in for ordinary reasoning models"
+        },
+        {
+          "file": "packages/ai/test/max-thinking.test.ts",
+          "line": 51,
+          "name": "supports a hole between high and max"
+        },
+        {
+          "file": "packages/ai/test/max-thinking.test.ts",
+          "line": 70,
+          "name": "sends max to the Codex Responses API"
+        },
+        {
+          "file": "packages/ai/test/mistral-reasoning-mode.test.ts",
+          "line": 81,
+          "name": "uses the session id as prompt cache key"
+        },
+        {
+          "file": "packages/ai/test/mistral-reasoning-mode.test.ts",
+          "line": 89,
+          "name": "omits prompt cache key when cache retention is disabled"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 110,
+          "name": "enumerates credential metadata without exposing secrets"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 126,
+          "name": "applies request-wide pricing tiers above the configured input threshold"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 162,
+          "name": "registers, replaces, and deletes providers"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 201,
+          "name": "swallows provider source failures for both all-provider and single-provider listing"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 219,
+          "name": "refresh() updates every configured dynamic provider and reports failures"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 255,
+          "name": "persists dynamic catalogs and restores them without network access"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 369,
+          "name": "resolves auth: stored credential owns the provider, ambient only when nothing stored"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 432,
+          "name": "runs provider login and logout through the credential store"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 450,
+          "name": "a stored credential without a matching handler blocks ambient fallback"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 460,
+          "name": "refreshes expired oauth credentials and persists the rotated credential"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 479,
+          "name": "rejects with code oauth when refresh fails, preserving the stored credential"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 495,
+          "name": "serializes concurrent OAuth refreshes through store.modify (no double refresh)"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 517,
+          "name": "valid oauth tokens resolve without touching modify"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 606,
+          "name": "merges resolved auth into stream options; explicit options win per field"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 638,
+          "name": "adds model headers only for model auth and transforms assembled headers once"
+        },
+        {
+          "file": "packages/ai/test/models-runtime.test.ts",
+          "line": 675,
+          "name": "streams through the provider"
+        },
+        {
+          "file": "packages/ai/test/oauth-device-code.test.ts",
+          "line": 9,
+          "name": "polls immediately and returns the completed value"
+        },
+        {
+          "file": "packages/ai/test/oauth-device-code.test.ts",
+          "line": 125,
+          "name": "cancels an in-flight wait"
+        },
+        {
+          "file": "packages/ai/test/openai-codex-stream.test.ts",
+          "line": 1767,
+          "name": "opens a fresh cached websocket before the backend connection age limit"
+        },
+        {
+          "file": "packages/ai/test/openai-completions-tool-choice.test.ts",
+          "line": 299,
+          "name": "stores z.ai GLM-5.2 effort metadata"
+        },
+        {
+          "file": "packages/ai/test/openai-completions-tool-choice.test.ts",
+          "line": 1639,
+          "name": "uses Ant Ling compatibility metadata"
+        },
+        {
+          "file": "packages/ai/test/openai-responses-terminal-event.test.ts",
+          "line": 188,
+          "name": "finalizes completed terminal events as stop"
+        },
+        {
+          "file": "packages/ai/test/openai-responses-terminal-event.test.ts",
+          "line": 206,
+          "name": "finalizes incomplete terminal events as length stops"
+        },
+        {
+          "file": "packages/ai/test/openrouter-cache-control-models.test.ts",
+          "line": 12,
+          "name": "enables cache control for %s"
+        },
+        {
+          "file": "packages/ai/test/pi-messages.test.ts",
+          "line": 97,
+          "name": "streams text and tool calls and resolves the terminal message"
+        },
+        {
+          "file": "packages/ai/test/pi-messages.test.ts",
+          "line": 155,
+          "name": "appends debug=1 and reports response headers via onResponse"
+        },
+        {
+          "file": "packages/ai/test/pi-messages.test.ts",
+          "line": 177,
+          "name": "surfaces backend error responses with diagnostics"
+        },
+        {
+          "file": "packages/ai/test/pi-messages.test.ts",
+          "line": 194,
+          "name": "propagates server-sent error events"
+        },
+        {
+          "file": "packages/ai/test/pi-messages.test.ts",
+          "line": 207,
+          "name": "errors when no API key is provided"
+        },
+        {
+          "file": "packages/ai/test/pi-messages.test.ts",
+          "line": 216,
+          "name": "errors when the stream ends without a terminal event"
+        },
+        {
+          "file": "packages/ai/test/pi-messages.test.ts",
+          "line": 234,
+          "name": "is registered as a builtin api provider"
+        },
+        {
+          "file": "packages/ai/test/pi-messages.test.ts",
+          "line": 239,
+          "name": "is a known api usable on models"
+        },
+        {
+          "file": "packages/ai/test/provider-error-body-regression.test.ts",
+          "line": 140,
+          "name": "openai-completions (body-blind text) surfaces status + body"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 26,
+          "name": "builtinModels registers every builtin provider with models"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 47,
+          "name": "stores native constrained-sampling capabilities in model metadata"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 58,
+          "name": "uses official Kimi K3 pricing for Moonshot providers"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 70,
+          "name": "uses API-equivalent implied pricing for Kimi Coding subscription models"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 82,
+          "name": "resolves anthropic auth from env with OAuth token precedence"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 94,
+          "name": "runs provider-owned Bedrock bearer token and AWS profile login flows"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 126,
+          "name": "reports bedrock as configured from ambient AWS credentials without an api key"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 140,
+          "name": "requires Cloudflare Workers AI account config and returns scoped env"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 155,
+          "name": "requires Cloudflare AI Gateway account and gateway config and returns scoped env headers"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 185,
+          "name": "runs provider-owned Vertex API key and ADC login flows"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 226,
+          "name": "resolves vertex via ADC file plus project and location"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 251,
+          "name": "prefers the stored credential key and falls back through env vars in order"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 268,
+          "name": "login prompts for a secret and returns an api-key credential"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 310,
+          "name": "dispatches on model.api for mixed-API providers"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 326,
+          "name": "merges provider-resolved env into stream options"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 367,
+          "name": "produces a stream error for a model whose api has no implementation"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 379,
+          "name": "supports dynamic providers: empty until refreshed, in-flight refreshes deduped"
+        },
+        {
+          "file": "packages/ai/test/providers.test.ts",
+          "line": 415,
+          "name": "streams queued responses through a Models collection"
+        },
+        {
+          "file": "packages/ai/test/reasoning-options.test.ts",
+          "line": 5,
+          "name": "exposes only verified effort values and none"
+        },
+        {
+          "file": "packages/ai/test/reasoning-options.test.ts",
+          "line": 19,
+          "name": "does not infer thinking-off from an effort list"
+        },
+        {
+          "file": "packages/ai/test/reasoning-options.test.ts",
+          "line": 31,
+          "name": "leaves toggle and budget controls for their adapter-specific implementations"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 17,
+          "name": "matches explicit provider retry guidance"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 35,
+          "name": "matches Bun fetch socket drop wording"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 52,
+          "name": "matches OpenAI Responses streams that end before terminal events"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 60,
+          "name": "keeps provider limit errors non-retryable"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 68,
+          "name": "classifies assistant error messages"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 85,
+          "name": "returns a successful response immediately without retrying"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 92,
+          "name": "does not retry an aborted message"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 101,
+          "name": "does not retry a non-retryable error (quota/billing)"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 114,
+          "name": "retries a transient error up to maxRetries then returns the final error"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 125,
+          "name": "stops retrying once a call succeeds"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 140,
+          "name": "reports an aborted retried call as unsuccessful"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 155,
+          "name": "does not retry when policy is disabled"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 166,
+          "name": "emits onRetryAttemptStart after backoff before each retried call"
+        },
+        {
+          "file": "packages/ai/test/retry.test.ts",
+          "line": 197,
+          "name": "aborts backoff sleep via signal, returns an aborted message, and emits onRetryFinished(false)"
+        },
+        {
+          "file": "packages/ai/test/supports-xhigh.test.ts",
+          "line": 105,
+          "name": "uses the verified effort options for %s Kimi K3"
+        },
+        {
+          "file": "packages/ai/test/text.test.ts",
+          "line": 12,
+          "name": "extracts assistant text blocks"
+        },
+        {
+          "file": "packages/ai/test/text.test.ts",
+          "line": 16,
+          "name": "supports custom separators"
+        },
+        {
+          "file": "packages/ai/test/text.test.ts",
+          "line": 20,
+          "name": "passes string content through"
+        },
+        {
+          "file": "packages/ai/test/text.test.ts",
+          "line": 24,
+          "name": "extracts text from tool-result content"
+        },
+        {
+          "file": "packages/ai/test/uuid.test.ts",
+          "line": 16,
+          "name": "uses the RFC 9562 layout and preserves monotonic order"
+        },
+        {
+          "file": "packages/ai/test/xai-oauth.test.ts",
+          "line": 298,
+          "name": "assumes a one-hour lifetime when expires_in is missing"
+        },
+        {
+          "file": "packages/ai/test/xai-responses.test.ts",
+          "line": 63,
+          "name": "excludes retired and redundant models from the built-in catalog"
+        }
+      ]
+    },
+    {
+      "module": "agent",
+      "undocumentedFiles": [
+        "packages/agent/test/harness/sqlite-migrations.test.ts",
+        "packages/agent/test/harness/sqlite-node.test.ts",
+        "packages/agent/test/harness/tools.test.ts"
+      ],
+      "noCandidateFiles": [
+        "packages/agent/test/harness/sqlite-migrations.test.ts",
+        "packages/agent/test/harness/sqlite-node.test.ts",
+        "packages/agent/test/harness/tools.test.ts"
+      ],
+      "noCandidateCases": [
+        {
+          "file": "packages/agent/test/harness/nodejs-env.test.ts",
+          "line": 285,
+          "name": "uses stdin command transport for legacy WSL bash paths"
+        },
+        {
+          "file": "packages/agent/test/harness/nodejs-env.test.ts",
+          "line": 373,
+          "name": "reports a missing working directory before spawning"
+        },
+        {
+          "file": "packages/agent/test/harness/repo.test.ts",
+          "line": 69,
+          "name": "persists header metadata through create, list, and fork"
+        },
+        {
+          "file": "packages/agent/test/harness/sqlite-migrations.test.ts",
+          "line": 67,
+          "name": "applies file-based migrations and records them"
+        },
+        {
+          "file": "packages/agent/test/harness/sqlite-migrations.test.ts",
+          "line": 110,
+          "name": "persists session metadata through create, list, open, and fork"
+        },
+        {
+          "file": "packages/agent/test/harness/sqlite-migrations.test.ts",
+          "line": 134,
+          "name": "materializes active leaf id in sessions transactionally"
+        },
+        {
+          "file": "packages/agent/test/harness/sqlite-migrations.test.ts",
+          "line": 170,
+          "name": "materializes a new branch when appending from a parent with an existing child"
+        },
+        {
+          "file": "packages/agent/test/harness/sqlite-migrations.test.ts",
+          "line": 199,
+          "name": "reopens using branch materialization and session summary state"
+        },
+        {
+          "file": "packages/agent/test/harness/sqlite-migrations.test.ts",
+          "line": 219,
+          "name": "pages entries by entry_seq cursor"
+        },
+        {
+          "file": "packages/agent/test/harness/sqlite-migrations.test.ts",
+          "line": 236,
+          "name": "closes the database when create fails after openDatabase succeeds"
+        },
+        {
+          "file": "packages/agent/test/harness/sqlite-migrations.test.ts",
+          "line": 256,
+          "name": "closes the database when open fails after openDatabase succeeds"
+        },
+        {
+          "file": "packages/agent/test/harness/sqlite-migrations.test.ts",
+          "line": 281,
+          "name": "closes the source storage after fork reads its entries"
+        },
+        {
+          "file": "packages/agent/test/harness/sqlite-migrations.test.ts",
+          "line": 323,
+          "name": "restores in-memory state when appendEntry fails after mutating caches"
+        },
+        {
+          "file": "packages/agent/test/harness/sqlite-migrations.test.ts",
+          "line": 358,
+          "name": "materializes session summary fields transactionally"
+        },
+        {
+          "file": "packages/agent/test/harness/sqlite-node.test.ts",
+          "line": 7,
+          "name": "supports node:sqlite-style named parameters"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 121,
+          "name": "reads text with offsets, limits, and continuation notices"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 146,
+          "name": "truncates large text by line count"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 166,
+          "name": "does not count a trailing newline as an extra line at the truncation limit"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 184,
+          "name": "rejects offsets beyond the file"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 193,
+          "name": "detects supported images by content"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 213,
+          "name": "delegates image conversion and resizing to an injected processor"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 241,
+          "name": "writes files and creates parent directories"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 255,
+          "name": "keeps the mutation queue locked until an aborted write settles"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 288,
+          "name": "applies disjoint edits and returns both diff formats"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 314,
+          "name": "matches all edits against the original and rejects overlaps"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 336,
+          "name": "rejects missing and duplicate target text"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 361,
+          "name": "keeps the mutation queue locked until an aborted edit write settles"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 392,
+          "name": "serializes concurrent edits through canonical and symlink paths"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 418,
+          "name": "edits regular files through symlinks"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 434,
+          "name": "preserves BOM and CRLF line endings"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 451,
+          "name": "executes commands and combines stdout and stderr"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 465,
+          "name": "reports nonzero exits and timeouts"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 477,
+          "name": "preserves truncated output when a command times out"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 505,
+          "name": "ignores output callbacks after execution settles"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 521,
+          "name": "reports the total size of an oversized final line"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 534,
+          "name": "prepares command, cwd, and an explicit environment with the turn context"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 563,
+          "name": "supports command prefixes"
+        },
+        {
+          "file": "packages/agent/test/harness/tools.test.ts",
+          "line": 576,
+          "name": "coalesces updates and persists truncated full output"
+        }
+      ]
+    },
+    {
+      "module": "tui",
+      "undocumentedFiles": [
+        "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
+        "packages/tui/test/tab-width.test.ts",
+        "packages/tui/test/terminal-colors.test.ts",
+        "packages/tui/test/tui-shrink.test.ts",
+        "packages/tui/test/word-navigation.test.ts"
+      ],
+      "noCandidateFiles": [
+        "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
+        "packages/tui/test/word-navigation.test.ts"
+      ],
+      "noCandidateCases": [
+        {
+          "file": "packages/tui/test/keybindings.test.ts",
+          "line": 6,
+          "name": "binds Ctrl+J as a default newline alias"
+        },
+        {
+          "file": "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
+          "line": 29,
+          "name": "excludes a wide grapheme from before when overlay starts inside it"
+        },
+        {
+          "file": "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
+          "line": 39,
+          "name": "keeps ASCII before-segment behavior at the same boundary"
+        },
+        {
+          "file": "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
+          "line": 47,
+          "name": "composites an overlay at the requested column when it starts inside a wide grapheme"
+        },
+        {
+          "file": "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
+          "line": 59,
+          "name": "composites an overlay when it starts at a wide grapheme boundary"
+        },
+        {
+          "file": "packages/tui/test/tab-width.test.ts",
+          "line": 60,
+          "name": "keeps tabs inside terminal control sequences byte-identical"
+        },
+        {
+          "file": "packages/tui/test/tab-width.test.ts",
+          "line": 72,
+          "name": "keeps tab-containing overlays on one physical terminal row"
+        },
+        {
+          "file": "packages/tui/test/terminal-colors.test.ts",
+          "line": 114,
+          "name": "parses color scheme reports"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 6,
+          "name": "basic words: hello world"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 12,
+          "name": "dotted: foo.bar"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 19,
+          "name": "colon: foo:bar"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 26,
+          "name": "path: path/to/file"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 36,
+          "name": "CJK mixed"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 44,
+          "name": "whitespace at boundaries"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 50,
+          "name": "punctuation run: foo...bar"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 57,
+          "name": "cursor at 0 returns 0"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 63,
+          "name": "basic words: hello world"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 69,
+          "name": "dotted: foo.bar"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 76,
+          "name": "colon: foo:bar"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 83,
+          "name": "path: path/to/file"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 92,
+          "name": "CJK mixed"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 107,
+          "name": "whitespace at boundaries"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 113,
+          "name": "punctuation run: foo...bar"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 120,
+          "name": "cursor at end returns end"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 180,
+          "name": "backward skips word then stops before atomic marker"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 184,
+          "name": "backward skips whitespace then atomic marker as one unit"
+        },
+        {
+          "file": "packages/tui/test/word-navigation.test.ts",
+          "line": 188,
+          "name": "forward skips atomic marker as one unit"
+        }
+      ]
+    },
+    {
+      "module": "coding",
+      "undocumentedFiles": [
+        "packages/coding-agent/test/branch-summary-extensions.test.ts",
+        "packages/coding-agent/test/cache-stats.test.ts",
+        "packages/coding-agent/test/changelog.test.ts",
+        "packages/coding-agent/test/clipboard-native.test.ts",
+        "packages/coding-agent/test/config-value-migration.test.ts",
+        "packages/coding-agent/test/experimental.test.ts",
+        "packages/coding-agent/test/external-editor.test.ts",
+        "packages/coding-agent/test/first-time-setup-fork.test.ts",
+        "packages/coding-agent/test/first-time-setup.test.ts",
+        "packages/coding-agent/test/format-resume-command.test.ts",
+        "packages/coding-agent/test/git-merge-and-resolve-extension.test.ts",
+        "packages/coding-agent/test/http-dispatcher.test.ts",
+        "packages/coding-agent/test/image-process.test.ts",
+        "packages/coding-agent/test/input-transform-streaming-example.test.ts",
+        "packages/coding-agent/test/interactive-mode-startup-input.test.ts",
+        "packages/coding-agent/test/llama-extension.test.ts",
+        "packages/coding-agent/test/max-thinking.test.ts",
+        "packages/coding-agent/test/model-runtime-auth-options.test.ts",
+        "packages/coding-agent/test/model-runtime-cloudflare-compat.test.ts",
+        "packages/coding-agent/test/model-runtime-modify-models-compat.test.ts",
+        "packages/coding-agent/test/models-store.test.ts",
+        "packages/coding-agent/test/plan-mode-extension.test.ts",
+        "packages/coding-agent/test/radius.test.ts",
+        "packages/coding-agent/test/remote-catalog-provider.test.ts",
+        "packages/coding-agent/test/resolve-config-value.test.ts",
+        "packages/coding-agent/test/rpc-client-process-exit.test.ts",
+        "packages/coding-agent/test/runtime-credentials.test.ts",
+        "packages/coding-agent/test/sdk-stream-options.test.ts",
+        "packages/coding-agent/test/session-file-invalid.test.ts",
+        "packages/coding-agent/test/session-id-readonly.test.ts",
+        "packages/coding-agent/test/startup-session-name.test.ts",
+        "packages/coding-agent/test/status-indicator.test.ts",
+        "packages/coding-agent/test/suite/lax-message-content.test.ts",
+        "packages/coding-agent/test/suite/regressions/1717-2113-agent-session-event-settlement.test.ts",
+        "packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts",
+        "packages/coding-agent/test/suite/regressions/5109-exclude-tools.test.ts",
+        "packages/coding-agent/test/suite/regressions/5208-late-bash-output.test.ts",
+        "packages/coding-agent/test/suite/regressions/5217-compaction-reason.test.ts",
+        "packages/coding-agent/test/suite/regressions/5303-bash-output-truncation.test.ts",
+        "packages/coding-agent/test/suite/regressions/5433-extension-oauth-prompt-input.test.ts",
+        "packages/coding-agent/test/suite/regressions/5596-missing-theme-export.test.ts",
+        "packages/coding-agent/test/suite/regressions/5661-uppercase-header-values.test.ts",
+        "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts",
+        "packages/coding-agent/test/suite/regressions/5868-rpc-unknown-command-id.test.ts",
+        "packages/coding-agent/test/suite/regressions/5943-session-start-notify.test.ts",
+        "packages/coding-agent/test/suite/regressions/5996-session-name-newlines.test.ts",
+        "packages/coding-agent/test/suite/regressions/6019-explicit-provider-retry-message.test.ts",
+        "packages/coding-agent/test/suite/regressions/6162-extension-active-tools-next-turn.test.ts",
+        "packages/coding-agent/test/suite/regressions/6260-inline-extension-naming.test.ts",
+        "packages/coding-agent/test/suite/regressions/6324-branch-summary-ambient-auth.test.ts",
+        "packages/coding-agent/test/suite/regressions/6363-agent-settled-event.test.ts",
+        "packages/coding-agent/test/suite/regressions/6647-compaction-retries-transient-stream-drop.test.ts",
+        "packages/coding-agent/test/suite/regressions/6904-dns-transport-retry.test.ts",
+        "packages/coding-agent/test/suite/regressions/6999-models-json-hot-reload.test.ts",
+        "packages/coding-agent/test/suite/regressions/extension-factory-cache.test.ts",
+        "packages/coding-agent/test/suite/regressions/pre-prompt-compaction-no-continue.test.ts",
+        "packages/coding-agent/test/theme-detection.test.ts",
+        "packages/coding-agent/test/theme-picker.test.ts",
+        "packages/coding-agent/test/trust-manager.test.ts",
+        "packages/coding-agent/test/trust-selector.test.ts"
+      ],
+      "noCandidateFiles": [
+        "packages/coding-agent/test/experimental.test.ts",
+        "packages/coding-agent/test/external-editor.test.ts",
+        "packages/coding-agent/test/first-time-setup-fork.test.ts",
+        "packages/coding-agent/test/first-time-setup.test.ts",
+        "packages/coding-agent/test/http-dispatcher.test.ts",
+        "packages/coding-agent/test/max-thinking.test.ts",
+        "packages/coding-agent/test/radius.test.ts",
+        "packages/coding-agent/test/suite/regressions/5661-uppercase-header-values.test.ts",
+        "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts"
+      ],
+      "noCandidateCases": [
+        {
+          "file": "packages/coding-agent/test/auth-storage.test.ts",
+          "line": 96,
+          "name": "serializes concurrent modifications"
+        },
+        {
+          "file": "packages/coding-agent/test/auth-storage.test.ts",
+          "line": 110,
+          "name": "delete removes one credential while preserving others"
+        },
+        {
+          "file": "packages/coding-agent/test/cache-stats.test.ts",
+          "line": 60,
+          "name": "accumulates missed tokens and cost across turns"
+        },
+        {
+          "file": "packages/coding-agent/test/cache-stats.test.ts",
+          "line": 69,
+          "name": "counts nothing for healthy sessions"
+        },
+        {
+          "file": "packages/coding-agent/test/cache-stats.test.ts",
+          "line": 82,
+          "name": "counts misses caused by model switches"
+        },
+        {
+          "file": "packages/coding-agent/test/cache-stats.test.ts",
+          "line": 98,
+          "name": "maps counted misses to their assistant messages by reference"
+        },
+        {
+          "file": "packages/coding-agent/test/cache-stats.test.ts",
+          "line": 107,
+          "name": "detects a miss on a just-completed message with idle time"
+        },
+        {
+          "file": "packages/coding-agent/test/cache-stats.test.ts",
+          "line": 118,
+          "name": "flags model switches on detected misses"
+        },
+        {
+          "file": "packages/coding-agent/test/cache-stats.test.ts",
+          "line": 130,
+          "name": "returns undefined for healthy turns"
+        },
+        {
+          "file": "packages/coding-agent/test/changelog.test.ts",
+          "line": 30,
+          "name": "canonicalizes old repository URLs without changing external links"
+        },
+        {
+          "file": "packages/coding-agent/test/config-value-migration.test.ts",
+          "line": 41,
+          "name": "leaves uppercase auth.json API key values unchanged"
+        },
+        {
+          "file": "packages/coding-agent/test/config-value-migration.test.ts",
+          "line": 89,
+          "name": "leaves uppercase models.json API key and header values unchanged"
+        },
+        {
+          "file": "packages/coding-agent/test/experimental.test.ts",
+          "line": 15,
+          "name": "returns false when PI_EXPERIMENTAL is unset"
+        },
+        {
+          "file": "packages/coding-agent/test/experimental.test.ts",
+          "line": 21,
+          "name": "returns false when PI_EXPERIMENTAL is empty"
+        },
+        {
+          "file": "packages/coding-agent/test/experimental.test.ts",
+          "line": 27,
+          "name": "returns true when PI_EXPERIMENTAL is set to 1"
+        },
+        {
+          "file": "packages/coding-agent/test/experimental.test.ts",
+          "line": 33,
+          "name": "returns false when PI_EXPERIMENTAL is set to 0"
+        },
+        {
+          "file": "packages/coding-agent/test/experimental.test.ts",
+          "line": 39,
+          "name": "returns false when PI_EXPERIMENTAL is set to a non-1 value"
+        },
+        {
+          "file": "packages/coding-agent/test/external-editor.test.ts",
+          "line": 36,
+          "name": "edits a prompt inside a private temporary directory"
+        },
+        {
+          "file": "packages/coding-agent/test/external-editor.test.ts",
+          "line": 52,
+          "name": "keeps the original content when the editor exits unsuccessfully"
+        },
+        {
+          "file": "packages/coding-agent/test/external-editor.test.ts",
+          "line": 58,
+          "name": "returns empty content when the editor clears the prompt"
+        },
+        {
+          "file": "packages/coding-agent/test/first-time-setup-fork.test.ts",
+          "line": 36,
+          "name": "returns false for a forked package"
+        },
+        {
+          "file": "packages/coding-agent/test/first-time-setup.test.ts",
+          "line": 36,
+          "name": "returns true when experimental, default agent dir, and no settings.json"
+        },
+        {
+          "file": "packages/coding-agent/test/first-time-setup.test.ts",
+          "line": 40,
+          "name": "returns false when experimental features are disabled"
+        },
+        {
+          "file": "packages/coding-agent/test/first-time-setup.test.ts",
+          "line": 46,
+          "name": "returns false when a custom agent dir is set"
+        },
+        {
+          "file": "packages/coding-agent/test/first-time-setup.test.ts",
+          "line": 52,
+          "name": "returns false when settings.json already exists"
+        },
+        {
+          "file": "packages/coding-agent/test/first-time-setup.test.ts",
+          "line": 60,
+          "name": "defaults to disabled with no tracking identifier"
+        },
+        {
+          "file": "packages/coding-agent/test/first-time-setup.test.ts",
+          "line": 67,
+          "name": "generates a tracking identifier on opt-in"
+        },
+        {
+          "file": "packages/coding-agent/test/first-time-setup.test.ts",
+          "line": 76,
+          "name": "does not generate a tracking identifier on opt-out"
+        },
+        {
+          "file": "packages/coding-agent/test/first-time-setup.test.ts",
+          "line": 85,
+          "name": "keeps the tracking identifier when toggling analytics"
+        },
+        {
+          "file": "packages/coding-agent/test/footer-width.test.ts",
+          "line": 154,
+          "name": "includes summary and tool result usage in the total cost"
+        },
+        {
+          "file": "packages/coding-agent/test/footer-width.test.ts",
+          "line": 192,
+          "name": "shows the latest cache hit rate when cache usage is present"
+        },
+        {
+          "file": "packages/coding-agent/test/footer-width.test.ts",
+          "line": 209,
+          "name": "marks Kimi Coding costs as subscription estimates"
+        },
+        {
+          "file": "packages/coding-agent/test/git-merge-and-resolve-extension.test.ts",
+          "line": 87,
+          "name": "re-sends conflicts when in an unfinished merge"
+        },
+        {
+          "file": "packages/coding-agent/test/git-merge-and-resolve-extension.test.ts",
+          "line": 143,
+          "name": "sends conflict report as a follow-up"
+        },
+        {
+          "file": "packages/coding-agent/test/git-merge-and-resolve-extension.test.ts",
+          "line": 177,
+          "name": "handles empty ours or theirs sections"
+        },
+        {
+          "file": "packages/coding-agent/test/http-dispatcher.test.ts",
+          "line": 30,
+          "name": "applies httpProxy to HTTP_PROXY and HTTPS_PROXY"
+        },
+        {
+          "file": "packages/coding-agent/test/http-dispatcher.test.ts",
+          "line": 37,
+          "name": "does not override existing proxy env vars"
+        },
+        {
+          "file": "packages/coding-agent/test/http-dispatcher.test.ts",
+          "line": 47,
+          "name": "ignores empty values"
+        },
+        {
+          "file": "packages/coding-agent/test/llama-extension.test.ts",
+          "line": 56,
+          "name": "normalizes management and inference URLs"
+        },
+        {
+          "file": "packages/coding-agent/test/llama-extension.test.ts",
+          "line": 120,
+          "name": "searches Hugging Face and reads quantizations plus access requirements"
+        },
+        {
+          "file": "packages/coding-agent/test/llama-extension.test.ts",
+          "line": 203,
+          "name": "downloads with byte progress and returns the refreshed catalog"
+        },
+        {
+          "file": "packages/coding-agent/test/max-thinking.test.ts",
+          "line": 19,
+          "name": "is accepted by CLI and settings"
+        },
+        {
+          "file": "packages/coding-agent/test/max-thinking.test.ts",
+          "line": 28,
+          "name": "falls back to thinkingXhigh for legacy themes"
+        },
+        {
+          "file": "packages/coding-agent/test/model-runtime-auth-options.test.ts",
+          "line": 36,
+          "name": "accepts a pi-ai CredentialStore"
+        },
+        {
+          "file": "packages/coding-agent/test/model-runtime-auth-options.test.ts",
+          "line": 163,
+          "name": "lets an explicit Authorization header override authHeader case-insensitively"
+        },
+        {
+          "file": "packages/coding-agent/test/model-runtime-modify-models-compat.test.ts",
+          "line": 26,
+          "name": "registers native pi-ai providers with their auth implementation"
+        },
+        {
+          "file": "packages/coding-agent/test/models-store.test.ts",
+          "line": 32,
+          "name": "persists provider catalogs without replacing unrelated providers"
+        },
+        {
+          "file": "packages/coding-agent/test/radius.test.ts",
+          "line": 50,
+          "name": "restores the legacy credential catalog without network access"
+        },
+        {
+          "file": "packages/coding-agent/test/radius.test.ts",
+          "line": 66,
+          "name": "fetches and stores the catalog for configured Radius auth"
+        },
+        {
+          "file": "packages/coding-agent/test/radius.test.ts",
+          "line": 94,
+          "name": "does not refresh catalogs over the network by default"
+        },
+        {
+          "file": "packages/coding-agent/test/radius.test.ts",
+          "line": 108,
+          "name": "does not fetch or expose Radius models without configured auth"
+        },
+        {
+          "file": "packages/coding-agent/test/radius.test.ts",
+          "line": 121,
+          "name": "supports custom Radius gateways from models.json"
+        },
+        {
+          "file": "packages/coding-agent/test/radius.test.ts",
+          "line": 153,
+          "name": "requires baseUrl for custom Radius gateways"
+        },
+        {
+          "file": "packages/coding-agent/test/remote-catalog-provider.test.ts",
+          "line": 81,
+          "name": "prefers the newer of the generated and remote catalogs"
+        },
+        {
+          "file": "packages/coding-agent/test/resolve-config-value.test.ts",
+          "line": 95,
+          "name": "uncached resolution executes a command on every call"
+        },
+        {
+          "file": "packages/coding-agent/test/runtime-credentials.test.ts",
+          "line": 18,
+          "name": "enumeration merges overrides without exposing keys"
+        },
+        {
+          "file": "packages/coding-agent/test/runtime-credentials.test.ts",
+          "line": 32,
+          "name": "delete clears both the override and persisted credential"
+        },
+        {
+          "file": "packages/coding-agent/test/sdk-stream-options.test.ts",
+          "line": 148,
+          "name": "forwards websocketConnectTimeoutMs from settings"
+        },
+        {
+          "file": "packages/coding-agent/test/settings-manager.test.ts",
+          "line": 349,
+          "name": "should reject invalid timeout values"
+        },
+        {
+          "file": "packages/coding-agent/test/status-indicator.test.ts",
+          "line": 19,
+          "name": "disposes retry countdown updates"
+        },
+        {
+          "file": "packages/coding-agent/test/suite/regressions/5661-uppercase-header-values.test.ts",
+          "line": 33,
+          "name": "keeps uppercase header strings as literals during startup migrations"
+        },
+        {
+          "file": "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts",
+          "line": 52,
+          "name": "keeps signal handlers registered while signal-triggered cleanup is pending"
+        },
+        {
+          "file": "packages/coding-agent/test/suite/regressions/5943-session-start-notify.test.ts",
+          "line": 471,
+          "name": "keeps the reload blocker focused until async reload completes"
+        },
+        {
+          "file": "packages/coding-agent/test/suite/regressions/6260-inline-extension-naming.test.ts",
+          "line": 36,
+          "name": "displays bare factories as <inline:N>"
+        },
+        {
+          "file": "packages/coding-agent/test/suite/regressions/6260-inline-extension-naming.test.ts",
+          "line": 56,
+          "name": "displays named wrappers as <inline:name>"
+        },
+        {
+          "file": "packages/coding-agent/test/syntax-highlight.test.ts",
+          "line": 62,
+          "name": "colors diff additions and deletions in fenced diff blocks"
+        },
+        {
+          "file": "packages/coding-agent/test/theme-detection.test.ts",
+          "line": 83,
+          "name": "falls back to environment hints when the terminal query fails"
+        },
+        {
+          "file": "packages/coding-agent/test/theme-detection.test.ts",
+          "line": 103,
+          "name": "uses terminal capabilities"
+        },
+        {
+          "file": "packages/coding-agent/test/trust-selector.test.ts",
+          "line": 17,
+          "name": "marks the saved trusted decision"
+        },
+        {
+          "file": "packages/coding-agent/test/trust-selector.test.ts",
+          "line": 49,
+          "name": "labels saved ancestor decisions as inherited"
+        },
+        {
+          "file": "packages/coding-agent/test/trust-selector.test.ts",
+          "line": 63,
+          "name": "adds a trust parent option"
+        }
+      ]
+    }
+  ]
+}

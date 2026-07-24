@@ -1,5 +1,9 @@
 # Pi Test-Case Parity Tracker
 
+> The counts below are historical v0.78.0-era evidence. The active Pi v0.82.0
+> test delta is pinned and tracked by `baseline.json` and
+> `v0.82.0-open-gaps.json`; this document is not a v0.82.0 completion claim.
+
 This document tracks test-case-level parity between the local Pi checkout at
 `~/Projects/agents/pi` and Gi. It is intentionally stricter than file-level
 mapping: a Pi test file only counts as covered when the user-visible contract is

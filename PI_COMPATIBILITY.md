@@ -4,6 +4,11 @@
 
 This repository is a Go rebuild of the Pi `pi-ai`, `pi-agent-core`, and `pi-tui` packages.
 
+> The detailed tables below describe the completed v0.78.0-era audit and are
+> being advanced to the pinned Pi v0.82.0 baseline. Current machine-readable
+> debt and scope live in [`docs/pi-parity/`](docs/pi-parity/README.md); the
+> existing tables are not a v0.82.0 completion claim.
+
 Case-level provider/agent parity is tracked in
 [`PI_AI_AGENT_TEST_CASE_PARITY.md`](PI_AI_AGENT_TEST_CASE_PARITY.md). Case-level
 TUI parity is tracked in [`PI_TUI_TEST_CASE_PARITY.md`](PI_TUI_TEST_CASE_PARITY.md).

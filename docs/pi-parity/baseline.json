@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "https://github.com/earendil-works/pi.git",
+    "tag": "v0.82.0",
+    "commit": "083e61621276bff9f6faefab87ce07fcd98734e2",
+    "releaseVersion": "0.82.0"
+  },
+  "scope": {
+    "modules": [
+      {
+        "name": "llm",
+        "piPackage": "packages/ai",
+        "giPackages": [
+          "gi-llm-provider"
+        ]
+      },
+      {
+        "name": "agent",
+        "piPackage": "packages/agent",
+        "giPackages": [
+          "gi-agent-core",
+          "gi-agent-core/harness"
+        ]
+      },
+      {
+        "name": "tui",
+        "piPackage": "packages/tui",
+        "giPackages": [
+          "gi-tui"
+        ]
+      },
+      {
+        "name": "coding",
+        "piPackage": "packages/coding-agent",
+        "giPackages": [
+          "gi-coding-agent",
+          "cmd/gi",
+          "protocol"
+        ]
+      }
+    ],
+    "excludedPackages": [
+      {
+        "path": "packages/web-ui",
+        "reason": "Gi does not currently ship a browser UI."
+      },
+      {
+        "path": "packages/server",
+        "reason": "The Pi server/orchestrator is a separate product surface and is not required by the four ported packages."
+      },
+      {
+        "path": "packages/storage",
+        "reason": "The standalone SQLite adapter is optional; the agent session-storage contracts remain in scope."
+      }
+    ],
+    "intentionalReplacements": [
+      {
+        "surface": "TypeScript in-process extensions",
+        "replacement": "Gi protocol and ViewTree process boundary"
+      },
+      {
+        "surface": "npm, pnpm, yarn, and Bun package lifecycle",
+        "replacement": "Go-native package and protocol resource loading"
+      }
+    ]
+  }
+}

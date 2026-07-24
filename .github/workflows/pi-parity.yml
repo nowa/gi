@@ -1,0 +1,35 @@
+name: Pi parity baseline
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PI_ROOT: ${{ runner.temp }}/pi-v0.82.0
+    steps:
+      - name: Check out Gi
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Check out the pinned Pi release
+        run: git clone --branch v0.82.0 --depth 1 https://github.com/earendil-works/pi.git "$PI_ROOT"
+
+      - name: Verify the Pi tag, commit, and package versions
+        run: node docs/pi-parity/verify-pi-baseline.mjs --pi-root "$PI_ROOT"
+
+      - name: Test the parity baseline tooling
+        run: node --test docs/pi-parity/parity-baseline-lib.test.mjs
+
+      - name: Reject parity debt drift
+        run: node docs/pi-parity/verify-parity-baseline.mjs --pi-root "$PI_ROOT"

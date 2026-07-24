@@ -1,5 +1,10 @@
 # Pi Parity Module Audit
 
+> The detailed mappings below originated from the v0.78.0 audit. Gi is now
+> targeting the immutable Pi v0.82.0 baseline declared in `baseline.json`.
+> `v0.82.0-open-gaps.json` is authoritative for the current unclassified delta;
+> these tables are not a v0.82.0 completion claim.
+
 This document is the working audit for aligning Gi with the Pi repository at
 `~/Projects/agents/pi`. It intentionally records current evidence and open
 gaps; it is not a completion claim.
