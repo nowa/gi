@@ -174,7 +174,26 @@ func parseEdits(value any) ([]Edit, error) {
 func editAccessError(path string, err error) error {
 	var fileError *harnessenv.FileError
 	if errors.As(err, &fileError) {
-		return fmt.Errorf("Could not edit file: %s. Error code: %s: %w", path, fileError.Code, err)
+		return &editToolAccessError{
+			message: fmt.Sprintf("Could not edit file: %s. Error code: %s.", path, fileError.Code),
+			cause:   err,
+		}
 	}
-	return fmt.Errorf("Could not edit file: %s: %w", path, err)
+	return &editToolAccessError{
+		message: fmt.Sprintf("Could not edit file: %s. Error: %s.", path, err.Error()),
+		cause:   err,
+	}
+}
+
+type editToolAccessError struct {
+	message string
+	cause   error
+}
+
+func (e *editToolAccessError) Error() string {
+	return e.message
+}
+
+func (e *editToolAccessError) Unwrap() error {
+	return e.cause
 }
