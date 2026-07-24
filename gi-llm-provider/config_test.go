@@ -86,7 +86,33 @@ func TestResolveAzureOpenAIConfigBuildsDefaultFromResourceName(t *testing.T) {
 	}
 }
 
+func TestResolveAzureOpenAIConfigPrefersScopedEnvironment(t *testing.T) {
+	t.Setenv("AZURE_OPENAI_API_VERSION", "process-version")
+	t.Setenv("AZURE_OPENAI_BASE_URL", "https://process.openai.azure.com")
+	t.Setenv("AZURE_OPENAI_RESOURCE_NAME", "process-resource")
+
+	config, err := ResolveAzureOpenAIConfig(
+		MustGetModel("azure-openai-responses", "gpt-4o-mini"),
+		AzureOpenAIResponsesOptions{Env: ProviderEnv{
+			"AZURE_OPENAI_API_VERSION":   "scoped-version",
+			"AZURE_OPENAI_BASE_URL":      "https://scoped.openai.azure.com",
+			"AZURE_OPENAI_RESOURCE_NAME": "scoped-resource",
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.APIVersion != "scoped-version" ||
+		config.BaseURL != "https://scoped.openai.azure.com/openai/v1" {
+		t.Fatalf("config = %#v", config)
+	}
+}
+
 func TestResolveBedrockClientConfig(t *testing.T) {
+	t.Setenv("AWS_REGION", "")
+	t.Setenv("AWS_DEFAULT_REGION", "")
+	t.Setenv("AWS_PROFILE", "")
+
 	t.Run("assigns eu-central-1 runtime URLs to built-in EU inference profiles", func(t *testing.T) {
 		model := MustGetModel("amazon-bedrock", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0")
 		if model.BaseURL != "https://bedrock-runtime.eu-central-1.amazonaws.com" {
@@ -113,6 +139,79 @@ func TestResolveBedrockClientConfig(t *testing.T) {
 		config := ResolveBedrockClientConfig(model, BedrockClientOptions{})
 		if config.Region != "us-west-2" || config.Endpoint != "https://bedrock-vpc.example.com" {
 			t.Fatalf("config = %#v", config)
+		}
+	})
+	t.Run("prefers scoped region and profile over process environment", func(t *testing.T) {
+		t.Setenv("AWS_REGION", "process-region")
+		t.Setenv("AWS_PROFILE", "process-profile")
+		config := ResolveBedrockClientConfig(
+			MustGetModel("amazon-bedrock", "us.anthropic.claude-opus-4-7"),
+			BedrockClientOptions{Env: ProviderEnv{
+				"AWS_REGION":  "scoped-region",
+				"AWS_PROFILE": "scoped-profile",
+			}},
+		)
+		if config.Region != "scoped-region" ||
+			config.Profile != "scoped-profile" ||
+			config.Endpoint != "" {
+			t.Fatalf("config = %#v", config)
+		}
+	})
+	t.Run("distinguishes explicit scoped and ambient profiles for endpoint resolution", func(t *testing.T) {
+		model := MustGetModel("amazon-bedrock", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0")
+
+		config := ResolveBedrockClientConfig(
+			model,
+			BedrockClientOptions{Profile: "explicit-profile"},
+		)
+		if config.Profile != "explicit-profile" ||
+			config.Endpoint != model.BaseURL ||
+			config.Region != "eu-central-1" {
+			t.Fatalf("explicit profile config = %#v", config)
+		}
+
+		config = ResolveBedrockClientConfig(
+			model,
+			BedrockClientOptions{Env: ProviderEnv{"AWS_PROFILE": "scoped-profile"}},
+		)
+		if config.Profile != "scoped-profile" ||
+			config.Endpoint != model.BaseURL ||
+			config.Region != "eu-central-1" {
+			t.Fatalf("scoped profile config = %#v", config)
+		}
+
+		t.Setenv("AWS_PROFILE", "ambient-profile")
+		config = ResolveBedrockClientConfig(model, BedrockClientOptions{})
+		if config.Profile != "ambient-profile" ||
+			config.Endpoint != "" ||
+			config.Region != "" {
+			t.Fatalf("ambient profile config = %#v", config)
+		}
+	})
+	t.Run("prefers inference profile ARN regions over configured regions", func(t *testing.T) {
+		t.Setenv("AWS_REGION", "us-east-1")
+		model := MustGetModel("amazon-bedrock", "us.anthropic.claude-opus-4-7")
+		model.ID = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/abc123"
+		config := ResolveBedrockClientConfig(model, BedrockClientOptions{})
+		if config.Region != "us-west-2" {
+			t.Fatalf("ARN config = %#v", config)
+		}
+
+		model.ID = "arn:aws-us-gov:bedrock:us-gov-west-1:123456789012:application-inference-profile/abc123"
+		config = ResolveBedrockClientConfig(model, BedrockClientOptions{})
+		if config.Region != "us-gov-west-1" {
+			t.Fatalf("GovCloud ARN config = %#v", config)
+		}
+	})
+	t.Run("recognizes FIPS and China standard endpoints", func(t *testing.T) {
+		cases := map[string]string{
+			"https://bedrock-runtime-fips.us-gov-west-1.amazonaws.com": "us-gov-west-1",
+			"https://bedrock-runtime.cn-north-1.amazonaws.com.cn":      "cn-north-1",
+		}
+		for endpoint, want := range cases {
+			if got := StandardBedrockEndpointRegion(endpoint); got != want {
+				t.Fatalf("endpoint %q region = %q, want %q", endpoint, got, want)
+			}
 		}
 	})
 }
@@ -145,6 +244,32 @@ func TestResolveGoogleVertexClientConfig(t *testing.T) {
 				t.Fatalf("config = %#v", config)
 			}
 		})
+	}
+}
+
+func TestResolveGoogleVertexClientConfigPrefersScopedEnvironment(t *testing.T) {
+	t.Setenv("GOOGLE_CLOUD_API_KEY", "")
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "process-project")
+	t.Setenv("GOOGLE_CLOUD_LOCATION", "process-location")
+
+	model := MustGetModel("google-vertex", "gemini-3-flash-preview")
+	config := ResolveGoogleVertexClientConfig(model, GoogleVertexOptions{Env: ProviderEnv{
+		"GOOGLE_CLOUD_PROJECT":  "scoped-project",
+		"GOOGLE_CLOUD_LOCATION": "scoped-location",
+	}})
+	if config.APIKey != "" ||
+		config.Project != "scoped-project" ||
+		config.Location != "scoped-location" {
+		t.Fatalf("config = %#v", config)
+	}
+
+	config = ResolveGoogleVertexClientConfig(model, GoogleVertexOptions{Env: ProviderEnv{
+		"GOOGLE_CLOUD_API_KEY": "scoped-api-key",
+	}})
+	if config.APIKey != "scoped-api-key" ||
+		config.Project != "" ||
+		config.Location != "" {
+		t.Fatalf("API key config = %#v", config)
 	}
 }
 

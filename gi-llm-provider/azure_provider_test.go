@@ -99,6 +99,23 @@ func TestAzureOpenAIResponsesProviderUsesDeploymentNameMap(t *testing.T) {
 	}
 }
 
+func TestAzureOpenAIResponsesProviderPrefersScopedDeploymentNameMap(t *testing.T) {
+	t.Setenv("AZURE_OPENAI_DEPLOYMENT_NAME_MAP", "gpt-4o-mini=process-deploy")
+	model := Model{
+		ID:       "gpt-4o-mini",
+		Provider: "azure-openai-responses",
+		API:      "azure-openai-responses",
+	}
+	got := resolveAzureDeploymentName(
+		model,
+		"",
+		ProviderEnv{"AZURE_OPENAI_DEPLOYMENT_NAME_MAP": "gpt-4o-mini=scoped-deploy"},
+	)
+	if got != "scoped-deploy" {
+		t.Fatalf("deployment = %q", got)
+	}
+}
+
 func TestAzureOpenAIResponsesEndpointPreservesProxyQuery(t *testing.T) {
 	endpoint := azureOpenAIResponsesEndpoint(AzureOpenAIConfig{BaseURL: "https://proxy.example.com/v1?custom=true", APIVersion: "v1"})
 	if endpoint != "https://proxy.example.com/v1/responses?api-version=v1&custom=true" {

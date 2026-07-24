@@ -37,7 +37,7 @@ func (p AnthropicMessagesProvider) stream(
 	options StreamOptions,
 	simple bool,
 ) (*AssistantMessageEventStream, error) {
-	apiKey := apiKeyOrEnv(model.Provider, options.APIKey)
+	apiKey := apiKeyOrEnv(model.Provider, options.APIKey, options.Env)
 	if apiKey == "" && !hasCloudflareAIGatewayAuthorization(model, options.Headers) {
 		return streamError(model, "missing API key for provider %s", model.Provider), nil
 	}
@@ -45,6 +45,7 @@ func (p AnthropicMessagesProvider) stream(
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	options.CacheRetention = resolveCacheRetentionWithEnv(options.CacheRetention, options.Env)
 	isOAuthToken := model.Provider == "anthropic" && isAnthropicOAuthToken(apiKey)
 	reasoning := ""
 	if options.Reasoning != "" {

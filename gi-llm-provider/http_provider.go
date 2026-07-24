@@ -24,11 +24,11 @@ func httpClientOrDefault(client HTTPDoer) HTTPDoer {
 	return &http.Client{Timeout: 10 * time.Minute}
 }
 
-func apiKeyOrEnv(provider, explicit string) string {
+func apiKeyOrEnv(provider, explicit string, env ProviderEnv) string {
 	if explicit != "" {
 		return explicit
 	}
-	return GetEnvAPIKey(provider)
+	return GetEnvAPIKeyWithOverrides(provider, env)
 }
 
 func postSSE(ctx context.Context, client HTTPDoer, endpoint string, headers map[string]string, payload any) (*http.Response, error) {

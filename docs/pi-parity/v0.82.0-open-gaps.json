@@ -39,8 +39,7 @@
         "compat.ts",
         "compat/extension-oauth-types.ts",
         "legacy-api-aliases.ts",
-        "utils/abort-signals.ts",
-        "utils/provider-env.ts"
+        "utils/abort-signals.ts"
       ],
       "missingSymbols": [
         "api/anthropic-messages.ts::assertRequestAuth",
@@ -90,9 +89,7 @@
         "compat.ts::hasResolvedCloudflareAuth",
         "compat.ts::withEnvApiKey",
         "utils/abort-signals.ts::combineAbortSignals",
-        "utils/headers.ts::providerHeadersToRecord",
-        "utils/provider-env.ts::getBunSandboxEnvValue",
-        "utils/provider-env.ts::getProviderEnvValue"
+        "utils/headers.ts::providerHeadersToRecord"
       ]
     },
     {

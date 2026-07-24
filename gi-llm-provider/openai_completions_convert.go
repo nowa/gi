@@ -2,7 +2,6 @@ package gillmprovider
 
 import (
 	"encoding/json"
-	"os"
 	"strings"
 )
 
@@ -770,11 +769,15 @@ func mapThinkingLevel(model Model, level string) string {
 }
 
 func resolveCacheRetention(value string) string {
+	return resolveCacheRetentionWithEnv(value, nil)
+}
+
+func resolveCacheRetentionWithEnv(value string, env ProviderEnv) string {
 	switch value {
 	case "none", "short", "long":
 		return value
 	default:
-		if os.Getenv("PI_CACHE_RETENTION") == "long" {
+		if GetProviderEnvValue("PI_CACHE_RETENTION", env) == "long" {
 			return "long"
 		}
 		return "short"

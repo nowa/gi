@@ -39,7 +39,7 @@ gap.
 | `packages/ai/src/compat` | `types.go` model compatibility metadata plus provider conversion/config helpers | consolidated; generated compatibility flags are typed model data in Go and consumed by the relevant protocol adapter. |
 | `packages/ai/src/providers` | `gi-llm-provider/*_provider.go`, `*_payload.go`, `*_stream.go`, `*_config.go` | consistent; provider files are split by protocol responsibility rather than nested directories. |
 | `packages/ai/src/providers/images` | `images.go`, `image_models.go`, `openrouter_images*.go` | consistent; image provider registry stays in the same Go package. |
-| `packages/ai/src/utils` | focused Go helpers in `diagnostics.go`, `event_stream.go`, `message_transform.go`, `overflow.go`, `validation.go`, `http_proxy.go`, `internal/envkeys`, `internal/eventstream`, `internal/httpproxy` | consistent; provider environment-key lookup, generic event stream mechanics, and HTTP proxy resolution now have focused Go subpackages with root-level compatibility wrappers, while helpers that depend on provider message types remain in the public package to avoid import cycles. |
+| `packages/ai/src/utils` | focused Go helpers in `diagnostics.go`, `env.go`, `event_stream.go`, `message_transform.go`, `overflow.go`, `validation.go`, `http_proxy.go`, `internal/envkeys`, `internal/eventstream`, `internal/httpproxy` | consistent; one request-scoped provider environment lookup feeds authentication, cache policy, and Azure/Bedrock/Vertex configuration. Generic event stream mechanics and HTTP proxy resolution use focused Go subpackages with root-level compatibility wrappers, while helpers that depend on provider message types remain in the public package to avoid import cycles. |
 
 ### Agent Core
 
@@ -95,7 +95,7 @@ behind focused subpackages:
 
 | Gi subpackage | Pi boundary it clarifies | Public compatibility surface |
 | --- | --- | --- |
-| `gi-llm-provider/internal/envkeys` | `packages/ai/src/env-api-keys.ts` and provider environment-key lookup helpers | `gi-llm-provider/env.go` forwards `FindEnvKeys` and `GetEnvAPIKey`. |
+| `gi-llm-provider/internal/envkeys` | `packages/ai/src/env-api-keys.ts` and provider environment-key lookup helpers | `gi-llm-provider/env.go` exposes process-only compatibility calls plus `FindEnvKeysWithOverrides` and `GetEnvAPIKeyWithOverrides` for request-scoped resolution. |
 | `gi-llm-provider/internal/oauthpage` | `packages/ai/src/utils/oauth/oauth-page.ts` | `gi-llm-provider/oauth_page.go` aliases `OAuthPageOptions` and forwards OAuth callback page render helpers. |
 | `gi-llm-provider/internal/eventstream` | `packages/ai/src/utils/event-stream.ts` | `gi-llm-provider/event_stream.go` wraps the generic stream type and preserves `AssistantMessageEventStream` constructors. |
 | `gi-llm-provider/internal/httpproxy` | `packages/ai/src/utils/node-http-proxy.ts` proxy resolution helpers | `gi-llm-provider/http_proxy.go` forwards the public proxy resolver and unsupported-protocol message. |
@@ -148,7 +148,7 @@ The member-level source inventory currently reports:
 
 | Module | Pi source files | Gi production files | Pi symbols | Missing Pi files | Missing Pi symbols |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 169 | 89 | 632 | 27 | 50 |
+| LLM provider | 169 | 89 | 632 | 26 | 48 |
 | Agent core | 35 | 35 | 327 | 0 | 0 |
 | TUI | 28 | 32 | 449 | 0 | 0 |
 | Coding agent | 177 | 172 | 2115 | 27 | 398 |

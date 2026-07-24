@@ -3,7 +3,6 @@ package gillmprovider
 import (
 	"context"
 	"net/url"
-	"os"
 	"strings"
 )
 
@@ -50,7 +49,7 @@ func (p AzureOpenAIResponsesProvider) StreamSimple(model Model, llmContext Conte
 }
 
 func (p AzureOpenAIResponsesProvider) stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {
-	apiKey := apiKeyOrEnv(model.Provider, options.APIKey)
+	apiKey := apiKeyOrEnv(model.Provider, options.APIKey, options.Env)
 	if apiKey == "" {
 		return streamError(model, "missing API key for provider %s", model.Provider), nil
 	}
@@ -63,6 +62,7 @@ func (p AzureOpenAIResponsesProvider) stream(model Model, llmContext Context, op
 		AzureResourceName:   metadataString(options.Metadata, "azure_resource_name"),
 		AzureBaseURL:        metadataString(options.Metadata, "azure_base_url"),
 		AzureDeploymentName: metadataString(options.Metadata, "azure_deployment_name"),
+		Env:                 options.Env,
 	}
 	config, err := ResolveAzureOpenAIConfig(model, azureOptions)
 	if err != nil {
@@ -76,7 +76,7 @@ func (p AzureOpenAIResponsesProvider) stream(model Model, llmContext Context, op
 		}
 	}
 	azurePayload, sampling, err := buildAzureOpenAIResponsesPayload(model, llmContext, AzureOpenAIResponsesPayloadOptions{
-		DeploymentName:   ResolveAzureDeploymentName(model, azureOptions.AzureDeploymentName),
+		DeploymentName:   resolveAzureDeploymentName(model, azureOptions.AzureDeploymentName, options.Env),
 		MaxTokens:        options.MaxTokens,
 		Temperature:      options.Temperature,
 		SessionID:        options.SessionID,
@@ -219,10 +219,16 @@ func applyAzureOpenAIResponsesReasoning(payload *AzureOpenAIResponsesPayload, mo
 }
 
 func ResolveAzureDeploymentName(model Model, explicit string) string {
+	return resolveAzureDeploymentName(model, explicit, nil)
+}
+
+func resolveAzureDeploymentName(model Model, explicit string, env ProviderEnv) string {
 	if explicit != "" {
 		return explicit
 	}
-	if mapped := parseAzureDeploymentNameMap(os.Getenv("AZURE_OPENAI_DEPLOYMENT_NAME_MAP"))[model.ID]; mapped != "" {
+	if mapped := parseAzureDeploymentNameMap(
+		GetProviderEnvValue("AZURE_OPENAI_DEPLOYMENT_NAME_MAP", env),
+	)[model.ID]; mapped != "" {
 		return mapped
 	}
 	return model.ID

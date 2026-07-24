@@ -1,7 +1,6 @@
 package gillmprovider
 
 import (
-	"os"
 	"regexp"
 	"strings"
 )
@@ -12,6 +11,7 @@ type GoogleVertexOptions struct {
 	APIKey   string
 	Project  string
 	Location string
+	Env      ProviderEnv
 }
 
 type GoogleVertexClientConfig struct {
@@ -35,8 +35,15 @@ func ResolveGoogleVertexClientConfig(model Model, options GoogleVertexOptions) G
 	if apiKey != "" {
 		config.APIKey = apiKey
 	} else {
-		config.Project = firstNonEmpty(options.Project, os.Getenv("GOOGLE_CLOUD_PROJECT"), os.Getenv("GCLOUD_PROJECT"))
-		config.Location = firstNonEmpty(options.Location, os.Getenv("GOOGLE_CLOUD_LOCATION"))
+		config.Project = firstNonEmpty(
+			options.Project,
+			GetProviderEnvValue("GOOGLE_CLOUD_PROJECT", options.Env),
+			GetProviderEnvValue("GCLOUD_PROJECT", options.Env),
+		)
+		config.Location = firstNonEmpty(
+			options.Location,
+			GetProviderEnvValue("GOOGLE_CLOUD_LOCATION", options.Env),
+		)
 	}
 	if baseURL := ResolveGoogleVertexCustomBaseURL(model.BaseURL); baseURL != "" {
 		config.HTTPOptions = &GoogleVertexHTTPOptions{
@@ -51,7 +58,10 @@ func ResolveGoogleVertexClientConfig(model Model, options GoogleVertexOptions) G
 }
 
 func ResolveGoogleVertexAPIKey(options GoogleVertexOptions) string {
-	apiKey := strings.TrimSpace(firstNonEmpty(options.APIKey, os.Getenv("GOOGLE_CLOUD_API_KEY")))
+	apiKey := strings.TrimSpace(firstNonEmpty(
+		options.APIKey,
+		GetProviderEnvValue("GOOGLE_CLOUD_API_KEY", options.Env),
+	))
 	if apiKey == "" || apiKey == GCPVertexCredentialsMarker || IsPlaceholderAPIKey(apiKey) {
 		return ""
 	}

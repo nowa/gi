@@ -3,7 +3,6 @@ package gillmprovider
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 )
 
@@ -14,6 +13,7 @@ type AzureOpenAIResponsesOptions struct {
 	AzureResourceName   string
 	AzureBaseURL        string
 	AzureDeploymentName string
+	Env                 ProviderEnv
 }
 
 type AzureOpenAIConfig struct {
@@ -42,9 +42,19 @@ func BuildDefaultAzureOpenAIBaseURL(resourceName string) string {
 }
 
 func ResolveAzureOpenAIConfig(model Model, options AzureOpenAIResponsesOptions) (AzureOpenAIConfig, error) {
-	apiVersion := firstNonEmpty(options.AzureAPIVersion, os.Getenv("AZURE_OPENAI_API_VERSION"), DefaultAzureOpenAIAPIVersion)
-	baseURL := firstNonEmpty(strings.TrimSpace(options.AzureBaseURL), strings.TrimSpace(os.Getenv("AZURE_OPENAI_BASE_URL")))
-	resourceName := firstNonEmpty(options.AzureResourceName, os.Getenv("AZURE_OPENAI_RESOURCE_NAME"))
+	apiVersion := firstNonEmpty(
+		options.AzureAPIVersion,
+		GetProviderEnvValue("AZURE_OPENAI_API_VERSION", options.Env),
+		DefaultAzureOpenAIAPIVersion,
+	)
+	baseURL := firstNonEmpty(
+		strings.TrimSpace(options.AzureBaseURL),
+		strings.TrimSpace(GetProviderEnvValue("AZURE_OPENAI_BASE_URL", options.Env)),
+	)
+	resourceName := firstNonEmpty(
+		options.AzureResourceName,
+		GetProviderEnvValue("AZURE_OPENAI_RESOURCE_NAME", options.Env),
+	)
 	if baseURL == "" && resourceName != "" {
 		baseURL = BuildDefaultAzureOpenAIBaseURL(resourceName)
 	}

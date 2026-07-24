@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 )
 
@@ -136,7 +135,7 @@ func (p PiMessagesProvider) stream(
 	llmContext Context,
 	options StreamOptions,
 ) error {
-	apiKey := apiKeyOrEnv(model.Provider, options.APIKey)
+	apiKey := apiKeyOrEnv(model.Provider, options.APIKey, options.Env)
 	if apiKey == "" {
 		return fmt.Errorf("No API key provided for provider %q", model.Provider)
 	}
@@ -246,8 +245,7 @@ func piMessagesCacheRetention(options StreamOptions) string {
 	if options.CacheRetention != "" {
 		return options.CacheRetention
 	}
-	if options.Env["PI_CACHE_RETENTION"] == "long" ||
-		options.Env["PI_CACHE_RETENTION"] == "" && os.Getenv("PI_CACHE_RETENTION") == "long" {
+	if GetProviderEnvValue("PI_CACHE_RETENTION", options.Env) == "long" {
 		return "long"
 	}
 	return ""

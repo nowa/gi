@@ -132,18 +132,27 @@ func (p BedrockConverseStreamProvider) stream(
 		}
 		options.ThinkingBudgets[normalizeThinkingBudgetLevel(reasoning)] = allocation.ThinkingBudget
 	}
+	cacheRetention := firstNonEmpty(
+		options.CacheRetention,
+		metadataString(options.Metadata, "cache_retention"),
+	)
+	cacheRetention = resolveCacheRetentionWithEnv(cacheRetention, options.Env)
 	payloadOptions := BedrockPayloadOptions{
 		Reasoning:       reasoning,
 		Region:          metadataString(options.Metadata, "region"),
 		ThinkingBudgets: options.ThinkingBudgets,
 		ThinkingDisplay: metadataString(options.Metadata, "thinking_display"),
-		CacheRetention:  firstNonEmpty(options.CacheRetention, metadataString(options.Metadata, "cache_retention")),
+		CacheRetention:  cacheRetention,
 		ToolChoice:      metadataValue(options.Metadata, "tool_choice"),
 	}
 	request := BedrockConverseStreamRequest{
-		Model:           model,
-		Payload:         BuildBedrockPayload(model, llmContext, payloadOptions),
-		ClientConfig:    ResolveBedrockClientConfig(model, BedrockClientOptions{Region: payloadOptions.Region, Profile: metadataString(options.Metadata, "profile")}),
+		Model:   model,
+		Payload: BuildBedrockPayload(model, llmContext, payloadOptions),
+		ClientConfig: ResolveBedrockClientConfig(model, BedrockClientOptions{
+			Region:  payloadOptions.Region,
+			Profile: metadataString(options.Metadata, "profile"),
+			Env:     options.Env,
+		}),
 		MaxTokens:       options.MaxTokens,
 		Temperature:     options.Temperature,
 		CacheRetention:  payloadOptions.CacheRetention,

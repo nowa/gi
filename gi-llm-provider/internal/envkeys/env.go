@@ -14,6 +14,8 @@ func apiKeyEnvVars(provider string) []string {
 		return []string{"OPENAI_API_KEY"}
 	case "azure-openai-responses":
 		return []string{"AZURE_OPENAI_API_KEY"}
+	case "nvidia":
+		return []string{"NVIDIA_API_KEY"}
 	case "deepseek":
 		return []string{"DEEPSEEK_API_KEY"}
 	case "google":
@@ -74,9 +76,18 @@ func apiKeyEnvVars(provider string) []string {
 }
 
 func FindEnvKeys(provider string) []string {
+	return FindEnvKeysWithLookup(provider, os.Getenv)
+}
+
+// FindEnvKeysWithLookup returns configured API-key variable names through the
+// supplied environment lookup.
+func FindEnvKeysWithLookup(provider string, lookup func(string) string) []string {
+	if lookup == nil {
+		lookup = os.Getenv
+	}
 	var found []string
 	for _, key := range apiKeyEnvVars(provider) {
-		if os.Getenv(key) != "" {
+		if lookup(key) != "" {
 			found = append(found, key)
 		}
 	}
@@ -87,17 +98,26 @@ func FindEnvKeys(provider string) []string {
 }
 
 func GetEnvAPIKey(provider string) string {
-	keys := FindEnvKeys(provider)
+	return ResolveAPIKey(provider, os.Getenv)
+}
+
+// ResolveAPIKey resolves provider authentication through the supplied lookup.
+// It also recognizes ambient Bedrock credential sources.
+func ResolveAPIKey(provider string, lookup func(string) string) string {
+	if lookup == nil {
+		lookup = os.Getenv
+	}
+	keys := FindEnvKeysWithLookup(provider, lookup)
 	if len(keys) > 0 {
-		return os.Getenv(keys[0])
+		return lookup(keys[0])
 	}
 	if provider == "amazon-bedrock" {
-		if os.Getenv("AWS_PROFILE") != "" ||
-			(os.Getenv("AWS_ACCESS_KEY_ID") != "" && os.Getenv("AWS_SECRET_ACCESS_KEY") != "") ||
-			os.Getenv("AWS_BEARER_TOKEN_BEDROCK") != "" ||
-			os.Getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") != "" ||
-			os.Getenv("AWS_CONTAINER_CREDENTIALS_FULL_URI") != "" ||
-			os.Getenv("AWS_WEB_IDENTITY_TOKEN_FILE") != "" {
+		if lookup("AWS_PROFILE") != "" ||
+			(lookup("AWS_ACCESS_KEY_ID") != "" && lookup("AWS_SECRET_ACCESS_KEY") != "") ||
+			lookup("AWS_BEARER_TOKEN_BEDROCK") != "" ||
+			lookup("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") != "" ||
+			lookup("AWS_CONTAINER_CREDENTIALS_FULL_URI") != "" ||
+			lookup("AWS_WEB_IDENTITY_TOKEN_FILE") != "" {
 			return "<authenticated>"
 		}
 	}

@@ -29,7 +29,7 @@ func (p OpenAICompletionsProvider) StreamSimple(model Model, llmContext Context,
 }
 
 func (p OpenAICompletionsProvider) stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {
-	apiKey := apiKeyOrEnv(model.Provider, options.APIKey)
+	apiKey := apiKeyOrEnv(model.Provider, options.APIKey, options.Env)
 	if apiKey == "" && !hasCloudflareAIGatewayAuthorization(model, options.Headers) {
 		return streamError(model, "missing API key for provider %s", model.Provider), nil
 	}
@@ -37,6 +37,7 @@ func (p OpenAICompletionsProvider) stream(model Model, llmContext Context, optio
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	options.CacheRetention = resolveCacheRetentionWithEnv(options.CacheRetention, options.Env)
 	reasoning := ""
 	if options.Reasoning != "" {
 		reasoning = ClampThinkingLevel(model, options.Reasoning)

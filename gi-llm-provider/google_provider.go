@@ -82,7 +82,7 @@ func (p GoogleProvider) StreamSimple(model Model, llmContext Context, options Si
 }
 
 func (p GoogleProvider) stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {
-	apiKey := apiKeyOrEnv(model.Provider, options.APIKey)
+	apiKey := apiKeyOrEnv(model.Provider, options.APIKey, options.Env)
 	if apiKey == "" {
 		return streamError(model, "missing API key for provider %s", model.Provider), nil
 	}

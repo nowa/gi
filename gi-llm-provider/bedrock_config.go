@@ -2,13 +2,23 @@ package gillmprovider
 
 import (
 	"net/url"
-	"os"
+	"regexp"
 	"strings"
+)
+
+var (
+	bedrockInferenceProfileARNPattern = regexp.MustCompile(
+		`^arn:aws(?:-[a-z0-9-]+)?:bedrock:([a-z0-9-]+):`,
+	)
+	standardBedrockEndpointPattern = regexp.MustCompile(
+		`^bedrock-runtime(?:-fips)?\.([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?$`,
+	)
 )
 
 type BedrockClientOptions struct {
 	Region  string
 	Profile string
+	Env     ProviderEnv
 }
 
 type BedrockClientConfig struct {
@@ -18,31 +28,49 @@ type BedrockClientConfig struct {
 }
 
 func ResolveBedrockClientConfig(model Model, options BedrockClientOptions) BedrockClientConfig {
-	config := BedrockClientConfig{Profile: options.Profile}
+	config := BedrockClientConfig{Profile: GetConfiguredBedrockProfile(options)}
 	configuredRegion := GetConfiguredBedrockRegion(options)
-	hasConfiguredProfile := HasConfiguredBedrockProfile(options)
+	hasAmbientConfiguredProfile := GetProviderEnvValue("AWS_PROFILE", nil) != ""
 	endpointRegion := StandardBedrockEndpointRegion(model.BaseURL)
-	useExplicitEndpoint := ShouldUseExplicitBedrockEndpoint(model.BaseURL, configuredRegion, hasConfiguredProfile)
+	inferenceProfileRegion := BedrockInferenceProfileRegion(model.ID)
+	useExplicitEndpoint := ShouldUseExplicitBedrockEndpoint(
+		model.BaseURL,
+		configuredRegion,
+		hasAmbientConfiguredProfile,
+	)
 	if useExplicitEndpoint {
 		config.Endpoint = model.BaseURL
 	}
 	switch {
+	case inferenceProfileRegion != "":
+		config.Region = inferenceProfileRegion
 	case configuredRegion != "":
 		config.Region = configuredRegion
 	case endpointRegion != "" && useExplicitEndpoint:
 		config.Region = endpointRegion
-	case !hasConfiguredProfile:
+	case !hasAmbientConfiguredProfile:
 		config.Region = "us-east-1"
 	}
 	return config
 }
 
 func GetConfiguredBedrockRegion(options BedrockClientOptions) string {
-	return firstNonEmpty(options.Region, os.Getenv("AWS_REGION"), os.Getenv("AWS_DEFAULT_REGION"))
+	return firstNonEmpty(
+		options.Region,
+		GetProviderEnvValue("AWS_REGION", options.Env),
+		GetProviderEnvValue("AWS_DEFAULT_REGION", options.Env),
+	)
 }
 
 func HasConfiguredBedrockProfile(options BedrockClientOptions) bool {
-	return firstNonEmpty(options.Profile, os.Getenv("AWS_PROFILE")) != ""
+	return GetConfiguredBedrockProfile(options) != ""
+}
+
+func GetConfiguredBedrockProfile(options BedrockClientOptions) string {
+	return firstNonEmpty(
+		options.Profile,
+		GetProviderEnvValue("AWS_PROFILE", options.Env),
+	)
 }
 
 func ShouldUseExplicitBedrockEndpoint(baseURL, configuredRegion string, hasConfiguredProfile bool) bool {
@@ -53,6 +81,14 @@ func ShouldUseExplicitBedrockEndpoint(baseURL, configuredRegion string, hasConfi
 	return configuredRegion == "" && !hasConfiguredProfile
 }
 
+func BedrockInferenceProfileRegion(modelID string) string {
+	match := bedrockInferenceProfileARNPattern.FindStringSubmatch(modelID)
+	if len(match) != 2 {
+		return ""
+	}
+	return match[1]
+}
+
 func StandardBedrockEndpointRegion(baseURL string) string {
 	if baseURL == "" {
 		return ""
@@ -61,15 +97,11 @@ func StandardBedrockEndpointRegion(baseURL string) string {
 	if err != nil {
 		return ""
 	}
-	host := parsed.Hostname()
-	const prefix = "bedrock-runtime."
-	const suffix = ".amazonaws.com"
-	if !strings.HasPrefix(host, prefix) || !strings.HasSuffix(host, suffix) {
+	match := standardBedrockEndpointPattern.FindStringSubmatch(
+		strings.ToLower(parsed.Hostname()),
+	)
+	if len(match) != 2 {
 		return ""
 	}
-	region := strings.TrimSuffix(strings.TrimPrefix(host, prefix), suffix)
-	if region == "" || strings.Contains(region, ".") {
-		return ""
-	}
-	return region
+	return match[1]
 }

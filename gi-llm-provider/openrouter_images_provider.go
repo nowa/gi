@@ -21,7 +21,7 @@ func init() {
 func (p OpenRouterImagesProvider) GenerateImages(model ImagesModel, imagesContext ImagesContext, options ImagesOptions) (AssistantImages, error) {
 	apiKey := options.APIKey
 	if options.APIKeyOverride == nil {
-		apiKey = apiKeyOrEnv(model.Provider, apiKey)
+		apiKey = apiKeyOrEnv(model.Provider, apiKey, options.Env)
 	} else {
 		apiKey = *options.APIKeyOverride
 	}

@@ -170,6 +170,48 @@ func TestBedrockStreamSimpleKeepsThinkingBudgetWithinRemainingContext(t *testing
 	}
 }
 
+func TestBedrockConverseStreamProviderUsesScopedEnvironment(t *testing.T) {
+	t.Setenv("AWS_REGION", "process-region")
+	t.Setenv("AWS_PROFILE", "process-profile")
+	t.Setenv("PI_CACHE_RETENTION", "short")
+
+	model := Model{
+		ID:       "anthropic.claude-sonnet-4-5",
+		Name:     "Claude Sonnet 4.5",
+		Provider: "amazon-bedrock",
+		API:      "bedrock-converse-stream",
+		BaseURL:  "https://bedrock-runtime.us-east-1.amazonaws.com",
+	}
+	var captured BedrockConverseStreamRequest
+	provider := NewBedrockConverseStreamProvider(func(
+		_ context.Context,
+		request BedrockConverseStreamRequest,
+	) (<-chan BedrockConverseStreamEvent, error) {
+		captured = request
+		events := make(chan BedrockConverseStreamEvent)
+		close(events)
+		return events, nil
+	})
+
+	stream, err := provider.Stream(model, Context{}, StreamOptions{Env: ProviderEnv{
+		"AWS_REGION":         "scoped-region",
+		"AWS_PROFILE":        "scoped-profile",
+		"PI_CACHE_RETENTION": "long",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Result(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if captured.ClientConfig.Region != "scoped-region" ||
+		captured.ClientConfig.Profile != "scoped-profile" ||
+		captured.ClientConfig.Endpoint != "" ||
+		captured.CacheRetention != "long" {
+		t.Fatalf("request = %#v", captured)
+	}
+}
+
 func TestBedrockConverseStreamProviderMissingTransportReturnsAssistantError(t *testing.T) {
 	model := Model{ID: "bedrock-test", Provider: "amazon-bedrock", API: "bedrock-converse-stream"}
 	stream, err := NewBedrockConverseStreamProvider(nil).StreamSimple(model, Context{}, SimpleStreamOptions{})
