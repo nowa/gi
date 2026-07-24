@@ -1627,13 +1627,15 @@ func TestCLIInteractiveTUIHostSeparatesAssistantAndNextUserMessagePiStyle(t *tes
 }
 
 func TestCLIInteractiveLayoutReservesBottomRegionWithLargeOutput(t *testing.T) {
+	session := &AgentSession{}
+	session.lifecycle.setActivity(agentSessionActivityStreaming, true)
 	host := &CLIInteractiveTUIHost{
 		chat:            gitui.NewContainer(),
 		pendingMessages: gitui.NewContainer(),
 		statusContainer: gitui.NewContainer(),
 		editorContainer: gitui.NewContainer(),
 		workingVisible:  true,
-		runtimeHost:     cliInteractiveLayoutRuntimeHost{session: &AgentSession{isStreaming: true}},
+		runtimeHost:     cliInteractiveLayoutRuntimeHost{session: session},
 		slots:           map[string]*gitui.Container{"footer": gitui.NewContainer()},
 	}
 	for i := 0; i < 40; i++ {
@@ -1667,13 +1669,15 @@ func TestCLIInteractiveLayoutReservesBottomRegionWithLargeOutput(t *testing.T) {
 func TestCLIInteractiveLayoutKeepsBottomRegionStableWhileOutputGrows(t *testing.T) {
 	terminal := gitui.NewVirtualTerminal(80, 12)
 	ui := gitui.NewTUI(terminal)
+	session := &AgentSession{}
+	session.lifecycle.setActivity(agentSessionActivityStreaming, true)
 	host := &CLIInteractiveTUIHost{
 		chat:            gitui.NewContainer(),
 		pendingMessages: gitui.NewContainer(),
 		statusContainer: gitui.NewContainer(),
 		editorContainer: gitui.NewContainer(),
 		workingVisible:  true,
-		runtimeHost:     cliInteractiveLayoutRuntimeHost{session: &AgentSession{isStreaming: true}},
+		runtimeHost:     cliInteractiveLayoutRuntimeHost{session: session},
 		slots:           map[string]*gitui.Container{"footer": gitui.NewContainer()},
 	}
 	host.statusContainer.AddChild(gitui.NewText("Working...", 1, 0))
@@ -4035,7 +4039,7 @@ func TestCLIInteractiveTUIHostEscapeAbortsStreamingAndRestoresQueuePiStyle(t *te
 
 	terminal.SendInput("\x1b")
 	waitForEditorText(t, host, "steer now\n\nfollow later")
-	if !sessionHost.session.abortRequested {
+	if !sessionHost.session.lifecycle.isAbortRequested() {
 		t.Fatal("escape should abort active session")
 	}
 	if sessionHost.session.PendingMessageCount() != 0 {
@@ -4078,11 +4082,12 @@ func TestCLIInteractiveTUIHostShowsAndCancelsAutoRetryPiStyle(t *testing.T) {
 	waitForHostEditor(t, host)
 
 	cancelled := make(chan struct{}, 1)
-	sessionHost.session.isRetrying = true
-	sessionHost.session.retryAbort = func() {
+	sessionHost.session.lifecycle.setActivity(agentSessionActivityRetrying, true)
+	cleanupRetry := sessionHost.session.lifecycle.installCancellation(agentSessionCancellationRetry, func() {
 		cancelled <- struct{}{}
-		sessionHost.session.isRetrying = false
-	}
+		sessionHost.session.lifecycle.setActivity(agentSessionActivityRetrying, false)
+	})
+	defer cleanupRetry()
 	sessionHost.session.emit(AgentSessionEvent{Type: "auto_retry_start", Attempt: 1, MaxAttempts: 3, DelayMs: 2100})
 	waitForViewport(t, terminal, "Retrying (1/3) in 3s... (Esc to cancel)")
 	if host.statusContainer == nil || host.statusContainer.ChildCount() == 0 {

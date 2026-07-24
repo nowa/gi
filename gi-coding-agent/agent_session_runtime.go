@@ -96,7 +96,7 @@ func (s *AgentSession) Prompt(text string) error {
 	return s.PromptWithImages(text, nil)
 }
 
-func (s *AgentSession) PromptWithImages(text string, images []llm.ContentPart) error {
+func (s *AgentSession) PromptWithImages(text string, images []llm.ContentPart) (returnErr error) {
 	if s == nil || s.SessionManager == nil {
 		return errors.New("session manager is required")
 	}
@@ -116,7 +116,7 @@ func (s *AgentSession) PromptWithImages(text string, images []llm.ContentPart) e
 			return command.Handler(args)
 		}
 	}
-	if s.isStreaming {
+	if s.IsStreaming() {
 		return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")
 	}
 	promptImages := normalizePromptImages(images)
@@ -141,14 +141,16 @@ func (s *AgentSession) PromptWithImages(text string, images []llm.ContentPart) e
 			return err
 		}
 	}
+	if !s.lifecycle.tryStartStreaming() {
+		return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")
+	}
+	s.lifecycle.resetAbort()
+	defer func() {
+		returnErr = errors.Join(returnErr, s.settleAgentRun())
+	}()
 	s.flushPendingBashMessages()
 	content := []llm.ContentPart{llm.Text(expandedPrompt)}
 	content = append(content, promptImages...)
-	s.abortRequested = false
-	s.isStreaming = true
-	defer func() {
-		s.isStreaming = false
-	}()
 	s.emit(AgentSessionEvent{Type: "agent_start"})
 	s.emit(AgentSessionEvent{Type: "turn_start"})
 	userMessage := llm.Message{Role: llm.RoleUser, Content: content, Timestamp: llm.NowMillis()}
@@ -313,6 +315,7 @@ func providerContextFromSessionMessages(messages []llm.Message) []llm.Message {
 }
 
 func (s *AgentSession) runPromptLoop(prompt string) error {
+	defer s.lifecycle.setActivity(agentSessionActivityRetrying, false)
 	responder := s.Responder
 	if responder == nil {
 		responder = DefaultAgentSessionResponder
@@ -342,14 +345,13 @@ func (s *AgentSession) runPromptLoop(prompt string) error {
 		if llm.IsRetryableAssistantError(assistant) && s.RetrySettings.Enabled && attempt < s.RetrySettings.MaxRetries {
 			attempt++
 			retried = true
-			s.isRetrying = true
 			delayMs := retryDelayMS(s.RetrySettings.BaseDelayMs, attempt)
 			cancelled, cleanupRetryDelay := s.prepareRetryDelay()
 			s.emit(AgentSessionEvent{Type: "auto_retry_start", Attempt: attempt, MaxAttempts: s.RetrySettings.MaxRetries, DelayMs: delayMs, ErrorMessage: assistant.ErrorMessage})
 			retryDelayCompleted := waitForRetryDelay(delayMs, cancelled)
 			cleanupRetryDelay()
 			if !retryDelayCompleted {
-				s.isRetrying = false
+				s.lifecycle.setActivity(agentSessionActivityRetrying, false)
 				s.emit(AgentSessionEvent{Type: "auto_retry_end", Success: false, Attempt: attempt, FinalError: "Retry cancelled"})
 				s.emit(AgentSessionEvent{Type: "turn_end"})
 				return nil
@@ -366,13 +368,13 @@ func (s *AgentSession) runPromptLoop(prompt string) error {
 			if retried {
 				s.emit(AgentSessionEvent{Type: "auto_retry_end", Success: false, Attempt: attempt, FinalError: assistant.ErrorMessage})
 			}
-			s.isRetrying = false
+			s.lifecycle.setActivity(agentSessionActivityRetrying, false)
 			s.emit(AgentSessionEvent{Type: "turn_end"})
 			return nil
 		}
 		if retried {
 			s.emit(AgentSessionEvent{Type: "auto_retry_end", Success: true, Attempt: attempt})
-			s.isRetrying = false
+			s.lifecycle.setActivity(agentSessionActivityRetrying, false)
 		}
 		if assistant.StopReason != "toolUse" {
 			s.emit(AgentSessionEvent{Type: "turn_end"})
@@ -442,7 +444,7 @@ func (s *AgentSession) streamAssistantResponse(prompt string, messages []llm.Mes
 			if err := s.emitAssistantMessageEvent(event); err != nil {
 				return llm.Message{}, err
 			}
-			if s.abortRequested {
+			if s.lifecycle.isAbortRequested() {
 				return s.abortedAssistantMessage(event.Partial)
 			}
 		case "done":
@@ -505,13 +507,17 @@ func retryDelayMS(baseDelayMS, attempt int) int {
 func (s *AgentSession) prepareRetryDelay() (<-chan struct{}, func()) {
 	cancelled := make(chan struct{})
 	var once sync.Once
-	s.retryAbort = func() {
-		once.Do(func() {
-			close(cancelled)
-		})
-	}
+	cleanup := s.lifecycle.startNestedCancellableActivity(
+		agentSessionActivityRetrying,
+		agentSessionCancellationRetry,
+		func() {
+			once.Do(func() {
+				close(cancelled)
+			})
+		},
+	)
 	return cancelled, func() {
-		s.retryAbort = nil
+		cleanup()
 	}
 }
 
@@ -640,7 +646,7 @@ func (s *AgentSession) emitAssistantMessageUpdates(message llm.Message) (llm.Mes
 			if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "thinking_end", ContentIndex: index, Content: part.Thinking, Partial: partial}); err != nil {
 				return llm.Message{}, err
 			}
-			if s.abortRequested {
+			if s.lifecycle.isAbortRequested() {
 				return s.abortedAssistantMessage(partial)
 			}
 		case llm.ContentText:
@@ -655,7 +661,7 @@ func (s *AgentSession) emitAssistantMessageUpdates(message llm.Message) (llm.Mes
 			if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "text_end", ContentIndex: index, Content: part.Text, Partial: partial}); err != nil {
 				return llm.Message{}, err
 			}
-			if s.abortRequested {
+			if s.lifecycle.isAbortRequested() {
 				return s.abortedAssistantMessage(partial)
 			}
 		case llm.ContentToolCall:
@@ -671,7 +677,7 @@ func (s *AgentSession) emitAssistantMessageUpdates(message llm.Message) (llm.Mes
 			if err := s.emitAssistantMessageEvent(llm.AssistantMessageEvent{Type: "toolcall_end", ContentIndex: index, ToolCall: part, Partial: partial}); err != nil {
 				return llm.Message{}, err
 			}
-			if s.abortRequested {
+			if s.lifecycle.isAbortRequested() {
 				return s.abortedAssistantMessage(partial)
 			}
 		}
@@ -683,7 +689,7 @@ func (s *AgentSession) emitAssistantMessageUpdates(message llm.Message) (llm.Mes
 }
 
 func (s *AgentSession) abortedAssistantMessage(partial llm.Message) (llm.Message, error) {
-	s.abortRequested = false
+	s.lifecycle.resetAbort()
 	partial.StopReason = llm.StopReasonAborted
 	if partial.ErrorMessage == "" {
 		partial.ErrorMessage = "aborted"
@@ -1048,21 +1054,35 @@ func (s *AgentSession) IsRetrying() bool {
 	if s == nil {
 		return false
 	}
-	return s.isRetrying
+	return s.lifecycle.isActive(agentSessionActivityRetrying)
 }
 
 func (s *AgentSession) IsStreaming() bool {
 	if s == nil {
 		return false
 	}
-	return s.isStreaming
+	return s.lifecycle.isActive(agentSessionActivityStreaming)
+}
+
+func (s *AgentSession) IsIdle() bool {
+	if s == nil {
+		return true
+	}
+	return s.lifecycle.isIdle()
+}
+
+func (s *AgentSession) WaitForIdle(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	return s.lifecycle.waitForIdle(ctx)
 }
 
 func (s *AgentSession) Abort() error {
 	if s == nil {
 		return nil
 	}
-	s.abortRequested = true
+	s.lifecycle.requestAbort()
 	s.AbortBranchSummary()
 	s.AbortBash()
 	s.AbortRetry()
@@ -1090,18 +1110,17 @@ func (s *AgentSession) AbortRetry() {
 	if s == nil {
 		return
 	}
-	if s.retryAbort != nil {
-		s.retryAbort()
+	if s.lifecycle.cancel(agentSessionCancellationRetry) {
 		return
 	}
-	s.isRetrying = false
+	s.lifecycle.setActivity(agentSessionActivityRetrying, false)
 }
 
 func (s *AgentSession) AbortCompaction() {
-	if s == nil || s.compactionCancel == nil {
+	if s == nil {
 		return
 	}
-	s.compactionCancel()
+	s.lifecycle.cancel(agentSessionCancellationCompaction)
 }
 
 func (s *AgentSession) Steer(text string) error {
@@ -1161,7 +1180,7 @@ func (s *AgentSession) QueueExtensionUserMessage(text, deliverAs string) error {
 	return nil
 }
 
-func (s *AgentSession) SendCustomMessage(message QueuedCustomMessage, options ProtocolSendCustomMessageOptions) error {
+func (s *AgentSession) SendCustomMessage(message QueuedCustomMessage, options ProtocolSendCustomMessageOptions) (returnErr error) {
 	if s == nil {
 		return errors.New("session is required")
 	}
@@ -1173,7 +1192,7 @@ func (s *AgentSession) SendCustomMessage(message QueuedCustomMessage, options Pr
 		s.pendingNextTurn = append(s.pendingNextTurn, message)
 		return nil
 	}
-	if s.isStreaming {
+	if s.IsStreaming() {
 		queued := QueuedUserMessage{Text: text, Custom: &message}
 		switch options.DeliverAs {
 		case "followUp":
@@ -1187,9 +1206,12 @@ func (s *AgentSession) SendCustomMessage(message QueuedCustomMessage, options Pr
 		return nil
 	}
 	if options.TriggerTurn {
-		s.isStreaming = true
+		if !s.lifecycle.tryStartStreaming() {
+			return errors.New("Agent is already processing. Specify deliverAs ('steer' or 'followUp') to queue the message.")
+		}
+		s.lifecycle.resetAbort()
 		defer func() {
-			s.isStreaming = false
+			returnErr = errors.Join(returnErr, s.settleAgentRun())
 		}()
 		s.emit(AgentSessionEvent{Type: "agent_start"})
 		s.emit(AgentSessionEvent{Type: "turn_start"})
@@ -1330,21 +1352,28 @@ func (s *AgentSession) Compact(customInstructions ...string) (agentharness.Compa
 			return agentharness.CompactionResult{}, err
 		}
 	}
-	s.isCompacting = true
 	instructions := ""
 	if len(customInstructions) > 0 {
 		instructions = customInstructions[0]
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.compactionCancel = cancel
+	cleanupCancellation, started := s.lifecycle.tryStartExclusiveCancellableActivity(
+		agentSessionActivityCompacting,
+		agentSessionCancellationCompaction,
+		cancel,
+	)
+	if !started {
+		cancel()
+		return agentharness.CompactionResult{}, errors.New("session is busy")
+	}
 	defer func() {
-		s.compactionCancel = nil
-		s.isCompacting = false
+		cleanupCancellation()
 		cancel()
 	}()
 	s.emit(AgentSessionEvent{Type: "compaction_start", Reason: "manual"})
 	result, err := s.compactManual(ctx, instructions)
-	s.isCompacting = false
+	s.lifecycle.beginActivitySettlement(agentSessionActivityCompacting)
+	defer s.lifecycle.finishSettlement()
 	if err != nil {
 		aborted := isCompactionCancelledError(err)
 		errorMessage := "Compaction failed: " + err.Error()

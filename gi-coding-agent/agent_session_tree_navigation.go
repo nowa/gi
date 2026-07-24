@@ -39,8 +39,6 @@ func (s *AgentSession) NavigateTree(targetID string, options AgentSessionNavigat
 			return AgentSessionNavigateTreeResult{}, err
 		}
 		if result.Cancel {
-			s.isCompacting = false
-			s.branchSummaryAbort = nil
 			return AgentSessionNavigateTreeResult{Cancelled: true}, nil
 		}
 	}
@@ -48,16 +46,22 @@ func (s *AgentSession) NavigateTree(targetID string, options AgentSessionNavigat
 	var summary string
 	if options.Summarize {
 		abort := make(chan struct{})
-		s.branchSummaryAbort = abort
-		s.isCompacting = true
+		cleanupCancellation, started := s.lifecycle.tryStartExclusiveCancellableActivity(
+			agentSessionActivityCompacting,
+			agentSessionCancellationBranchSummary,
+			func() { close(abort) },
+		)
+		if !started {
+			return AgentSessionNavigateTreeResult{}, errors.New("session is busy")
+		}
 		summarizer := s.BranchSummarizer
 		if summarizer == nil {
 			summarizer = DefaultAgentSessionBranchSummarizer
 		}
 		var err error
 		summary, err = summarizer(collectTreeNavigationSummaryEntries(s.SessionManager, leaf, targetID), options.CustomInstructions, abort)
-		s.isCompacting = false
-		s.branchSummaryAbort = nil
+		cleanupCancellation()
+		s.lifecycle.setActivity(agentSessionActivityCompacting, false)
 		if err != nil {
 			if errors.Is(err, errAgentSessionBranchSummaryAborted) {
 				return AgentSessionNavigateTreeResult{Cancelled: true, Aborted: true}, nil
@@ -89,22 +93,21 @@ func (s *AgentSession) NavigateTree(targetID string, options AgentSessionNavigat
 }
 
 func (s *AgentSession) AbortBranchSummary() {
-	if s == nil || s.branchSummaryAbort == nil {
+	if s == nil {
 		return
 	}
-	close(s.branchSummaryAbort)
-	s.branchSummaryAbort = nil
+	s.lifecycle.cancel(agentSessionCancellationBranchSummary)
 }
 
 func (s *AgentSession) IsBranchSummaryRunning() bool {
-	return s != nil && s.branchSummaryAbort != nil
+	return s != nil && s.lifecycle.hasCancellation(agentSessionCancellationBranchSummary)
 }
 
 func (s *AgentSession) IsCompacting() bool {
 	if s == nil {
 		return false
 	}
-	return s.isCompacting
+	return s.lifecycle.isActive(agentSessionActivityCompacting)
 }
 
 func DefaultAgentSessionBranchSummarizer(entries []FileEntry, customInstructions string, abort <-chan struct{}) (string, error) {

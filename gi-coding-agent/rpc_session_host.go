@@ -379,7 +379,7 @@ func (h *RPCSessionHost) GetState() RPCSessionState {
 		Model:                 &model,
 		ThinkingLevel:         session.Agent.State.ThinkingLevel,
 		IsStreaming:           session.IsStreaming(),
-		IsCompacting:          session.isCompacting,
+		IsCompacting:          session.IsCompacting(),
 		SteeringMode:          h.steeringMode(),
 		FollowUpMode:          h.followUpMode(),
 		SessionFile:           manager.GetSessionFile(),

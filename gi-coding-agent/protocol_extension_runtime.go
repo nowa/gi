@@ -387,6 +387,7 @@ type ProtocolCommandSwitchResult struct {
 }
 
 type ProtocolCommandContextActions struct {
+	WaitForIdle   func() error
 	Fork          func(entryID string, options ProtocolForkOptions) (ProtocolCommandForkResult, error)
 	NewSession    func(options ProtocolNewSessionOptions) (ProtocolCommandSwitchResult, error)
 	SwitchSession func(sessionFile string, options ProtocolSwitchSessionOptions) (ProtocolCommandSwitchResult, error)
@@ -610,6 +611,20 @@ func (r *ProtocolExtensionRuntime) GetSystemPrompt() string {
 		return r.boundSession.SystemPrompt
 	}
 	return ""
+}
+
+func (c *ProtocolExtensionContext) IsIdle() bool {
+	return c == nil || c.runtime == nil || c.runtime.boundSession == nil || c.runtime.boundSession.IsIdle()
+}
+
+func (c ProtocolCommandContext) WaitForIdle() error {
+	if err := c.ensureCurrent(); err != nil {
+		return err
+	}
+	if c.runtime.commandContext.WaitForIdle == nil {
+		return nil
+	}
+	return c.runtime.commandContext.WaitForIdle()
 }
 
 func (c ProtocolCommandContext) Fork(entryID string, options ...ProtocolForkOptions) (ProtocolCommandForkResult, error) {

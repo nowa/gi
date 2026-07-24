@@ -276,6 +276,7 @@ func TestAgentSessionRetryEventsPiParitySinglePromptEventOrder(t *testing.T) {
 		"message_end:assistant",
 		"turn_end",
 		"agent_end",
+		"agent_settled",
 	}
 	if got := normalizeRetryEventOrder(*events); !reflect.DeepEqual(got, want) {
 		t.Fatalf("event order = %#v, want %#v", got, want)
@@ -326,6 +327,7 @@ func TestAgentSessionRetryEventsPiParityToolCallEventOrder(t *testing.T) {
 		"message_end:assistant",
 		"turn_end",
 		"agent_end",
+		"agent_settled",
 	}
 	if got := normalizeRetryEventOrder(*events); !reflect.DeepEqual(got, want) {
 		t.Fatalf("event order = %#v, want %#v", got, want)
@@ -472,8 +474,8 @@ func TestAgentSessionRetryEventsPiParityAgentEndForErrorResponses(t *testing.T) 
 	if err := session.Prompt("hi"); err != nil {
 		t.Fatal(err)
 	}
-	if last := (*events)[len(*events)-1]; last.Type != "agent_end" {
-		t.Fatalf("last event = %q, want agent_end", last.Type)
+	if last := (*events)[len(*events)-1]; last.Type != ProtocolEventAgentSettled {
+		t.Fatalf("last event = %q, want %s", last.Type, ProtocolEventAgentSettled)
 	}
 }
 
@@ -494,8 +496,8 @@ func TestAgentSessionRetryEventsPiParityAgentEndForAbortedRuns(t *testing.T) {
 	if err := session.Prompt("hi"); err != nil {
 		t.Fatal(err)
 	}
-	if last := (*events)[len(*events)-1]; last.Type != "agent_end" {
-		t.Fatalf("last event = %q, want agent_end", last.Type)
+	if last := (*events)[len(*events)-1]; last.Type != ProtocolEventAgentSettled {
+		t.Fatalf("last event = %q, want %s", last.Type, ProtocolEventAgentSettled)
 	}
 	messages := session.Messages()
 	lastMessage := messages[len(messages)-1]

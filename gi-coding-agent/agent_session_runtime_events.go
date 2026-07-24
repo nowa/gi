@@ -1,6 +1,7 @@
 package gicodingagent
 
 import (
+	"context"
 	"errors"
 	"sync"
 
@@ -18,6 +19,7 @@ const (
 	ProtocolEventModelSelect           = "model_select"
 	ProtocolEventThinkingLevelSelect   = "thinking_level_select"
 	ProtocolEventBeforeAgentStart      = "before_agent_start"
+	ProtocolEventAgentSettled          = "agent_settled"
 	ProtocolEventContext               = "context"
 	ProtocolEventToolCall              = "tool_call"
 	ProtocolEventToolResult            = "tool_result"
@@ -77,6 +79,12 @@ func (h *AgentSessionRuntimeHost) bindCommandContext() {
 		return
 	}
 	h.ExtensionRuntime.BindCommandContext(ProtocolCommandContextActions{
+		WaitForIdle: func() error {
+			if h.Session == nil {
+				return nil
+			}
+			return h.Session.WaitForIdle(context.Background())
+		},
 		NewSession: func(options ProtocolNewSessionOptions) (ProtocolCommandSwitchResult, error) {
 			result, err := h.NewSession(options)
 			return ProtocolCommandSwitchResult{Cancelled: result.Cancelled}, err

@@ -264,6 +264,10 @@ const modules = [
 				"gi-coding-agent/agent_session_dynamic_provider_tools_test.go",
 				"gi-coding-agent/pi_coding_agent_case_names_test.go",
 			],
+			"packages/coding-agent/test/suite/regressions/6363-agent-settled-event.test.ts": [
+				"gi-coding-agent/agent_session_concurrent_test.go",
+				"gi-coding-agent/agent_session_retry_events_test.go",
+			],
 			"packages/coding-agent/test/tools.test.ts": [
 				"gi-coding-agent/tools_read_test.go",
 				"gi-coding-agent/tools_write_edit_test.go",

@@ -1,7 +1,6 @@
 package gicodingagent
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -58,11 +57,7 @@ type AgentSession struct {
 	SteeringMode         string
 	FollowUpMode         string
 	eventListeners       []AgentSessionEventListener
-	branchSummaryAbort   chan struct{}
-	compactionCancel     context.CancelFunc
-	isCompacting         bool
-	isRetrying           bool
-	isStreaming          bool
+	lifecycle            agentSessionLifecycle
 	overflowRecovered    bool
 	agentQueuedMessages  []llm.Message
 	steeringMessages     []string
@@ -71,9 +66,6 @@ type AgentSession struct {
 	followUpQueue        []QueuedUserMessage
 	pendingNextTurn      []QueuedCustomMessage
 	pendingBashMessages  []map[string]any
-	bashAbort            func()
-	retryAbort           func()
-	abortRequested       bool
 }
 
 type AgentSessionStats struct {

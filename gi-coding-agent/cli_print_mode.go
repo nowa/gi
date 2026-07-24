@@ -666,7 +666,10 @@ func (h *agentSessionPrintModeHost) Prompt(message string, options PrintModeProm
 }
 
 func (h *agentSessionPrintModeHost) WaitForIdle() error {
-	return nil
+	if h == nil || h.session == nil {
+		return nil
+	}
+	return h.session.WaitForIdle(context.Background())
 }
 
 func (h *agentSessionPrintModeHost) Messages() []llm.Message {

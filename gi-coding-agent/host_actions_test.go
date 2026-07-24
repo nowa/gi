@@ -690,7 +690,9 @@ func TestRPCSessionHostAgentAndSessionActionHostActions(t *testing.T) {
 		t.Fatalf("send steer result=%#v queue=%#v", result, session.GetSteeringQueue())
 	}
 
-	session.isStreaming = true
+	if !session.lifecycle.tryStartStreaming() {
+		t.Fatal("session should enter streaming state")
+	}
 	abort := host.HandleHostAction(HostActionRequest{
 		Type:     "request",
 		Protocol: "gi-ext-rpc@1",
@@ -699,10 +701,11 @@ func TestRPCSessionHostAgentAndSessionActionHostActions(t *testing.T) {
 		Params:   []byte(`{}`),
 	})
 	result = assertHostActionResponseOK(t, abort, "abort")
-	if result["aborted"] != true || !session.abortRequested {
-		t.Fatalf("abort result=%#v abortRequested=%v", result, session.abortRequested)
+	if result["aborted"] != true || !session.lifecycle.isAbortRequested() {
+		t.Fatalf("abort result=%#v abortRequested=%v", result, session.lifecycle.isAbortRequested())
 	}
-	session.isStreaming = false
+	session.lifecycle.beginAgentSettlement()
+	session.lifecycle.finishSettlement()
 
 	if err := session.Prompt("hello before clear"); err != nil {
 		t.Fatal(err)

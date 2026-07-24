@@ -37,11 +37,10 @@ func (s *AgentSession) ExecuteBash(command string, options ...AgentSessionBashOp
 		ctx = context.Background()
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	s.bashAbort = cancel
+	cleanupCancellation := s.lifecycle.installCancellation(agentSessionCancellationBash, cancel)
 	defer func() {
-		if s.bashAbort != nil {
-			s.bashAbort = nil
-		}
+		cleanupCancellation()
+		cancel()
 	}()
 
 	result, err := ExecuteBashWithOperations(command, s.SessionManager.GetCWD(), opts.Operations, BashExecutorOptions{
@@ -72,7 +71,7 @@ func (s *AgentSession) RecordBashResult(command string, result BashResult, optio
 		opts = options[0]
 	}
 	message := bashExecutionMessageValue(command, result, opts.ExcludeFromContext)
-	if s.isStreaming {
+	if s.IsStreaming() {
 		s.pendingBashMessages = append(s.pendingBashMessages, message)
 		return
 	}
@@ -80,14 +79,14 @@ func (s *AgentSession) RecordBashResult(command string, result BashResult, optio
 }
 
 func (s *AgentSession) AbortBash() {
-	if s == nil || s.bashAbort == nil {
+	if s == nil {
 		return
 	}
-	s.bashAbort()
+	s.lifecycle.cancel(agentSessionCancellationBash)
 }
 
 func (s *AgentSession) IsBashRunning() bool {
-	return s != nil && s.bashAbort != nil
+	return s != nil && s.lifecycle.hasCancellation(agentSessionCancellationBash)
 }
 
 func (s *AgentSession) HasPendingBashMessages() bool {
