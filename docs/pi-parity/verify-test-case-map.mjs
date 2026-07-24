@@ -118,6 +118,12 @@ const modules = [
 		label: "Agent core",
 		piTests: ["packages/agent/test"],
 		giTests: ["gi-agent-core"],
+		excludedTests: {
+			"packages/agent/test/harness/sqlite-migrations.test.ts":
+				"Exercises the optional packages/storage/sqlite-node adapter, which baseline.json excludes from Gi's four-package parity scope.",
+			"packages/agent/test/harness/sqlite-node.test.ts":
+				"Exercises the optional packages/storage/sqlite-node adapter, which baseline.json excludes from Gi's four-package parity scope.",
+		},
 		aliases: {
 			"packages/agent/test/harness/resource-formatting.test.ts": ["gi-agent-core/harness/format_test.go"],
 			"packages/agent/test/harness/prompt-templates.test.ts": [
@@ -581,7 +587,21 @@ function knownParityDocText(giRoot) {
 }
 
 function collectModule(args, module, docsText) {
-	const piFiles = module.piTests.flatMap((dir) => walk(path.join(args.piRoot, dir), isPiTestFile));
+	const discoveredPiFiles = module.piTests.flatMap((dir) => walk(path.join(args.piRoot, dir), isPiTestFile));
+	const excludedFiles = discoveredPiFiles
+		.map((file) => {
+			const relative = rel(args.piRoot, file);
+			const reason = module.excludedTests?.[relative];
+			return reason
+				? {
+						relative,
+						cases: extractPiCases(file),
+						reason,
+					}
+				: undefined;
+		})
+		.filter(Boolean);
+	const piFiles = discoveredPiFiles.filter((file) => !module.excludedTests?.[rel(args.piRoot, file)]);
 	const giFiles = module.giTests.flatMap((dir) => walk(path.join(args.giRoot, dir), isGoTestFile));
 	const giEntries = giFiles.map((file) => buildGiEntry(args, file));
 	const giEntryByRelative = new Map(giEntries.map((entry) => [entry.relative, entry]));
@@ -673,6 +693,7 @@ function collectModule(args, module, docsText) {
 	const giTestCount = giEntries.reduce((sum, entry) => sum + entry.tests.length, 0);
 	const giSubtestCount = giEntries.reduce((sum, entry) => sum + entry.subtests.length, 0);
 	const piCaseCount = files.reduce((sum, file) => sum + file.cases.length, 0);
+	const excludedPiCaseCount = excludedFiles.reduce((sum, file) => sum + file.cases.length, 0);
 	const candidateCaseCount = files.reduce(
 		(sum, file) => sum + file.cases.filter((piCase) => piCase.candidates.length > 0).length,
 		0,
@@ -691,6 +712,9 @@ function collectModule(args, module, docsText) {
 		label: module.label,
 		piTestFiles: files.length,
 		piCaseCount,
+		excludedPiTestFiles: excludedFiles.length,
+		excludedPiCaseCount,
+		excludedFiles,
 		giTestFiles: giEntries.length,
 		giTestCount,
 		giSubtestCount,
@@ -727,6 +751,7 @@ function renderText(report) {
 	for (const result of report.results) {
 		lines.push(
 			`${result.name}: piFiles=${result.piTestFiles} piCases=${result.piCaseCount} ` +
+				`excludedPiFiles=${result.excludedPiTestFiles} excludedPiCases=${result.excludedPiCaseCount} ` +
 				`giFiles=${result.giTestFiles} giTests=${result.giTestCount} giSubtests=${result.giSubtestCount} ` +
 				`documentedFiles=${result.documentedFiles} candidateFiles=${result.candidateFiles} ` +
 				`noCandidateFiles=${result.noCandidateFiles.length} candidateCases=${result.candidateCaseCount} ` +
@@ -754,14 +779,31 @@ function renderMarkdown(report) {
 	lines.push(`- Pi root: \`${report.piRoot}\``);
 	lines.push(`- Gi root: \`${report.giRoot}\``);
 	lines.push("");
-	lines.push("| Area | Pi test files | Pi cases | Gi test files | Gi top-level tests | Gi subtests | Documented Pi test files | Candidate-mapped Pi test files | No-candidate Pi test files | Candidate-mapped Pi cases | No-candidate Pi cases |");
-	lines.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
+	lines.push("| Area | In-scope Pi test files | In-scope Pi cases | Excluded Pi test files | Excluded Pi cases | Gi test files | Gi top-level tests | Gi subtests | Documented Pi test files | Candidate-mapped Pi test files | No-candidate Pi test files | Candidate-mapped Pi cases | No-candidate Pi cases |");
+	lines.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
 	for (const result of report.results) {
 		lines.push(
-			`| ${result.label} | ${result.piTestFiles} | ${result.piCaseCount} | ${result.giTestFiles} | ` +
+			`| ${result.label} | ${result.piTestFiles} | ${result.piCaseCount} | ${result.excludedPiTestFiles} | ${result.excludedPiCaseCount} | ${result.giTestFiles} | ` +
 				`${result.giTestCount} | ${result.giSubtestCount} | ${result.documentedFiles} | ` +
 				`${result.candidateFiles} | ${result.noCandidateFiles.length} | ${result.candidateCaseCount} | ${result.noCandidateCases.length} |`,
 		);
+	}
+	lines.push("");
+	lines.push("## Explicitly Excluded Cross-Package Tests");
+	lines.push("");
+	lines.push("These tests live under an in-scope package's test tree but exercise a package excluded by `baseline.json`. They remain visible here so scope decisions cannot silently hide test coverage.");
+	for (const result of report.results) {
+		if (result.excludedFiles.length === 0) {
+			continue;
+		}
+		lines.push("");
+		lines.push(`### ${result.label}`);
+		lines.push("");
+		lines.push("| Pi test file | Cases | Reason |");
+		lines.push("| --- | ---: | --- |");
+		for (const file of result.excludedFiles) {
+			lines.push(`| \`${file.relative}\` | ${file.cases.length} | ${markdownCell(file.reason)} |`);
+		}
 	}
 	lines.push("");
 	lines.push("## No-Candidate Pi Test Files");

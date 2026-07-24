@@ -18,6 +18,7 @@ evidence and open gaps; it is not a completion claim.
 | `packages/tui` | `gi-tui` | Same responsibility: component model, editor/input, key parsing, terminal/image helpers, headless terminal, render tests. Gi exposes parity through Go constructors/types while incrementally splitting Pi component boundaries into focused Go files. |
 | `packages/coding-agent` | `gi-coding-agent`, `cmd/gi`, `protocol` | Same responsibility: CLI, interactive/print/RPC modes, session runtime, tools, resource loading, packages/extensions, UI components. Gi additionally separates the cross-language extension/view protocol into `protocol/`. |
 | `packages/web-ui` | none | No Gi equivalent currently observed. If Pi web UI is in coding-agent scope, this is an explicit product gap; if out of scope, document that boundary. |
+| `packages/storage/sqlite-node` | none | Explicitly excluded by `baseline.json`: this is a separately published optional adapter. Its two tests under `packages/agent/test/harness` are reported as cross-package exclusions; agent session-storage contracts and JSONL/in-memory implementations remain in scope. |
 
 ## Directory Abstraction Map
 
