@@ -984,14 +984,14 @@ func TestOpenAICodexResponsesProviderRejectsInvalidTimeoutsBeforeTransport(t *te
 			options: SimpleStreamOptions{
 				TimeoutMillis: -1,
 			},
-			want: "invalid timeoutMillis: -1",
+			want: "Invalid timeoutMs: -1",
 		},
 		{
 			name: "websocket connect timeout",
 			options: SimpleStreamOptions{
 				WebSocketConnectTimeoutMillis: -1,
 			},
-			want: "invalid websocketConnectTimeoutMillis: -1",
+			want: "Invalid websocketConnectTimeoutMs: -1",
 		},
 	}
 	for _, test := range tests {

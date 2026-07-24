@@ -120,3 +120,37 @@ func TestAzureOpenAIResponsesDisablesServerSideResponseStorage(t *testing.T) {
 		t.Fatalf("payload = %s", raw)
 	}
 }
+
+func TestAzureOpenAIResponsesHonorsSupportsStrictModeFalse(t *testing.T) {
+	model := Model{
+		ID:       "gpt-4o-mini",
+		Provider: "azure-openai-responses",
+		API:      "azure-openai-responses",
+		Input:    []string{"text"},
+		Compat: ModelCompat{
+			SupportsStrictMode: ptrBool(false),
+		},
+	}
+	payload, err := BuildAzureOpenAIResponsesPayloadChecked(
+		model,
+		Context{
+			Messages: []Message{UserMessageText("hi")},
+			Tools: []Tool{{
+				Name:        "preferred",
+				Description: "Preferred constrained tool",
+				Parameters:  Object(map[string]Schema{"value": String()}, "value"),
+				ConstrainedSampling: &ConstrainedSamplingConfig{
+					Type:   ConstrainedSamplingJSONSchema,
+					Strict: ConstrainedSamplingPrefer,
+				},
+			}},
+		},
+		AzureOpenAIResponsesPayloadOptions{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Tools) != 1 || payload.Tools[0].Strict != nil {
+		t.Fatalf("tools = %#v", payload.Tools)
+	}
+}

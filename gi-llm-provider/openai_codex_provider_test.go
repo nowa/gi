@@ -119,8 +119,9 @@ func TestOpenAICodexResponsesProviderRetriesRetryableHTTPStatus(t *testing.T) {
 	}
 	model := Model{ID: "gpt-5.1-codex", Provider: "openai-codex", API: "openai-codex-responses", BaseURL: server.URL, Input: []string{"text"}}
 	stream, err := provider.StreamSimple(model, Context{Messages: []Message{UserMessageText("hi")}}, SimpleStreamOptions{
-		APIKey:    token,
-		Transport: "sse",
+		APIKey:     token,
+		Transport:  "sse",
+		MaxRetries: 1,
 	})
 	if err != nil {
 		t.Fatal(err)

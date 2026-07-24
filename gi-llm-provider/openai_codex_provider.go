@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-const defaultOpenAICodexMaxRetries = 3
-
 type OpenAICodexResponsesProvider struct {
 	Client          HTTPDoer
 	WebSocketDialer OpenAICodexWebSocketDialer
@@ -59,22 +57,15 @@ func (p OpenAICodexResponsesProvider) StreamSimple(model Model, llmContext Conte
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	execution, err := prepareOpenAICodexExecutionOptions(options)
+	if err != nil {
+		return streamError(model, "%s", err.Error()), nil
+	}
 	request, err := p.buildRequest(model, llmContext, options, apiKey)
 	if err != nil {
 		return streamError(model, "%s", err.Error()), nil
 	}
-	if options.TimeoutMillis < 0 {
-		return streamError(model, "invalid timeoutMillis: %d", options.TimeoutMillis), nil
-	}
-	if options.WebSocketConnectTimeoutMillis < 0 {
-		return streamError(
-			model,
-			"invalid websocketConnectTimeoutMillis: %d",
-			options.WebSocketConnectTimeoutMillis,
-		), nil
-	}
-	transport := normalizeOpenAICodexTransport(options.Transport)
-	if transport != "sse" {
+	if execution.transport != "sse" {
 		if isOpenAICodexWebSocketSSEFallbackActive(request.cacheSessionID) {
 			recordOpenAICodexWebSocketSSEFallback(request.cacheSessionID)
 		} else {
@@ -90,13 +81,20 @@ func (p OpenAICodexResponsesProvider) StreamSimple(model Model, llmContext Conte
 				request,
 				body,
 				stream,
-				transport,
+				execution,
 			)
 			return stream, nil
 		}
 	}
 
-	response, err := p.postWithRetry(ctx, model, options, request.sseHeaders, request.payload)
+	response, err := p.postWithRetry(
+		ctx,
+		model,
+		options,
+		execution,
+		request.sseHeaders,
+		request.payload,
+	)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ErrorAssistantStream(AssistantErrorMessage(ctx.Err().Error(), model, true)), nil
@@ -185,31 +183,37 @@ func (p OpenAICodexResponsesProvider) buildRequest(
 	}, nil
 }
 
-func (p OpenAICodexResponsesProvider) postWithRetry(ctx context.Context, model Model, options SimpleStreamOptions, headers map[string]string, payload any) (*http.Response, error) {
+func (p OpenAICodexResponsesProvider) postWithRetry(
+	ctx context.Context,
+	model Model,
+	options SimpleStreamOptions,
+	execution openAICodexExecutionOptions,
+	headers map[string]string,
+	payload any,
+) (*http.Response, error) {
 	client := httpClientOrDefault(p.Client)
-	maxRetries := options.MaxRetries
-	if maxRetries == 0 {
-		maxRetries = defaultOpenAICodexMaxRetries
-	}
-	if maxRetries < 0 {
-		maxRetries = 0
-	}
 	endpoint := ResolveOpenAICodexURL(model.BaseURL)
 	var lastErr error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
+	for attempt := 0; attempt <= execution.maxRetries; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		response, err := postSSE(ctx, client, endpoint, headers, payload)
+		response, err := postOpenAICodexSSEWithHeaderTimeout(
+			ctx,
+			client,
+			endpoint,
+			headers,
+			payload,
+			execution.sseResponseHeaderTimeout,
+		)
 		if err != nil {
-			lastErr = err
-			if attempt < maxRetries {
+			if attempt < execution.maxRetries {
 				if err := p.wait(ctx, OpenAICodexRetryDelay(0, nil, attempt, p.now())); err != nil {
 					return nil, err
 				}
 				continue
 			}
-			return nil, fmt.Errorf("request failed: %w", err)
+			return nil, err
 		}
 		headerMap := responseHeaders(response.Header)
 		if options.OnResponseStatus != nil {
@@ -224,8 +228,19 @@ func (p OpenAICodexResponsesProvider) postWithRetry(ctx context.Context, model M
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
 		response.Body.Close()
 		bodyText := strings.TrimSpace(string(body))
-		if attempt < maxRetries && IsOpenAICodexRetryable(response.StatusCode, bodyText) {
-			if err := p.wait(ctx, OpenAICodexRetryDelay(response.StatusCode, headerMap, attempt, p.now())); err != nil {
+		if attempt < execution.maxRetries && IsOpenAICodexRetryable(response.StatusCode, bodyText) {
+			delay, serverRequested := openAICodexRetryDelay(
+				headerMap,
+				attempt,
+				p.now(),
+			)
+			if serverRequested {
+				delay, err = validateOpenAICodexRetryDelay(delay, execution.maxRetryDelay)
+				if err != nil {
+					return nil, err
+				}
+			}
+			if err := p.wait(ctx, delay); err != nil {
 				return nil, err
 			}
 			continue
@@ -240,6 +255,69 @@ func (p OpenAICodexResponsesProvider) postWithRetry(ctx context.Context, model M
 		lastErr = fmt.Errorf("request failed after retries")
 	}
 	return nil, lastErr
+}
+
+type openAICodexCancelReadCloser struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (body *openAICodexCancelReadCloser) Close() error {
+	err := body.ReadCloser.Close()
+	body.cancel()
+	return err
+}
+
+func postOpenAICodexSSEWithHeaderTimeout(
+	ctx context.Context,
+	client HTTPDoer,
+	endpoint string,
+	headers map[string]string,
+	payload any,
+	timeout time.Duration,
+) (*http.Response, error) {
+	if timeout <= 0 {
+		return postSSE(ctx, client, endpoint, headers, payload)
+	}
+
+	requestContext, cancel := context.WithCancel(ctx)
+	timeoutDone := make(chan struct{})
+	timer := time.AfterFunc(timeout, func() {
+		close(timeoutDone)
+		cancel()
+	})
+	response, err := postSSE(requestContext, client, endpoint, headers, payload)
+	if !timer.Stop() {
+		<-timeoutDone
+	}
+	timedOut := false
+	select {
+	case <-timeoutDone:
+		timedOut = true
+	default:
+	}
+	if timedOut {
+		if response != nil && response.Body != nil {
+			response.Body.Close()
+		}
+		cancel()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf(
+			"Codex SSE response headers timed out after %dms",
+			timeout/time.Millisecond,
+		)
+	}
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	response.Body = &openAICodexCancelReadCloser{
+		ReadCloser: response.Body,
+		cancel:     cancel,
+	}
+	return response, nil
 }
 
 func (p OpenAICodexResponsesProvider) now() time.Time {
@@ -263,7 +341,7 @@ func (p OpenAICodexResponsesProvider) streamOpenAICodexWebSocketWithFallback(
 	request openAICodexPreparedRequest,
 	body openAICodexWebSocketRequestBody,
 	stream *AssistantMessageEventStream,
-	transport string,
+	execution openAICodexExecutionOptions,
 ) {
 	output := AssistantMessage(nil, StopReasonStop, model)
 	startEmitted := false
@@ -278,7 +356,7 @@ func (p OpenAICodexResponsesProvider) streamOpenAICodexWebSocketWithFallback(
 			request,
 			body,
 			stream,
-			transport,
+			execution,
 			&output,
 			&startEmitted,
 		)
@@ -310,7 +388,7 @@ func (p OpenAICodexResponsesProvider) streamOpenAICodexWebSocketWithFallback(
 		}
 
 		diagnostic := newOpenAICodexTransportDiagnostic(
-			transport,
+			execution.transport,
 			err,
 			started,
 			request.payload,
@@ -327,6 +405,7 @@ func (p OpenAICodexResponsesProvider) streamOpenAICodexWebSocketWithFallback(
 			ctx,
 			model,
 			options,
+			execution,
 			request.sseHeaders,
 			request.payload,
 		)
@@ -359,15 +438,10 @@ func (p OpenAICodexResponsesProvider) streamOpenAICodexWebSocket(
 	request openAICodexPreparedRequest,
 	body openAICodexWebSocketRequestBody,
 	stream *AssistantMessageEventStream,
-	transport string,
+	execution openAICodexExecutionOptions,
 	output *Message,
 	startEmitted *bool,
 ) (started bool, resultErr error) {
-	connectTimeout := defaultOpenAICodexWebSocketConnectTimeout
-	if options.WebSocketConnectTimeoutMillis > 0 {
-		connectTimeout = time.Duration(options.WebSocketConnectTimeoutMillis) * time.Millisecond
-	}
-	idleTimeout := time.Duration(options.TimeoutMillis) * time.Millisecond
 	lease, err := acquireOpenAICodexWebSocket(
 		ctx,
 		p.WebSocketDialer,
@@ -375,7 +449,7 @@ func (p OpenAICodexResponsesProvider) streamOpenAICodexWebSocket(
 		request.webSocketHeaders,
 		request.cacheSessionID,
 		p.now(),
-		connectTimeout,
+		execution.webSocketConnectTimeout,
 	)
 	if err != nil {
 		return false, err
@@ -388,7 +462,8 @@ func (p OpenAICodexResponsesProvider) streamOpenAICodexWebSocket(
 		lease.release(keepConnection)
 	}()
 
-	useCachedContext := transport == "websocket-cached" || transport == "auto"
+	useCachedContext := execution.transport == "websocket-cached" ||
+		execution.transport == "auto"
 	plan := buildOpenAICodexWebSocketRequestPlan(lease.session, body, useCachedContext)
 	recordOpenAICodexWebSocketRequest(
 		request.cacheSessionID,
@@ -413,7 +488,7 @@ func (p OpenAICodexResponsesProvider) streamOpenAICodexWebSocket(
 		},
 	)
 	for {
-		payload, err := lease.connection.Read(ctx, idleTimeout)
+		payload, err := lease.connection.Read(ctx, execution.webSocketIdleTimeout)
 		if err != nil {
 			return started, err
 		}

@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -358,30 +360,111 @@ func ApplyOpenAICodexServiceTierPricing(usage *Usage, serviceTier string, model 
 	usage.Cost.Total = usage.Cost.Input + usage.Cost.Output + usage.Cost.CacheRead + usage.Cost.CacheWrite
 }
 
-func OpenAICodexRetryDelay(status int, headers map[string]string, attempt int, now time.Time) time.Duration {
+// OpenAICodexRetryDelayExceededError reports a server-requested retry delay
+// above the configured safety limit.
+type OpenAICodexRetryDelayExceededError struct {
+	Requested time.Duration
+	Maximum   time.Duration
+}
+
+func (e *OpenAICodexRetryDelayExceededError) Error() string {
+	return fmt.Sprintf(
+		"Server requested %ds retry delay (max: %ds)",
+		openAICodexCeilSeconds(e.Requested),
+		openAICodexCeilSeconds(e.Maximum),
+	)
+}
+
+func OpenAICodexRetryDelay(
+	_ int,
+	headers map[string]string,
+	attempt int,
+	now time.Time,
+) time.Duration {
+	delay, _ := openAICodexRetryDelay(headers, attempt, now)
+	return delay
+}
+
+func openAICodexRetryDelay(
+	headers map[string]string,
+	attempt int,
+	now time.Time,
+) (time.Duration, bool) {
 	if value, ok := lookupHeader(headers, "retry-after-ms"); ok {
-		if millis, err := parseNonNegativeInt(value); err == nil {
-			return time.Duration(millis) * time.Millisecond
+		if millis, err := strconv.ParseFloat(value, 64); err == nil &&
+			!math.IsNaN(millis) &&
+			!math.IsInf(millis, 0) {
+			return openAICodexDurationFromFloatMillis(millis), true
 		}
 	}
 	if value, ok := lookupHeader(headers, "retry-after"); ok {
-		if seconds, err := parseNonNegativeInt(value); err == nil {
-			return time.Duration(seconds) * time.Second
+		if seconds, err := strconv.ParseFloat(value, 64); err == nil &&
+			!math.IsNaN(seconds) &&
+			!math.IsInf(seconds, 0) {
+			return openAICodexDurationFromFloatMillis(seconds * 1000), true
 		}
-		if date, err := time.Parse(time.RFC1123, value); err == nil {
+		date, err := http.ParseTime(value)
+		if err != nil {
+			date, err = time.Parse(time.RFC1123, value)
+		}
+		if err == nil {
 			if date.Before(now) {
-				return 0
+				return 0, true
 			}
-			return date.Sub(now)
+			return date.Sub(now), true
 		}
 	}
 	if attempt < 0 {
 		attempt = 0
 	}
-	return time.Duration(1<<attempt) * time.Second
+	return exponentialRetryDelay(time.Second, attempt+1), false
+}
+
+func openAICodexDurationFromFloatMillis(milliseconds float64) time.Duration {
+	if milliseconds <= 0 {
+		return 0
+	}
+	const maxDuration = time.Duration(1<<63 - 1)
+	maxMilliseconds := float64(maxDuration) / float64(time.Millisecond)
+	if milliseconds >= maxMilliseconds {
+		return maxDuration
+	}
+	return time.Duration(milliseconds * float64(time.Millisecond))
+}
+
+func validateOpenAICodexRetryDelay(
+	delay time.Duration,
+	maximum time.Duration,
+) (time.Duration, error) {
+	delay = max(delay, 0)
+	if maximum > 0 && delay > maximum {
+		return 0, &OpenAICodexRetryDelayExceededError{
+			Requested: delay,
+			Maximum:   maximum,
+		}
+	}
+	return delay, nil
+}
+
+func openAICodexCeilSeconds(duration time.Duration) int64 {
+	seconds := int64(duration / time.Second)
+	if duration%time.Second != 0 {
+		seconds++
+	}
+	return seconds
+}
+
+// IsOpenAICodexTerminalRateLimitError identifies quota and billing failures
+// that must not be retried even when the HTTP status is 429.
+func IsOpenAICodexTerminalRateLimitError(body string) bool {
+	return nonRetryableProviderLimitErrorPattern.MatchString(body)
 }
 
 func IsOpenAICodexRetryable(status int, body string) bool {
+	if status == http.StatusTooManyRequests &&
+		IsOpenAICodexTerminalRateLimitError(body) {
+		return false
+	}
 	switch status {
 	case 429, 500, 502, 503, 504:
 		return true
@@ -467,15 +550,4 @@ func lookupHeader(headers map[string]string, name string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-func parseNonNegativeInt(value string) (int, error) {
-	result, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil {
-		return 0, err
-	}
-	if result < 0 {
-		return 0, nil
-	}
-	return result, nil
 }

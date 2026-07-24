@@ -178,6 +178,8 @@ func TestOpenAICodexRetryDelay(t *testing.T) {
 		want    time.Duration
 	}{
 		{"retry-after-ms", map[string]string{"retry-after-ms": "1500"}, 0, 1500 * time.Millisecond},
+		{"retry-after-ms fractional", map[string]string{"retry-after-ms": "1500.5"}, 0, 1500*time.Millisecond + 500*time.Microsecond},
+		{"retry-after-ms negative", map[string]string{"retry-after-ms": "-10"}, 0, 0},
 		{"retry-after seconds", map[string]string{"retry-after": "60"}, 0, 60 * time.Second},
 		{"retry-after date", map[string]string{"retry-after": now.Add(45 * time.Second).Format(time.RFC1123)}, 0, 45 * time.Second},
 		{"backoff 0", nil, 0, time.Second},
@@ -190,7 +192,10 @@ func TestOpenAICodexRetryDelay(t *testing.T) {
 			}
 		})
 	}
-	if !IsOpenAICodexRetryable(429, "") || !IsOpenAICodexRetryable(400, "upstream connect error") || IsOpenAICodexRetryable(404, "not found") {
+	if !IsOpenAICodexRetryable(429, "") ||
+		IsOpenAICodexRetryable(429, `{"error":{"code":"insufficient_quota"}}`) ||
+		!IsOpenAICodexRetryable(400, "upstream connect error") ||
+		IsOpenAICodexRetryable(404, "not found") {
 		t.Fatal("retryable classification mismatch")
 	}
 }
