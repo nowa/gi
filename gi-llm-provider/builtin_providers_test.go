@@ -809,6 +809,32 @@ func TestBuiltinProviderPiContracts(t *testing.T) {
 	})
 }
 
+func TestGitHubCopilotFiltersModelsToAuthenticatedAccountPickerCatalog(t *testing.T) {
+	provider, err := NewBuiltinProvider("github-copilot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	models := []Model{
+		{ID: "gpt-4.1", Provider: "github-copilot"},
+		{ID: "claude-opus-4.7", Provider: "github-copilot"},
+		{ID: "gpt-5.4-nano", Provider: "github-copilot"},
+	}
+	credential := Credential{
+		Type: CredentialTypeOAuth,
+		Metadata: map[string]any{
+			"availableModelIds": []any{"gpt-4.1"},
+		},
+	}
+
+	filtered := provider.FilterModels(models, &credential)
+	if len(filtered) != 1 || filtered[0].ID != "gpt-4.1" {
+		t.Fatalf("filtered models = %#v", filtered)
+	}
+	if len(models) != 3 {
+		t.Fatalf("provider policy mutated its input: %#v", models)
+	}
+}
+
 func TestLazyOAuthAuthLoadsOnce(t *testing.T) {
 	const providerID = "lazy-oauth-test"
 	t.Cleanup(func() { UnregisterOAuthAuthLoader(providerID) })

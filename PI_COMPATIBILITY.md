@@ -222,7 +222,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/google-thinking-signature.test.ts` | `gi-llm-provider/google_convert_test.go` |
 | `packages/ai/test/google-vertex-api-key-resolution.test.ts` | `gi-llm-provider/config_test.go` |
 | `packages/ai/test/github-copilot-anthropic.test.ts` | `gi-llm-provider/github_copilot_headers_test.go` |
-| `packages/ai/test/github-copilot-oauth.test.ts` | `gi-llm-provider/oauth_test.go` |
+| `packages/ai/test/github-copilot-oauth.test.ts` | `gi-llm-provider/oauth_test.go`, `gi-llm-provider/builtin_providers_test.go` for authenticated account model filtering |
 | `packages/ai/test/image-tool-result.test.ts` | `gi-llm-provider/anthropic_payload_test.go`, `gi-llm-provider/google_convert_test.go`, `gi-llm-provider/openai_completions_convert_test.go`, `gi-llm-provider/openai_responses_convert_test.go` |
 | `packages/ai/test/interleaved-thinking.test.ts` | `gi-llm-provider/anthropic_payload_test.go`, `gi-llm-provider/bedrock_payload_test.go` |
 | `packages/ai/test/bedrock-thinking-payload.test.ts` | `gi-llm-provider/bedrock_payload_test.go` |
@@ -238,7 +238,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/openai-completions-response-model.test.ts` | `gi-llm-provider/openai_completions_stream_test.go` |
 | `packages/ai/test/openai-completions-thinking-as-text.test.ts` | `gi-llm-provider/openai_completions_payload_test.go` |
 | `packages/ai/test/openai-completions-tool-result-images.test.ts` | `gi-llm-provider/openai_completions_convert_test.go` |
-| `packages/ai/test/openai-completions-tool-choice.test.ts` | `gi-llm-provider/openai_completions_payload_test.go` |
+| `packages/ai/test/openai-completions-tool-choice.test.ts` | `gi-llm-provider/openai_completions_payload_test.go`, `gi-llm-provider/model_catalog_test.go` for z.ai and Ant Ling compatibility metadata |
 | `packages/ai/test/openai-codex-oauth.test.ts` | `gi-llm-provider/oauth_test.go` |
 | `packages/ai/test/openai-codex-cache-affinity-e2e.test.ts` | `gi-llm-provider/openai_codex_test.go` |
 | `packages/ai/test/openai-codex-stream.test.ts` | `gi-llm-provider/openai_codex_test.go`, `gi-llm-provider/openai_responses_stream_test.go` |
@@ -251,6 +251,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/openai-responses-tool-result-images.test.ts` | `gi-llm-provider/openai_responses_stream_test.go` |
 | `packages/ai/test/openrouter-images.test.ts` | `gi-llm-provider/openrouter_images_test.go` |
 | `packages/ai/test/openrouter-cache-write-repro.test.ts` | `gi-llm-provider/openai_completions_stream_test.go` |
+| `packages/ai/test/openrouter-cache-control-models.test.ts` | `gi-llm-provider/model_catalog_test.go` for Anthropic latest-alias cache-control metadata |
 | `packages/ai/test/responseid.test.ts` | `gi-llm-provider/openai_responses_stream_test.go` |
 | `packages/ai/test/stream.test.ts` | `gi-llm-provider/stream_contract_test.go`, `gi-llm-provider/faux_test.go` |
 | `packages/ai/test/tool-call-id-normalization.test.ts` | `gi-llm-provider/message_transform_test.go` |
@@ -264,6 +265,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/overflow.test.ts` | `gi-llm-provider/overflow_test.go` |
 | `packages/ai/test/supports-xhigh.test.ts` | `gi-llm-provider/models_test.go` |
 | `packages/ai/test/xhigh.test.ts` | `gi-llm-provider/models_test.go` |
+| `packages/ai/test/xai-responses.test.ts` | `gi-llm-provider/model_catalog_test.go` for the release-pinned xAI catalog and retired-model exclusions |
 | `packages/ai/test/validation.test.ts` | `gi-llm-provider/validation_test.go` |
 | `packages/ai/test/zen.test.ts` | `gi-llm-provider/model_catalog_test.go` |
 | `packages/ai/test/lazy-module-load.test.ts` | N/A in Go: the package has no provider SDK module dependencies; providers are explicit registry entries |

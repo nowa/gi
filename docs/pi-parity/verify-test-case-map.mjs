@@ -92,6 +92,29 @@ const modules = [
 			"packages/ai/test/zen.test.ts": ["gi-llm-provider/model_catalog_test.go"],
 		},
 		caseAliases: {
+			"packages/ai/test/github-copilot-oauth.test.ts": {
+				"filters models to the authenticated account picker catalog": [
+					"gi-llm-provider/builtin_providers_test.go",
+				],
+			},
+			"packages/ai/test/openai-completions-tool-choice.test.ts": {
+				"stores z.ai GLM-5.2 effort metadata": [
+					"gi-llm-provider/model_catalog_test.go",
+				],
+				"uses Ant Ling compatibility metadata": [
+					"gi-llm-provider/model_catalog_test.go",
+				],
+			},
+			"packages/ai/test/openrouter-cache-control-models.test.ts": {
+				"enables cache control for %s": [
+					"gi-llm-provider/model_catalog_test.go",
+				],
+			},
+			"packages/ai/test/xai-responses.test.ts": {
+				"excludes retired and redundant models from the built-in catalog": [
+					"gi-llm-provider/model_catalog_test.go",
+				],
+			},
 			"packages/ai/test/models-runtime.test.ts": {
 				"enumerates credential metadata without exposing secrets": [
 					"gi-llm-provider/credential_store_test.go",

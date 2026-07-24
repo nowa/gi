@@ -392,6 +392,77 @@ func TestBedrockModelCatalog(t *testing.T) {
 	}
 }
 
+func TestPiV082ModelCompatibilityMetadata(t *testing.T) {
+	t.Run("stores z.ai GLM-5.2 effort metadata", func(t *testing.T) {
+		for _, providerID := range []string{"zai", "zai-coding-cn"} {
+			model := MustGetModel(providerID, "glm-5.2")
+			if model.Compat.SupportsReasoningEffort == nil || !*model.Compat.SupportsReasoningEffort {
+				t.Fatalf("%s compatibility = %#v", providerID, model.Compat)
+			}
+			if len(model.ThinkingLevelMap) != 5 ||
+				!thinkingMapHas(model.ThinkingLevelMap, map[string]string{
+					"low":    "high",
+					"medium": "high",
+					"high":   "high",
+					"max":    "max",
+				}) ||
+				!thinkingMapHasNil(model.ThinkingLevelMap, "minimal") {
+				t.Fatalf("%s thinking map = %#v", providerID, model.ThinkingLevelMap)
+			}
+		}
+	})
+
+	t.Run("uses Ant Ling compatibility metadata", func(t *testing.T) {
+		model := MustGetModel("ant-ling", "Ring-2.6-1T")
+		compat := model.Compat
+		if compat.SupportsStore == nil || *compat.SupportsStore ||
+			compat.SupportsDeveloperRole == nil || *compat.SupportsDeveloperRole ||
+			compat.SupportsReasoningEffort == nil || *compat.SupportsReasoningEffort ||
+			compat.SupportsLongCacheRetention == nil || *compat.SupportsLongCacheRetention ||
+			compat.MaxTokensField != "max_tokens" ||
+			compat.ThinkingFormat != "ant-ling" {
+			t.Fatalf("Ant Ling compatibility = %#v", compat)
+		}
+		if compat.SupportsStrictMode != nil ||
+			compat.RequiresReasoningContentOnAssistantMessages != nil {
+			t.Fatalf("Ant Ling inherited unsupported metadata = %#v", compat)
+		}
+	})
+
+	t.Run("enables cache control for OpenRouter Anthropic latest models", func(t *testing.T) {
+		for _, modelID := range []string{
+			"~anthropic/claude-fable-latest",
+			"~anthropic/claude-haiku-latest",
+			"~anthropic/claude-opus-latest",
+			"~anthropic/claude-sonnet-latest",
+		} {
+			model := MustGetModel("openrouter", modelID)
+			if model.Compat.CacheControlFormat != "anthropic" {
+				t.Fatalf("%s compatibility = %#v", modelID, model.Compat)
+			}
+		}
+	})
+
+	t.Run("excludes retired and redundant xAI models from the built-in catalog", func(t *testing.T) {
+		models := builtinModels("xai")
+		ids := make(map[string]struct{}, len(models))
+		for _, model := range models {
+			ids[model.ID] = struct{}{}
+		}
+		for _, retiredID := range []string{
+			"grok-3",
+			"grok-3-fast",
+			"grok-4.20-0309-non-reasoning",
+			"grok-4.20-0309-reasoning",
+			"grok-code-fast-1",
+		} {
+			if _, exists := ids[retiredID]; exists {
+				t.Fatalf("retired model %q remains in built-in catalog", retiredID)
+			}
+		}
+	})
+}
+
 func stringSlicesEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

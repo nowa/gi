@@ -579,34 +579,9 @@
       "noCandidateFiles": [],
       "noCandidateCases": [
         {
-          "file": "packages/ai/test/github-copilot-oauth.test.ts",
-          "line": 62,
-          "name": "filters models to the authenticated account picker catalog"
-        },
-        {
           "file": "packages/ai/test/openai-codex-stream.test.ts",
           "line": 1767,
           "name": "opens a fresh cached websocket before the backend connection age limit"
-        },
-        {
-          "file": "packages/ai/test/openai-completions-tool-choice.test.ts",
-          "line": 299,
-          "name": "stores z.ai GLM-5.2 effort metadata"
-        },
-        {
-          "file": "packages/ai/test/openai-completions-tool-choice.test.ts",
-          "line": 1639,
-          "name": "uses Ant Ling compatibility metadata"
-        },
-        {
-          "file": "packages/ai/test/openrouter-cache-control-models.test.ts",
-          "line": 12,
-          "name": "enables cache control for %s"
-        },
-        {
-          "file": "packages/ai/test/xai-responses.test.ts",
-          "line": 63,
-          "name": "excludes retired and redundant models from the built-in catalog"
         }
       ]
     },
