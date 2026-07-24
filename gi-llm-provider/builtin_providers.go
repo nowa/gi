@@ -94,10 +94,9 @@ var builtinProviderSpecs = []builtinProviderSpec{
 	{id: "openrouter", name: "OpenRouter", baseURL: "https://openrouter.ai/api/v1", auth: func() ProviderAuth {
 		return ProviderAuth{
 			APIKey: EnvAPIKeyAuth("OpenRouter API key", "OPENROUTER_API_KEY"),
-			OAuth: registeredOAuthAuth(
+			OAuth: registeredOrBuiltinOAuthAuth(
 				"openrouter",
-				"OpenRouter OAuth",
-				"Sign in with OpenRouter",
+				NewOpenRouterOAuth(OpenRouterOAuthOptions{}),
 			),
 		}
 	}},
