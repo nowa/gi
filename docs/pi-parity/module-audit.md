@@ -5,9 +5,9 @@
 > `v0.82.0-open-gaps.json` is authoritative for the current unclassified delta;
 > these tables are not a v0.82.0 completion claim.
 
-This document is the working audit for aligning Gi with the Pi repository at
-`~/Projects/agents/pi`. It intentionally records current evidence and open
-gaps; it is not a completion claim.
+This document is the working audit for aligning Gi with Pi `v0.82.0` at commit
+`083e61621276bff9f6faefab87ce07fcd98734e2`. It intentionally records current
+evidence and open gaps; it is not a completion claim.
 
 ## Module Map
 
@@ -32,10 +32,13 @@ gap.
 | Pi directory | Gi ownership boundary | Abstraction status |
 | --- | --- | --- |
 | `packages/ai/src` | `gi-llm-provider` public package: model catalog, registry, stream entrypoints, base types, image API | consistent; Go keeps one provider package instead of TS root/barrel files. |
+| `packages/ai/src/api` | `gi-llm-provider` provider, payload, stream, registry, and transport files | partial; Go dispatches through typed provider interfaces rather than lazy TS modules. Implemented APIs remain in one package, while missing v0.82.0 transports are tracked by the LLM file/symbol/test inventories. |
+| `packages/ai/src/auth` | `auth.go`, `credential_store.go`, `models_runtime.go`, and provider-owned auth hooks | Go-native consistent for the credential store, request-scoped auth context, serialized OAuth refresh, and typed models errors; remaining provider-specific auth helpers are explicit LLM gaps. |
+| `packages/ai/src/auth/oauth` | `oauth.go`, provider OAuth files in `gi-coding-agent`, and `internal/oauthpage` | split and partial; reusable token/PKCE/callback primitives stay provider-level, interactive browser/device flows stay coding-agent-level, and unimplemented v0.82.0 providers remain explicit gaps. |
+| `packages/ai/src/compat` | `types.go` model compatibility metadata plus provider conversion/config helpers | consolidated; generated compatibility flags are typed model data in Go and consumed by the relevant protocol adapter. |
 | `packages/ai/src/providers` | `gi-llm-provider/*_provider.go`, `*_payload.go`, `*_stream.go`, `*_config.go` | consistent; provider files are split by protocol responsibility rather than nested directories. |
 | `packages/ai/src/providers/images` | `images.go`, `image_models.go`, `openrouter_images*.go` | consistent; image provider registry stays in the same Go package. |
 | `packages/ai/src/utils` | focused Go helpers in `diagnostics.go`, `event_stream.go`, `message_transform.go`, `overflow.go`, `validation.go`, `http_proxy.go`, `internal/envkeys`, `internal/eventstream`, `internal/httpproxy` | consistent; provider environment-key lookup, generic event stream mechanics, and HTTP proxy resolution now have focused Go subpackages with root-level compatibility wrappers, while helpers that depend on provider message types remain in the public package to avoid import cycles. |
-| `packages/ai/src/utils/oauth` | `gi-llm-provider/oauth.go`, `internal/oauthpage`, `oauth_page.go` facade, plus provider-specific coding-agent login flows | split but consistent; token/request primitives stay provider-level, callback-page rendering now has a focused provider utility subpackage, and browser UI/storage stays coding-agent-level. |
 
 ### Agent Core
 
@@ -46,6 +49,7 @@ gap.
 | `packages/agent/src/harness/compaction` | `gi-agent-core/harness/compaction.go`, `branch_summary.go` | consistent; Go folds compaction helpers into the harness package while preserving exported functions/types. |
 | `packages/agent/src/harness/env` | `gi-agent-core/harness/env`, `gi-agent-core/harness/local_env.go` facade | Go-native consistent; Node execution classes map to Go file/process interfaces behind a focused harness env subpackage. |
 | `packages/agent/src/harness/session` | `session.go`, `session_repo.go`, `session_storage.go`, `harness/sessionid` UUID helpers | consistent; session tree/repo/storage are still owned by harness, while UUID generation now has a focused Go subpackage with harness-level compatibility wrappers. |
+| `packages/agent/src/harness/tools` | currently split between `gi-agent-core/harness` context/session concerns and `gi-coding-agent` concrete file, edit, image, write, and bash tools | explicit architecture gap; v0.82.0 moved reusable tool contracts into agent harness, and Gi still needs a dependency-safe core tool boundary before relocating coding-agent implementations. |
 | `packages/agent/src/harness/utils` | `harness/utils` truncate helpers, `harness/env` shell-output helpers, root facades | consistent; reusable truncation and shell-capture logic now have focused Go subpackages with harness-level compatibility wrappers. |
 
 ### TUI
@@ -70,6 +74,8 @@ gap.
 | `packages/coding-agent/src/core/export-html/vendor` | `ExportHTMLTemplateJS` safe DOM markdown/highlight helpers | partial; Gi intentionally does not embed Pi's `marked.min.js` and `highlight.min.js` assets yet, while keeping their browser-rendering responsibilities documented in the file map. |
 | `packages/coding-agent/src/core/extensions` | `protocol_extension_*`, `host_actions.go`, `viewtree.go`, `protocol/spec` | protocol-consistent; Pi's in-process TS API is intentionally replaced by process RPC/ViewTree/capability contracts. |
 | `packages/coding-agent/src/core/tools` | `bash_*`, `file_tools.go`, `search_tools.go`, `edit_tool_definition.go`, `internal/toolqueue`, `internal/tooloutput`, root facades, tool renderers | consistent; built-in tool ownership is preserved with Go-native execution, and pure per-file mutation queueing plus streaming output accumulation now have focused tool subpackages. |
+| `packages/coding-agent/src/extensions` | `extension_discovery.go`, `extension_selector.go`, and `protocol_extension_*` | partial; Gi owns generic extension discovery and process-protocol execution, while v0.82.0 bundled extensions are tracked separately from the host runtime. |
+| `packages/coding-agent/src/extensions/llama` | no bundled Gi equivalent | explicit product gap; Pi's local Hugging Face/Llama extension requires a Go provider/runtime design before it can be shipped safely. |
 | `packages/coding-agent/src/modes` | `print_mode.go`, `interactive_mode.go`, `cli_interactive_mode.go`, `rpc_mode.go` | consistent; mode boundaries are preserved by entrypoint files. |
 | `packages/coding-agent/src/modes/interactive` | `cli_interactive_tui.go`, `cli_interactive_editor_host.go`, `cli_interactive_dialog_host.go`, `cli_interactive_status.go`, `cli_interactive_settings.go`, `cli_interactive_model.go`, `cli_interactive_auth.go`, `cli_interactive_help.go`, `cli_interactive_autocomplete.go`, `cli_interactive_keybindings.go`, `cli_interactive_session.go`, `cli_interactive_reload.go`, resources/signals/theme/component files | consistent but flattened; host, editor, dialog, status, settings, model-selection, auth/login, help/debug, autocomplete, keybinding/action routing, session/navigation, and reload/resource lifecycle state mirror Pi's interactive-mode ownership. |
 | `packages/coding-agent/src/modes/interactive/assets` | `gi-coding-agent/assets`, embedded asset helpers | consistent; Pi's interactive announcement image asset is embedded and rendered through Gi's Go image component. |
@@ -131,7 +137,57 @@ session/runtime code, and interactive TUI components still contain many
 cross-file dependencies, so they should be split only after the shared type
 boundaries are made explicit enough to avoid import cycles.
 
-## Current Inventory Evidence
+## Current v0.82.0 Inventory Evidence
+
+All generated evidence below uses the clean, immutable Pi checkout at
+`/private/tmp/pi-v0.82.0`, whose HEAD is the commit declared in
+`baseline.json`.
+
+The member-level source inventory currently reports:
+
+| Module | Pi source files | Gi production files | Pi symbols | Missing Pi files | Missing Pi symbols |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| LLM provider | 169 | 57 | 632 | 129 | 220 |
+| Agent core | 35 | 22 | 327 | 11 | 68 |
+| TUI | 28 | 27 | 449 | 3 | 56 |
+| Coding agent | 177 | 161 | 2115 | 31 | 480 |
+
+`docs/pi-parity/member-symbol-inventory.md` is the generated per-file detail.
+A mentioned symbol means its ownership or gap has been classified; it does not
+by itself prove equivalent behavior.
+
+The directory-boundary verifier sees 8 LLM, 7 agent, 2 TUI, and 18 coding-agent
+source directories. Every directory now has an ownership or explicit-gap row
+above. Regenerate the inventory with:
+
+```sh
+node docs/pi-parity/verify-module-boundaries.mjs \
+  --pi-root /private/tmp/pi-v0.82.0 \
+  --format markdown \
+  --out docs/pi-parity/module-boundary-inventory.md
+```
+
+The test-case inventory currently reports:
+
+| Module | Pi test files | Pi cases | Candidate files | Candidate cases | No-candidate files | No-candidate cases |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| LLM provider | 112 | 1189 | 104 | 1107 | 8 | 82 |
+| Agent core | 18 | 224 | 15 | 186 | 3 | 38 |
+| TUI | 27 | 700 | 25 | 673 | 2 | 27 |
+| Coding agent | 181 | 1649 | 172 | 1587 | 9 | 62 |
+
+Candidate matching is an audit lead, not proof. Behavioral parity still
+requires the mapped Go tests, implementation review, and the release gate in
+`docs/pi-parity/README.md`.
+
+## Superseded v0.78.0 Inventory Evidence
+
+> The section below is retained as historical audit provenance only. Its
+> “current” counts refer to the old v0.78.0 pass and must not be used for the
+> v0.82.0 release decision.
+
+<details>
+<summary>Show the superseded v0.78.0 evidence</summary>
 
 Current TypeScript/function source inventory from the local checkouts:
 
@@ -275,8 +331,12 @@ candidate. It also records confirmed high-risk Gi coverage for interactive UI,
 thinking visibility, real provider streaming, compaction/retry status,
 model/thinking selection, runtime switching, retry lifecycle behavior, and the
 Go-native provider dependency/dispatch boundary corresponding to Pi's
-`lazy-module-load.test.ts`. No Pi test file or extracted Pi test case remains
-without a Gi candidate.
+`lazy-module-load.test.ts`. No Pi test file or extracted Pi test case remained
+without a Gi candidate in that historical pass.
+
+</details>
+
+## Current Module Findings
 
 ### LLM Provider
 
@@ -294,11 +354,13 @@ Observed direct coverage:
 - Detailed file/function mapping is tracked in
   `docs/pi-parity/llm-provider-file-map.md`.
 - Provider/model core: Pi `api-registry.ts`, `models.ts`, `models.generated.ts`, `types.ts`, `stream.ts` map to Gi `registry.go`, `models.go`, `pi_models_generated.go`, `types.go`, `event_stream.go`.
-- Pi generated model catalog is now regenerated from the current local
-  `packages/ai/src/models.generated.ts` source rather than the older installed
-  `@earendil-works/pi-ai` snapshot. This keeps current provider IDs and compat
-  flags aligned, including the Fireworks `kimi-k2p5-turbo` router and the
-  absence of the stale `kimi-k2p6-turbo` router.
+- Pi's generated model catalog now comes from the official
+  `@earendil-works/pi-ai@0.82.0` release package (npm shasum
+  `b1f33e7cb81ef6a55918baaef2764ff03c37a925`). The tag intentionally omits the
+  generated provider JSON, so Gi's checked-in `internal/cmd/modelgen` consumes
+  the published data, preserves source order, and rejects unknown fields. This
+  aligns the catalog with v0.82.0, including the Fireworks
+  `kimi-k2p6-turbo` router, GPT-5.6 pricing tiers, and `max` thinking metadata.
 - Gi model registry initialization now mirrors Pi's generated-catalog path:
   `models.go` calls `registerPiGeneratedModels()` directly instead of first
   registering hand-written model rows that were immediately discarded by the

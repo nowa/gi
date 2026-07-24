@@ -357,6 +357,9 @@ func ResolveOpenAICompletionsCompat(model Model) OpenAICompletionsCompat {
 	if compat.RequiresThinkingAsText != nil {
 		detected.RequiresThinkingAsText = *compat.RequiresThinkingAsText
 	}
+	if compat.RequiresReasoningContentOnAssistantMessages != nil {
+		detected.RequiresReasoningContentOnAssistant = *compat.RequiresReasoningContentOnAssistantMessages
+	}
 	if compat.RequiresReasoningContentOnAssistantEvents != nil {
 		detected.RequiresReasoningContentOnAssistant = *compat.RequiresReasoningContentOnAssistantEvents
 	}

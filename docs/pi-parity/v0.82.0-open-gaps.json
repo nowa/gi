@@ -62,8 +62,6 @@
         "compat/extension-oauth-types.ts",
         "images-models.ts",
         "legacy-api-aliases.ts",
-        "model-catalog.ts",
-        "models-store.ts",
         "providers/all.ts",
         "providers/amazon-bedrock.models.ts",
         "providers/ant-ling.models.ts",
@@ -286,38 +284,6 @@
         "images-models.ts::ImagesModelsImpl.setProvider",
         "images-models.ts::createImagesModels",
         "images-models.ts::createImagesProvider",
-        "model-catalog.ts::flattenModelCatalog",
-        "models-store.ts::InMemoryModelsStore",
-        "models-store.ts::InMemoryModelsStore.delete",
-        "models-store.ts::InMemoryModelsStore.read",
-        "models-store.ts::InMemoryModelsStore.write",
-        "models.ts::ModelsImpl",
-        "models.ts::ModelsImpl.applyAuth",
-        "models.ts::ModelsImpl.checkAuth",
-        "models.ts::ModelsImpl.checkProviderAuth",
-        "models.ts::ModelsImpl.clearProviders",
-        "models.ts::ModelsImpl.complete",
-        "models.ts::ModelsImpl.completeSimple",
-        "models.ts::ModelsImpl.constructor",
-        "models.ts::ModelsImpl.deleteProvider",
-        "models.ts::ModelsImpl.getAuth",
-        "models.ts::ModelsImpl.getAvailable",
-        "models.ts::ModelsImpl.getModel",
-        "models.ts::ModelsImpl.getModels",
-        "models.ts::ModelsImpl.getProvider",
-        "models.ts::ModelsImpl.getProviders",
-        "models.ts::ModelsImpl.login",
-        "models.ts::ModelsImpl.logout",
-        "models.ts::ModelsImpl.readCredential",
-        "models.ts::ModelsImpl.refresh",
-        "models.ts::ModelsImpl.requireProvider",
-        "models.ts::ModelsImpl.resolveRefreshCredential",
-        "models.ts::ModelsImpl.setProvider",
-        "models.ts::ModelsImpl.stream",
-        "models.ts::ModelsImpl.streamSimple",
-        "models.ts::createModels",
-        "models.ts::createProvider",
-        "models.ts::hasApi",
         "providers/all.ts::builtinImagesModels",
         "providers/all.ts::builtinImagesProviders",
         "providers/all.ts::builtinModels",
@@ -1075,18 +1041,11 @@
   "boundaries": [
     {
       "module": "llm",
-      "missingDirectories": [
-        "packages/ai/src/api",
-        "packages/ai/src/auth",
-        "packages/ai/src/auth/oauth",
-        "packages/ai/src/compat"
-      ]
+      "missingDirectories": []
     },
     {
       "module": "agent",
-      "missingDirectories": [
-        "packages/agent/src/harness/tools"
-      ]
+      "missingDirectories": []
     },
     {
       "module": "tui",
@@ -1094,10 +1053,7 @@
     },
     {
       "module": "coding",
-      "missingDirectories": [
-        "packages/coding-agent/src/extensions",
-        "packages/coding-agent/src/extensions/llama"
-      ]
+      "missingDirectories": []
     }
   ],
   "tests": [
@@ -1108,7 +1064,6 @@
         "packages/ai/test/constrained-sampling.test.ts",
         "packages/ai/test/context-estimate.test.ts",
         "packages/ai/test/deferred-tools.test.ts",
-        "packages/ai/test/max-thinking.test.ts",
         "packages/ai/test/pi-messages.test.ts",
         "packages/ai/test/providers.test.ts",
         "packages/ai/test/reasoning-options.test.ts",
@@ -1282,11 +1237,6 @@
           "name": "reports device-code details through onDeviceCode"
         },
         {
-          "file": "packages/ai/test/images-models.test.ts",
-          "line": 161,
-          "name": "supports dynamic providers via refresh with in-flight dedupe"
-        },
-        {
           "file": "packages/ai/test/kimi-coding-oauth.test.ts",
           "line": 51,
           "name": "logs in with the device authorization flow"
@@ -1302,21 +1252,6 @@
           "name": "honors the KIMI_CODE_OAUTH_HOST override"
         },
         {
-          "file": "packages/ai/test/max-thinking.test.ts",
-          "line": 15,
-          "name": "is opt-in for ordinary reasoning models"
-        },
-        {
-          "file": "packages/ai/test/max-thinking.test.ts",
-          "line": 51,
-          "name": "supports a hole between high and max"
-        },
-        {
-          "file": "packages/ai/test/max-thinking.test.ts",
-          "line": 70,
-          "name": "sends max to the Codex Responses API"
-        },
-        {
           "file": "packages/ai/test/mistral-reasoning-mode.test.ts",
           "line": 81,
           "name": "uses the session id as prompt cache key"
@@ -1325,51 +1260,6 @@
           "file": "packages/ai/test/mistral-reasoning-mode.test.ts",
           "line": 89,
           "name": "omits prompt cache key when cache retention is disabled"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 126,
-          "name": "applies request-wide pricing tiers above the configured input threshold"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 162,
-          "name": "registers, replaces, and deletes providers"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 201,
-          "name": "swallows provider source failures for both all-provider and single-provider listing"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 219,
-          "name": "refresh() updates every configured dynamic provider and reports failures"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 255,
-          "name": "persists dynamic catalogs and restores them without network access"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 432,
-          "name": "runs provider login and logout through the credential store"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 606,
-          "name": "merges resolved auth into stream options; explicit options win per field"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 638,
-          "name": "adds model headers only for model auth and transforms assembled headers once"
-        },
-        {
-          "file": "packages/ai/test/models-runtime.test.ts",
-          "line": 675,
-          "name": "streams through the provider"
         },
         {
           "file": "packages/ai/test/oauth-device-code.test.ts",
@@ -1555,11 +1445,6 @@
           "file": "packages/ai/test/reasoning-options.test.ts",
           "line": 31,
           "name": "leaves toggle and budget controls for their adapter-specific implementations"
-        },
-        {
-          "file": "packages/ai/test/supports-xhigh.test.ts",
-          "line": 105,
-          "name": "uses the verified effort options for %s Kimi K3"
         },
         {
           "file": "packages/ai/test/text.test.ts",

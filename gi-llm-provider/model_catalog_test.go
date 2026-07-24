@@ -1,6 +1,9 @@
 package gillmprovider
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestFireworksModelCatalog(t *testing.T) {
 	model := MustGetModel("fireworks", "accounts/fireworks/models/kimi-k2p6")
@@ -10,7 +13,7 @@ func TestFireworksModelCatalog(t *testing.T) {
 	if !model.Reasoning || !stringSlicesEqual(model.Input, []string{"text", "image"}) || model.ContextWindow != 262000 || model.MaxTokens != 262000 {
 		t.Fatalf("model = %#v", model)
 	}
-	if model.Cost != (ModelCost{Input: 0.95, Output: 4, CacheRead: 0.16, CacheWrite: 0}) {
+	if !reflect.DeepEqual(model.Cost, ModelCost{Input: 0.95, Output: 4, CacheRead: 0.16, CacheWrite: 0}) {
 		t.Fatalf("cost = %#v", model.Cost)
 	}
 	if model.Compat.SendSessionAffinityHeaders == nil || !*model.Compat.SendSessionAffinityHeaders {
@@ -26,16 +29,16 @@ func TestFireworksModelCatalog(t *testing.T) {
 		t.Fatalf("compat = %#v", model.Compat)
 	}
 
-	router := MustGetModel("fireworks", "accounts/fireworks/routers/kimi-k2p5-turbo")
-	if router.API != "anthropic-messages" || router.BaseURL != "https://api.fireworks.ai/inference" || !stringSlicesEqual(router.Input, []string{"text", "image"}) || router.ContextWindow != 256000 || router.MaxTokens != 256000 {
+	router := MustGetModel("fireworks", "accounts/fireworks/routers/kimi-k2p6-turbo")
+	if router.API != "anthropic-messages" || router.BaseURL != "https://api.fireworks.ai/inference" || !stringSlicesEqual(router.Input, []string{"text", "image"}) || router.ContextWindow != 262000 || router.MaxTokens != 262000 {
 		t.Fatalf("router = %#v", router)
 	}
-	if _, ok := GetModel("fireworks", "accounts/fireworks/routers/kimi-k2p6-turbo"); ok {
-		t.Fatalf("stale Fireworks Kimi K2.6 Turbo router should not be registered")
+	if _, ok := GetModel("fireworks", "accounts/fireworks/routers/kimi-k2p5-turbo"); ok {
+		t.Fatal("stale Fireworks Kimi K2.5 Turbo router should not be registered")
 	}
 
-	minimax := MustGetModel("fireworks", "accounts/fireworks/models/minimax-m2p1")
-	if minimax.API != "anthropic-messages" || minimax.ContextWindow != 200000 || minimax.MaxTokens != 200000 {
+	minimax := MustGetModel("fireworks", "accounts/fireworks/models/minimax-m2p7")
+	if minimax.API != "anthropic-messages" || minimax.ContextWindow != 196608 || minimax.MaxTokens != 196608 {
 		t.Fatalf("minimax = %#v", minimax)
 	}
 }
@@ -83,7 +86,7 @@ func TestTogetherModelCatalog(t *testing.T) {
 	if !model.Reasoning || !stringSlicesEqual(model.Input, []string{"text", "image"}) || model.ContextWindow != 262144 || model.MaxTokens != 131000 {
 		t.Fatalf("model = %#v", model)
 	}
-	if model.Cost != (ModelCost{Input: 1.2, Output: 4.5, CacheRead: 0.2, CacheWrite: 0}) {
+	if !reflect.DeepEqual(model.Cost, ModelCost{Input: 1.2, Output: 4.5, CacheRead: 0.2, CacheWrite: 0}) {
 		t.Fatalf("cost = %#v", model.Cost)
 	}
 	if !thinkingMapHasNil(model.ThinkingLevelMap, "minimal", "low", "medium") {
@@ -145,7 +148,7 @@ func TestOfficialGrokAndDeepSeekModelCatalog(t *testing.T) {
 	if !grok.Reasoning || !stringSlicesEqual(grok.Input, []string{"text", "image"}) || grok.ContextWindow != 1000000 {
 		t.Fatalf("grok model = %#v", grok)
 	}
-	if grok.Cost != (ModelCost{Input: 1.25, Output: 2.50, CacheRead: 0.20, CacheWrite: 0}) {
+	if !reflect.DeepEqual(grok.Cost, ModelCost{Input: 1.25, Output: 2.50, CacheRead: 0.20, CacheWrite: 0}) {
 		t.Fatalf("grok cost = %#v", grok.Cost)
 	}
 	if len(grok.ThinkingLevelMap) != 0 {
@@ -155,7 +158,7 @@ func TestOfficialGrokAndDeepSeekModelCatalog(t *testing.T) {
 		t.Fatalf("grok levels = %#v", got)
 	}
 	grokCompat := ResolveOpenAICompletionsCompat(grok)
-	if grokCompat.SupportsStore || grokCompat.SupportsDeveloperRole || !grokCompat.SupportsReasoningEffort || grokCompat.SupportsStrictMode || grokCompat.SupportsLongCacheRetention || grokCompat.MaxTokensField != "max_tokens" || grokCompat.ThinkingFormat != "xai" {
+	if grokCompat.SupportsStore || grokCompat.SupportsDeveloperRole || grokCompat.SupportsReasoningEffort || grokCompat.SupportsStrictMode || grokCompat.SupportsLongCacheRetention || grokCompat.MaxTokensField != "max_tokens" || grokCompat.ThinkingFormat != "xai" {
 		t.Fatalf("grok compat = %#v", grokCompat)
 	}
 
@@ -166,17 +169,18 @@ func TestOfficialGrokAndDeepSeekModelCatalog(t *testing.T) {
 	if !deepseek.Reasoning || !stringSlicesEqual(deepseek.Input, []string{"text"}) || deepseek.ContextWindow != 1000000 || deepseek.MaxTokens != 384000 {
 		t.Fatalf("deepseek model = %#v", deepseek)
 	}
-	if deepseek.Cost != (ModelCost{Input: 0.14, Output: 0.28, CacheRead: 0.0028, CacheWrite: 0}) {
+	if !reflect.DeepEqual(deepseek.Cost, ModelCost{Input: 0.14, Output: 0.28, CacheRead: 0.0028, CacheWrite: 0}) {
 		t.Fatalf("deepseek cost = %#v", deepseek.Cost)
 	}
-	if !thinkingMapHas(deepseek.ThinkingLevelMap, map[string]string{"high": "high", "xhigh": "max"}) ||
+	if !thinkingMapHas(deepseek.ThinkingLevelMap, map[string]string{"high": "high", "max": "max"}) ||
 		!thinkingMapHasNil(deepseek.ThinkingLevelMap, "minimal") ||
 		!thinkingMapHasNil(deepseek.ThinkingLevelMap, "low") ||
 		!thinkingMapHasNil(deepseek.ThinkingLevelMap, "medium") {
 		t.Fatalf("deepseek thinking map = %#v", deepseek.ThinkingLevelMap)
 	}
 	pro := MustGetModel("deepseek", "deepseek-v4-pro")
-	if pro.BaseURL != deepseek.BaseURL || pro.MaxTokens != 384000 || pro.Cost != (ModelCost{Input: 0.435, Output: 0.87, CacheRead: 0.003625, CacheWrite: 0}) {
+	if pro.BaseURL != deepseek.BaseURL || pro.MaxTokens != 384000 ||
+		!reflect.DeepEqual(pro.Cost, ModelCost{Input: 0.435, Output: 0.87, CacheRead: 0.003625, CacheWrite: 0}) {
 		t.Fatalf("deepseek pro = %#v", pro)
 	}
 	deepseekCompat := ResolveOpenAICompletionsCompat(deepseek)
@@ -208,10 +212,10 @@ func TestOpenCodeZenModelCatalog(t *testing.T) {
 	if goModel.API != "openai-completions" || goModel.BaseURL != "https://opencode.ai/zen/go/v1" || goModel.ContextWindow != 1000000 || goModel.MaxTokens != 384000 {
 		t.Fatalf("opencode-go model = %#v", goModel)
 	}
-	if goModel.Compat.RequiresReasoningContentOnAssistantTurns == nil || !*goModel.Compat.RequiresReasoningContentOnAssistantTurns || goModel.Compat.ThinkingFormat != "deepseek" {
+	if goModel.Compat.RequiresReasoningContentOnAssistantMessages == nil || !*goModel.Compat.RequiresReasoningContentOnAssistantMessages || goModel.Compat.ThinkingFormat != "deepseek" {
 		t.Fatalf("opencode-go compat = %#v", goModel.Compat)
 	}
-	if !thinkingMapHas(goModel.ThinkingLevelMap, map[string]string{"high": "high", "xhigh": "max"}) {
+	if !thinkingMapHas(goModel.ThinkingLevelMap, map[string]string{"high": "high", "max": "max"}) {
 		t.Fatalf("opencode-go thinking map = %#v", goModel.ThinkingLevelMap)
 	}
 }
@@ -239,7 +243,7 @@ func TestFireworksModelCatalogPiCaseNames(t *testing.T) {
 	})
 
 	t.Run("registers the Fire Pass turbo router model", func(t *testing.T) {
-		model := MustGetModel("fireworks", "accounts/fireworks/routers/kimi-k2p5-turbo")
+		model := MustGetModel("fireworks", "accounts/fireworks/routers/kimi-k2p6-turbo")
 		if model.API != "anthropic-messages" || model.BaseURL != "https://api.fireworks.ai/inference" || !stringSlicesEqual(model.Input, []string{"text", "image"}) {
 			t.Fatalf("model = %#v", model)
 		}

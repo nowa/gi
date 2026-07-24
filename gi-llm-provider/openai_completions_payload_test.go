@@ -263,7 +263,7 @@ func TestBuildOpenAICompletionsPayloadOfficialGrokAndDeepSeek(t *testing.T) {
 	if payload.MaxTokens != 4096 || payload.MaxCompletionTokens != 0 {
 		t.Fatalf("grok max tokens = %#v", payload)
 	}
-	if payload.ReasoningEffort != "high" || payload.Reasoning != nil || payload.Thinking != nil {
+	if payload.ReasoningEffort != "" || payload.Reasoning != nil || payload.Thinking != nil {
 		t.Fatalf("grok reasoning payload = %#v", payload)
 	}
 	if payload.Store != nil || payload.PromptCacheKey != "" || payload.PromptCacheRetention != "" {
@@ -277,7 +277,7 @@ func TestBuildOpenAICompletionsPayloadOfficialGrokAndDeepSeek(t *testing.T) {
 	}
 
 	payload = BuildOpenAICompletionsPayload(grok, Context{Messages: []Message{UserMessageText("Hi")}}, OpenAICompletionsPayloadOptions{Reasoning: "off"})
-	if payload.ReasoningEffort != "none" {
+	if payload.ReasoningEffort != "" {
 		t.Fatalf("grok off reasoning payload = %#v", payload)
 	}
 

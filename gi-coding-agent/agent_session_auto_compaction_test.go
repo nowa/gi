@@ -129,7 +129,7 @@ func createAutoCompactionTestSession(t *testing.T) (*AgentSession, *int) {
 	session, err := CreateAgentSession(AgentSessionOptions{
 		CWD:                cwd,
 		AgentDir:           t.TempDir(),
-		Model:              llm.MustGetModel("anthropic", "claude-sonnet-4-5"),
+		Model:              autoCompactionTestModel(),
 		SessionManager:     manager,
 		CompactionSettings: &settings,
 		AutoCompactionRunner: func(string, bool) error {
@@ -144,10 +144,16 @@ func createAutoCompactionTestSession(t *testing.T) (*AgentSession, *int) {
 }
 
 func autoCompactionAssistant(text string, totalTokens int, timestamp int64) llm.Message {
-	message := statsAssistantMessage(text, totalTokens, timestamp, llm.MustGetModel("anthropic", "claude-sonnet-4-5"))
+	message := statsAssistantMessage(text, totalTokens, timestamp, autoCompactionTestModel())
 	message.Usage.Output = 0
 	message.Usage.TotalTokens = totalTokens
 	return message
+}
+
+func autoCompactionTestModel() llm.Model {
+	model := llm.MustGetModel("anthropic", "claude-sonnet-4-5")
+	model.ContextWindow = 200_000
+	return model
 }
 
 func autoCompactionAssistantError(message string, timestamp int64) llm.Message {

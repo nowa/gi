@@ -30,8 +30,10 @@ working file/function parity audit, not a completion claim.
 | `images-api-registry.ts` | `registerImagesApiProvider`, `getImagesApiProvider` | `images.go` `RegisterImagesAPIProvider`, `GetImagesAPIProvider` | direct | Pi image registry is smaller than text API registry; Gi matches the exposed lifecycle. |
 | `images.ts` | `generateImages` | `images.go` `GenerateImages`, `AbortedImages` | direct | Includes context-cancel abort mapping. |
 | `index.ts` | public re-exports | Go package exports | consolidated | No barrel file needed; exported Go identifiers are the public surface. |
-| `models.generated.ts` | generated model catalog | `pi_models_generated.go` | direct | Generated Pi model catalog is represented from the current local Pi source snapshot. |
-| `models.ts` | `getModel`, `getProviders`, `getModels`, `calculateCost`, `getSupportedThinkingLevels`, `clampThinkingLevel`, `modelsAreEqual` | `models.go` | direct | Model lookup, cost, thinking-level, and equality helpers are represented. |
+| `model-catalog.ts` | `ModelGroups`, `ModelCatalog`, `flattenModelCatalog` | `internal/cmd/modelgen` ordered catalog decoder and `pi_models_generated.go` | go-native | Go flattens Pi's API-grouped published JSON while generating typed model registrations. |
+| `models.generated.ts` | generated model catalog | `pi_models_generated.go`, `internal/cmd/modelgen` | direct | The 1,116-model catalog is generated from the official `@earendil-works/pi-ai@0.82.0` package (npm shasum `b1f33e7cb81ef6a55918baaef2764ff03c37a925`); generation preserves provider/model order and rejects unknown upstream fields. |
+| `models-store.ts` | `ModelsStoreEntry`, `ModelsStore`, `ProviderModelsStore`, `InMemoryModelsStore` | `models_store.go` same-purpose contracts and concurrent clone-on-read/write store | direct | Provider-scoped adapters prevent one provider from accessing another provider's persisted dynamic catalog. |
+| `models.ts` | provider/model runtime, auth, refresh, stream assembly, `createModels`, `createProvider`, `hasApi`, cost/thinking/equality helpers | `models_runtime.go`, `provider_runtime.go`, `models.go` | direct | Gi uses an instance-scoped, mutex-protected `Models` collection and `context.Context`; the legacy compiled catalog remains a separately synchronized read-mostly registry. |
 | `oauth.ts` | OAuth provider registry/types | `oauth.go`, `gi-coding-agent/oauth_*.go` | split | Low-level credential request helpers live in provider; interactive login orchestration lives in coding-agent. |
 | `session-resources.ts` | `registerSessionResourceCleanup`, `cleanupSessionResources` | `session_resources.go` `RegisterSessionResourceCleanup`, `CleanupSessionResources` | direct | Gi now has the same session cleanup registry shape with unregister callbacks and aggregate cleanup errors. Websocket-specific Codex debug helpers remain tracked under the Codex provider row. |
 | `stream.ts` | `stream`, `complete`, `streamSimple`, `completeSimple`, env key re-export | `registry.go`, `env.go` | direct | Stream/complete entrypoints are represented. |
@@ -106,6 +108,30 @@ working file/function parity audit, not a completion claim.
   `TestGitHubCopilotBaseURLFromToken`, `TestOpenAICodexRefreshErrorMessage`,
   and coding-agent OAuth callback/token/login tests cover the browser-facing
   orchestration split.
+- `models-store.ts` `InMemoryModelsStore`,
+  `InMemoryModelsStore.read`, `InMemoryModelsStore.write`, and
+  `InMemoryModelsStore.delete` map to `models_store.go`
+  `InMemoryModelsStore` and its context-aware methods.
+- `models.ts` `ModelsImpl` and `ModelsImpl.constructor` map to the
+  instance-scoped `Models` type and `NewModels`. Registration and lookup map as
+  follows: `ModelsImpl.setProvider`, `ModelsImpl.deleteProvider`,
+  `ModelsImpl.clearProviders`, `ModelsImpl.getProviders`,
+  `ModelsImpl.getProvider`, `ModelsImpl.getModels`, and `ModelsImpl.getModel`
+  map to the correspondingly named exported Go methods.
+- `ModelsImpl.refresh`, `ModelsImpl.resolveRefreshCredential`, and
+  `ModelsImpl.readCredential` map to `Models.Refresh` plus focused private
+  helpers. `ModelsImpl.checkAuth`, `ModelsImpl.checkProviderAuth`, and
+  `ModelsImpl.getAvailable` map to `Models.CheckAuth`,
+  `Models.checkProviderAuth`, and `Models.GetAvailable`.
+- `ModelsImpl.getAuth`, `ModelsImpl.login`, and `ModelsImpl.logout` map to
+  `Models.GetAuth`, `Models.GetModelAuth`, `Models.Login`, and `Models.Logout`.
+  Request assembly and dispatch map from `ModelsImpl.requireProvider`,
+  `ModelsImpl.applyAuth`, `ModelsImpl.stream`, `ModelsImpl.complete`,
+  `ModelsImpl.streamSimple`, and `ModelsImpl.completeSimple` to
+  `Models.applyAuth`, `Models.Stream`, `Models.Complete`,
+  `Models.StreamSimple`, and `Models.CompleteSimple`.
+- `models.ts` `createModels`, `createProvider`, and `hasApi` map to
+  `NewModels`, `CreateProvider`, and `HasAPI`.
 
 ## Exported Symbol Audit
 
@@ -119,7 +145,9 @@ to a Go public symbol, a named consolidated implementation, or an explicit gap.
 | --- | --- | --- | --- | --- |
 | `index.ts` | `Static`, `TSchema`, `Type` TypeBox re-exports | `types.go` `Schema`, schema helper constructors such as `StringEnum` / `StringEnumWithOptions` | go-native | Go does not re-export TypeBox; schema contracts are represented by Go structs and helper constructors. |
 | `api-registry.ts` | `ApiProvider`, `ApiStreamFunction`, `ApiStreamSimpleFunction` | `registry.go` `APIProvider`, `APIProviderFuncs`, `StreamOptions`, `SimpleStreamOptions` | direct | Go uses an interface plus function adapter instead of TS function types. |
-| `models.generated.ts` | `MODELS` | `pi_models_generated.go` `registerPiGeneratedModels`, `models.go` registry | direct | Generated data is registered into the Go model registry rather than exported as a mutable array; the Go file is regenerated from the current local Pi source snapshot. |
+| `models.generated.ts` | `MODELS` | `pi_models_generated.go` `registerPiGeneratedModels`, `models.go` registry, `internal/cmd/modelgen` | direct | Generated data is registered into a synchronized Go registry rather than exported as a mutable object; generation uses the official v0.82.0 npm package because Pi's Git tag intentionally omits generated provider JSON. |
+| `models-store.ts` | `ModelsStoreEntry`, `ModelsStore`, `ProviderModelsStore`, `InMemoryModelsStore` | `models_store.go` same names and `ReadModels`, `WriteModels`, `DeleteModels` | direct | Go methods take `context.Context`, return explicit existence/error values, and clone mutable catalog data at storage boundaries. |
+| `models.ts` | `ModelsError`, `ModelsErrorCode`, `Provider`, `Models`, `MutableModels`, `RefreshModelsContext`, `ModelsRefreshOptions`, `ModelsRefreshResult`, `ModelsStreamTransforms`, `ModelsApiStreamOptions`, `ModelsSimpleStreamOptions`, `CreateModelsOptions`, `CreateProviderOptions`, `createModels`, `createProvider`, `hasApi`, `calculateCost`, `getSupportedThinkingLevels`, `clampThinkingLevel`, `modelsAreEqual` | `auth.go` `ModelsError`, `ModelsErrorCode`; `provider_runtime.go` `Provider`, `RefreshModelsContext`, `CreateProviderOptions`, `CreateProvider`; `models_runtime.go` `Models`, option/result types, `NewModels`; `models.go` `HasAPI`, `CalculateCost`, thinking helpers, `ModelsAreEqual` | direct | Go replaces TS overloads and mutable interfaces with explicit methods, pointer overrides, typed errors, and detached value snapshots. |
 | `image-models.generated.ts` | `IMAGE_MODELS` | `image_models.go` image model registry | direct | Generated image model data is registered in Go. |
 | `images-api-registry.ts` | `ImagesApiFunction`, `ImagesApiProvider` | `images.go` `ImagesAPIProvider`, `ImagesAPIProviderFuncs` | direct | Go uses provider interfaces and adapters. |
 | `session-resources.ts` | `SessionResourceCleanup` | `session_resources.go` cleanup callback type in registry methods | direct | Cleanup callbacks are represented by Go function values and unregister callbacks. |

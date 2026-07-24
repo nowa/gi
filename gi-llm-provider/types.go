@@ -30,12 +30,13 @@ type UsageCost struct {
 }
 
 type Usage struct {
-	Input       int       `json:"input"`
-	Output      int       `json:"output"`
-	CacheRead   int       `json:"cacheRead"`
-	CacheWrite  int       `json:"cacheWrite"`
-	TotalTokens int       `json:"totalTokens"`
-	Cost        UsageCost `json:"cost"`
+	Input        int       `json:"input"`
+	Output       int       `json:"output"`
+	CacheRead    int       `json:"cacheRead"`
+	CacheWrite   int       `json:"cacheWrite"`
+	CacheWrite1h int       `json:"cacheWrite1h,omitempty"`
+	TotalTokens  int       `json:"totalTokens"`
+	Cost         UsageCost `json:"cost"`
 }
 
 func EmptyUsage() Usage {
@@ -156,11 +157,22 @@ func AssistantErrorMessage(message string, model Model, aborted bool) Message {
 	}
 }
 
+// ModelCostTier replaces the base rates when total request input exceeds the
+// configured threshold.
+type ModelCostTier struct {
+	InputTokensAbove int     `json:"inputTokensAbove"`
+	Input            float64 `json:"input"`
+	Output           float64 `json:"output"`
+	CacheRead        float64 `json:"cacheRead"`
+	CacheWrite       float64 `json:"cacheWrite"`
+}
+
 type ModelCost struct {
-	Input      float64 `json:"input"`
-	Output     float64 `json:"output"`
-	CacheRead  float64 `json:"cacheRead"`
-	CacheWrite float64 `json:"cacheWrite"`
+	Input      float64         `json:"input"`
+	Output     float64         `json:"output"`
+	CacheRead  float64         `json:"cacheRead"`
+	CacheWrite float64         `json:"cacheWrite"`
+	Tiers      []ModelCostTier `json:"tiers,omitempty"`
 }
 
 type Model struct {
@@ -180,28 +192,39 @@ type Model struct {
 }
 
 type ModelCompat struct {
-	SupportsStore                             *bool          `json:"supportsStore,omitempty"`
-	SupportsDeveloperRole                     *bool          `json:"supportsDeveloperRole,omitempty"`
-	SupportsReasoningEffort                   *bool          `json:"supportsReasoningEffort,omitempty"`
-	SupportsUsageInStreaming                  *bool          `json:"supportsUsageInStreaming,omitempty"`
-	SupportsStrictMode                        *bool          `json:"supportsStrictMode,omitempty"`
-	SupportsLongCacheRetention                *bool          `json:"supportsLongCacheRetention,omitempty"`
-	SupportsEagerToolInputStreaming           *bool          `json:"supportsEagerToolInputStreaming,omitempty"`
-	SupportsCacheControlOnTools               *bool          `json:"supportsCacheControlOnTools,omitempty"`
-	ForceAdaptiveThinking                     *bool          `json:"forceAdaptiveThinking,omitempty"`
-	SendSessionAffinityHeaders                *bool          `json:"sendSessionAffinityHeaders,omitempty"`
-	SendSessionIDHeader                       *bool          `json:"sendSessionIdHeader,omitempty"`
-	RequiresToolResultName                    *bool          `json:"requiresToolResultName,omitempty"`
-	RequiresAssistantAfterToolResult          *bool          `json:"requiresAssistantAfterToolResult,omitempty"`
-	RequiresThinkingAsText                    *bool          `json:"requiresThinkingAsText,omitempty"`
-	RequiresReasoningContentOnAssistantTurns  *bool          `json:"requiresReasoningContentOnAssistantTurns,omitempty"`
-	RequiresReasoningContentOnAssistantEvents *bool          `json:"requiresReasoningContentOnAssistantEvents,omitempty"`
-	ZAIToolStream                             *bool          `json:"zaiToolStream,omitempty"`
-	OpenRouterRouting                         map[string]any `json:"openRouterRouting,omitempty"`
-	VercelGatewayRouting                      map[string]any `json:"vercelGatewayRouting,omitempty"`
-	MaxTokensField                            string         `json:"maxTokensField,omitempty"`
-	ThinkingFormat                            string         `json:"thinkingFormat,omitempty"`
-	CacheControlFormat                        string         `json:"cacheControlFormat,omitempty"`
+	SupportsStore                               *bool          `json:"supportsStore,omitempty"`
+	SupportsDeveloperRole                       *bool          `json:"supportsDeveloperRole,omitempty"`
+	SupportsReasoningEffort                     *bool          `json:"supportsReasoningEffort,omitempty"`
+	SupportsUsageInStreaming                    *bool          `json:"supportsUsageInStreaming,omitempty"`
+	SupportsStrictMode                          *bool          `json:"supportsStrictMode,omitempty"`
+	SupportsOpenAIGrammarTools                  *bool          `json:"supportsOpenAIGrammarTools,omitempty"`
+	SupportsLongCacheRetention                  *bool          `json:"supportsLongCacheRetention,omitempty"`
+	SupportsEagerToolInputStreaming             *bool          `json:"supportsEagerToolInputStreaming,omitempty"`
+	SupportsCacheControlOnTools                 *bool          `json:"supportsCacheControlOnTools,omitempty"`
+	SupportsExplicitPromptCacheMode             *bool          `json:"supportsExplicitPromptCacheMode,omitempty"`
+	SupportsTemperature                         *bool          `json:"supportsTemperature,omitempty"`
+	SupportsStrictTools                         *bool          `json:"supportsStrictTools,omitempty"`
+	SupportsToolReferences                      *bool          `json:"supportsToolReferences,omitempty"`
+	SupportsToolSearch                          *bool          `json:"supportsToolSearch,omitempty"`
+	ForceAdaptiveThinking                       *bool          `json:"forceAdaptiveThinking,omitempty"`
+	AllowEmptySignature                         *bool          `json:"allowEmptySignature,omitempty"`
+	SendSessionAffinityHeaders                  *bool          `json:"sendSessionAffinityHeaders,omitempty"`
+	SendSessionIDHeader                         *bool          `json:"sendSessionIdHeader,omitempty"`
+	RequiresToolResultName                      *bool          `json:"requiresToolResultName,omitempty"`
+	RequiresAssistantAfterToolResult            *bool          `json:"requiresAssistantAfterToolResult,omitempty"`
+	RequiresThinkingAsText                      *bool          `json:"requiresThinkingAsText,omitempty"`
+	RequiresReasoningContentOnAssistantMessages *bool          `json:"requiresReasoningContentOnAssistantMessages,omitempty"`
+	RequiresReasoningContentOnAssistantTurns    *bool          `json:"requiresReasoningContentOnAssistantTurns,omitempty"`
+	RequiresReasoningContentOnAssistantEvents   *bool          `json:"requiresReasoningContentOnAssistantEvents,omitempty"`
+	ZAIToolStream                               *bool          `json:"zaiToolStream,omitempty"`
+	OpenRouterRouting                           map[string]any `json:"openRouterRouting,omitempty"`
+	VercelGatewayRouting                        map[string]any `json:"vercelGatewayRouting,omitempty"`
+	ChatTemplateKwargs                          map[string]any `json:"chatTemplateKwargs,omitempty"`
+	MaxTokensField                              string         `json:"maxTokensField,omitempty"`
+	ThinkingFormat                              string         `json:"thinkingFormat,omitempty"`
+	CacheControlFormat                          string         `json:"cacheControlFormat,omitempty"`
+	DeferredToolsMode                           string         `json:"deferredToolsMode,omitempty"`
+	SessionAffinityFormat                       string         `json:"sessionAffinityFormat,omitempty"`
 }
 
 type Context struct {
@@ -221,6 +244,7 @@ type StreamOptions struct {
 	Reasoning        string
 	ThinkingBudgets  map[string]int
 	Headers          map[string]string
+	Env              ProviderEnv
 	TimeoutMillis    int
 	MaxRetries       int
 	MaxRetryDelayMs  int

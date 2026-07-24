@@ -47,6 +47,7 @@ const modules = [
 				"gi-llm-provider/openai_completions_stream_test.go",
 				"gi-llm-provider/openai_responses_stream_test.go",
 			],
+			"packages/ai/test/max-thinking.test.ts": ["gi-llm-provider/models_test.go"],
 			"packages/ai/test/supports-xhigh.test.ts": ["gi-llm-provider/models_test.go"],
 			"packages/ai/test/stream.test.ts": [
 				"gi-llm-provider/stream_contract_test.go",

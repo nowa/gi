@@ -1,11 +1,15 @@
 package gillmprovider
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 func ptrString(value string) *string { return &value }
 func ptrBool(value bool) *bool       { return &value }
 
 var (
+	modelRegistryMu    sync.RWMutex
 	modelRegistry      = map[string]map[string]Model{}
 	modelProviderOrder []string
 	modelOrder         = map[string][]string{}
@@ -19,6 +23,9 @@ func RegisterModel(model Model) {
 	if model.Provider == "" {
 		return
 	}
+	model = cloneModel(model)
+	modelRegistryMu.Lock()
+	defer modelRegistryMu.Unlock()
 	if modelRegistry[model.Provider] == nil {
 		modelRegistry[model.Provider] = map[string]Model{}
 		modelProviderOrder = append(modelProviderOrder, model.Provider)
@@ -30,17 +37,22 @@ func RegisterModel(model Model) {
 }
 
 func resetModelRegistry() {
+	modelRegistryMu.Lock()
+	defer modelRegistryMu.Unlock()
 	modelRegistry = map[string]map[string]Model{}
 	modelProviderOrder = nil
 	modelOrder = map[string][]string{}
 }
 
 func GetModel(provider, modelID string) (Model, bool) {
+	modelRegistryMu.RLock()
 	if models, ok := modelRegistry[provider]; ok {
 		if model, ok := models[modelID]; ok {
-			return model, true
+			modelRegistryMu.RUnlock()
+			return cloneModel(model), true
 		}
 	}
+	modelRegistryMu.RUnlock()
 	return Model{
 		ID:            modelID,
 		Name:          modelID,
@@ -58,25 +70,51 @@ func MustGetModel(provider, modelID string) Model {
 }
 
 func GetProviders() []string {
-	return append([]string(nil), modelProviderOrder...)
+	modelRegistryMu.RLock()
+	providers := append([]string(nil), modelProviderOrder...)
+	modelRegistryMu.RUnlock()
+	return providers
 }
 
 func GetModels(provider string) []Model {
+	modelRegistryMu.RLock()
 	models := modelRegistry[provider]
 	result := make([]Model, 0, len(models))
 	for _, id := range modelOrder[provider] {
 		if model, ok := models[id]; ok {
-			result = append(result, model)
+			result = append(result, cloneModel(model))
 		}
 	}
+	modelRegistryMu.RUnlock()
 	return result
 }
 
+// HasAPI reports whether a dynamically selected model uses the requested API.
+func HasAPI(model Model, api string) bool {
+	return model.API == api
+}
+
 func CalculateCost(model Model, usage Usage) UsageCost {
-	usage.Cost.Input = model.Cost.Input / 1_000_000 * float64(usage.Input)
-	usage.Cost.Output = model.Cost.Output / 1_000_000 * float64(usage.Output)
-	usage.Cost.CacheRead = model.Cost.CacheRead / 1_000_000 * float64(usage.CacheRead)
-	usage.Cost.CacheWrite = model.Cost.CacheWrite / 1_000_000 * float64(usage.CacheWrite)
+	rates := model.Cost
+	inputTokens := usage.Input + usage.CacheRead + usage.CacheWrite
+	matchedThreshold := -1
+	for _, tier := range model.Cost.Tiers {
+		if inputTokens > tier.InputTokensAbove && tier.InputTokensAbove > matchedThreshold {
+			rates.Input = tier.Input
+			rates.Output = tier.Output
+			rates.CacheRead = tier.CacheRead
+			rates.CacheWrite = tier.CacheWrite
+			matchedThreshold = tier.InputTokensAbove
+		}
+	}
+
+	longCacheWrite := usage.CacheWrite1h
+	shortCacheWrite := usage.CacheWrite - longCacheWrite
+	usage.Cost.Input = rates.Input / 1_000_000 * float64(usage.Input)
+	usage.Cost.Output = rates.Output / 1_000_000 * float64(usage.Output)
+	usage.Cost.CacheRead = rates.CacheRead / 1_000_000 * float64(usage.CacheRead)
+	usage.Cost.CacheWrite = (rates.CacheWrite*float64(shortCacheWrite) +
+		rates.Input*2*float64(longCacheWrite)) / 1_000_000
 	usage.Cost.Total = usage.Cost.Input + usage.Cost.Output + usage.Cost.CacheRead + usage.Cost.CacheWrite
 	return usage.Cost
 }
@@ -85,14 +123,14 @@ func GetSupportedThinkingLevels(model Model) []string {
 	if !model.Reasoning {
 		return []string{"off"}
 	}
-	all := []string{"off", "minimal", "low", "medium", "high", "xhigh"}
+	all := []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 	result := make([]string, 0, len(all))
 	for _, level := range all {
 		mapped, hasMapping := model.ThinkingLevelMap[level]
 		if hasMapping && mapped == nil {
 			continue
 		}
-		if level == "xhigh" && !hasMapping {
+		if (level == "xhigh" || level == "max") && !hasMapping {
 			continue
 		}
 		result = append(result, level)
@@ -107,7 +145,7 @@ func ClampThinkingLevel(model Model, level string) string {
 			return level
 		}
 	}
-	order := []string{"off", "minimal", "low", "medium", "high", "xhigh"}
+	order := []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}
 	index := -1
 	for i, candidate := range order {
 		if candidate == level {

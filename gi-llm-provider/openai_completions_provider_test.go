@@ -83,7 +83,7 @@ func TestOpenAICompletionsProviderUsesOfficialGrokEndpointAndPayload(t *testing.
 	if requestPath != "/v1/chat/completions" || authHeader != "Bearer xai-key" {
 		t.Fatalf("request path/auth = %q %q", requestPath, authHeader)
 	}
-	if payload.Model != "grok-4.3" || payload.MaxTokens != 1234 || payload.MaxCompletionTokens != 0 || payload.ReasoningEffort != "high" {
+	if payload.Model != "grok-4.3" || payload.MaxTokens != 1234 || payload.MaxCompletionTokens != 0 || payload.ReasoningEffort != "" {
 		t.Fatalf("payload = %#v", payload)
 	}
 	if payload.Store != nil || payload.PromptCacheKey != "" || len(payload.Messages) != 1 {
