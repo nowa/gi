@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,11 +85,12 @@ func (e *ExecutionError) Unwrap() error {
 }
 
 type ExecOptions struct {
-	CWD      string
-	Env      map[string]string
-	Timeout  time.Duration
-	OnStdout func(string) error
-	OnStderr func(string) error
+	CWD        string
+	Env        map[string]string
+	InheritEnv *bool
+	Timeout    time.Duration
+	OnStdout   func(string) error
+	OnStderr   func(string) error
 }
 
 type ExecResult struct {
@@ -436,38 +436,30 @@ func (e *LocalExecutionEnv) Exec(ctx context.Context, command string, options Ex
 	}
 	cmd := exec.CommandContext(runCtx, e.shellPath, "-c", command)
 	cmd.Dir = cwd
-	cmd.Env = os.Environ()
+	cmd.WaitDelay = time.Second
+	inheritEnv := true
+	if options.InheritEnv != nil {
+		inheritEnv = *options.InheritEnv
+	}
+	if inheritEnv {
+		cmd.Env = os.Environ()
+	} else {
+		cmd.Env = []string{}
+	}
 	for key, value := range options.Env {
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawnError, Err: err}
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawnError, Err: err}
-	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	callbacks := &execCallbackState{cancel: cancel}
+	cmd.Stdout = &execOutputWriter{buffer: &stdout, callback: options.OnStdout, callbacks: callbacks}
+	cmd.Stderr = &execOutputWriter{buffer: &stderr, callback: options.OnStderr, callbacks: callbacks}
 	if err := cmd.Start(); err != nil {
 		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawnError, Err: err}
 	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	callbackErr := make(chan error, 2)
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go readExecPipe(stdoutPipe, &stdout, options.OnStdout, callbackErr, cancel, &wg)
-	go readExecPipe(stderrPipe, &stderr, options.OnStderr, callbackErr, cancel, &wg)
-
 	waitErr := cmd.Wait()
-	wg.Wait()
-	close(callbackErr)
-	for err := range callbackErr {
-		if err != nil {
-			_ = cmd.Process.Kill()
-			return ExecResult{}, &ExecutionError{Code: ExecutionErrorCallbackError, Err: err}
-		}
+	if callbackErr := callbacks.Err(); callbackErr != nil {
+		return ExecResult{}, &ExecutionError{Code: ExecutionErrorCallbackError, Err: callbackErr}
 	}
 	if runCtx.Err() != nil {
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
@@ -480,6 +472,9 @@ func (e *LocalExecutionEnv) Exec(ctx context.Context, command string, options Ex
 	}
 
 	result := ExecResult{Stdout: stdout.String(), Stderr: stderr.String()}
+	if errors.Is(waitErr, exec.ErrWaitDelay) {
+		waitErr = nil
+	}
 	if waitErr != nil {
 		var exitErr *exec.ExitError
 		if errors.As(waitErr, &exitErr) {
@@ -552,30 +547,47 @@ func ExecuteShellWithCapture(ctx context.Context, env *LocalExecutionEnv, comman
 	return captured, nil
 }
 
-func readExecPipe(pipe io.Reader, buffer *bytes.Buffer, callback func(string) error, callbackErr chan<- error, cancel context.CancelFunc, wg *sync.WaitGroup) {
-	defer wg.Done()
-	chunk := make([]byte, 8192)
-	for {
-		n, err := pipe.Read(chunk)
-		if n > 0 {
-			text := string(chunk[:n])
-			buffer.WriteString(text)
-			if callback != nil {
-				if callbackErrValue := callback(text); callbackErrValue != nil {
-					callbackErr <- callbackErrValue
-					cancel()
-					io.Copy(io.Discard, pipe)
-					return
-				}
-			}
-		}
-		if err != nil {
-			if !errors.Is(err, io.EOF) && !errors.Is(err, os.ErrClosed) {
-				callbackErr <- err
-			}
-			return
+type execCallbackState struct {
+	mu     sync.Mutex
+	err    error
+	cancel context.CancelFunc
+}
+
+func (s *execCallbackState) Fail(err error) {
+	if err == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.err == nil {
+		s.err = err
+	}
+	s.mu.Unlock()
+	s.cancel()
+}
+
+func (s *execCallbackState) Err() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.err
+}
+
+type execOutputWriter struct {
+	buffer    *bytes.Buffer
+	callback  func(string) error
+	callbacks *execCallbackState
+}
+
+func (w *execOutputWriter) Write(content []byte) (int, error) {
+	if _, err := w.buffer.Write(content); err != nil {
+		return 0, err
+	}
+	if w.callback != nil {
+		if err := w.callback(string(content)); err != nil {
+			w.callbacks.Fail(err)
+			return 0, err
 		}
 	}
+	return len(content), nil
 }
 
 func checkShell(path string) error {

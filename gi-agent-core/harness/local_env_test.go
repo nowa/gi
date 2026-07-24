@@ -171,6 +171,33 @@ func TestLocalExecutionEnvExec(t *testing.T) {
 	if err != nil || result.ExitCode != 7 {
 		t.Fatalf("exit result=%#v err=%v", result, err)
 	}
+
+	var largeOutput strings.Builder
+	result, err = env.Exec(ctx, "printf '%060000d' 0", ExecOptions{
+		OnStdout: func(chunk string) error {
+			largeOutput.WriteString(chunk)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Stdout) != 60000 || largeOutput.Len() != 60000 {
+		t.Fatalf("large output lengths = %d / %d", len(result.Stdout), largeOutput.Len())
+	}
+
+	t.Setenv("GI_ENV_INHERIT_TEST", "inherited")
+	inheritEnv := false
+	result, err = env.Exec(ctx, `printf '%s:%s' "${GI_ENV_INHERIT_TEST-}" "$GI_ENV_EXPLICIT_TEST"`, ExecOptions{
+		Env:        map[string]string{"GI_ENV_EXPLICIT_TEST": "explicit"},
+		InheritEnv: &inheritEnv,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Stdout != ":explicit" {
+		t.Fatalf("explicit environment output = %q", result.Stdout)
+	}
 }
 
 func TestLocalExecutionEnvExecErrors(t *testing.T) {

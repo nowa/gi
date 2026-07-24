@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"strings"
 	"testing"
 	"unicode/utf8"
 )
@@ -24,6 +25,14 @@ func TestTruncateHeadReportsFirstLineExceedsByteLimit(t *testing.T) {
 	result := TruncateHead("éé\nabc", TruncationOptions{MaxBytes: 3, MaxLines: 10})
 	if result.Content != "" || !result.Truncated || result.TruncatedBy != TruncatedByBytes || !result.FirstLineExceedsLimit {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestTruncateHeadDoesNotCountTrailingNewlineAsLine(t *testing.T) {
+	content := strings.Repeat("x\n", 2000)
+	result := TruncateHead(content, TruncationOptions{})
+	if result.Truncated || result.TotalLines != 2000 || result.Content != content {
+		t.Fatalf("trailing-newline result = %#v", result)
 	}
 }
 

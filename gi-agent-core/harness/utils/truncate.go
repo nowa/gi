@@ -1,6 +1,9 @@
 package utils
 
-import "unicode/utf8"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 const (
 	DefaultMaxLines    = 2000
@@ -135,6 +138,9 @@ func truncationResult(content string, truncated bool, truncatedBy string, totalL
 }
 
 func splitLines(s string) []string {
+	if s == "" {
+		return nil
+	}
 	lines := []string{""}
 	start := 0
 	for i, r := range s {
@@ -145,6 +151,9 @@ func splitLines(s string) []string {
 		}
 	}
 	lines[len(lines)-1] = s[start:]
+	if strings.HasSuffix(s, "\n") {
+		lines = lines[:len(lines)-1]
+	}
 	return lines
 }
 
