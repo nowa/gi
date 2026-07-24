@@ -46,7 +46,7 @@ func normalizeTruncationOptions(options TruncationOptions) TruncationOptions {
 func TruncateHead(content string, options TruncationOptions) TruncationResult {
 	options = normalizeTruncationOptions(options)
 	totalBytes := len([]byte(content))
-	lines := splitLines(content)
+	lines := splitLinesForCounting(content)
 	totalLines := len(lines)
 	if totalLines <= options.MaxLines && totalBytes <= options.MaxBytes {
 		return truncationResult(content, false, TruncatedByNothing, totalLines, totalBytes, totalLines, totalBytes, false, false, options)
@@ -78,7 +78,7 @@ func TruncateHead(content string, options TruncationOptions) TruncationResult {
 func TruncateTail(content string, options TruncationOptions) TruncationResult {
 	options = normalizeTruncationOptions(options)
 	totalBytes := len([]byte(content))
-	lines := splitLines(content)
+	lines := splitLinesForCounting(content)
 	totalLines := len(lines)
 	if totalLines <= options.MaxLines && totalBytes <= options.MaxBytes {
 		return truncationResult(content, false, TruncatedByNothing, totalLines, totalBytes, totalLines, totalBytes, false, false, options)
@@ -137,7 +137,7 @@ func truncationResult(content string, truncated bool, truncatedBy string, totalL
 	}
 }
 
-func splitLines(s string) []string {
+func splitLinesForCounting(s string) []string {
 	if s == "" {
 		return nil
 	}

@@ -39,8 +39,8 @@ func TestCompactionTokenCalculations(t *testing.T) {
 	if EstimateTokens(llm.UserMessageText("plain user")) <= 0 {
 		t.Fatal("expected user estimate")
 	}
-	if EstimateTokens(llm.Message{Role: llm.RoleToolResult, Content: []llm.ContentPart{llm.Image("abc", "image/png")}}) <= 1000 {
-		t.Fatal("expected image tool result estimate > 1000")
+	if got := EstimateTokens(llm.Message{Role: llm.RoleToolResult, Content: []llm.ContentPart{llm.Image("abc", "image/png")}}); got != 1200 {
+		t.Fatalf("image tool result estimate = %d, want 1200", got)
 	}
 	if EstimateTokens(llm.Message{Role: "unknown"}) != 0 {
 		t.Fatal("unknown role should estimate to zero")
@@ -57,6 +57,25 @@ func TestCompactionTokenCalculations(t *testing.T) {
 	estimate := EstimateContextTokens([]llm.Message{assistant, llm.UserMessageText("tail")})
 	if estimate.UsageTokens != 20 || estimate.LastUsageIndex == nil || *estimate.LastUsageIndex != 0 {
 		t.Fatalf("estimate = %#v", estimate)
+	}
+}
+
+func TestEstimateTokensUsesPiContentHeuristic(t *testing.T) {
+	if got := EstimateTokens(llm.UserMessageText("1234")); got != 1 {
+		t.Fatalf("text estimate = %d, want 1", got)
+	}
+	if got := EstimateTokens(llm.UserMessageText("🙂🙂")); got != 1 {
+		t.Fatalf("UTF-16 estimate = %d, want 1", got)
+	}
+	assistant := harnessAssistantMessage("")
+	assistant.Content = []llm.ContentPart{
+		llm.Text("abcd"),
+		llm.Thinking("efgh"),
+		llm.ToolCall("call", "tool", map[string]any{"x": "y"}),
+	}
+	wantChars := 4 + 4 + len("tool") + len(`{"x":"y"}`)
+	if got, want := EstimateTokens(assistant), (wantChars+3)/4; got != want {
+		t.Fatalf("assistant estimate = %d, want %d", got, want)
 	}
 }
 

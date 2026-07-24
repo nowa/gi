@@ -680,7 +680,7 @@ func TestAgentHarnessCompactAppendsCompactionEntry(t *testing.T) {
 	firstAssistant.Usage = mockUsage(50_000, 1_000, 0, 0)
 	_, _ = session.AppendMessage(firstAssistant)
 	_, _ = session.AppendMessage(llm.UserMessageText("three"))
-	secondAssistant := harnessAssistantMessage("four")
+	secondAssistant := harnessAssistantMessage(strings.Repeat("four", 20_000))
 	secondAssistant.Usage = mockUsage(50_000, 1_000, 0, 0)
 	_, _ = session.AppendMessage(secondAssistant)
 

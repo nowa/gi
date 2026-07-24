@@ -336,7 +336,16 @@ func TestPiCompactionLargeSessionWithFauxProvider(t *testing.T) {
 
 	loaded := BuildSessionContext(entries)
 	parentID := entries[len(entries)-1].ID
-	compactionEntry := Entry{Type: "compaction", ID: "compaction-test-id", ParentID: &parentID, Timestamp: nowISO(), Summary: result.Summary, FirstKeptEntryID: result.FirstKeptEntryID, TokensBefore: result.TokensBefore}
+	compactionEntry := Entry{
+		Type:             "compaction",
+		ID:               "compaction-test-id",
+		ParentID:         &parentID,
+		Timestamp:        nowISO(),
+		Summary:          result.Summary,
+		FirstKeptEntryID: result.FirstKeptEntryID,
+		TokensBefore:     result.TokensBefore,
+		RetainedTail:     result.RetainedTail,
+	}
 	reloaded := BuildSessionContext(append(entries, compactionEntry))
 	if len(reloaded.Messages) >= len(loaded.Messages) || reloaded.Messages[0].Role != "compactionSummary" || !strings.Contains(piCompactionMessageText(reloaded.Messages[0]), result.Summary) {
 		t.Fatalf("reloaded messages = %d original = %d first = %#v", len(reloaded.Messages), len(loaded.Messages), reloaded.Messages[0])
@@ -413,8 +422,8 @@ func piCompactionLargeEntries(turns int) []Entry {
 	entries := make([]Entry, 0, turns*2)
 	for i := 0; i < turns; i++ {
 		entries = append(entries,
-			builder.message(llm.UserMessageText(fmt.Sprintf("Large user message %03d", i))),
-			builder.message(piCompactionAssistant(fmt.Sprintf("Large assistant message %03d", i), mockUsage(0, 100, (i+1)*750, 0))),
+			builder.message(llm.UserMessageText(strings.Repeat(fmt.Sprintf("Large user message %03d ", i), 200))),
+			builder.message(piCompactionAssistant(strings.Repeat(fmt.Sprintf("Large assistant message %03d ", i), 200), mockUsage(0, 100, (i+1)*750, 0))),
 		)
 	}
 	return entries

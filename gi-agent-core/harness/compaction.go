@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -17,6 +18,8 @@ type CompactionSettings struct {
 }
 
 var DefaultCompactionSettings = CompactionSettings{Enabled: true, ReserveTokens: 16_384, KeepRecentTokens: 20_000}
+
+const estimatedImageChars = 4800
 
 type ContextTokenEstimate struct {
 	Tokens         int  `json:"tokens"`
@@ -190,33 +193,60 @@ func ShouldCompact(contextTokens, contextWindow int, settings CompactionSettings
 }
 
 func EstimateTokens(message llm.Message) int {
+	var chars int
 	switch message.Role {
-	case llm.RoleUser, llm.RoleAssistant, llm.RoleToolResult, "custom", "branchSummary", "compactionSummary", "bashExecution":
+	case llm.RoleUser, llm.RoleToolResult, "custom":
+		chars = estimateTextAndImageContentChars(message.Content)
+	case llm.RoleAssistant:
+		for _, part := range message.Content {
+			switch part.Type {
+			case llm.ContentText:
+				chars += utf16CodeUnits(part.Text)
+			case llm.ContentThinking:
+				chars += utf16CodeUnits(part.Thinking)
+			case llm.ContentToolCall:
+				chars += utf16CodeUnits(part.Name) + utf16CodeUnits(safeJSONString(part.Arguments))
+			}
+		}
+	case "branchSummary", "compactionSummary", "bashExecution":
+		chars = estimateTextAndImageContentChars(message.Content)
 	default:
 		return 0
 	}
-	tokens := 4
-	for _, part := range message.Content {
+	return (chars + 3) / 4
+}
+
+func estimateTextAndImageContentChars(content []llm.ContentPart) int {
+	chars := 0
+	for _, part := range content {
 		switch part.Type {
 		case llm.ContentText:
-			tokens += len([]rune(part.Text))/4 + 1
-		case llm.ContentThinking:
-			tokens += len([]rune(part.Thinking))/4 + 1
-		case llm.ContentToolCall:
-			tokens += len(part.Name) + len(fmt.Sprint(part.Arguments))/4 + 8
+			chars += utf16CodeUnits(part.Text)
 		case llm.ContentImage:
-			tokens += 1000 + len(part.Data)/1024
+			chars += estimatedImageChars
 		}
 	}
-	if message.Role == llm.RoleAssistant && message.StopReason != llm.StopReasonError && message.StopReason != llm.StopReasonAborted {
-		if usage := CalculateContextTokens(message.Usage); usage > tokens {
-			return usage
+	return chars
+}
+
+func safeJSONString(value any) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "[unserializable]"
+	}
+	return string(encoded)
+}
+
+func utf16CodeUnits(value string) int {
+	units := 0
+	for _, codePoint := range value {
+		if codePoint > 0xffff {
+			units += 2
+		} else {
+			units++
 		}
 	}
-	if message.Role == llm.RoleToolResult && len(message.Content) == 0 {
-		tokens += len(fmt.Sprint(message.Details)) / 4
-	}
-	return tokens
+	return units
 }
 
 func EstimateContextTokens(messages []llm.Message) ContextTokenEstimate {

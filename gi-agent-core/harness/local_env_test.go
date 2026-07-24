@@ -238,6 +238,15 @@ func TestLocalExecutionEnvExecErrors(t *testing.T) {
 	if !errors.As(err, &execErr) || execErr.Code != ExecutionErrorSpawnError {
 		t.Fatalf("spawn err = %#v", err)
 	}
+
+	t.Run("reports a missing working directory before spawning", func(t *testing.T) {
+		missingCWDEnv := MustLocalExecutionEnv(filepath.Join(root, "missing-working-directory"))
+		_, err := missingCWDEnv.Exec(context.Background(), "printf ok", ExecOptions{})
+		if !errors.As(err, &execErr) || execErr.Code != ExecutionErrorSpawnError ||
+			!strings.Contains(err.Error(), "Working directory does not exist") {
+			t.Fatalf("missing working directory err = %#v", err)
+		}
+	})
 }
 
 func TestExecuteShellWithCapture(t *testing.T) {

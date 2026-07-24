@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -35,7 +36,12 @@ const (
 	ExecutionErrorSpawnError       = "spawn_error"
 	ExecutionErrorCallbackError    = "callback_error"
 	ExecutionErrorUnknown          = "unknown"
+
+	maxExecutionTimeout = time.Duration(2_147_483_647) * time.Millisecond
+	exitStdioGrace      = 100 * time.Millisecond
 )
+
+var legacyWSLBashPathPattern = regexp.MustCompile(`^[a-z]:\\windows\\(system32|sysnative)\\bash\.exe$`)
 
 type FileInfo struct {
 	Name    string
@@ -149,6 +155,12 @@ type LocalExecutionEnv struct {
 }
 
 type LocalExecutionOption func(*LocalExecutionEnv)
+
+type shellConfig struct {
+	shell        string
+	args         []string
+	commandStdin bool
+}
 
 func WithShellPath(path string) LocalExecutionOption {
 	return func(env *LocalExecutionEnv) {
@@ -415,14 +427,18 @@ func (e *LocalExecutionEnv) Exec(ctx context.Context, command string, options Ex
 	if err := ctx.Err(); err != nil {
 		return ExecResult{}, &ExecutionError{Code: ExecutionErrorAborted, Err: err}
 	}
+	timeout, err := resolveTimeout(options.Timeout)
+	if err != nil {
+		return ExecResult{}, err
+	}
 	if err := checkShell(e.shellPath); err != nil {
 		return ExecResult{}, err
 	}
 	var runCtx context.Context
 	var cancel context.CancelFunc
 	timedOut := false
-	if options.Timeout > 0 {
-		runCtx, cancel = context.WithTimeout(ctx, options.Timeout)
+	if timeout > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, timeout)
 	} else {
 		runCtx, cancel = context.WithCancel(ctx)
 	}
@@ -434,9 +450,26 @@ func (e *LocalExecutionEnv) Exec(ctx context.Context, command string, options Ex
 	} else {
 		cwd = e.AbsolutePath(cwd)
 	}
-	cmd := exec.CommandContext(runCtx, e.shellPath, "-c", command)
+	if _, err := os.Stat(cwd); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ExecResult{}, &ExecutionError{
+				Code: ExecutionErrorSpawnError,
+				Err:  fmt.Errorf("Working directory does not exist: %s\nCannot execute bash commands: %w", cwd, err),
+			}
+		}
+		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawnError, Err: err}
+	}
+	shell := getBashShellConfig(e.shellPath)
+	args := append([]string{}, shell.args...)
+	if !shell.commandStdin {
+		args = append(args, command)
+	}
+	cmd := exec.CommandContext(runCtx, shell.shell, args...)
 	cmd.Dir = cwd
-	cmd.WaitDelay = time.Second
+	cmd.WaitDelay = exitStdioGrace
+	if shell.commandStdin {
+		cmd.Stdin = strings.NewReader(command)
+	}
 	inheritEnv := true
 	if options.InheritEnv != nil {
 		inheritEnv = *options.InheritEnv
@@ -457,7 +490,7 @@ func (e *LocalExecutionEnv) Exec(ctx context.Context, command string, options Ex
 	if err := cmd.Start(); err != nil {
 		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawnError, Err: err}
 	}
-	waitErr := cmd.Wait()
+	waitErr := waitForChildProcess(cmd)
 	if callbackErr := callbacks.Err(); callbackErr != nil {
 		return ExecResult{}, &ExecutionError{Code: ExecutionErrorCallbackError, Err: callbackErr}
 	}
@@ -472,9 +505,6 @@ func (e *LocalExecutionEnv) Exec(ctx context.Context, command string, options Ex
 	}
 
 	result := ExecResult{Stdout: stdout.String(), Stderr: stderr.String()}
-	if errors.Is(waitErr, exec.ErrWaitDelay) {
-		waitErr = nil
-	}
 	if waitErr != nil {
 		var exitErr *exec.ExitError
 		if errors.As(waitErr, &exitErr) {
@@ -484,6 +514,45 @@ func (e *LocalExecutionEnv) Exec(ctx context.Context, command string, options Ex
 		return ExecResult{}, &ExecutionError{Code: ExecutionErrorSpawnError, Err: waitErr}
 	}
 	return result, nil
+}
+
+func resolveTimeout(timeout time.Duration) (time.Duration, error) {
+	if timeout == 0 {
+		return 0, nil
+	}
+	if timeout < 0 {
+		return 0, &ExecutionError{
+			Code: ExecutionErrorTimeout,
+			Err:  errors.New("invalid timeout: must be a positive duration"),
+		}
+	}
+	if timeout > maxExecutionTimeout {
+		return 0, &ExecutionError{
+			Code: ExecutionErrorTimeout,
+			Err:  fmt.Errorf("invalid timeout: maximum is %s", maxExecutionTimeout),
+		}
+	}
+	return timeout, nil
+}
+
+func isLegacyWSLBashPath(path string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(path, "/", `\`))
+	return legacyWSLBashPathPattern.MatchString(normalized)
+}
+
+func getBashShellConfig(shell string) shellConfig {
+	if isLegacyWSLBashPath(shell) {
+		return shellConfig{shell: shell, args: []string{"-s"}, commandStdin: true}
+	}
+	return shellConfig{shell: shell, args: []string{"-c"}}
+}
+
+func waitForChildProcess(cmd *exec.Cmd) error {
+	err := cmd.Wait()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return nil
+	}
+	return err
 }
 
 type CapturedShellResult struct {
