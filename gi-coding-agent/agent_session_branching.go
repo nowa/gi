@@ -56,11 +56,26 @@ func (s *AgentSession) Fork(entryID string) (AgentSessionForkResult, error) {
 		return AgentSessionForkResult{}, err
 	}
 	forkedSession, err := CreateAgentSession(AgentSessionOptions{
-		CWD:            forkedManager.GetCwd(),
-		Model:          s.Agent.State.Model,
-		SessionManager: forkedManager,
-		ResourceLoader: s.ResourceLoader,
-		ScopedModels:   s.ScopedModels,
+		CWD:                  forkedManager.GetCwd(),
+		Model:                s.Agent.State.Model,
+		ThinkingLevel:        s.Agent.State.ThinkingLevel,
+		Preflight:            s.Preflight,
+		SessionManager:       forkedManager,
+		ResourceLoader:       s.ResourceLoader,
+		CompactionSettings:   &s.CompactionSettings,
+		CompactionSummarizer: s.CompactionSummarizer,
+		BranchSummarizer:     s.BranchSummarizer,
+		RetrySettings:        &s.RetrySettings,
+		AutoCompactionRunner: s.AutoCompactionRunner,
+		AgentContinue:        s.AgentContinue,
+		Responder:            s.Responder,
+		StreamResponder:      s.StreamResponder,
+		ModelRuntime:         s.ModelRuntime,
+		SummaryRuntime:       s.SummaryRuntime,
+		ScopedModels:         s.ScopedModels,
+		Tools:                s.Tools,
+		ToolsSet:             s.ToolsSet,
+		NoTools:              s.NoTools,
 	})
 	if err != nil {
 		return AgentSessionForkResult{}, err
@@ -77,11 +92,26 @@ func (s *AgentSession) ForkAt(entryID string) (AgentSessionForkResult, error) {
 		return AgentSessionForkResult{}, errors.New("Invalid entry ID for forking")
 	}
 	forkedSession, err := CreateAgentSession(AgentSessionOptions{
-		CWD:            forkedManager.GetCwd(),
-		Model:          s.Agent.State.Model,
-		SessionManager: forkedManager,
-		ResourceLoader: s.ResourceLoader,
-		ScopedModels:   s.ScopedModels,
+		CWD:                  forkedManager.GetCwd(),
+		Model:                s.Agent.State.Model,
+		ThinkingLevel:        s.Agent.State.ThinkingLevel,
+		Preflight:            s.Preflight,
+		SessionManager:       forkedManager,
+		ResourceLoader:       s.ResourceLoader,
+		CompactionSettings:   &s.CompactionSettings,
+		CompactionSummarizer: s.CompactionSummarizer,
+		BranchSummarizer:     s.BranchSummarizer,
+		RetrySettings:        &s.RetrySettings,
+		AutoCompactionRunner: s.AutoCompactionRunner,
+		AgentContinue:        s.AgentContinue,
+		Responder:            s.Responder,
+		StreamResponder:      s.StreamResponder,
+		ModelRuntime:         s.ModelRuntime,
+		SummaryRuntime:       s.SummaryRuntime,
+		ScopedModels:         s.ScopedModels,
+		Tools:                s.Tools,
+		ToolsSet:             s.ToolsSet,
+		NoTools:              s.NoTools,
 	})
 	if err != nil {
 		return AgentSessionForkResult{}, err

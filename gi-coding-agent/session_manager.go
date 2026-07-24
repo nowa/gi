@@ -15,6 +15,7 @@ import (
 	"time"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
+	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
 const CurrentSessionVersion = 3
@@ -31,6 +32,12 @@ type SessionHeader struct {
 type NewSessionOptions struct {
 	ID            string
 	ParentSession string
+}
+
+type SessionSummaryOptions struct {
+	Details  any
+	FromHook bool
+	Usage    *llm.Usage
 }
 
 type FileEntry struct {
@@ -54,6 +61,7 @@ type FileEntry struct {
 	Display       bool
 	Details       any
 	FromHook      bool
+	Usage         *llm.Usage
 	TargetID      string
 	Label         string
 	Name          string
@@ -95,6 +103,15 @@ func (e *FileEntry) UnmarshalJSON(data []byte) error {
 	e.Display, _ = raw["display"].(bool)
 	e.Details = raw["details"]
 	e.FromHook, _ = raw["fromHook"].(bool)
+	if usage := raw["usage"]; usage != nil {
+		data, err := json.Marshal(usage)
+		if err == nil {
+			var decoded llm.Usage
+			if json.Unmarshal(data, &decoded) == nil {
+				e.Usage = &decoded
+			}
+		}
+	}
 	e.TargetID, _ = raw["targetId"].(string)
 	e.Label, _ = raw["label"].(string)
 	e.Name, _ = raw["name"].(string)
@@ -166,6 +183,9 @@ func (e FileEntry) MarshalJSON() ([]byte, error) {
 	}
 	if e.FromHook {
 		values["fromHook"] = e.FromHook
+	}
+	if e.Usage != nil {
+		values["usage"] = e.Usage
 	}
 	if e.TargetID != "" {
 		values["targetId"] = e.TargetID
@@ -995,15 +1015,29 @@ func (s *SessionManager) AppendModelChange(provider, modelID string) string {
 }
 
 func (s *SessionManager) AppendCompaction(summary, firstKeptEntryID string, tokensBefore int) string {
+	return s.AppendCompactionWithOptions(summary, firstKeptEntryID, tokensBefore, SessionSummaryOptions{})
+}
+
+func (s *SessionManager) AppendCompactionWithOptions(
+	summary,
+	firstKeptEntryID string,
+	tokensBefore int,
+	options SessionSummaryOptions,
+) string {
 	parentID := cloneStringPtr(s.leafID)
-	entry := newSessionEntry("compaction", parentID, map[string]any{
+	values := map[string]any{
 		"summary":          summary,
 		"firstKeptEntryId": firstKeptEntryID,
 		"tokensBefore":     tokensBefore,
-	})
+	}
+	appendSessionSummaryOptions(values, options)
+	entry := newSessionEntry("compaction", parentID, values)
 	entry.Summary = summary
 	entry.FirstKeptID = firstKeptEntryID
 	entry.TokensBefore = tokensBefore
+	entry.Details = options.Details
+	entry.FromHook = options.FromHook
+	entry.Usage = cloneSessionUsage(options.Usage)
 	s.appendEntry(entry)
 	return entry.ID
 }
@@ -1326,6 +1360,14 @@ func (s *SessionManager) ResetLeaf() {
 }
 
 func (s *SessionManager) BranchWithSummary(branchFromID *string, summary string) (string, error) {
+	return s.BranchWithSummaryOptions(branchFromID, summary, SessionSummaryOptions{})
+}
+
+func (s *SessionManager) BranchWithSummaryOptions(
+	branchFromID *string,
+	summary string,
+	options SessionSummaryOptions,
+) (string, error) {
 	if branchFromID != nil {
 		if _, ok := s.byID[*branchFromID]; !ok {
 			return "", errors.New("Entry " + *branchFromID + " not found")
@@ -1337,14 +1379,39 @@ func (s *SessionManager) BranchWithSummary(branchFromID *string, summary string)
 	if branchFromID != nil {
 		fromID = *branchFromID
 	}
-	entry := newSessionEntry("branch_summary", parentID, map[string]any{
+	values := map[string]any{
 		"fromId":  fromID,
 		"summary": summary,
-	})
+	}
+	appendSessionSummaryOptions(values, options)
+	entry := newSessionEntry("branch_summary", parentID, values)
 	entry.Summary = summary
 	entry.FromID = fromID
+	entry.Details = options.Details
+	entry.FromHook = options.FromHook
+	entry.Usage = cloneSessionUsage(options.Usage)
 	s.appendEntry(entry)
 	return entry.ID, nil
+}
+
+func appendSessionSummaryOptions(values map[string]any, options SessionSummaryOptions) {
+	if options.Details != nil {
+		values["details"] = options.Details
+	}
+	if options.FromHook {
+		values["fromHook"] = true
+	}
+	if options.Usage != nil {
+		values["usage"] = options.Usage
+	}
+}
+
+func cloneSessionUsage(usage *llm.Usage) *llm.Usage {
+	if usage == nil {
+		return nil
+	}
+	cloned := *usage
+	return &cloned
 }
 
 func (s *SessionManager) CreateBranchedSession(leafID string) (string, error) {

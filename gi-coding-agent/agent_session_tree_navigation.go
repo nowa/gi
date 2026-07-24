@@ -1,8 +1,11 @@
 package gicodingagent
 
 import (
+	"context"
 	"errors"
 	"strings"
+
+	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 )
 
 type AgentSessionNavigateTreeOptions struct {
@@ -43,27 +46,64 @@ func (s *AgentSession) NavigateTree(targetID string, options AgentSessionNavigat
 		}
 	}
 
-	var summary string
+	var summaryResult agentharness.BranchSummaryResult
+	var entriesToSummarize []FileEntry
 	if options.Summarize {
-		abort := make(chan struct{})
+		entriesToSummarize = collectTreeNavigationSummaryEntries(
+			s.SessionManager,
+			leaf,
+			targetID,
+		)
+		if len(entriesToSummarize) == 0 {
+			options.Summarize = false
+		}
+	}
+	if options.Summarize {
+		ctx, cancel := context.WithCancel(context.Background())
 		cleanupCancellation, started := s.lifecycle.tryStartExclusiveCancellableActivity(
 			agentSessionActivityCompacting,
 			agentSessionCancellationBranchSummary,
-			func() { close(abort) },
+			cancel,
 		)
 		if !started {
-			return AgentSessionNavigateTreeResult{}, errors.New("session is busy")
+			cancel()
+			return AgentSessionNavigateTreeResult{},
+				errors.New("session is busy")
 		}
-		summarizer := s.BranchSummarizer
-		if summarizer == nil {
-			summarizer = DefaultAgentSessionBranchSummarizer
-		}
+		defer func() {
+			cleanupCancellation()
+			cancel()
+			s.lifecycle.setActivity(agentSessionActivityCompacting, false)
+		}()
 		var err error
-		summary, err = summarizer(collectTreeNavigationSummaryEntries(s.SessionManager, leaf, targetID), options.CustomInstructions, abort)
-		cleanupCancellation()
-		s.lifecycle.setActivity(agentSessionActivityCompacting, false)
+		if s.BranchSummarizer != nil {
+			summaryResult.Summary, err = s.BranchSummarizer(
+				entriesToSummarize,
+				options.CustomInstructions,
+				ctx.Done(),
+			)
+		} else {
+			if s.Agent == nil ||
+				strings.TrimSpace(s.Agent.State.Model.ID) == "" {
+				return AgentSessionNavigateTreeResult{},
+					errors.New("No model selected")
+			}
+			if s.Preflight != nil {
+				if err := s.Preflight(s.Agent.State.Model); err != nil {
+					return AgentSessionNavigateTreeResult{}, err
+				}
+			}
+			summaryResult, err = s.generateBranchSummary(
+				ctx,
+				entriesToSummarize,
+				options.CustomInstructions,
+			)
+		}
 		if err != nil {
-			if errors.Is(err, errAgentSessionBranchSummaryAborted) {
+			var summaryErr *agentharness.BranchSummaryError
+			if errors.Is(err, errAgentSessionBranchSummaryAborted) ||
+				errors.As(err, &summaryErr) &&
+					summaryErr.Code == agentharness.BranchSummaryErrorAborted {
 				return AgentSessionNavigateTreeResult{Cancelled: true, Aborted: true}, nil
 			}
 			return AgentSessionNavigateTreeResult{}, err
@@ -77,8 +117,18 @@ func (s *AgentSession) NavigateTree(targetID string, options AgentSessionNavigat
 		editorText = sessionMessageText(target.Message)
 	}
 
-	if strings.TrimSpace(summary) != "" {
-		summaryID, err := s.SessionManager.BranchWithSummary(newLeafID, summary)
+	if strings.TrimSpace(summaryResult.Summary) != "" {
+		summaryID, err := s.SessionManager.BranchWithSummaryOptions(
+			newLeafID,
+			summaryResult.Summary,
+			SessionSummaryOptions{
+				Details: map[string]any{
+					"readFiles":     summaryResult.ReadFiles,
+					"modifiedFiles": summaryResult.ModifiedFiles,
+				},
+				Usage: summaryResult.Usage,
+			},
+		)
 		if err != nil {
 			return AgentSessionNavigateTreeResult{}, err
 		}

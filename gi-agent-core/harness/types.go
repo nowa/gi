@@ -49,6 +49,7 @@ type Entry struct {
 	Display          bool        `json:"display,omitempty"`
 	Details          any         `json:"details,omitempty"`
 	FromHook         bool        `json:"fromHook,omitempty"`
+	Usage            *llm.Usage  `json:"usage,omitempty"`
 	Name             string      `json:"name,omitempty"`
 }
 

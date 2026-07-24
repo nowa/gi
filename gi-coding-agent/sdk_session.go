@@ -27,6 +27,7 @@ type AgentSessionOptions struct {
 	Responder            AgentSessionResponder
 	StreamResponder      AgentSessionStreamResponder
 	ModelRuntime         *ModelRuntime
+	SummaryRuntime       agentharness.SimpleCompletionRuntime
 	CustomTools          []SDKTool
 	ScopedModels         []ScopedModel
 	Tools                []string
@@ -49,6 +50,7 @@ type AgentSession struct {
 	Responder            AgentSessionResponder
 	StreamResponder      AgentSessionStreamResponder
 	ModelRuntime         *ModelRuntime
+	SummaryRuntime       agentharness.SimpleCompletionRuntime
 	Preflight            AgentSessionPreflight
 	ExtensionRuntime     *ProtocolExtensionRuntime
 	DynamicTools         []SDKTool
@@ -192,18 +194,19 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		compactionSettings = *options.CompactionSettings
 	}
 	compactionSummarizer := options.CompactionSummarizer
-	if compactionSummarizer == nil {
-		compactionSummarizer = DefaultAgentSessionCompactionSummarizer
-	}
 	branchSummarizer := options.BranchSummarizer
-	if branchSummarizer == nil {
-		branchSummarizer = DefaultAgentSessionBranchSummarizer
-	}
 	retrySettings := DefaultAgentSessionRetrySettings()
 	if options.RetrySettings != nil {
 		retrySettings = *options.RetrySettings
 	}
 	responder := options.Responder
+	summaryRuntime := options.SummaryRuntime
+	if summaryRuntime == nil && responder != nil {
+		summaryRuntime = agentSessionResponderCompletionRuntime{
+			responder:       responder,
+			streamResponder: options.StreamResponder,
+		}
+	}
 	if responder == nil {
 		responder = DefaultAgentSessionResponder
 	}
@@ -242,6 +245,7 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		Responder:            responder,
 		StreamResponder:      options.StreamResponder,
 		ModelRuntime:         options.ModelRuntime,
+		SummaryRuntime:       summaryRuntime,
 		Preflight:            options.Preflight,
 		ScopedModels:         append([]ScopedModel(nil), options.ScopedModels...),
 		Tools:                append([]string(nil), options.Tools...),
@@ -721,6 +725,13 @@ func toSystemPromptSkills(skills []agentharness.Skill) []SystemPromptSkill {
 
 func aggregateSessionUsage(branch []FileEntry) llm.Usage {
 	total := llm.EmptyUsage()
+	for _, entry := range branch {
+		if (entry.Type == "compaction" ||
+			entry.Type == "branch_summary") &&
+			entry.Usage != nil {
+			addUsage(&total, *entry.Usage)
+		}
+	}
 	startIndex := 0
 	if compactionIndex := lastSessionCompactionIndex(branch); compactionIndex >= 0 {
 		tokensBefore := branch[compactionIndex].TokensBefore

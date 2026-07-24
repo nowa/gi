@@ -20,6 +20,7 @@ type Session struct {
 type SessionEntryOptions struct {
 	Details  any
 	FromHook bool
+	Usage    *llm.Usage
 }
 
 func NewSession(storage SessionStorage) *Session {
@@ -90,7 +91,7 @@ func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefor
 }
 
 func (s *Session) AppendCompactionWithOptions(summary, firstKeptEntryID string, tokensBefore int, options SessionEntryOptions) (string, error) {
-	return s.appendEntry(Entry{Type: "compaction", ID: s.storage.CreateEntryID(), ParentID: s.currentParentID(), Timestamp: nowISO(), Summary: summary, FirstKeptEntryID: firstKeptEntryID, TokensBefore: tokensBefore, Details: options.Details, FromHook: options.FromHook})
+	return s.appendEntry(Entry{Type: "compaction", ID: s.storage.CreateEntryID(), ParentID: s.currentParentID(), Timestamp: nowISO(), Summary: summary, FirstKeptEntryID: firstKeptEntryID, TokensBefore: tokensBefore, Details: options.Details, FromHook: options.FromHook, Usage: cloneUsagePointer(options.Usage)})
 }
 
 func (s *Session) AppendCustomMessageEntry(customType string, content any, display bool, details any) (string, error) {
@@ -136,11 +137,19 @@ func (s *Session) MoveToWithOptions(entryID *string, summary string, options Ses
 	if entryID != nil {
 		fromID = *entryID
 	}
-	id, err := s.appendEntry(Entry{Type: "branch_summary", ID: s.storage.CreateEntryID(), ParentID: cloneStringPtr(entryID), Timestamp: nowISO(), FromID: fromID, Summary: summary, Details: options.Details, FromHook: options.FromHook})
+	id, err := s.appendEntry(Entry{Type: "branch_summary", ID: s.storage.CreateEntryID(), ParentID: cloneStringPtr(entryID), Timestamp: nowISO(), FromID: fromID, Summary: summary, Details: options.Details, FromHook: options.FromHook, Usage: cloneUsagePointer(options.Usage)})
 	if err != nil {
 		return nil, err
 	}
 	return &id, nil
+}
+
+func cloneUsagePointer(usage *llm.Usage) *llm.Usage {
+	if usage == nil {
+		return nil
+	}
+	cloned := *usage
+	return &cloned
 }
 
 func (s *Session) appendEntry(entry Entry) (string, error) {

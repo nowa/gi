@@ -52,13 +52,33 @@ type CompactionResult struct {
 	Summary          string         `json:"summary"`
 	FirstKeptEntryID string         `json:"firstKeptEntryId"`
 	TokensBefore     int            `json:"tokensBefore"`
+	Usage            *llm.Usage     `json:"usage,omitempty"`
 	Details          map[string]any `json:"details,omitempty"`
+}
+
+// SimpleCompletionRuntime is the minimal model-runtime contract required by
+// generated summaries. Both llm.Models and coding-agent's ModelRuntime satisfy
+// this interface, so the harness owns summary policy without owning provider
+// registration or credentials.
+type SimpleCompletionRuntime interface {
+	CompleteSimple(context.Context, llm.Model, llm.Context, llm.ModelsStreamOptions) (llm.Message, error)
 }
 
 type CompactOptions struct {
 	APIKey             string
 	ThinkingLevel      string
 	CustomInstructions string
+	Runtime            SimpleCompletionRuntime
+	RequestOptions     llm.ModelsStreamOptions
+	Retry              llm.RetryPolicy
+	RetryCallbacks     llm.RetryCallbacks
+}
+
+// SummaryWithUsage is the generated text and provider usage for one summary
+// request.
+type SummaryWithUsage struct {
+	Text  string
+	Usage llm.Usage
 }
 
 const summarizationSystemPrompt = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI coding assistant, then produce a structured summary following the exact format specified.
@@ -386,7 +406,97 @@ func SerializeConversation(messages []llm.Message) string {
 	return strings.Join(entries, "\n")
 }
 
+type directSimpleCompletionRuntime struct{}
+
+func (directSimpleCompletionRuntime) CompleteSimple(
+	ctx context.Context,
+	model llm.Model,
+	llmContext llm.Context,
+	options llm.ModelsStreamOptions,
+) (llm.Message, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	streamOptions := options.StreamOptions
+	streamOptions.Context = ctx
+	if options.APIKey != nil {
+		streamOptions.APIKey = *options.APIKey
+	}
+	if options.TransformHeaders != nil {
+		headers := make(map[string]string, len(streamOptions.Headers))
+		for key, value := range streamOptions.Headers {
+			headers[key] = value
+		}
+		transformed, err := options.TransformHeaders(ctx, headers)
+		if err != nil {
+			return llm.Message{}, err
+		}
+		streamOptions.Headers = transformed
+	}
+	stream, err := llm.StreamSimple(model, llmContext, streamOptions)
+	if err != nil {
+		return llm.Message{}, err
+	}
+	if stream == nil {
+		return llm.Message{}, errors.New("simple completion returned nil stream")
+	}
+	message, err := stream.Result(ctx)
+	if err != nil && ctx.Err() != nil {
+		return llm.AssistantErrorMessage(ctx.Err().Error(), model, true), nil
+	}
+	return message, err
+}
+
+// CompleteSimpleWithRetries is the single request boundary for generated
+// summaries. Every attempt reuses one isolated session ID and disables prompt
+// cache retention because summary requests are never continued.
+func CompleteSimpleWithRetries(
+	ctx context.Context,
+	runtime SimpleCompletionRuntime,
+	model llm.Model,
+	llmContext llm.Context,
+	options llm.ModelsStreamOptions,
+	retry llm.RetryPolicy,
+	callbacks llm.RetryCallbacks,
+) (llm.Message, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if runtime == nil {
+		runtime = directSimpleCompletionRuntime{}
+	}
+	options.StreamOptions.Context = ctx
+	options.StreamOptions.CacheRetention = "none"
+	options.StreamOptions.SessionID = UUIDv7()
+	return llm.RetryAssistantCall(ctx, retry, callbacks, func(callCtx context.Context) (llm.Message, error) {
+		requestOptions := options
+		requestOptions.StreamOptions.Context = callCtx
+		return runtime.CompleteSimple(callCtx, model, llmContext, requestOptions)
+	})
+}
+
 func GenerateSummary(ctx context.Context, messages []llm.Message, model llm.Model, maxTokens int, apiKey string, previousSummary, focus, thinkingLevel string) (string, error) {
+	result, err := GenerateSummaryWithUsage(ctx, messages, model, maxTokens, previousSummary, focus, CompactOptions{
+		APIKey:        apiKey,
+		ThinkingLevel: thinkingLevel,
+	})
+	if err != nil {
+		return "", err
+	}
+	return result.Text, nil
+}
+
+// GenerateSummaryWithUsage generates or updates a conversation summary while
+// preserving the provider usage from the successful terminal attempt.
+func GenerateSummaryWithUsage(
+	ctx context.Context,
+	messages []llm.Message,
+	model llm.Model,
+	maxTokens int,
+	previousSummary string,
+	focus string,
+	options CompactOptions,
+) (SummaryWithUsage, error) {
 	basePrompt := summarizationPrompt
 	if previousSummary != "" {
 		basePrompt = updateSummarizationPrompt
@@ -399,64 +509,108 @@ func GenerateSummary(ctx context.Context, messages []llm.Message, model llm.Mode
 		prompt += "<previous-summary>\n" + previousSummary + "\n</previous-summary>\n\n"
 	}
 	prompt += basePrompt
-	options := llm.SimpleStreamOptions{APIKey: apiKey, MaxTokens: compactionSummaryMaxTokens(maxTokens, 8, 10, model.MaxTokens)}
-	if model.Reasoning && thinkingLevel != "" && thinkingLevel != "off" {
-		options.Reasoning = thinkingLevel
+	requestOptions := summaryRequestOptions(options)
+	requestOptions.StreamOptions.MaxTokens = compactionSummaryMaxTokens(maxTokens, 8, 10, model.MaxTokens)
+	if model.Reasoning && options.ThinkingLevel != "" && options.ThinkingLevel != "off" {
+		requestOptions.StreamOptions.Reasoning = options.ThinkingLevel
 	}
-	stream, err := llm.StreamSimple(model, llm.Context{SystemPrompt: summarizationSystemPrompt, Messages: []llm.Message{llm.UserMessageText(prompt)}}, options)
-	if err != nil {
-		return "", newCompactionError(CompactionErrorSummarizationFailed, "summarization failed: %v", err)
-	}
-	message, err := stream.Result(ctx)
+	message, err := CompleteSimpleWithRetries(
+		ctx,
+		options.Runtime,
+		model,
+		llm.Context{
+			SystemPrompt: summarizationSystemPrompt,
+			Messages:     []llm.Message{llm.UserMessageText(prompt)},
+		},
+		requestOptions,
+		options.Retry,
+		options.RetryCallbacks,
+	)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return "", newCompactionError(CompactionErrorAborted, "summarization aborted: %v", err)
+			return SummaryWithUsage{}, newCompactionError(CompactionErrorAborted, "summarization aborted: %v", err)
 		}
-		return "", newCompactionError(CompactionErrorSummarizationFailed, "summarization failed: %v", err)
+		return SummaryWithUsage{}, newCompactionError(CompactionErrorSummarizationFailed, "summarization failed: %v", err)
 	}
 	if message.StopReason == llm.StopReasonAborted {
-		return "", newCompactionError(CompactionErrorAborted, "summarization aborted: %s", message.ErrorMessage)
+		return SummaryWithUsage{}, newCompactionError(CompactionErrorAborted, "summarization aborted: %s", message.ErrorMessage)
 	}
 	if message.StopReason == llm.StopReasonError {
-		return "", newCompactionError(CompactionErrorSummarizationFailed, "summarization failed: %s", message.ErrorMessage)
+		return SummaryWithUsage{}, newCompactionError(CompactionErrorSummarizationFailed, "summarization failed: %s", message.ErrorMessage)
 	}
+	var text strings.Builder
 	for _, part := range message.Content {
 		if part.Type == llm.ContentText {
-			return part.Text, nil
+			text.WriteString(part.Text)
 		}
 	}
-	return "", nil
+	return SummaryWithUsage{Text: text.String(), Usage: message.Usage}, nil
 }
 
 func GenerateTurnPrefixSummary(ctx context.Context, messages []llm.Message, model llm.Model, reserveTokens int, apiKey string, thinkingLevel string) (string, error) {
-	prompt := "<conversation>\n" + SerializeConversation(messages) + "\n</conversation>\n\n" + turnPrefixSummarizationPrompt
-	options := llm.SimpleStreamOptions{APIKey: apiKey, MaxTokens: compactionSummaryMaxTokens(reserveTokens, 5, 10, model.MaxTokens)}
-	if model.Reasoning && thinkingLevel != "" && thinkingLevel != "off" {
-		options.Reasoning = thinkingLevel
-	}
-	stream, err := llm.StreamSimple(model, llm.Context{SystemPrompt: summarizationSystemPrompt, Messages: []llm.Message{llm.UserMessageText(prompt)}}, options)
+	result, err := generateTurnPrefixSummaryWithUsage(ctx, messages, model, reserveTokens, CompactOptions{
+		APIKey:        apiKey,
+		ThinkingLevel: thinkingLevel,
+	})
 	if err != nil {
-		return "", newCompactionError(CompactionErrorSummarizationFailed, "turn prefix summarization failed: %v", err)
+		return "", err
 	}
-	message, err := stream.Result(ctx)
+	return result.Text, nil
+}
+
+func generateTurnPrefixSummaryWithUsage(
+	ctx context.Context,
+	messages []llm.Message,
+	model llm.Model,
+	reserveTokens int,
+	options CompactOptions,
+) (SummaryWithUsage, error) {
+	prompt := "<conversation>\n" + SerializeConversation(messages) + "\n</conversation>\n\n" + turnPrefixSummarizationPrompt
+	requestOptions := summaryRequestOptions(options)
+	requestOptions.StreamOptions.MaxTokens = compactionSummaryMaxTokens(reserveTokens, 5, 10, model.MaxTokens)
+	if model.Reasoning && options.ThinkingLevel != "" && options.ThinkingLevel != "off" {
+		requestOptions.StreamOptions.Reasoning = options.ThinkingLevel
+	}
+	message, err := CompleteSimpleWithRetries(
+		ctx,
+		options.Runtime,
+		model,
+		llm.Context{
+			SystemPrompt: summarizationSystemPrompt,
+			Messages:     []llm.Message{llm.UserMessageText(prompt)},
+		},
+		requestOptions,
+		options.Retry,
+		options.RetryCallbacks,
+	)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return "", newCompactionError(CompactionErrorAborted, "turn prefix summarization aborted: %v", err)
+			return SummaryWithUsage{}, newCompactionError(CompactionErrorAborted, "turn prefix summarization aborted: %v", err)
 		}
-		return "", newCompactionError(CompactionErrorSummarizationFailed, "turn prefix summarization failed: %v", err)
+		return SummaryWithUsage{}, newCompactionError(CompactionErrorSummarizationFailed, "turn prefix summarization failed: %v", err)
 	}
 	if message.StopReason == llm.StopReasonAborted {
-		return "", newCompactionError(CompactionErrorAborted, "turn prefix summarization aborted: %s", message.ErrorMessage)
+		return SummaryWithUsage{}, newCompactionError(CompactionErrorAborted, "turn prefix summarization aborted: %s", message.ErrorMessage)
 	}
 	if message.StopReason == llm.StopReasonError {
-		return "", newCompactionError(CompactionErrorSummarizationFailed, "turn prefix summarization failed: %s", message.ErrorMessage)
+		return SummaryWithUsage{}, newCompactionError(CompactionErrorSummarizationFailed, "turn prefix summarization failed: %s", message.ErrorMessage)
 	}
+	var text strings.Builder
 	for _, part := range message.Content {
 		if part.Type == llm.ContentText {
-			return part.Text, nil
+			text.WriteString(part.Text)
 		}
 	}
-	return "", nil
+	return SummaryWithUsage{Text: text.String(), Usage: message.Usage}, nil
+}
+
+func summaryRequestOptions(options CompactOptions) llm.ModelsStreamOptions {
+	requestOptions := options.RequestOptions
+	if requestOptions.APIKey == nil && (options.Runtime == nil || options.APIKey != "") {
+		apiKey := options.APIKey
+		requestOptions.APIKey = &apiKey
+	}
+	return requestOptions
 }
 
 func compactionSummaryMaxTokens(reserveTokens, numerator, denominator, modelMaxTokens int) int {
@@ -479,24 +633,48 @@ func CompactWithOptions(ctx context.Context, prep CompactionPreparation, model l
 		return CompactionResult{}, newCompactionError(CompactionErrorInvalidSession, "invalid compaction preparation")
 	}
 	var summary string
+	var summaryUsage *llm.Usage
 	var err error
 	if len(prep.MessagesToSummarize) > 0 || !prep.IsSplitTurn {
-		summary, err = GenerateSummary(ctx, prep.MessagesToSummarize, model, prep.Settings.ReserveTokens, options.APIKey, prep.PreviousSummary, options.CustomInstructions, options.ThinkingLevel)
+		var generated SummaryWithUsage
+		generated, err = GenerateSummaryWithUsage(
+			ctx,
+			prep.MessagesToSummarize,
+			model,
+			prep.Settings.ReserveTokens,
+			prep.PreviousSummary,
+			options.CustomInstructions,
+			options,
+		)
 		if err != nil {
 			return CompactionResult{}, err
 		}
+		summary = generated.Text
+		summaryUsage = cloneUsage(generated.Usage)
 	} else if prep.IsSplitTurn {
 		summary = "No prior history."
 	}
 	if len(prep.TurnPrefixMessages) > 0 {
-		prefix, err := GenerateTurnPrefixSummary(ctx, prep.TurnPrefixMessages, model, prep.Settings.ReserveTokens, options.APIKey, options.ThinkingLevel)
+		prefix, err := generateTurnPrefixSummaryWithUsage(
+			ctx,
+			prep.TurnPrefixMessages,
+			model,
+			prep.Settings.ReserveTokens,
+			options,
+		)
 		if err != nil {
 			return CompactionResult{}, err
 		}
 		if summary != "" {
 			summary += "\n\n---\n\n"
 		}
-		summary += "**Turn Context (split turn):**\n\n" + prefix
+		summary += "**Turn Context (split turn):**\n\n" + prefix.Text
+		if summaryUsage == nil {
+			summaryUsage = cloneUsage(prefix.Usage)
+		} else {
+			combined := combineUsage(*summaryUsage, prefix.Usage)
+			summaryUsage = &combined
+		}
 	}
 	readFiles, modifiedFiles := fileListsFromOps(prep.FileOps)
 	summary += formatFileOperations(readFiles, modifiedFiles)
@@ -504,11 +682,35 @@ func CompactWithOptions(ctx context.Context, prep CompactionPreparation, model l
 		Summary:          summary,
 		FirstKeptEntryID: prep.FirstKeptEntryID,
 		TokensBefore:     prep.TokensBefore,
+		Usage:            summaryUsage,
 		Details: map[string]any{
 			"readFiles":     readFiles,
 			"modifiedFiles": modifiedFiles,
 		},
 	}, nil
+}
+
+func combineUsage(first, second llm.Usage) llm.Usage {
+	return llm.Usage{
+		Input:        first.Input + second.Input,
+		Output:       first.Output + second.Output,
+		CacheRead:    first.CacheRead + second.CacheRead,
+		CacheWrite:   first.CacheWrite + second.CacheWrite,
+		CacheWrite1h: first.CacheWrite1h + second.CacheWrite1h,
+		TotalTokens:  first.TotalTokens + second.TotalTokens,
+		Cost: llm.UsageCost{
+			Input:      first.Cost.Input + second.Cost.Input,
+			Output:     first.Cost.Output + second.Cost.Output,
+			CacheRead:  first.Cost.CacheRead + second.Cost.CacheRead,
+			CacheWrite: first.Cost.CacheWrite + second.Cost.CacheWrite,
+			Total:      first.Cost.Total + second.Cost.Total,
+		},
+	}
+}
+
+func cloneUsage(usage llm.Usage) *llm.Usage {
+	cloned := usage
+	return &cloned
 }
 
 func findValidCutPoints(entries []Entry, start, end int) []int {

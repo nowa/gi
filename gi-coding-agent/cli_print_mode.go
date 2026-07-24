@@ -333,6 +333,9 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	}
 	if options.Responder != nil {
 		session.Responder = options.Responder
+		session.SummaryRuntime = agentSessionResponderCompletionRuntime{
+			responder: options.Responder,
+		}
 	} else {
 		session.Responder = host.providerResponder(modelRegistry, args, installTelemetryEnabled)
 		session.StreamResponder = host.providerStreamResponder(modelRegistry, args, installTelemetryEnabled)

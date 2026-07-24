@@ -502,7 +502,7 @@ func TestProtocolCommandContextForkWithSessionPiRegression(t *testing.T) {
 		"user:seed",
 		"assistant:seed reply",
 		"user:fork callback message",
-		"assistant:Response to: fork callback message",
+		"assistant:fork reply",
 	}) {
 		t.Fatalf("messages = %#v", got)
 	}

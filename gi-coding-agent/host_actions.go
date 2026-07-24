@@ -1437,6 +1437,8 @@ func (h *RPCSessionHost) newChildAgentSession(manager *SessionManager, params ho
 		RetrySettings:        &retrySettings,
 		Responder:            h.Session.Responder,
 		StreamResponder:      h.Session.StreamResponder,
+		ModelRuntime:         h.Session.ModelRuntime,
+		SummaryRuntime:       h.Session.SummaryRuntime,
 		CustomTools:          append([]SDKTool(nil), h.Session.DynamicTools...),
 		Tools:                tools,
 		ToolsSet:             toolsSet,

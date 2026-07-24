@@ -2,7 +2,6 @@ package harness
 
 import (
 	"context"
-	"errors"
 	"slices"
 	"strings"
 
@@ -25,12 +24,17 @@ type BranchSummaryOptions struct {
 	CustomInstructions  string
 	ReplaceInstructions bool
 	ReserveTokens       int
+	Runtime             SimpleCompletionRuntime
+	RequestOptions      llm.ModelsStreamOptions
+	Retry               llm.RetryPolicy
+	RetryCallbacks      llm.RetryCallbacks
 }
 
 type BranchSummaryResult struct {
 	Summary       string
 	ReadFiles     []string
 	ModifiedFiles []string
+	Usage         *llm.Usage
 }
 
 const branchSummaryPreamble = "The user explored a different conversation branch before returning here.\nSummary of that exploration:\n\n"
@@ -158,15 +162,25 @@ func GenerateBranchSummary(ctx context.Context, entries []Entry, model llm.Model
 		instructions += "\n\nAdditional focus: " + options.CustomInstructions
 	}
 	prompt := "<conversation>\n" + SerializeConversation(preparation.Messages) + "\n</conversation>\n\n" + instructions
-	stream, err := llm.StreamSimple(model, llm.Context{SystemPrompt: summarizationSystemPrompt, Messages: []llm.Message{llm.UserMessageText(prompt)}}, llm.SimpleStreamOptions{APIKey: options.APIKey, MaxTokens: min(2048, model.MaxTokens)})
-	if err != nil {
-		return BranchSummaryResult{}, newBranchSummaryError(BranchSummaryErrorSummarizationFailed, "branch summary failed: %v", err)
+	requestOptions := options.RequestOptions
+	if requestOptions.APIKey == nil && (options.Runtime == nil || options.APIKey != "") {
+		apiKey := options.APIKey
+		requestOptions.APIKey = &apiKey
 	}
-	message, err := stream.Result(ctx)
+	requestOptions.StreamOptions.MaxTokens = min(2048, model.MaxTokens)
+	message, err := CompleteSimpleWithRetries(
+		ctx,
+		options.Runtime,
+		model,
+		llm.Context{
+			SystemPrompt: summarizationSystemPrompt,
+			Messages:     []llm.Message{llm.UserMessageText(prompt)},
+		},
+		requestOptions,
+		options.Retry,
+		options.RetryCallbacks,
+	)
 	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return BranchSummaryResult{}, newBranchSummaryError(BranchSummaryErrorAborted, "branch summary aborted: %v", err)
-		}
 		return BranchSummaryResult{}, newBranchSummaryError(BranchSummaryErrorSummarizationFailed, "branch summary failed: %v", err)
 	}
 	if message.StopReason == llm.StopReasonAborted {
@@ -182,7 +196,12 @@ func GenerateBranchSummary(ctx context.Context, entries []Entry, model llm.Model
 		}
 	}
 	summary := branchSummaryPreamble + strings.Join(parts, "\n") + formatFileOperations(readFiles, modifiedFiles)
-	return BranchSummaryResult{Summary: summary, ReadFiles: readFiles, ModifiedFiles: modifiedFiles}, nil
+	return BranchSummaryResult{
+		Summary:       summary,
+		ReadFiles:     readFiles,
+		ModifiedFiles: modifiedFiles,
+		Usage:         cloneUsage(message.Usage),
+	}, nil
 }
 
 func branchMessageFromEntry(entry Entry) (llm.Message, bool) {

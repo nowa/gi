@@ -82,6 +82,37 @@ func TestAgentSessionStatsUsePostCompactionUsageForCurrentContext(t *testing.T) 
 	assertFloatNear(t, *stats.ContextUsage.Percent, (25_000/float64(model.ContextWindow))*100)
 }
 
+func TestAgentSessionStatsIncludeGeneratedSummaryUsagePiStyle(t *testing.T) {
+	session, sessionManager := createStatsTestSession(t)
+	defer session.Dispose()
+	usage := llm.Usage{
+		Input:       20,
+		Output:      5,
+		TotalTokens: 25,
+		Cost:        llm.UsageCost{Total: 0.25},
+	}
+	compactionID := sessionManager.AppendCompactionWithOptions(
+		"summary",
+		"",
+		100,
+		SessionSummaryOptions{Usage: &usage},
+	)
+	if _, err := sessionManager.BranchWithSummaryOptions(
+		&compactionID,
+		"branch summary",
+		SessionSummaryOptions{Usage: &usage},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	stats := session.GetSessionStats()
+	if stats.Tokens.Input != 140 ||
+		stats.Tokens.Output != 10 ||
+		stats.Tokens.TotalTokens != 150 {
+		t.Fatalf("summary usage totals = %#v", stats.Tokens)
+	}
+}
+
 func createStatsTestSession(t *testing.T) (*AgentSession, *SessionManager) {
 	t.Helper()
 	cwd := t.TempDir()

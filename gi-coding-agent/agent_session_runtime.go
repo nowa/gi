@@ -17,6 +17,7 @@ import (
 
 type AgentSessionEvent struct {
 	Type                  string                         `json:"type"`
+	Source                string                         `json:"source,omitempty"`
 	Reason                string                         `json:"reason,omitempty"`
 	Result                *agentharness.CompactionResult `json:"result,omitempty"`
 	Aborted               bool                           `json:"aborted,omitempty"`
@@ -1414,7 +1415,13 @@ func (s *AgentSession) compactManual(ctx context.Context, customInstructions str
 	if preparation == nil {
 		return agentharness.CompactionResult{}, errors.New("Nothing to compact (session too small)")
 	}
-	result, fromExtension, err := s.resolveCompactionResult(ctx, *preparation, branch, customInstructions)
+	result, fromExtension, err := s.resolveCompactionResult(
+		ctx,
+		*preparation,
+		branch,
+		customInstructions,
+		"manual",
+	)
 	if err != nil {
 		return agentharness.CompactionResult{}, err
 	}
@@ -1427,14 +1434,29 @@ func (s *AgentSession) compactManual(ctx context.Context, customInstructions str
 	if result.TokensBefore == 0 {
 		result.TokensBefore = preparation.TokensBefore
 	}
-	entryID := s.SessionManager.AppendCompaction(result.Summary, result.FirstKeptEntryID, result.TokensBefore)
+	entryID := s.SessionManager.AppendCompactionWithOptions(
+		result.Summary,
+		result.FirstKeptEntryID,
+		result.TokensBefore,
+		SessionSummaryOptions{
+			Details:  result.Details,
+			FromHook: fromExtension,
+			Usage:    result.Usage,
+		},
+	)
 	if entry := s.SessionManager.GetEntry(entryID); entry != nil {
 		_ = s.emitExtensionEvent(ProtocolSessionEvent{Type: "session_compact", CompactionEntry: entry, FromExtension: fromExtension})
 	}
 	return result, nil
 }
 
-func (s *AgentSession) resolveCompactionResult(ctx context.Context, preparation agentharness.CompactionPreparation, branch []FileEntry, customInstructions string) (agentharness.CompactionResult, bool, error) {
+func (s *AgentSession) resolveCompactionResult(
+	ctx context.Context,
+	preparation agentharness.CompactionPreparation,
+	branch []FileEntry,
+	customInstructions string,
+	reason string,
+) (agentharness.CompactionResult, bool, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1456,10 +1478,19 @@ func (s *AgentSession) resolveCompactionResult(ctx context.Context, preparation 
 		}
 	}
 	summarizer := s.CompactionSummarizer
-	if summarizer == nil {
-		summarizer = DefaultAgentSessionCompactionSummarizer
+	if summarizer != nil {
+		result, err := summarizer(preparation, customInstructions)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return agentharness.CompactionResult{}, false, errCompactionCancelled
+		}
+		return result, false, err
 	}
-	result, err := summarizer(preparation, customInstructions)
+	result, err := s.generateCompactionSummary(
+		ctx,
+		preparation,
+		customInstructions,
+		reason,
+	)
 	if errors.Is(ctx.Err(), context.Canceled) {
 		return agentharness.CompactionResult{}, false, errCompactionCancelled
 	}
@@ -1514,6 +1545,7 @@ func fileEntriesToHarnessEntries(entries []FileEntry) []agentharness.Entry {
 			Display:          entry.Display,
 			Details:          entry.Details,
 			FromHook:         entry.FromHook,
+			Usage:            cloneSessionUsage(entry.Usage),
 			Name:             entry.Name,
 		}
 		if entry.TargetID != "" {

@@ -92,11 +92,13 @@ type SystemPromptContext struct {
 type AgentHarnessOptions struct {
 	Env                 any
 	Session             *Session
+	Models              SimpleCompletionRuntime
 	Model               llm.Model
 	ThinkingLevel       string
 	SystemPrompt        string
 	BuildSystemPrompt   func(context.Context, SystemPromptContext) (string, error)
 	GetAPIKeyAndHeaders func(context.Context, llm.Model) (AgentHarnessAuth, bool, error)
+	Retry               llm.RetryPolicy
 	Resources           AgentHarnessResources
 	Tools               []core.AgentTool
 	ActiveToolNames     []string
@@ -163,6 +165,11 @@ type AgentHarnessEvent struct {
 	CommonAncestorID   *string
 	BranchSummary      BranchSummaryResult
 	SummaryEntry       *Entry
+	Operation          string
+	Attempt            int
+	MaxAttempts        int
+	DelayMs            int
+	ErrorMessage       string
 
 	AgentEvent core.AgentEvent
 }
@@ -279,6 +286,7 @@ type AgentHarness struct {
 
 	mu                   sync.Mutex
 	session              *Session
+	models               SimpleCompletionRuntime
 	phase                string
 	cancel               context.CancelFunc
 	done                 chan struct{}
@@ -289,6 +297,7 @@ type AgentHarness struct {
 	buildSystemPrompt    func(context.Context, SystemPromptContext) (string, error)
 	streamOptions        AgentHarnessStreamOptions
 	getAPIKeyAndHeaders  func(context.Context, llm.Model) (AgentHarnessAuth, bool, error)
+	retry                llm.RetryPolicy
 	resources            AgentHarnessResources
 	tools                map[string]core.AgentTool
 	activeToolNames      []string
@@ -336,12 +345,14 @@ func NewAgentHarness(options AgentHarnessOptions) (*AgentHarness, error) {
 	return &AgentHarness{
 		Env:                 options.Env,
 		session:             options.Session,
+		models:              options.Models,
 		phase:               AgentHarnessPhaseIdle,
 		model:               options.Model,
 		thinkingLevel:       thinkingLevel,
 		systemPrompt:        options.SystemPrompt,
 		buildSystemPrompt:   options.BuildSystemPrompt,
 		getAPIKeyAndHeaders: options.GetAPIKeyAndHeaders,
+		retry:               options.Retry,
 		resources:           options.Resources.Clone(),
 		streamOptions:       cloneHarnessStreamOptions(options.StreamOptions),
 		tools:               tools,
@@ -612,14 +623,21 @@ func (h *AgentHarness) Compact(ctx context.Context, customInstructions string) (
 	h.mu.Lock()
 	model := h.model
 	thinkingLevel := h.thinkingLevel
+	models := h.models
+	retry := h.retry
 	h.mu.Unlock()
 
-	auth, hasAuth, err := h.resolveAuth(runCtx, model)
-	if err != nil {
-		return CompactionResult{}, normalizeHarnessError(err, "auth")
-	}
-	if !hasAuth {
-		return CompactionResult{}, newAgentHarnessError("auth", "No auth available for compaction")
+	var requestOptions llm.ModelsStreamOptions
+	if models == nil {
+		auth, hasAuth, err := h.resolveAuth(runCtx, model)
+		if err != nil {
+			return CompactionResult{}, normalizeHarnessError(err, "auth")
+		}
+		if !hasAuth {
+			return CompactionResult{}, newAgentHarnessError("auth", "No auth available for compaction")
+		}
+		requestOptions.StreamOptions.Headers = cloneStringMap(auth.Headers)
+		requestOptions.APIKey = &auth.APIKey
 	}
 
 	branchEntries, err := h.session.Branch(nil)
@@ -653,16 +671,28 @@ func (h *AgentHarness) Compact(ctx context.Context, customInstructions string) (
 		result = hookResult.Compaction
 	} else {
 		result, err = CompactWithOptions(runCtx, *preparation, model, CompactOptions{
-			APIKey:             auth.APIKey,
 			ThinkingLevel:      thinkingLevel,
 			CustomInstructions: customInstructions,
+			Runtime:            models,
+			RequestOptions:     requestOptions,
+			Retry:              retry,
+			RetryCallbacks:     h.summarizationRetryCallbacks(runCtx, "compaction"),
 		})
 		if err != nil {
 			return CompactionResult{}, normalizeHarnessError(err, "compaction")
 		}
 	}
 
-	entryID, err := h.session.AppendCompactionWithOptions(result.Summary, result.FirstKeptEntryID, result.TokensBefore, SessionEntryOptions{Details: result.Details, FromHook: fromHook})
+	entryID, err := h.session.AppendCompactionWithOptions(
+		result.Summary,
+		result.FirstKeptEntryID,
+		result.TokensBefore,
+		SessionEntryOptions{
+			Details:  result.Details,
+			FromHook: fromHook,
+			Usage:    result.Usage,
+		},
+	)
 	if err != nil {
 		return CompactionResult{}, normalizeHarnessError(err, "session")
 	}
@@ -714,6 +744,7 @@ func (h *AgentHarness) NavigateTree(ctx context.Context, targetID string, option
 
 	var summaryText string
 	var summaryDetails map[string]any
+	var summaryUsage *llm.Usage
 	fromHook := hookResult != nil && hookResult.HasBranchSummary
 	customInstructions := options.CustomInstructions
 	replaceInstructions := options.ReplaceInstructions
@@ -727,6 +758,7 @@ func (h *AgentHarness) NavigateTree(ctx context.Context, targetID string, option
 	}
 	if fromHook {
 		summaryText = hookResult.BranchSummary.Summary
+		summaryUsage = hookResult.BranchSummary.Usage
 		summaryDetails = map[string]any{
 			"readFiles":     append([]string{}, hookResult.BranchSummary.ReadFiles...),
 			"modifiedFiles": append([]string{}, hookResult.BranchSummary.ModifiedFiles...),
@@ -734,18 +766,28 @@ func (h *AgentHarness) NavigateTree(ctx context.Context, targetID string, option
 	} else if options.Summarize && len(collectResult.Entries) > 0 {
 		h.mu.Lock()
 		model := h.model
+		models := h.models
+		retry := h.retry
 		h.mu.Unlock()
-		auth, hasAuth, err := h.resolveAuth(runCtx, model)
-		if err != nil {
-			return NavigateTreeResult{}, normalizeHarnessError(err, "auth")
-		}
-		if !hasAuth {
-			return NavigateTreeResult{}, newAgentHarnessError("auth", "No auth available for branch summary")
+		var requestOptions llm.ModelsStreamOptions
+		if models == nil {
+			auth, hasAuth, err := h.resolveAuth(runCtx, model)
+			if err != nil {
+				return NavigateTreeResult{}, normalizeHarnessError(err, "auth")
+			}
+			if !hasAuth {
+				return NavigateTreeResult{}, newAgentHarnessError("auth", "No auth available for branch summary")
+			}
+			requestOptions.StreamOptions.Headers = cloneStringMap(auth.Headers)
+			requestOptions.APIKey = &auth.APIKey
 		}
 		summary, err := GenerateBranchSummary(runCtx, collectResult.Entries, model, BranchSummaryOptions{
-			APIKey:              auth.APIKey,
 			CustomInstructions:  customInstructions,
 			ReplaceInstructions: replaceInstructions,
+			Runtime:             models,
+			RequestOptions:      requestOptions,
+			Retry:               retry,
+			RetryCallbacks:      h.summarizationRetryCallbacks(runCtx, "branch_summary"),
 		})
 		if err != nil {
 			if runCtx.Err() != nil {
@@ -754,6 +796,7 @@ func (h *AgentHarness) NavigateTree(ctx context.Context, targetID string, option
 			return NavigateTreeResult{}, normalizeHarnessError(err, "branch_summary")
 		}
 		summaryText = summary.Summary
+		summaryUsage = summary.Usage
 		summaryDetails = map[string]any{
 			"readFiles":     append([]string{}, summary.ReadFiles...),
 			"modifiedFiles": append([]string{}, summary.ModifiedFiles...),
@@ -770,7 +813,15 @@ func (h *AgentHarness) NavigateTree(ctx context.Context, targetID string, option
 		editorText = textFromEntry(targetEntry)
 	}
 
-	summaryID, err := h.session.MoveToWithOptions(newLeafID, summaryText, SessionEntryOptions{Details: summaryDetails, FromHook: fromHook})
+	summaryID, err := h.session.MoveToWithOptions(
+		newLeafID,
+		summaryText,
+		SessionEntryOptions{
+			Details:  summaryDetails,
+			FromHook: fromHook,
+			Usage:    summaryUsage,
+		},
+	)
 	if err != nil {
 		return NavigateTreeResult{}, normalizeHarnessError(err, "session")
 	}
@@ -1203,6 +1254,39 @@ func (h *AgentHarness) emitRunFailure(ctx context.Context, model llm.Model, caus
 		}
 	}
 	return message, nil
+}
+
+func (h *AgentHarness) summarizationRetryCallbacks(
+	ctx context.Context,
+	operation string,
+) llm.RetryCallbacks {
+	return llm.RetryCallbacks{
+		OnRetryScheduled: func(attempt llm.RetryAttempt) {
+			_ = h.emitOwn(ctx, AgentHarnessEvent{
+				Type:         "retry_scheduled",
+				Operation:    operation,
+				Attempt:      attempt.Attempt,
+				MaxAttempts:  attempt.MaxAttempts,
+				DelayMs:      int(attempt.Delay.Milliseconds()),
+				ErrorMessage: attempt.ErrorMessage,
+			})
+		},
+		OnRetryAttemptStart: func(attempt int) {
+			_ = h.emitOwn(ctx, AgentHarnessEvent{
+				Type:      "retry_attempt_start",
+				Operation: operation,
+				Attempt:   attempt,
+			})
+		},
+		OnRetryFinished: func(result llm.RetryResult) {
+			_ = h.emitOwn(ctx, AgentHarnessEvent{
+				Type:         "retry_finished",
+				Operation:    operation,
+				Attempt:      result.Attempt,
+				ErrorMessage: result.FinalError,
+			})
+		},
+	}
 }
 
 func (h *AgentHarness) emitOwn(ctx context.Context, event AgentHarnessEvent) error {
