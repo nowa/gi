@@ -23,6 +23,7 @@ type OpenAICompletionsCompat struct {
 	RequiresReasoningContentOnAssistant      bool
 	RequiresReasoningContentOnAssistantTurns bool
 	DeferredToolsMode                        string
+	ChatTemplateKwargs                       map[string]any
 }
 
 type OpenAICompletionsPayloadOptions struct {
@@ -593,6 +594,11 @@ func ResolveOpenAICompletionsCompat(model Model) OpenAICompletionsCompat {
 	if compat.DeferredToolsMode != "" {
 		detected.DeferredToolsMode = compat.DeferredToolsMode
 	}
+	if compat.ChatTemplateKwargs != nil {
+		detected.ChatTemplateKwargs = cloneCredentialMetadata(
+			compat.ChatTemplateKwargs,
+		)
+	}
 	return detected
 }
 
@@ -725,6 +731,12 @@ func applyOpenAICompletionsReasoning(payload *OpenAICompletionsPayload, model Mo
 		payload.EnableThinking = ptrBool(level != "")
 	case "qwen-chat-template":
 		payload.ChatTemplateKwargs = map[string]any{"enable_thinking": level != "", "preserve_thinking": true}
+	case "chat-template":
+		payload.ChatTemplateKwargs = buildOpenAIChatTemplateKwargs(
+			model,
+			compat.ChatTemplateKwargs,
+			level,
+		)
 	case "deepseek":
 		state := "disabled"
 		if level != "" {
@@ -752,6 +764,76 @@ func applyOpenAICompletionsReasoning(payload *OpenAICompletionsPayload, model Mo
 		if level != "" && compat.SupportsReasoningEffort {
 			payload.ReasoningEffort = mapped
 		}
+	}
+}
+
+func buildOpenAIChatTemplateKwargs(
+	model Model,
+	values map[string]any,
+	reasoningLevel string,
+) map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+	resolved := make(map[string]any, len(values))
+	for key, value := range values {
+		if resolvedValue, ok := resolveOpenAIChatTemplateKwargValue(
+			model,
+			reasoningLevel,
+			value,
+		); ok {
+			resolved[key] = resolvedValue
+		}
+	}
+	if len(resolved) == 0 {
+		return nil
+	}
+	return resolved
+}
+
+func resolveOpenAIChatTemplateKwargValue(
+	model Model,
+	reasoningLevel string,
+	value any,
+) (any, bool) {
+	variable, dynamic := value.(map[string]any)
+	if !dynamic {
+		switch value.(type) {
+		case nil, string, bool, float64, float32,
+			int, int8, int16, int32, int64,
+			uint, uint8, uint16, uint32, uint64:
+			return value, true
+		default:
+			return nil, false
+		}
+	}
+
+	omitWhenOff, _ := variable["omitWhenOff"].(bool)
+	if reasoningLevel == "" && omitWhenOff {
+		return nil, false
+	}
+	variableName, _ := variable["$var"].(string)
+	switch variableName {
+	case "thinking.enabled":
+		return reasoningLevel != "", true
+	case "thinking.effort":
+		mapKey := reasoningLevel
+		if mapKey == "" {
+			mapKey = "off"
+		}
+		mapped, exists := model.ThinkingLevelMap[mapKey]
+		switch {
+		case exists && mapped != nil:
+			return *mapped, true
+		case exists:
+			return nil, false
+		case reasoningLevel != "":
+			return reasoningLevel, true
+		default:
+			return nil, false
+		}
+	default:
+		return nil, false
 	}
 }
 

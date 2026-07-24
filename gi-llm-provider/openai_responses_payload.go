@@ -1,15 +1,20 @@
 package gillmprovider
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 const openAIResponsesMinimumOutputTokens = 16
 
 type OpenAIResponsesCompat struct {
-	SendSessionIDHeader        bool
-	SupportsLongCacheRetention bool
-	SupportsStrictMode         bool
-	SupportsOpenAIGrammarTools bool
-	SupportsToolSearch         bool
+	SupportsDeveloperRole           bool
+	SessionAffinityFormat           string
+	SupportsLongCacheRetention      bool
+	SupportsStrictMode              bool
+	SupportsOpenAIGrammarTools      bool
+	SupportsToolSearch              bool
+	SupportsExplicitPromptCacheMode bool
 }
 
 type OpenAIResponsesPayloadOptions struct {
@@ -24,18 +29,23 @@ type OpenAIResponsesPayloadOptions struct {
 }
 
 type OpenAIResponsesPayload struct {
-	Model                string                     `json:"model"`
-	Input                []OpenAIResponsesInputItem `json:"input"`
-	Stream               bool                       `json:"stream"`
-	PromptCacheKey       string                     `json:"prompt_cache_key,omitempty"`
-	PromptCacheRetention string                     `json:"prompt_cache_retention,omitempty"`
-	Store                bool                       `json:"store"`
-	MaxOutputTokens      int                        `json:"max_output_tokens,omitempty"`
-	Temperature          *float64                   `json:"temperature,omitempty"`
-	ServiceTier          string                     `json:"service_tier,omitempty"`
-	Tools                []OpenAIResponsesTool      `json:"tools,omitempty"`
-	Reasoning            map[string]string          `json:"reasoning,omitempty"`
-	Include              []string                   `json:"include,omitempty"`
+	Model                string                             `json:"model"`
+	Input                []OpenAIResponsesInputItem         `json:"input"`
+	Stream               bool                               `json:"stream"`
+	PromptCacheKey       string                             `json:"prompt_cache_key,omitempty"`
+	PromptCacheRetention string                             `json:"prompt_cache_retention,omitempty"`
+	PromptCacheOptions   *OpenAIResponsesPromptCacheOptions `json:"prompt_cache_options,omitempty"`
+	Store                bool                               `json:"store"`
+	MaxOutputTokens      int                                `json:"max_output_tokens,omitempty"`
+	Temperature          *float64                           `json:"temperature,omitempty"`
+	ServiceTier          string                             `json:"service_tier,omitempty"`
+	Tools                []OpenAIResponsesTool              `json:"tools,omitempty"`
+	Reasoning            map[string]string                  `json:"reasoning,omitempty"`
+	Include              []string                           `json:"include,omitempty"`
+}
+
+type OpenAIResponsesPromptCacheOptions struct {
+	Mode string `json:"mode"`
 }
 
 type OpenAIResponsesTool struct {
@@ -141,11 +151,21 @@ func (tool *OpenAIResponsesTool) UnmarshalJSON(data []byte) error {
 
 func ResolveOpenAIResponsesCompat(model Model) OpenAIResponsesCompat {
 	compat := OpenAIResponsesCompat{
-		SendSessionIDHeader:        true,
+		SupportsDeveloperRole:      true,
+		SessionAffinityFormat:      DetectOpenAIResponsesSessionAffinityFormat(model),
 		SupportsLongCacheRetention: true,
 	}
-	if model.Compat.SendSessionIDHeader != nil {
-		compat.SendSessionIDHeader = *model.Compat.SendSessionIDHeader
+	if model.Compat.SupportsDeveloperRole != nil {
+		compat.SupportsDeveloperRole = *model.Compat.SupportsDeveloperRole
+	}
+	if model.Compat.SessionAffinityFormat != "" {
+		compat.SessionAffinityFormat = model.Compat.SessionAffinityFormat
+	} else if model.Compat.SendSessionIDHeader != nil &&
+		!*model.Compat.SendSessionIDHeader &&
+		compat.SessionAffinityFormat == "openai" {
+		// Preserve the older Go compatibility flag while using Pi's canonical
+		// session-affinity format internally.
+		compat.SessionAffinityFormat = "openai-nosession"
 	}
 	if model.Compat.SupportsLongCacheRetention != nil {
 		compat.SupportsLongCacheRetention = *model.Compat.SupportsLongCacheRetention
@@ -159,7 +179,17 @@ func ResolveOpenAIResponsesCompat(model Model) OpenAIResponsesCompat {
 	if model.Compat.SupportsToolSearch != nil {
 		compat.SupportsToolSearch = *model.Compat.SupportsToolSearch
 	}
+	if model.Compat.SupportsExplicitPromptCacheMode != nil {
+		compat.SupportsExplicitPromptCacheMode = *model.Compat.SupportsExplicitPromptCacheMode
+	}
 	return compat
+}
+
+func DetectOpenAIResponsesSessionAffinityFormat(model Model) string {
+	if model.Provider == "openrouter" || strings.Contains(model.BaseURL, "openrouter.ai") {
+		return "openrouter"
+	}
+	return "openai"
 }
 
 func BuildOpenAIResponsesPayload(model Model, context Context, options OpenAIResponsesPayloadOptions) OpenAIResponsesPayload {
@@ -185,6 +215,7 @@ func buildOpenAIResponsesPayload(
 		return OpenAIResponsesPayload{}, OpenAIResponsesSamplingState{}, err
 	}
 	input, err := ConvertOpenAIResponsesMessagesChecked(model, context, ConvertOpenAIResponsesOptions{
+		SupportsDeveloperRole:      ptrBool(compat.SupportsDeveloperRole),
 		GrammarToolInputProperties: requestState.Sampling.GrammarToolInputProperties,
 		DeferredTools:              requestState.ToolPlacement.Deferred,
 		ToolOptions:                requestState.Sampling.ToolOptions,
@@ -203,6 +234,9 @@ func buildOpenAIResponsesPayload(
 	}
 	if cacheRetention == "long" && compat.SupportsLongCacheRetention {
 		payload.PromptCacheRetention = "24h"
+	}
+	if cacheRetention == "none" && compat.SupportsExplicitPromptCacheMode {
+		payload.PromptCacheOptions = &OpenAIResponsesPromptCacheOptions{Mode: "explicit"}
 	}
 	if options.MaxTokens > 0 {
 		payload.MaxOutputTokens = max(options.MaxTokens, openAIResponsesMinimumOutputTokens)
@@ -250,10 +284,15 @@ func BuildOpenAIResponsesHeaders(model Model, options OpenAIResponsesPayloadOpti
 	cacheRetention := resolveCacheRetention(options.CacheRetention)
 	if cacheRetention != "none" && options.SessionID != "" {
 		compat := ResolveOpenAIResponsesCompat(model)
-		if compat.SendSessionIDHeader {
+		switch compat.SessionAffinityFormat {
+		case "openrouter":
+			headers["x-session-id"] = options.SessionID
+		case "openai":
 			headers["session_id"] = options.SessionID
+			headers["x-client-request-id"] = options.SessionID
+		default:
+			headers["x-client-request-id"] = options.SessionID
 		}
-		headers["x-client-request-id"] = options.SessionID
 	}
 	for key, value := range options.Headers {
 		headers[key] = value

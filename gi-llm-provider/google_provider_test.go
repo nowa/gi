@@ -43,7 +43,7 @@ func TestGoogleProviderStreamsFromHTTP(t *testing.T) {
 	if requestPath != "/v1beta/models/gemini-2.5-flash:streamGenerateContent" || !strings.Contains(rawQuery, "alt=sse") || !strings.Contains(rawQuery, "key=google-key") {
 		t.Fatalf("request path/query = %q %q", requestPath, rawQuery)
 	}
-	if len(payload.Contents) != 1 || payload.Config.MaxOutputTokens != 128 || payload.Config.SystemInstruction == nil {
+	if len(payload.Contents) != 1 || payload.Config.MaxOutputTokens != 128 || payload.SystemInstruction == nil {
 		t.Fatalf("payload = %#v", payload)
 	}
 	if payload.Config.ThinkingConfig == nil || payload.Config.ThinkingConfig.ThinkingBudget == nil || *payload.Config.ThinkingConfig.ThinkingBudget != 0 {
@@ -117,5 +117,106 @@ func TestGooglePayloadIncludesToolsAndEnabledThinking(t *testing.T) {
 	}, GooglePayloadOptions{Reasoning: "medium"})
 	if len(payload.Tools) != 1 || payload.Config.ThinkingConfig == nil || payload.Config.ThinkingConfig.IncludeThoughts == nil || !*payload.Config.ThinkingConfig.IncludeThoughts || payload.Config.ThinkingConfig.ThinkingLevel != "MEDIUM" {
 		t.Fatalf("payload = %#v", payload)
+	}
+}
+
+func TestBuildGooglePayloadResolvesStrictToolSampling(t *testing.T) {
+	strictTool := Tool{
+		Name:       "lookup",
+		Parameters: Object(map[string]Schema{"query": String()}, "query"),
+		ConstrainedSampling: &ConstrainedSamplingConfig{
+			Type:   ConstrainedSamplingJSONSchema,
+			Strict: ConstrainedSamplingRequire,
+		},
+	}
+
+	payload, err := BuildGooglePayloadChecked(
+		Model{ID: "gemini-3.1-pro-preview", Provider: "google", API: "google-generative-ai"},
+		Context{Tools: []Tool{strictTool}},
+		GooglePayloadOptions{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.ToolConfig == nil ||
+		payload.ToolConfig.FunctionCallingConfig.Mode != GoogleFunctionCallingValidated {
+		t.Fatalf("tool config = %#v", payload.ToolConfig)
+	}
+
+	_, err = BuildGooglePayloadChecked(
+		Model{ID: "gemini-2.5-pro", Provider: "google", API: "google-generative-ai"},
+		Context{Tools: []Tool{strictTool}},
+		GooglePayloadOptions{},
+	)
+	if err == nil || !strings.Contains(err.Error(), `tool "lookup" requires JSON-schema constrained sampling`) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestGoogleProviderRejectsUnsupportedStrictSamplingBeforeRequest(t *testing.T) {
+	called := false
+	provider := NewGoogleProvider(simpleOptionsHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
+		called = true
+		return nil, nil
+	}))
+	model := Model{
+		ID:       "gemini-2.5-pro",
+		Provider: "google",
+		API:      "google-generative-ai",
+	}
+	stream, err := provider.Stream(model, Context{
+		Tools: []Tool{{
+			Name: "lookup",
+			ConstrainedSampling: &ConstrainedSamplingConfig{
+				Type:   ConstrainedSamplingJSONSchema,
+				Strict: ConstrainedSamplingRequire,
+			},
+		}},
+	}, StreamOptions{APIKey: "google-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := stream.Result(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("HTTP client was called for an invalid strict-sampling request")
+	}
+	if result.StopReason != StopReasonError ||
+		!strings.Contains(result.ErrorMessage, `tool "lookup" requires JSON-schema constrained sampling`) {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestGooglePayloadSerializesRequestSectionsAtTopLevel(t *testing.T) {
+	payload, err := BuildGooglePayloadChecked(
+		Model{ID: "gemini-3-flash-preview", Provider: "google", API: "google-generative-ai"},
+		Context{
+			SystemPrompt: "Be concise.",
+			Tools:        []Tool{{Name: "lookup", Parameters: Object(nil)}},
+		},
+		GooglePayloadOptions{ToolChoice: "any"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if wire["systemInstruction"] == nil || wire["toolConfig"] == nil {
+		t.Fatalf("payload = %s", encoded)
+	}
+	generationConfig, ok := wire["generationConfig"].(map[string]any)
+	if !ok {
+		t.Fatalf("generation config = %#v", wire["generationConfig"])
+	}
+	if generationConfig["systemInstruction"] != nil || generationConfig["toolConfig"] != nil {
+		t.Fatalf("nested generation config = %#v", generationConfig)
 	}
 }

@@ -1,9 +1,30 @@
 package gillmprovider
 
-import "strings"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 type GoogleToolGroup struct {
 	FunctionDeclarations []GoogleFunctionDeclaration `json:"functionDeclarations"`
+}
+
+type GoogleFunctionCallingMode string
+
+const (
+	GoogleFunctionCallingAuto      GoogleFunctionCallingMode = "AUTO"
+	GoogleFunctionCallingNone      GoogleFunctionCallingMode = "NONE"
+	GoogleFunctionCallingAny       GoogleFunctionCallingMode = "ANY"
+	GoogleFunctionCallingValidated GoogleFunctionCallingMode = "VALIDATED"
+)
+
+type GoogleToolConfig struct {
+	FunctionCallingConfig GoogleFunctionCallingConfig `json:"functionCallingConfig"`
+}
+
+type GoogleFunctionCallingConfig struct {
+	Mode GoogleFunctionCallingMode `json:"mode"`
 }
 
 type GoogleFunctionDeclaration struct {
@@ -74,6 +95,84 @@ func ConvertGoogleTools(tools []Tool, useParameters bool) []GoogleToolGroup {
 		declarations = append(declarations, declaration)
 	}
 	return []GoogleToolGroup{{FunctionDeclarations: declarations}}
+}
+
+// SupportsGoogleStrictToolSampling reports whether Google validates required
+// function parameters for the model's tool calls.
+func SupportsGoogleStrictToolSampling(modelID string) bool {
+	majorVersion, ok := googleModelMajorVersion(modelID)
+	return ok && majorVersion >= 3
+}
+
+func googleModelMajorVersion(modelID string) (int, bool) {
+	version := strings.ToLower(modelID)
+	switch {
+	case strings.HasPrefix(version, "gemini-live-"):
+		version = strings.TrimPrefix(version, "gemini-live-")
+	case strings.HasPrefix(version, "gemini-"):
+		version = strings.TrimPrefix(version, "gemini-")
+	default:
+		return 0, false
+	}
+	end := 0
+	for end < len(version) && version[end] >= '0' && version[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0, false
+	}
+	majorVersion, err := strconv.Atoi(version[:end])
+	return majorVersion, err == nil
+}
+
+// ResolveGoogleFunctionCallingMode combines caller tool choice with each
+// tool's constrained-sampling contract. Sampling requirements are validated
+// before applying the explicit Google mode.
+func ResolveGoogleFunctionCallingMode(
+	tools []Tool,
+	toolChoice any,
+	supportsStrictMode bool,
+) (GoogleFunctionCallingMode, error) {
+	choice, err := googleToolChoiceString(toolChoice)
+	if err != nil {
+		return "", err
+	}
+
+	useStrictMode := false
+	for _, tool := range tools {
+		strict, err := ResolveJSONSchemaStrictSampling(tool, supportsStrictMode)
+		if err != nil {
+			return "", err
+		}
+		if strict != nil && *strict {
+			useStrictMode = true
+			break
+		}
+	}
+	if choice == "none" {
+		return GoogleFunctionCallingNone, nil
+	}
+	if choice == "any" {
+		return GoogleFunctionCallingAny, nil
+	}
+	if useStrictMode {
+		return GoogleFunctionCallingValidated, nil
+	}
+	if choice == "" {
+		return "", nil
+	}
+	return GoogleFunctionCallingAuto, nil
+}
+
+func googleToolChoiceString(toolChoice any) (string, error) {
+	if toolChoice == nil {
+		return "", nil
+	}
+	choice, ok := toolChoice.(string)
+	if !ok {
+		return "", fmt.Errorf("google tool choice must be a string, got %T", toolChoice)
+	}
+	return strings.ToLower(choice), nil
 }
 
 func SanitizeSchemaForOpenAPI(schema any) any {

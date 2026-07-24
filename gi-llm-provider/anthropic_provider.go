@@ -37,10 +37,19 @@ func (p AnthropicMessagesProvider) stream(
 	options StreamOptions,
 	simple bool,
 ) (*AssistantMessageEventStream, error) {
-	apiKey := apiKeyOrEnv(model.Provider, options.APIKey, options.Env)
-	if apiKey == "" && !hasCloudflareAIGatewayAuthorization(model, options.Headers) {
+	auth := resolveProviderRequestAuth(
+		model.Provider,
+		options.APIKey,
+		options.Env,
+		options.Headers,
+		"authorization",
+		"x-api-key",
+		"cf-aig-authorization",
+	)
+	if !auth.Configured() {
 		return streamError(model, "missing API key for provider %s", model.Provider), nil
 	}
+	apiKey := auth.APIKey
 	ctx := options.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -93,17 +102,17 @@ func (p AnthropicMessagesProvider) stream(
 		}
 	}
 	headers := BuildAnthropicRequestHeaders(model, llmContext, payloadOptions)
-	if model.Provider == "github-copilot" {
-		headers["Authorization"] = "Bearer " + apiKey
+	if model.Provider == "github-copilot" && apiKey != "" {
+		setHeaderCaseInsensitive(headers, "Authorization", "Bearer "+apiKey)
 	} else if isOAuthToken {
-		headers["Authorization"] = "Bearer " + apiKey
-		headers["anthropic-version"] = "2023-06-01"
+		setHeaderCaseInsensitive(headers, "Authorization", "Bearer "+apiKey)
+		setHeaderCaseInsensitive(headers, "anthropic-version", "2023-06-01")
 		applyAnthropicOAuthHeaders(headers)
 	} else if apiKey != "" {
-		headers["x-api-key"] = apiKey
-		headers["anthropic-version"] = "2023-06-01"
+		setHeaderCaseInsensitive(headers, "x-api-key", apiKey)
+		setHeaderCaseInsensitive(headers, "anthropic-version", "2023-06-01")
 	} else {
-		headers["anthropic-version"] = "2023-06-01"
+		setHeaderCaseInsensitive(headers, "anthropic-version", "2023-06-01")
 	}
 	headers = applyHeaderRemovals(headers, options.HeaderRemovals)
 

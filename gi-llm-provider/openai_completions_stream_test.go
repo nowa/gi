@@ -1,6 +1,9 @@
 package gillmprovider
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestProcessOpenAICompletionsChunksIgnoresNilAndCapturesResponseID(t *testing.T) {
 	stop := "stop"
@@ -368,4 +371,51 @@ func TestParseOpenAIChatUsagePreservesCacheReadWrite(t *testing.T) {
 			t.Fatalf("usage = %#v", usage)
 		}
 	})
+}
+
+func TestOpenAICompletionsPreservesEncryptedReasoningDetailsBeforeToolCall(t *testing.T) {
+	stop := "tool_calls"
+	detail := json.RawMessage(
+		`{"type":"reasoning.encrypted","id":"call_1","data":"encrypted-signature"}`,
+	)
+	model := Model{
+		ID:        "google/gemini-test",
+		Provider:  "openrouter",
+		API:       "openai-completions",
+		Reasoning: true,
+		Input:     []string{"text"},
+	}
+	response := ProcessOpenAICompletionsChunks(model, []*OpenAIChatCompletionChunk{
+		{Choices: []OpenAIChatCompletionChoice{{Delta: OpenAIChatDelta{
+			ReasoningDetails: []json.RawMessage{detail},
+		}}}},
+		{Choices: []OpenAIChatCompletionChoice{{Delta: OpenAIChatDelta{
+			ToolCalls: []OpenAIChatToolCallDelta{{
+				Index: ptrInt(0),
+				ID:    "call_1",
+				Type:  "function",
+				Function: OpenAIChatToolCallFunctionDelta{
+					Name:      "read",
+					Arguments: `{"path":"README.md"}`,
+				},
+			}},
+		}}}},
+		{Choices: []OpenAIChatCompletionChoice{{FinishReason: &stop}}},
+	})
+	if len(response.Content) != 1 ||
+		response.Content[0].ThoughtSignature != string(detail) {
+		t.Fatalf("response = %#v", response)
+	}
+
+	replayed := ConvertOpenAICompletionsMessages(
+		model,
+		Context{Messages: []Message{response}},
+		ResolveOpenAICompletionsCompat(model),
+	)
+	if len(replayed) == 0 ||
+		len(replayed[0].ReasoningDetails) != 1 ||
+		replayed[0].ReasoningDetails[0]["id"] != "call_1" ||
+		replayed[0].ReasoningDetails[0]["data"] != "encrypted-signature" {
+		t.Fatalf("replayed = %#v", replayed)
+	}
 }

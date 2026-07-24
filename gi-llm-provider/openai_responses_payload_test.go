@@ -65,6 +65,29 @@ func TestBuildOpenAIResponsesHeadersCacheAffinity(t *testing.T) {
 	if headers["session_id"] != "override-session" || headers["x-client-request-id"] != "override-request" {
 		t.Fatalf("override headers = %#v", headers)
 	}
+
+	openRouter := model
+	openRouter.Provider = "openrouter"
+	headers = BuildOpenAIResponsesHeaders(openRouter, OpenAIResponsesPayloadOptions{SessionID: "session-openrouter"})
+	if headers["x-session-id"] != "session-openrouter" {
+		t.Fatalf("OpenRouter headers = %#v", headers)
+	}
+	if _, ok := headers["session_id"]; ok {
+		t.Fatalf("OpenRouter headers = %#v", headers)
+	}
+	if _, ok := headers["x-client-request-id"]; ok {
+		t.Fatalf("OpenRouter headers = %#v", headers)
+	}
+
+	noSessionFormat := model
+	noSessionFormat.Compat.SessionAffinityFormat = "openai-nosession"
+	headers = BuildOpenAIResponsesHeaders(noSessionFormat, OpenAIResponsesPayloadOptions{SessionID: "session-client-only"})
+	if headers["x-client-request-id"] != "session-client-only" {
+		t.Fatalf("client-only headers = %#v", headers)
+	}
+	if _, ok := headers["session_id"]; ok {
+		t.Fatalf("client-only headers = %#v", headers)
+	}
 }
 
 func TestBuildOpenAIResponsesPayloadCacheRetentionAndTools(t *testing.T) {
@@ -98,6 +121,33 @@ func TestBuildOpenAIResponsesPayloadCacheRetentionAndTools(t *testing.T) {
 	payload = BuildOpenAIResponsesPayload(noLong, contextValue, OpenAIResponsesPayloadOptions{SessionID: "session-123", CacheRetention: "long"})
 	if payload.PromptCacheRetention != "" {
 		t.Fatalf("retention = %#v", payload)
+	}
+
+	explicitCache := model
+	explicitCache.Compat.SupportsExplicitPromptCacheMode = ptrBool(true)
+	payload = BuildOpenAIResponsesPayload(explicitCache, contextValue, OpenAIResponsesPayloadOptions{CacheRetention: "none"})
+	if payload.PromptCacheOptions == nil || payload.PromptCacheOptions.Mode != "explicit" {
+		t.Fatalf("explicit cache mode = %#v", payload)
+	}
+}
+
+func TestOpenAIResponsesSystemPromptHonorsDeveloperRoleCompatibility(t *testing.T) {
+	model := Model{
+		ID:        "reasoning-proxy",
+		Provider:  "proxy",
+		API:       "openai-responses",
+		Reasoning: true,
+		Compat: ModelCompat{
+			SupportsDeveloperRole: ptrBool(false),
+		},
+	}
+	items := ConvertOpenAIResponsesMessages(
+		model,
+		Context{SystemPrompt: "system"},
+		ConvertOpenAIResponsesOptions{},
+	)
+	if len(items) != 1 || items[0].Role != "system" {
+		t.Fatalf("items = %#v", items)
 	}
 }
 

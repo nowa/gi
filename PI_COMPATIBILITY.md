@@ -235,6 +235,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/openai-completions-cache-control-format.test.ts` | `gi-llm-provider/openai_completions_payload_test.go` |
 | `packages/ai/test/openai-completions-empty-tools.test.ts` | `gi-llm-provider/openai_completions_convert_test.go` |
 | `packages/ai/test/openai-completions-prompt-cache.test.ts` | `gi-llm-provider/openai_completions_payload_test.go` |
+| `packages/ai/test/openai-completions-reasoning-details.test.ts` | `gi-llm-provider/openai_completions_stream_test.go` for out-of-order encrypted reasoning detail retention and replay |
 | `packages/ai/test/openai-completions-response-model.test.ts` | `gi-llm-provider/openai_completions_stream_test.go` |
 | `packages/ai/test/openai-completions-thinking-as-text.test.ts` | `gi-llm-provider/openai_completions_payload_test.go` |
 | `packages/ai/test/openai-completions-tool-result-images.test.ts` | `gi-llm-provider/openai_completions_convert_test.go` |
@@ -244,6 +245,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/openai-codex-stream.test.ts` | `gi-llm-provider/openai_codex_test.go`, `gi-llm-provider/openai_codex_websocket_test.go`, `gi-llm-provider/openai_responses_stream_test.go` for SSE/WebSocket terminal processing, cached connection reuse, 55-minute rotation, busy-session transient leases, continuation deltas/retry, and before-start-only SSE fallback |
 | `packages/ai/test/openai-responses-copilot-provider.test.ts` | `gi-llm-provider/openai_responses_payload_test.go`, `gi-llm-provider/openai_responses_stream_test.go` |
 | `packages/ai/test/openai-responses-cache-affinity-e2e.test.ts` | `gi-llm-provider/openai_responses_payload_test.go` |
+| `packages/ai/test/openai-responses-compat.test.ts` | `gi-llm-provider/openai_responses_payload_test.go`, `gi-llm-provider/openai_responses_convert_test.go` for developer roles, session formats, and prompt-cache compatibility |
 | `packages/ai/test/openai-responses-foreign-toolcall-id.test.ts` | `gi-llm-provider/openai_responses_convert_test.go` |
 | `packages/ai/test/openai-responses-partial-json-cleanup.test.ts` | `gi-llm-provider/openai_responses_stream_test.go` |
 | `packages/ai/test/openai-responses-reasoning-replay-e2e.test.ts` | `gi-llm-provider/openai_responses_replay_test.go` |

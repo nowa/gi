@@ -86,6 +86,7 @@ type OpenAIResponsesContentPart struct {
 type ConvertOpenAIResponsesOptions struct {
 	AllowedToolCallProviders   map[string]bool
 	IncludeSystemPrompt        *bool
+	SupportsDeveloperRole      *bool
 	GrammarToolInputProperties map[string]string
 	DeferredTools              map[string]Tool
 	ToolOptions                OpenAIResponsesToolOptions
@@ -117,7 +118,11 @@ func ConvertOpenAIResponsesMessagesChecked(
 	var items []OpenAIResponsesInputItem
 	if includeSystemPrompt && context.SystemPrompt != "" {
 		role := "system"
-		if model.Reasoning {
+		supportsDeveloperRole := ResolveOpenAIResponsesCompat(model).SupportsDeveloperRole
+		if options.SupportsDeveloperRole != nil {
+			supportsDeveloperRole = *options.SupportsDeveloperRole
+		}
+		if model.Reasoning && supportsDeveloperRole {
 			role = "developer"
 		}
 		items = append(items, OpenAIResponsesInputItem{Role: role, Content: SanitizeSurrogates(context.SystemPrompt)})

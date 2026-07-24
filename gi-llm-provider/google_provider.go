@@ -18,20 +18,22 @@ type GooglePayloadOptions struct {
 	Temperature     *float64
 	Reasoning       string
 	ThinkingBudgets map[string]int
+	ToolChoice      any
 }
 
 type GooglePayload struct {
-	Model    string               `json:"-"`
-	Contents []GoogleContent      `json:"contents"`
-	Tools    []GoogleToolGroup    `json:"tools,omitempty"`
-	Config   GoogleGenerateConfig `json:"generationConfig,omitempty"`
+	Model             string               `json:"-"`
+	Contents          []GoogleContent      `json:"contents"`
+	Tools             []GoogleToolGroup    `json:"tools,omitempty"`
+	ToolConfig        *GoogleToolConfig    `json:"toolConfig,omitempty"`
+	SystemInstruction *GoogleSystemContent `json:"systemInstruction,omitempty"`
+	Config            GoogleGenerateConfig `json:"generationConfig,omitempty"`
 }
 
 type GoogleGenerateConfig struct {
-	Temperature       *float64              `json:"temperature,omitempty"`
-	MaxOutputTokens   int                   `json:"maxOutputTokens,omitempty"`
-	SystemInstruction *GoogleSystemContent  `json:"systemInstruction,omitempty"`
-	ThinkingConfig    *GoogleThinkingConfig `json:"thinkingConfig,omitempty"`
+	Temperature     *float64              `json:"temperature,omitempty"`
+	MaxOutputTokens int                   `json:"maxOutputTokens,omitempty"`
+	ThinkingConfig  *GoogleThinkingConfig `json:"thinkingConfig,omitempty"`
 }
 
 type GoogleSystemContent struct {
@@ -90,12 +92,17 @@ func (p GoogleProvider) stream(model Model, llmContext Context, options StreamOp
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	payload := any(BuildGooglePayload(model, llmContext, GooglePayloadOptions{
+	builtPayload, err := BuildGooglePayloadChecked(model, llmContext, GooglePayloadOptions{
 		MaxTokens:       options.MaxTokens,
 		Temperature:     options.Temperature,
 		Reasoning:       options.Reasoning,
 		ThinkingBudgets: options.ThinkingBudgets,
-	}))
+		ToolChoice:      options.ToolChoice,
+	})
+	if err != nil {
+		return streamError(model, "%s", err.Error()), nil
+	}
+	payload := any(builtPayload)
 	if options.OnPayload != nil {
 		next, replace, err := options.OnPayload(payload, model)
 		if err != nil {
@@ -131,10 +138,37 @@ func (p GoogleProvider) stream(model Model, llmContext Context, options StreamOp
 }
 
 func BuildGooglePayload(model Model, llmContext Context, options GooglePayloadOptions) GooglePayload {
+	payload, _ := BuildGooglePayloadChecked(model, llmContext, options)
+	return payload
+}
+
+// BuildGooglePayloadChecked resolves request-wide compatibility state before
+// serializing the payload. Providers should use this form so invalid strict
+// sampling requirements fail before any network request is attempted.
+func BuildGooglePayloadChecked(
+	model Model,
+	llmContext Context,
+	options GooglePayloadOptions,
+) (GooglePayload, error) {
 	payload := GooglePayload{
 		Model:    model.ID,
 		Contents: ConvertGoogleMessages(model, llmContext),
 		Tools:    ConvertGoogleTools(llmContext.Tools, false),
+	}
+	if len(llmContext.Tools) > 0 {
+		mode, err := ResolveGoogleFunctionCallingMode(
+			llmContext.Tools,
+			options.ToolChoice,
+			SupportsGoogleStrictToolSampling(model.ID),
+		)
+		if err != nil {
+			return GooglePayload{}, err
+		}
+		if mode != "" {
+			payload.ToolConfig = &GoogleToolConfig{
+				FunctionCallingConfig: GoogleFunctionCallingConfig{Mode: mode},
+			}
+		}
 	}
 	if options.MaxTokens > 0 {
 		payload.Config.MaxOutputTokens = options.MaxTokens
@@ -143,13 +177,13 @@ func BuildGooglePayload(model Model, llmContext Context, options GooglePayloadOp
 		payload.Config.Temperature = options.Temperature
 	}
 	if llmContext.SystemPrompt != "" {
-		payload.Config.SystemInstruction = &GoogleSystemContent{Parts: []GooglePart{{Text: SanitizeSurrogates(llmContext.SystemPrompt)}}}
+		payload.SystemInstruction = &GoogleSystemContent{Parts: []GooglePart{{Text: SanitizeSurrogates(llmContext.SystemPrompt)}}}
 	}
 	payload.Config.ThinkingConfig = BuildGoogleThinkingConfig(model, GoogleThinkingOptions{
 		Reasoning:     options.Reasoning,
 		CustomBudgets: options.ThinkingBudgets,
 	})
-	return payload
+	return payload, nil
 }
 
 func streamGoogleBody(model Model, body io.ReadCloser, stream *AssistantMessageEventStream) {

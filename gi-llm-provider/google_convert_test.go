@@ -59,6 +59,37 @@ func TestConvertGoogleToolsReturnsNilForEmptyAndUsesParametersMode(t *testing.T)
 	}
 }
 
+func TestResolveGoogleFunctionCallingMode(t *testing.T) {
+	strictTool := Tool{
+		Name: "test_tool",
+		ConstrainedSampling: &ConstrainedSamplingConfig{
+			Type:   ConstrainedSamplingJSONSchema,
+			Strict: ConstrainedSamplingRequire,
+		},
+	}
+	if !SupportsGoogleStrictToolSampling("gemini-3.1-pro-preview") {
+		t.Fatal("Gemini 3.1 should support strict tool sampling")
+	}
+	if SupportsGoogleStrictToolSampling("gemini-2.5-pro") {
+		t.Fatal("Gemini 2.5 should not support strict tool sampling")
+	}
+
+	mode, err := ResolveGoogleFunctionCallingMode([]Tool{strictTool}, nil, true)
+	if err != nil || mode != GoogleFunctionCallingValidated {
+		t.Fatalf("strict mode = %q, %v", mode, err)
+	}
+	mode, err = ResolveGoogleFunctionCallingMode([]Tool{strictTool}, "none", true)
+	if err != nil || mode != GoogleFunctionCallingNone {
+		t.Fatalf("none mode = %q, %v", mode, err)
+	}
+	if _, err := ResolveGoogleFunctionCallingMode([]Tool{strictTool}, nil, false); err == nil {
+		t.Fatal("required strict sampling should fail for unsupported models")
+	}
+	if _, err := ResolveGoogleFunctionCallingMode([]Tool{strictTool}, "none", false); err == nil {
+		t.Fatal("tool choice must not bypass an unsupported required sampling contract")
+	}
+}
+
 func TestConvertGoogleMessagesGemini3UnsignedToolCalls(t *testing.T) {
 	model := Model{ID: "gemini-3-pro-preview", Provider: "google", API: "google-generative-ai", Reasoning: true, Input: []string{"text"}}
 	context := googleToolCallContext(model, "")

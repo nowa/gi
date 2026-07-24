@@ -242,6 +242,58 @@ func TestBuildOpenAICompletionsPayloadReasoningAndZAIToolStream(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAICompletionsPayloadChatTemplateKwargs(t *testing.T) {
+	model := Model{
+		ID:        "local-reasoning",
+		Provider:  "local",
+		API:       "openai-completions",
+		Reasoning: true,
+		Input:     []string{"text"},
+		ThinkingLevelMap: map[string]*string{
+			"xhigh": ptrString("max"),
+		},
+		Compat: ModelCompat{
+			ThinkingFormat: "chat-template",
+			ChatTemplateKwargs: map[string]any{
+				"thinking": map[string]any{
+					"$var": "thinking.enabled",
+				},
+				"preserve_thinking": true,
+				"reasoning_effort": map[string]any{
+					"$var":        "thinking.effort",
+					"omitWhenOff": true,
+				},
+			},
+		},
+	}
+	contextValue := Context{Messages: []Message{UserMessageText("hello")}}
+
+	payload := BuildOpenAICompletionsPayload(
+		model,
+		contextValue,
+		OpenAICompletionsPayloadOptions{Reasoning: "xhigh"},
+	)
+	if payload.ChatTemplateKwargs["thinking"] != true ||
+		payload.ChatTemplateKwargs["preserve_thinking"] != true ||
+		payload.ChatTemplateKwargs["reasoning_effort"] != "max" ||
+		payload.ReasoningEffort != "" {
+		t.Fatalf("enabled kwargs = %#v", payload)
+	}
+
+	payload = BuildOpenAICompletionsPayload(
+		model,
+		contextValue,
+		OpenAICompletionsPayloadOptions{},
+	)
+	if payload.ChatTemplateKwargs["thinking"] != false ||
+		payload.ChatTemplateKwargs["preserve_thinking"] != true {
+		t.Fatalf("disabled kwargs = %#v", payload.ChatTemplateKwargs)
+	}
+	if _, ok := payload.ChatTemplateKwargs["reasoning_effort"]; ok {
+		t.Fatalf("disabled kwargs = %#v", payload.ChatTemplateKwargs)
+	}
+}
+
 func TestBuildOpenAICompletionsPayloadOfficialGrokAndDeepSeek(t *testing.T) {
 	context := Context{
 		SystemPrompt: "You are concise.",

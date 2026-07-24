@@ -24,6 +24,7 @@ type OpenAIChatDelta struct {
 	ReasoningContent string                    `json:"reasoning_content,omitempty"`
 	Reasoning        string                    `json:"reasoning,omitempty"`
 	ReasoningText    string                    `json:"reasoning_text,omitempty"`
+	ReasoningDetails []json.RawMessage         `json:"reasoning_details,omitempty"`
 	ToolCalls        []OpenAIChatToolCallDelta `json:"tool_calls,omitempty"`
 }
 
@@ -69,17 +70,20 @@ type OpenAICompletionsStreamProcessor struct {
 	textIndex                  int
 	thinkIndex                 int
 	tools                      map[string]*openAIChatToolAccumulator
+	toolsByID                  map[string]*openAIChatToolAccumulator
+	pendingReasoningDetails    map[string]string
 	textEnded                  bool
 	thinkEnded                 bool
 }
 
 type openAIChatToolAccumulator struct {
-	contentIndex int
-	id           string
-	name         string
-	argsJSON     string
-	customInput  *openAIChatCustomInputAccumulator
-	ended        bool
+	contentIndex  int
+	id            string
+	name          string
+	argsJSON      string
+	customInput   *openAIChatCustomInputAccumulator
+	hasProviderID bool
+	ended         bool
 }
 
 type openAIChatCustomInputAccumulator struct {
@@ -123,6 +127,8 @@ func NewOpenAICompletionsStreamProcessorWithOptions(
 		textIndex:                  -1,
 		thinkIndex:                 -1,
 		tools:                      map[string]*openAIChatToolAccumulator{},
+		toolsByID:                  map[string]*openAIChatToolAccumulator{},
+		pendingReasoningDetails:    map[string]string{},
 	}
 }
 
@@ -150,6 +156,7 @@ func (p *OpenAICompletionsStreamProcessor) Process(chunk *OpenAIChatCompletionCh
 		for _, delta := range choice.Delta.ToolCalls {
 			events = append(events, p.appendToolCall(delta)...)
 		}
+		p.applyReasoningDetails(choice.Delta.ReasoningDetails)
 		if choice.FinishReason != nil {
 			stopReason, errorMessage := MapOpenAIChatFinishReason(*choice.FinishReason)
 			p.output.StopReason = stopReason
@@ -290,7 +297,11 @@ func (p *OpenAICompletionsStreamProcessor) appendToolCall(delta OpenAIChatToolCa
 		name = delta.Custom.Name
 	}
 	if acc == nil {
-		acc = &openAIChatToolAccumulator{id: delta.ID, name: name}
+		acc = &openAIChatToolAccumulator{
+			id:            delta.ID,
+			name:          name,
+			hasProviderID: delta.ID != "",
+		}
 		if acc.id == "" {
 			acc.id = fmt.Sprintf("tool_%d", len(p.tools))
 		}
@@ -301,10 +312,13 @@ func (p *OpenAICompletionsStreamProcessor) appendToolCall(delta OpenAIChatToolCa
 		if delta.Custom != nil {
 			p.configureOpenAIChatCustomInput(acc)
 		}
+		p.registerOpenAIChatToolCallID(acc, delta.ID)
 		events = append(events, AssistantMessageEvent{Type: "toolcall_start", ContentIndex: acc.contentIndex, Partial: *p.output})
-	} else if p.output.Content[acc.contentIndex].ID == "" && delta.ID != "" {
+	} else if !acc.hasProviderID && delta.ID != "" {
 		acc.id = delta.ID
+		acc.hasProviderID = true
 		p.output.Content[acc.contentIndex].ID = delta.ID
+		p.registerOpenAIChatToolCallID(acc, delta.ID)
 	}
 	if acc.name == "" && name != "" {
 		acc.name = name
@@ -339,6 +353,57 @@ func (p *OpenAICompletionsStreamProcessor) appendToolCall(delta OpenAIChatToolCa
 		Partial:      *p.output,
 	})
 	return events
+}
+
+func (p *OpenAICompletionsStreamProcessor) registerOpenAIChatToolCallID(
+	acc *openAIChatToolAccumulator,
+	id string,
+) {
+	if acc == nil || id == "" {
+		return
+	}
+	p.toolsByID[id] = acc
+	if signature, ok := p.pendingReasoningDetails[id]; ok {
+		p.output.Content[acc.contentIndex].ThoughtSignature = signature
+		delete(p.pendingReasoningDetails, id)
+	}
+}
+
+func (p *OpenAICompletionsStreamProcessor) applyReasoningDetails(
+	details []json.RawMessage,
+) {
+	for _, raw := range details {
+		id, signature, ok := parseOpenAIEncryptedReasoningDetail(raw)
+		if !ok {
+			continue
+		}
+		if acc := p.toolsByID[id]; acc != nil {
+			p.output.Content[acc.contentIndex].ThoughtSignature = signature
+			continue
+		}
+		p.pendingReasoningDetails[id] = signature
+	}
+}
+
+func parseOpenAIEncryptedReasoningDetail(
+	raw json.RawMessage,
+) (id string, signature string, ok bool) {
+	var detail struct {
+		Type string `json:"type"`
+		ID   string `json:"id"`
+		Data string `json:"data"`
+	}
+	if json.Unmarshal(raw, &detail) != nil ||
+		detail.Type != "reasoning.encrypted" ||
+		detail.ID == "" ||
+		detail.Data == "" {
+		return "", "", false
+	}
+	compacted, err := json.Marshal(json.RawMessage(raw))
+	if err != nil {
+		return "", "", false
+	}
+	return detail.ID, string(compacted), true
 }
 
 func (p *OpenAICompletionsStreamProcessor) configureOpenAIChatCustomInput(

@@ -71,6 +71,15 @@ func hasHeaderCaseInsensitive(headers map[string]string, name string) bool {
 	return ok
 }
 
+func hasNonBlankHeaderCaseInsensitive(headers map[string]string, name string) bool {
+	for existing, value := range headers {
+		if strings.EqualFold(existing, name) && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func headerValueCaseInsensitive(headers map[string]string, name string) (string, bool) {
 	for existing := range headers {
 		if strings.EqualFold(existing, name) {
