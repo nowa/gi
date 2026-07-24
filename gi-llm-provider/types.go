@@ -242,6 +242,8 @@ type StreamOptions struct {
 	CacheRetention   string
 	SessionID        string
 	Reasoning        string
+	ToolChoice       any
+	Debug            bool
 	ThinkingBudgets  map[string]int
 	Headers          map[string]string
 	HeaderRemovals   []string

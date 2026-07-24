@@ -209,6 +209,8 @@ func defaultAPIForProvider(provider string) string {
 		return "azure-openai-responses"
 	case "mistral":
 		return "mistral-conversations"
+	case "radius":
+		return piMessagesAPI
 	default:
 		return "openai-completions"
 	}

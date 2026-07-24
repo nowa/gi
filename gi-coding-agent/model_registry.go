@@ -1,12 +1,15 @@
 package gicodingagent
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
@@ -69,18 +72,52 @@ type ResolvedRequestAuth struct {
 	OK      bool
 	APIKey  string
 	Headers map[string]string
+	Env     llm.ProviderEnv
 	Error   string
 }
 
+type modelsJSONProviderConfig struct {
+	Name           string                    `json:"name,omitempty"`
+	BaseURL        string                    `json:"baseUrl,omitempty"`
+	APIKey         string                    `json:"apiKey,omitempty"`
+	API            string                    `json:"api,omitempty"`
+	OAuth          string                    `json:"oauth,omitempty"`
+	Headers        map[string]string         `json:"headers,omitempty"`
+	AuthHeader     *bool                     `json:"authHeader,omitempty"`
+	Compat         llm.ModelCompat           `json:"compat,omitempty"`
+	Models         []ProviderModelDefinition `json:"models,omitempty"`
+	ModelOverrides map[string]ModelOverride  `json:"modelOverrides,omitempty"`
+}
+
 type modelRegistryConfig struct {
-	Providers map[string]ProviderConfigInput
+	Providers map[string]modelsJSONProviderConfig `json:"providers"`
 }
 
 type customModelsResult struct {
-	models         []llm.Model
-	overrides      map[string]ProviderConfigInput
-	modelOverrides map[string]map[string]ModelOverride
-	errorMessage   string
+	models          []llm.Model
+	overrides       map[string]ProviderConfigInput
+	modelOverrides  map[string]map[string]ModelOverride
+	radiusProviders []radiusRegistryProvider
+	errorMessage    string
+}
+
+// ModelRegistryOptions supplies app-owned state and explicit startup network
+// policy. Network catalog refresh is disabled by the zero value.
+type ModelRegistryOptions struct {
+	AuthStorage         *AuthStorage
+	ModelsJSONPath      string
+	ModelsStore         llm.ModelsStore
+	RadiusClient        llm.HTTPDoer
+	AllowModelNetwork   bool
+	ModelRefreshTimeout time.Duration
+}
+
+// ModelRegistryRefreshOptions controls an explicit dynamic catalog refresh.
+// Network access is disabled by the zero value.
+type ModelRegistryRefreshOptions struct {
+	AllowNetwork bool
+	Force        bool
+	Timeout      time.Duration
 }
 
 type apiProviderRestore struct {
@@ -93,17 +130,26 @@ type oauthProviderRestore struct {
 	had      bool
 }
 
+// ModelRegistry is the synchronous coding-agent compatibility facade.
+// Callers serialize registry mutation with reads; the shared llm.Models,
+// provider catalog state, credential storage, and ModelsStore boundaries it
+// composes are independently safe for concurrent use.
 type ModelRegistry struct {
-	authStorage            *AuthStorage
-	modelsJSONPath         string
-	models                 []llm.Model
-	providerRequestConfigs map[string]ProviderRequestConfig
-	modelRequestHeaders    map[string]map[string]string
-	registeredProviders    map[string]ProviderConfigInput
-	registeredOrder        []string
-	apiProviderRestores    map[string]apiProviderRestore
-	oauthProviderRestores  map[string]oauthProviderRestore
-	loadError              string
+	authStorage              *AuthStorage
+	modelsJSONPath           string
+	modelsStore              llm.ModelsStore
+	radiusClient             llm.HTTPDoer
+	dynamicModels            *llm.Models
+	baseModels               []llm.Model
+	models                   []llm.Model
+	configuredModelOverrides map[string]map[string]ModelOverride
+	providerRequestConfigs   map[string]ProviderRequestConfig
+	modelRequestHeaders      map[string]map[string]string
+	registeredProviders      map[string]ProviderConfigInput
+	registeredOrder          []string
+	apiProviderRestores      map[string]apiProviderRestore
+	oauthProviderRestores    map[string]oauthProviderRestore
+	loadError                string
 }
 
 var builtInProviderDisplayNames = map[string]string{
@@ -130,6 +176,7 @@ var builtInProviderDisplayNames = map[string]string{
 	"opencode-go":            "OpenCode Go",
 	"openai":                 "OpenAI",
 	"openrouter":             "OpenRouter",
+	RadiusProviderID:         "Radius",
 	"together":               "Together AI",
 	"vercel-ai-gateway":      "Vercel AI Gateway",
 	"xai":                    "xAI",
@@ -141,16 +188,49 @@ var builtInProviderDisplayNames = map[string]string{
 }
 
 func NewModelRegistry(authStorage *AuthStorage, modelsJSONPath string) *ModelRegistry {
+	return NewModelRegistryWithOptions(context.Background(), ModelRegistryOptions{
+		AuthStorage:    authStorage,
+		ModelsJSONPath: modelsJSONPath,
+	})
+}
+
+// NewModelRegistryWithOptions builds a registry and restores dynamic catalogs.
+// A network refresh occurs only when AllowModelNetwork is explicitly true.
+func NewModelRegistryWithOptions(
+	ctx context.Context,
+	options ModelRegistryOptions,
+) *ModelRegistry {
+	modelsStore := options.ModelsStore
+	if modelsStore == nil {
+		if options.ModelsJSONPath == "" {
+			modelsStore = llm.NewInMemoryModelsStore()
+		} else {
+			modelsStore = NewFileModelsStore(filepath.Join(
+				filepath.Dir(options.ModelsJSONPath),
+				"models-store.json",
+			))
+		}
+	}
 	registry := &ModelRegistry{
-		authStorage:            authStorage,
-		modelsJSONPath:         modelsJSONPath,
+		authStorage:            options.AuthStorage,
+		modelsJSONPath:         options.ModelsJSONPath,
+		modelsStore:            modelsStore,
+		radiusClient:           options.RadiusClient,
 		providerRequestConfigs: map[string]ProviderRequestConfig{},
 		modelRequestHeaders:    map[string]map[string]string{},
 		registeredProviders:    map[string]ProviderConfigInput{},
 		apiProviderRestores:    map[string]apiProviderRestore{},
 		oauthProviderRestores:  map[string]oauthProviderRestore{},
 	}
-	registry.loadModels()
+	refreshCtx, cancel := modelRegistryRefreshContext(
+		ctx,
+		options.AllowModelNetwork,
+		options.ModelRefreshTimeout,
+	)
+	defer cancel()
+	registry.loadModels(refreshCtx, llm.ModelsRefreshOptions{
+		Offline: !options.AllowModelNetwork,
+	})
 	return registry
 }
 
@@ -166,14 +246,48 @@ func (r *ModelRegistry) Refresh() {
 	r.providerRequestConfigs = map[string]ProviderRequestConfig{}
 	r.modelRequestHeaders = map[string]map[string]string{}
 	r.loadError = ""
-	r.loadModels()
+	r.loadModels(context.Background(), llm.ModelsRefreshOptions{Offline: true})
 	for _, providerName := range r.registeredOrder {
 		config, ok := r.registeredProviders[providerName]
 		if ok {
 			r.applyProviderConfig(providerName, config)
 		}
 	}
+	r.applyConfiguredModelOverrides()
 	r.applyOAuthModelOverrides()
+}
+
+// RefreshModels refreshes dynamic provider catalogs without reparsing
+// models.json. The zero options value only restores persisted state.
+func (r *ModelRegistry) RefreshModels(
+	ctx context.Context,
+	options ModelRegistryRefreshOptions,
+) llm.ModelsRefreshResult {
+	if r == nil || r.dynamicModels == nil {
+		return llm.ModelsRefreshResult{Errors: map[string]error{}}
+	}
+	refreshCtx, cancel := modelRegistryRefreshContext(
+		ctx,
+		options.AllowNetwork,
+		options.Timeout,
+	)
+	defer cancel()
+	result := r.dynamicModels.Refresh(
+		refreshCtx,
+		llm.ModelsRefreshOptions{
+			Offline: !options.AllowNetwork,
+			Force:   options.Force,
+		},
+	)
+	r.syncDynamicModels()
+	for _, providerName := range r.registeredOrder {
+		if config, ok := r.registeredProviders[providerName]; ok {
+			r.applyProviderConfig(providerName, config)
+		}
+	}
+	r.applyConfiguredModelOverrides()
+	r.applyOAuthModelOverrides()
+	return result
 }
 
 func (r *ModelRegistry) applyOAuthModelOverrides() {
@@ -223,51 +337,194 @@ func (r *ModelRegistry) Find(provider, modelID string) (llm.Model, bool) {
 }
 
 func (r *ModelRegistry) HasConfiguredAuth(model llm.Model) bool {
+	if r.hasExplicitAuth(model.Provider) {
+		return true
+	}
+	if config, ok := r.providerRequestConfigs[model.Provider]; ok &&
+		config.APIKey != "" {
+		return configuredAPIKeyAuthStatus(config.APIKey).Configured
+	}
+	if r.dynamicModels != nil {
+		if _, ok := r.dynamicModels.GetProvider(model.Provider); ok {
+			_, configured, err := r.dynamicModels.CheckAuth(
+				context.Background(),
+				model.Provider,
+			)
+			if err == nil && configured {
+				return true
+			}
+		}
+	}
 	if r.authStorage != nil && r.authStorage.HasAuth(model.Provider) {
 		return true
 	}
-	config, ok := r.providerRequestConfigs[model.Provider]
-	return ok && config.APIKey != ""
+	return false
 }
 
 func (r *ModelRegistry) GetAPIKeyForProvider(provider string) (string, bool) {
-	if r.authStorage != nil {
-		if apiKey, ok := r.authStorage.GetAPIKeyWithOptions(provider, AuthStorageOptions{IncludeFallback: false}); ok {
-			return apiKey, true
+	if r.hasExplicitAuth(provider) {
+		if r.dynamicModels != nil {
+			if _, ok := r.dynamicModels.GetProvider(provider); ok {
+				result, err := r.dynamicModels.GetAuth(
+					context.Background(),
+					provider,
+					llm.AuthResolutionOverrides{},
+				)
+				if err == nil &&
+					result != nil &&
+					result.Auth.APIKey != "" {
+					return result.Auth.APIKey, true
+				}
+				return "", false
+			}
+		}
+		return r.authStorage.GetAPIKeyWithOptions(
+			provider,
+			AuthStorageOptions{
+				ExcludeEnvironment: true,
+			},
+		)
+	}
+	if config, ok := r.providerRequestConfigs[provider]; ok &&
+		config.APIKey != "" {
+		return ResolveConfigValueUncached(config.APIKey)
+	}
+	if r.dynamicModels != nil {
+		if _, ok := r.dynamicModels.GetProvider(provider); ok {
+			result, err := r.dynamicModels.GetAuth(
+				context.Background(),
+				provider,
+				llm.AuthResolutionOverrides{},
+			)
+			if err == nil && result != nil && result.Auth.APIKey != "" {
+				return result.Auth.APIKey, true
+			}
 		}
 	}
-	config, ok := r.providerRequestConfigs[provider]
-	if !ok || config.APIKey == "" {
-		return "", false
+	if r.authStorage != nil {
+		return r.authStorage.GetAPIKeyWithOptions(
+			provider,
+			AuthStorageOptions{},
+		)
 	}
-	return ResolveConfigValueUncached(config.APIKey)
+	return "", false
 }
 
 func (r *ModelRegistry) GetAPIKeyAndHeaders(model llm.Model) ResolvedRequestAuth {
 	config := r.providerRequestConfigs[model.Provider]
 	apiKey := ""
-	if r.authStorage != nil {
-		if key, ok := r.authStorage.GetAPIKeyWithOptions(model.Provider, AuthStorageOptions{IncludeFallback: false}); ok {
-			apiKey = key
+	var dynamicHeaders map[string]string
+	var requestEnv llm.ProviderEnv
+	authSelected := r.hasExplicitAuth(model.Provider)
+	if authSelected {
+		if r.authStorage != nil &&
+			!r.authStorage.HasRuntimeAPIKey(model.Provider) {
+			if credential, ok := r.authStorage.Get(model.Provider); ok {
+				requestEnv = credential.Env
+			}
+		}
+		if r.dynamicModels != nil {
+			if _, ok := r.dynamicModels.GetProvider(model.Provider); ok {
+				result, err := r.dynamicModels.GetModelAuth(
+					context.Background(),
+					model,
+					llm.AuthResolutionOverrides{},
+				)
+				if err != nil {
+					return ResolvedRequestAuth{
+						OK:    false,
+						Error: err.Error(),
+					}
+				}
+				if result != nil {
+					apiKey = result.Auth.APIKey
+					dynamicHeaders = result.Auth.Headers
+					requestEnv = result.Env
+				}
+			} else if r.authStorage != nil {
+				apiKey, _ = r.authStorage.GetAPIKeyWithOptions(
+					model.Provider,
+					AuthStorageOptions{
+						ExcludeEnvironment: true,
+					},
+				)
+			}
+		} else if r.authStorage != nil {
+			apiKey, _ = r.authStorage.GetAPIKeyWithOptions(
+				model.Provider,
+				AuthStorageOptions{
+					ExcludeEnvironment: true,
+				},
+			)
 		}
 	}
-	if apiKey == "" && config.APIKey != "" {
-		value, err := resolveConfigValueOrError(config.APIKey, fmt.Sprintf(`API key for provider "%s"`, model.Provider))
+	if !authSelected && config.APIKey != "" {
+		value, err := resolveConfigValueOrError(
+			config.APIKey,
+			fmt.Sprintf(
+				`API key for provider "%s"`,
+				model.Provider,
+			),
+		)
 		if err != nil {
 			return ResolvedRequestAuth{OK: false, Error: err.Error()}
 		}
 		apiKey = value
+		authSelected = true
+	}
+	if !authSelected && r.dynamicModels != nil {
+		if _, ok := r.dynamicModels.GetProvider(model.Provider); ok {
+			result, err := r.dynamicModels.GetModelAuth(
+				context.Background(),
+				model,
+				llm.AuthResolutionOverrides{},
+			)
+			if err != nil {
+				return ResolvedRequestAuth{OK: false, Error: err.Error()}
+			}
+			if result != nil {
+				apiKey = result.Auth.APIKey
+				dynamicHeaders = result.Auth.Headers
+				requestEnv = result.Env
+				authSelected = true
+			}
+		}
+	}
+	if !authSelected && r.authStorage != nil {
+		if key, ok := r.authStorage.GetAPIKeyWithOptions(
+			model.Provider,
+			AuthStorageOptions{},
+		); ok {
+			apiKey = key
+		}
 	}
 
-	headers, err := resolveHeadersOrError(config.Headers, fmt.Sprintf(`provider "%s"`, model.Provider))
+	headers, err := resolveHeadersOrError(
+		config.Headers,
+		fmt.Sprintf(`provider "%s"`, model.Provider),
+		requestEnv,
+	)
 	if err != nil {
 		return ResolvedRequestAuth{OK: false, Error: err.Error()}
 	}
-	modelHeaders, err := resolveHeadersOrError(r.modelRequestHeaders[r.modelRequestKey(model.Provider, model.ID)], fmt.Sprintf(`model "%s/%s"`, model.Provider, model.ID))
+	modelHeaderConfig := r.modelRequestHeaders[r.modelRequestKey(
+		model.Provider,
+		model.ID,
+	)]
+	modelHeaders, err := resolveHeadersOrError(
+		modelHeaderConfig,
+		fmt.Sprintf(`model "%s/%s"`, model.Provider, model.ID),
+		requestEnv,
+	)
 	if err != nil {
 		return ResolvedRequestAuth{OK: false, Error: err.Error()}
 	}
-	mergedHeaders := mergeStringMaps(model.Headers, headers, modelHeaders)
+	mergedHeaders := mergeStringMaps(
+		model.Headers,
+		dynamicHeaders,
+		headers,
+		modelHeaders,
+	)
 	if config.AuthHeader {
 		if apiKey == "" {
 			return ResolvedRequestAuth{OK: false, Error: formatNoAPIKeyFoundMessage(model.Provider)}
@@ -277,7 +534,12 @@ func (r *ModelRegistry) GetAPIKeyAndHeaders(model llm.Model) ResolvedRequestAuth
 		}
 		mergedHeaders["Authorization"] = "Bearer " + apiKey
 	}
-	return ResolvedRequestAuth{OK: true, APIKey: apiKey, Headers: emptyMapAsNil(mergedHeaders)}
+	return ResolvedRequestAuth{
+		OK:      true,
+		APIKey:  apiKey,
+		Headers: emptyMapAsNil(mergedHeaders),
+		Env:     cloneResolvedProviderEnv(requestEnv),
+	}
 }
 
 func providerNeedsExplicitAPIKey(provider string) bool {
@@ -285,21 +547,72 @@ func providerNeedsExplicitAPIKey(provider string) bool {
 }
 
 func (r *ModelRegistry) GetProviderAuthStatus(provider string) AuthStatus {
+	storageStatus := AuthStatus{}
 	if r.authStorage != nil {
-		authStatus := r.authStorage.GetAuthStatus(provider)
-		if authStatus.Source != "" {
-			return authStatus
+		storageStatus = r.authStorage.GetAuthStatus(provider)
+		if storageStatus.Source == "stored" ||
+			storageStatus.Source == "runtime" {
+			return storageStatus
 		}
 	}
-	config, ok := r.providerRequestConfigs[provider]
-	if !ok || config.APIKey == "" {
+	if config, ok := r.providerRequestConfigs[provider]; ok &&
+		config.APIKey != "" {
+		return configuredAPIKeyAuthStatus(config.APIKey)
+	}
+	if r.dynamicModels != nil {
+		if _, ok := r.dynamicModels.GetProvider(provider); ok {
+			check, configured, err := r.dynamicModels.CheckAuth(
+				context.Background(),
+				provider,
+			)
+			if err == nil && configured {
+				return AuthStatus{
+					Configured: true,
+					Source:     "environment",
+					Label:      check.Source,
+				}
+			}
+		}
+	}
+	if storageStatus.Configured {
+		return storageStatus
+	}
+	return AuthStatus{Configured: false}
+}
+
+func (r *ModelRegistry) hasExplicitAuth(provider string) bool {
+	return r != nil &&
+		r.authStorage != nil &&
+		(r.authStorage.HasRuntimeAPIKey(provider) ||
+			r.authStorage.Has(provider))
+}
+
+func configuredAPIKeyAuthStatus(value string) AuthStatus {
+	if value == "" {
 		return AuthStatus{Configured: false}
 	}
-	if strings.HasPrefix(config.APIKey, "!") {
-		return AuthStatus{Configured: true, Source: "models_json_command"}
+	if IsCommandConfigValue(value) {
+		return AuthStatus{
+			Configured: true,
+			Source:     "models_json_command",
+		}
 	}
-	if os.Getenv(config.APIKey) != "" {
-		return AuthStatus{Configured: true, Source: "environment", Label: config.APIKey}
+	if names := ConfigValueEnvVarNames(value); len(names) > 0 {
+		if !IsConfigValueConfigured(value, nil) {
+			return AuthStatus{Configured: false}
+		}
+		return AuthStatus{
+			Configured: true,
+			Source:     "environment",
+			Label:      strings.Join(names, ", "),
+		}
+	}
+	if os.Getenv(value) != "" {
+		return AuthStatus{
+			Configured: true,
+			Source:     "environment",
+			Label:      value,
+		}
 	}
 	return AuthStatus{Configured: true, Source: "models_json_key"}
 }
@@ -311,6 +624,12 @@ func (r *ModelRegistry) GetProviderDisplayName(provider string) string {
 		}
 		if config.OAuth != nil && config.OAuth.Name != "" {
 			return config.OAuth.Name
+		}
+	}
+	if r.dynamicModels != nil {
+		if dynamic, ok := r.dynamicModels.GetProvider(provider); ok &&
+			dynamic.Name != "" {
+			return dynamic.Name
 		}
 	}
 	for _, oauthProvider := range GetOAuthProviders() {
@@ -337,6 +656,7 @@ func (r *ModelRegistry) RegisterProvider(providerName string, config ProviderCon
 		return err
 	}
 	r.applyProviderConfig(providerName, config)
+	r.applyConfiguredModelOverrides()
 	r.upsertRegisteredProvider(providerName, config)
 	return nil
 }
@@ -352,20 +672,32 @@ func (r *ModelRegistry) UnregisterProvider(providerName string) {
 	r.Refresh()
 }
 
-func (r *ModelRegistry) loadModels() {
+func (r *ModelRegistry) loadModels(
+	ctx context.Context,
+	refreshOptions llm.ModelsRefreshOptions,
+) {
 	result := r.loadCustomModels()
 	if result.errorMessage != "" {
 		r.loadError = result.errorMessage
 	}
-	builtIns := r.loadBuiltInModels(result.overrides, result.modelOverrides)
-	r.models = mergeCustomModels(builtIns, result.models)
+	r.configuredModelOverrides = result.modelOverrides
+	builtIns := r.loadBuiltInModels(result.overrides)
+	r.baseModels = mergeCustomModels(builtIns, result.models)
+	if err := r.configureDynamicModels(result.radiusProviders); err != nil {
+		r.appendLoadError(err.Error())
+	}
+	if r.dynamicModels != nil {
+		_ = r.dynamicModels.Refresh(ctx, refreshOptions)
+	}
+	r.syncDynamicModels()
 	r.applyOAuthModelOverrides()
 }
 
 func (r *ModelRegistry) loadCustomModels() customModelsResult {
 	result := customModelsResult{
-		overrides:      map[string]ProviderConfigInput{},
-		modelOverrides: map[string]map[string]ModelOverride{},
+		overrides:       map[string]ProviderConfigInput{},
+		modelOverrides:  map[string]map[string]ModelOverride{},
+		radiusProviders: []radiusRegistryProvider{},
 	}
 	if r.modelsJSONPath == "" {
 		return result
@@ -385,18 +717,36 @@ func (r *ModelRegistry) loadCustomModels() customModelsResult {
 		return result
 	}
 	if config.Providers == nil {
-		config.Providers = map[string]ProviderConfigInput{}
+		config.Providers = map[string]modelsJSONProviderConfig{}
 	}
 	if err := r.validateConfig(config); err != nil {
 		result.errorMessage = fmt.Sprintf("Failed to load models.json: %s\n\nFile: %s", err, r.modelsJSONPath)
 		return result
 	}
 
-	for providerName, providerConfig := range config.Providers {
+	for _, providerName := range sortedModelsJSONProviderNames(
+		config.Providers,
+	) {
+		providerConfig := config.Providers[providerName]
+		if providerConfig.OAuth == RadiusProviderID {
+			result.radiusProviders = append(
+				result.radiusProviders,
+				radiusRegistryProvider{
+					id:      providerName,
+					name:    firstNonEmptyString(providerConfig.Name, providerName),
+					gateway: radiusGatewayFromBaseURL(providerConfig.BaseURL),
+				},
+			)
+		}
 		if providerConfig.BaseURL != "" || hasCompat(providerConfig.Compat) {
 			result.overrides[providerName] = ProviderConfigInput{BaseURL: providerConfig.BaseURL, Compat: providerConfig.Compat}
 		}
-		r.storeProviderRequestConfig(providerName, providerConfig)
+		r.storeProviderRequestConfig(providerName, ProviderConfigInput{
+			APIKey:  providerConfig.APIKey,
+			Headers: providerConfig.Headers,
+			AuthHeader: providerConfig.AuthHeader != nil &&
+				*providerConfig.AuthHeader,
+		})
 		if len(providerConfig.ModelOverrides) > 0 {
 			result.modelOverrides[providerName] = providerConfig.ModelOverrides
 			for modelID, override := range providerConfig.ModelOverrides {
@@ -408,13 +758,64 @@ func (r *ModelRegistry) loadCustomModels() customModelsResult {
 	return result
 }
 
+func (r *ModelRegistry) appendLoadError(message string) {
+	if strings.TrimSpace(message) == "" {
+		return
+	}
+	if r.loadError == "" {
+		r.loadError = message
+		return
+	}
+	r.loadError += "\n\n" + message
+}
+
+func modelRegistryRefreshContext(
+	ctx context.Context,
+	allowNetwork bool,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if !allowNetwork {
+		return ctx, func() {}
+	}
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
 func (r *ModelRegistry) validateConfig(config modelRegistryConfig) error {
 	builtIns := builtInProviderSet()
-	for providerName, providerConfig := range config.Providers {
+	for _, providerName := range sortedModelsJSONProviderNames(
+		config.Providers,
+	) {
+		providerConfig := config.Providers[providerName]
 		isBuiltIn := builtIns[providerName]
+		if providerConfig.OAuth != "" &&
+			providerConfig.OAuth != RadiusProviderID {
+			return fmt.Errorf(
+				`Provider %s: unsupported "oauth" value %q.`,
+				providerName,
+				providerConfig.OAuth,
+			)
+		}
+		if providerConfig.OAuth != "" && providerConfig.BaseURL == "" {
+			return fmt.Errorf(
+				`Provider %s: "baseUrl" is required when "oauth" is set.`,
+				providerName,
+			)
+		}
 		models := providerConfig.Models
 		if len(models) == 0 {
-			if providerConfig.BaseURL == "" && len(providerConfig.Headers) == 0 && !hasCompat(providerConfig.Compat) && len(providerConfig.ModelOverrides) == 0 {
+			if providerConfig.BaseURL == "" &&
+				len(providerConfig.Headers) == 0 &&
+				!hasCompat(providerConfig.Compat) &&
+				len(providerConfig.ModelOverrides) == 0 &&
+				providerConfig.APIKey == "" &&
+				providerConfig.OAuth == "" &&
+				providerConfig.AuthHeader == nil {
 				return fmt.Errorf(`Provider %s: must specify "baseUrl", "headers", "compat", "modelOverrides", or "models".`, providerName)
 			}
 			continue
@@ -423,7 +824,7 @@ func (r *ModelRegistry) validateConfig(config modelRegistryConfig) error {
 			if providerConfig.BaseURL == "" {
 				return fmt.Errorf(`Provider %s: "baseUrl" is required when defining custom models.`, providerName)
 			}
-			if providerConfig.APIKey == "" {
+			if providerConfig.APIKey == "" && providerConfig.OAuth == "" {
 				return fmt.Errorf(`Provider %s: "apiKey" is required when defining custom models.`, providerName)
 			}
 		}
@@ -431,7 +832,10 @@ func (r *ModelRegistry) validateConfig(config modelRegistryConfig) error {
 			if model.ID == "" {
 				return fmt.Errorf("Provider %s: model missing \"id\"", providerName)
 			}
-			if !isBuiltIn && providerConfig.API == "" && model.API == "" {
+			if !isBuiltIn &&
+				providerConfig.API == "" &&
+				model.API == "" &&
+				providerConfig.OAuth != RadiusProviderID {
 				return fmt.Errorf(`Provider %s, model %s: no "api" specified. Set at provider or model level.`, providerName, model.ID)
 			}
 			if model.ContextWindow < 0 {
@@ -448,7 +852,10 @@ func (r *ModelRegistry) validateConfig(config modelRegistryConfig) error {
 func (r *ModelRegistry) parseModels(config modelRegistryConfig) []llm.Model {
 	builtIns := builtInProviderSet()
 	models := []llm.Model{}
-	for providerName, providerConfig := range config.Providers {
+	for _, providerName := range sortedModelsJSONProviderNames(
+		config.Providers,
+	) {
+		providerConfig := config.Providers[providerName]
 		if len(providerConfig.Models) == 0 {
 			continue
 		}
@@ -456,6 +863,9 @@ func (r *ModelRegistry) parseModels(config modelRegistryConfig) []llm.Model {
 		for _, definition := range providerConfig.Models {
 			api := firstNonEmptyString(definition.API, providerConfig.API)
 			baseURL := firstNonEmptyString(definition.BaseURL, providerConfig.BaseURL)
+			if api == "" && providerConfig.OAuth == RadiusProviderID {
+				api = "pi-messages"
+			}
 			if api == "" && builtIns[providerName] && hasDefaults {
 				api = defaults.API
 			}
@@ -472,7 +882,18 @@ func (r *ModelRegistry) parseModels(config modelRegistryConfig) []llm.Model {
 	return models
 }
 
-func (r *ModelRegistry) loadBuiltInModels(overrides map[string]ProviderConfigInput, modelOverrides map[string]map[string]ModelOverride) []llm.Model {
+func sortedModelsJSONProviderNames(
+	providers map[string]modelsJSONProviderConfig,
+) []string {
+	names := make([]string, 0, len(providers))
+	for name := range providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (r *ModelRegistry) loadBuiltInModels(overrides map[string]ProviderConfigInput) []llm.Model {
 	providers := llm.GetProviders()
 	sort.Strings(providers)
 	models := make([]llm.Model, 0)
@@ -484,15 +905,22 @@ func (r *ModelRegistry) loadBuiltInModels(overrides map[string]ProviderConfigInp
 				model.BaseURL = override.BaseURL
 			}
 			model.Compat = mergeCompat(model.Compat, override.Compat)
-			if providerOverrides := modelOverrides[provider]; len(providerOverrides) > 0 {
-				if modelOverride, ok := providerOverrides[model.ID]; ok {
-					model = applyModelOverride(model, modelOverride)
-				}
-			}
 			models = append(models, model)
 		}
 	}
 	return models
+}
+
+func (r *ModelRegistry) applyConfiguredModelOverrides() {
+	if r == nil || len(r.configuredModelOverrides) == 0 {
+		return
+	}
+	for index, model := range r.models {
+		providerOverrides := r.configuredModelOverrides[model.Provider]
+		if override, ok := providerOverrides[model.ID]; ok {
+			r.models[index] = applyModelOverride(model, override)
+		}
+	}
 }
 
 func (r *ModelRegistry) validateProviderConfig(providerName string, config ProviderConfigInput) error {
@@ -866,7 +1294,7 @@ func builtInDefaults(provider string) (llm.Model, bool) {
 
 func builtInProviderSet() map[string]bool {
 	set := map[string]bool{}
-	for _, provider := range llm.GetProviders() {
+	for _, provider := range llm.GetBuiltinProviderIDs() {
 		set[provider] = true
 	}
 	return set
@@ -886,8 +1314,23 @@ func resolveConfigValueOrError(config, description string) (string, error) {
 	return ResolveConfigValueOrError(config, description, nil)
 }
 
-func resolveHeadersOrError(headers map[string]string, description string) (map[string]string, error) {
-	return ResolveConfigHeadersOrError(headers, description, nil)
+func resolveHeadersOrError(
+	headers map[string]string,
+	description string,
+	env llm.ProviderEnv,
+) (map[string]string, error) {
+	return ResolveConfigHeadersOrError(headers, description, env)
+}
+
+func cloneResolvedProviderEnv(env llm.ProviderEnv) llm.ProviderEnv {
+	if env == nil {
+		return nil
+	}
+	cloned := make(llm.ProviderEnv, len(env))
+	for name, value := range env {
+		cloned[name] = value
+	}
+	return cloned
 }
 
 func stripJSONCommentsAndTrailingCommas(input string) string {

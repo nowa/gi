@@ -21,6 +21,7 @@ func TestLazyProviderModuleLoadingPiParity(t *testing.T) {
 			"google-generative-ai",
 			"mistral-conversations",
 			"bedrock-converse-stream",
+			"pi-messages",
 		} {
 			if GetAPIProvider(api) == nil {
 				t.Fatalf("built-in provider %q missing", api)

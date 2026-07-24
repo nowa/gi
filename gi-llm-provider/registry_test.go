@@ -55,6 +55,7 @@ func TestBuiltInAPIProviderLifecyclePiStyle(t *testing.T) {
 		"google-generative-ai",
 		"mistral-conversations",
 		"bedrock-converse-stream",
+		"pi-messages",
 	} {
 		if !apiProvidersIncludeSource(GetAPIProviders(), api, BuiltInAPIProviderSourceID) {
 			t.Fatalf("built-in provider %q missing after register: %#v", api, GetAPIProviders())

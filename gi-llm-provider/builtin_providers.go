@@ -14,6 +14,7 @@ type builtinProviderSpec struct {
 	auth      func() ProviderAuth
 	extraAPIs []string
 	filter    func(models []Model, credential *Credential) []Model
+	build     func() (*Provider, error)
 }
 
 // The declaration order matches Pi's providers/all.ts. Each call constructs
@@ -104,15 +105,10 @@ var builtinProviderSpecs = []builtinProviderSpec{
 	envBuiltin("qwen-token-plan", "Qwen Token Plan", "Qwen Token Plan API key", "QWEN_TOKEN_PLAN_API_KEY"),
 	envBuiltin("qwen-token-plan-cn", "Qwen Token Plan CN", "Qwen Token Plan CN API key", "QWEN_TOKEN_PLAN_CN_API_KEY"),
 	{
-		id:        "radius",
-		name:      "Radius",
-		baseURL:   "https://radius.pi.dev",
-		extraAPIs: []string{"pi-messages"},
-		auth: func() ProviderAuth {
-			return ProviderAuth{
-				APIKey: EnvAPIKeyAuth("Radius API key", "RADIUS_API_KEY"),
-				OAuth:  registeredOAuthAuth("radius", "Radius", ""),
-			}
+		id:   "radius",
+		name: "Radius",
+		build: func() (*Provider, error) {
+			return NewRadiusProvider(RadiusProviderOptions{})
 		},
 	},
 	envBuiltin("together", "Together", "Together API key", "TOGETHER_API_KEY"),
@@ -194,6 +190,9 @@ func NewBuiltinProvider(providerID string) (*Provider, error) {
 	for _, spec := range builtinProviderSpecs {
 		if spec.id != providerID {
 			continue
+		}
+		if spec.build != nil {
+			return spec.build()
 		}
 		models := GetBuiltinModels(spec.id)
 		apiProviders := builtinAPIProviders(spec, models)

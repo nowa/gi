@@ -59,6 +59,21 @@ This document tracks source-level parity for Pi `packages/coding-agent/src` in t
   diagnostics without blocking valid resources from other handlers. This covers
   Pi's dynamic resource event shape inside Gi's protocol boundary without
   npm/TS private APIs.
+- Latest model-runtime increment: `ModelRegistry` and
+  `model_registry_dynamic.go` now compose an
+  instance-scoped `llm.Models` collection for default and `models.json`
+  configured Radius providers. A private typed `models.json` structure keeps
+  declarative `oauth: "radius"` separate from extension provider input;
+  credentials remain owned by `AuthStorage`, dynamic catalogs restore through
+  an injected or private JSON `ModelsStore`, and network access is opt-in with
+  a bounded context. Cached and fetched models are merged into the registry as
+  detached snapshots, with explicit model definitions and `modelOverrides`
+  reapplied as the top user layer after every refresh; request auth is resolved
+  through the same Radius provider that owns refresh and `pi-messages`
+  streaming behavior. Auth selection is deterministic: runtime or persisted
+  credentials win first, then `models.json`, then provider environment or
+  fallback auth. Credential-scoped environment values remain attached to the
+  resolved request and take precedence while configured headers are expanded.
 - Latest interactive increment: default TTY startup now parses changelog entries, records fresh installs without showing them, shows Pi-style full or condensed changelog notices when `lastChangelogVersion` is behind, surfaces a Pi-style update notice from an injectable Gi release checker without forcing tests to hit the network, checks configured Gi git packages for remote HEAD differences before showing a package-update notice, wires the existing Anthropic subscription-auth warning into live startup/model-switch paths, and sets the terminal title from cwd/session name. It also shows Pi-style model scope when scoped models are configured and not silenced, restores an existing session's model/thinking level when possible, surfaces a Pi-style startup warning when that saved model falls back, and surfaces `models.json` load/parse errors through the chat status area. Startup and `/reload` render Pi-style loaded resource sections from the active `AgentSession.ResourceLoader`, including context files, skills, prompt templates, extensions, custom themes, and quiet-startup diagnostics without showing the verbose listing. `/reload` now temporarily replaces the editor area with Pi-style reload feedback, then rebuilds the extension runtime, process-extension specs, autocomplete providers, ViewTree slots, and editor/TUI settings before restoring editor focus and showing the reloaded resource summary. The live TTY regression suite also covers a screenshot-sized 188x56 viewport so startup typing and `/` autocomplete stay in Pi-style flow directly below the startup content rather than being anchored to the terminal bottom.
 - Latest package-lifecycle increment: long-lived package processes receive
   `session_switch` plus replacement `session_start` on live session changes

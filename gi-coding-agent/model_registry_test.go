@@ -634,6 +634,84 @@ func TestModelRegistryAPIKeyResolution(t *testing.T) {
 	}
 }
 
+func TestModelRegistryAcceptsAuthOnlyProviderConfiguration(t *testing.T) {
+	modelsPath := filepath.Join(t.TempDir(), "models.json")
+
+	t.Run("models.json auth overrides ambient provider auth", func(t *testing.T) {
+		t.Setenv("OPENAI_API_KEY", "ambient-key")
+		t.Setenv("MODEL_REGISTRY_TENANT", "process-tenant")
+		writeRawModelsJSON(t, modelsPath, map[string]any{
+			"providers": map[string]any{
+				"openai": map[string]any{
+					"apiKey": "configured-key",
+					"headers": map[string]any{
+						"X-Tenant": "$MODEL_REGISTRY_TENANT",
+					},
+				},
+			},
+		})
+		registry := NewModelRegistry(NewInMemoryAuthStorage(nil), modelsPath)
+		if registry.GetError() != "" {
+			t.Fatalf("load error = %q", registry.GetError())
+		}
+		if got := registry.GetProviderAuthStatus("openai"); got !=
+			(AuthStatus{Configured: true, Source: "models_json_key"}) {
+			t.Fatalf("auth status = %#v", got)
+		}
+		if key, ok := registry.GetAPIKeyForProvider("openai"); !ok ||
+			key != "configured-key" {
+			t.Fatalf("provider key = %q, configured=%v", key, ok)
+		}
+		requestAuth := registry.GetAPIKeyAndHeaders(
+			llm.Model{Provider: "openai", ID: "test"},
+		)
+		if !requestAuth.OK ||
+			requestAuth.APIKey != "configured-key" ||
+			requestAuth.Headers["X-Tenant"] != "process-tenant" {
+			t.Fatalf("request auth = %#v", requestAuth)
+		}
+
+		storedRegistry := NewModelRegistry(
+			NewInMemoryAuthStorage(AuthStorageData{
+				"openai": {
+					Type: llm.CredentialTypeAPIKey,
+					Key:  "stored-key",
+					Env: llm.ProviderEnv{
+						"MODEL_REGISTRY_TENANT": "credential-tenant",
+					},
+				},
+			}),
+			modelsPath,
+		)
+		if key, ok := storedRegistry.GetAPIKeyForProvider("openai"); !ok ||
+			key != "stored-key" {
+			t.Fatalf("stored provider key = %q, configured=%v", key, ok)
+		}
+		storedRequestAuth := storedRegistry.GetAPIKeyAndHeaders(
+			llm.Model{Provider: "openai", ID: "test"},
+		)
+		if !storedRequestAuth.OK ||
+			storedRequestAuth.Headers["X-Tenant"] !=
+				"credential-tenant" ||
+			storedRequestAuth.Env["MODEL_REGISTRY_TENANT"] !=
+				"credential-tenant" {
+			t.Fatalf("stored request auth = %#v", storedRequestAuth)
+		}
+	})
+
+	t.Run("explicit false authHeader remains valid configuration", func(t *testing.T) {
+		writeRawModelsJSON(t, modelsPath, map[string]any{
+			"providers": map[string]any{
+				"openai": map[string]any{"authHeader": false},
+			},
+		})
+		registry := NewModelRegistry(NewInMemoryAuthStorage(nil), modelsPath)
+		if registry.GetError() != "" {
+			t.Fatalf("load error = %q", registry.GetError())
+		}
+	})
+}
+
 func registryProviderConfig(baseURL string, ids []string, api string) ProviderConfigInput {
 	return ProviderConfigInput{
 		BaseURL: baseURL,

@@ -382,6 +382,14 @@ func TestAuthStorageRuntimeOverrides(t *testing.T) {
 		if got, ok := storage.GetAPIKey("anthropic"); !ok || got != "runtime-key" {
 			t.Fatalf("api key = %q, %v", got, ok)
 		}
+		if got := storage.GetAuthStatus("anthropic"); got !=
+			(AuthStatus{
+				Configured: true,
+				Source:     "runtime",
+				Label:      "--api-key",
+			}) {
+			t.Fatalf("runtime status = %#v", got)
+		}
 	})
 
 	t.Run("removing runtime override falls back to auth.json", func(t *testing.T) {
@@ -394,7 +402,34 @@ func TestAuthStorageRuntimeOverrides(t *testing.T) {
 		if got, ok := storage.GetAPIKey("anthropic"); !ok || got != "stored-key" {
 			t.Fatalf("api key = %q, %v", got, ok)
 		}
+		if got := storage.GetAuthStatus("anthropic"); got !=
+			(AuthStatus{Configured: true, Source: "stored"}) {
+			t.Fatalf("stored status = %#v", got)
+		}
 	})
+}
+
+func TestAuthStorageReportsResolvedNonStoredAuth(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "environment-key")
+	storage := NewInMemoryAuthStorage(nil)
+	if got := storage.GetAuthStatus("openai"); got !=
+		(AuthStatus{
+			Configured: true,
+			Source:     "environment",
+			Label:      "OPENAI_API_KEY",
+		}) {
+		t.Fatalf("environment status = %#v", got)
+	}
+
+	storage.SetRuntimeAPIKey("openai", "runtime-key")
+	if got := storage.GetAuthStatus("openai"); got !=
+		(AuthStatus{
+			Configured: true,
+			Source:     "runtime",
+			Label:      "--api-key",
+		}) {
+		t.Fatalf("runtime status = %#v", got)
+	}
 }
 
 func TestAuthStorageCredentialStorePreservesCanonicalCredential(t *testing.T) {

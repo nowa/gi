@@ -786,6 +786,7 @@ func mergeHeadersCaseInsensitive(base, override map[string]string) map[string]st
 }
 
 func cloneStreamOptions(options StreamOptions) StreamOptions {
+	options.ToolChoice = cloneCredentialMetadataValue(options.ToolChoice)
 	options.ThinkingBudgets = cloneIntMap(options.ThinkingBudgets)
 	options.Headers = cloneStringMap(options.Headers)
 	options.HeaderRemovals = append([]string(nil), options.HeaderRemovals...)

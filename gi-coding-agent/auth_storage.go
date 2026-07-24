@@ -25,7 +25,8 @@ type AuthStatus struct {
 }
 
 type AuthStorageOptions struct {
-	IncludeFallback bool
+	IncludeFallback    bool
+	ExcludeEnvironment bool
 }
 
 type AuthStorageLockFunc func(current string) (next string, write bool, err error)
@@ -290,17 +291,17 @@ func (s *AuthStorage) GetAuthStatus(provider string) AuthStatus {
 	_, runtimeOverride := s.runtimeOverrides[provider]
 	fallbackResolver := s.fallbackResolver
 	s.stateMu.RUnlock()
+	if runtimeOverride {
+		return AuthStatus{Configured: true, Source: "runtime", Label: "--api-key"}
+	}
 	if stored {
 		return AuthStatus{Configured: true, Source: "stored"}
 	}
-	if runtimeOverride {
-		return AuthStatus{Configured: false, Source: "runtime", Label: "--api-key"}
-	}
 	if keys := findProviderEnvKeys(provider); len(keys) > 0 {
-		return AuthStatus{Configured: false, Source: "environment", Label: keys[0]}
+		return AuthStatus{Configured: true, Source: "environment", Label: keys[0]}
 	}
 	if fallbackResolver != nil && fallbackResolver(provider) != "" {
-		return AuthStatus{Configured: false, Source: "fallback", Label: "custom provider config"}
+		return AuthStatus{Configured: true, Source: "fallback", Label: "custom provider config"}
 	}
 	return AuthStatus{Configured: false}
 }
@@ -358,8 +359,10 @@ func (s *AuthStorage) GetAPIKeyWithOptions(provider string, options AuthStorageO
 		return "", false
 	}
 
-	if envKey := getProviderEnvAPIKey(provider); envKey != "" {
-		return envKey, true
+	if !options.ExcludeEnvironment {
+		if envKey := getProviderEnvAPIKey(provider); envKey != "" {
+			return envKey, true
+		}
 	}
 	if options.IncludeFallback && fallbackResolver != nil {
 		if fallback := fallbackResolver(provider); fallback != "" {

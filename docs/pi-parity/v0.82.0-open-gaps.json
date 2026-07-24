@@ -40,7 +40,6 @@
         "api/openai-responses.ts",
         "api/openrouter-images.lazy.ts",
         "api/openrouter-images.ts",
-        "api/pi-messages.lazy.ts",
         "api/simple-options.ts",
         "api/transform-messages.ts",
         "auth/oauth/anthropic.ts",
@@ -120,17 +119,6 @@
         "api/openai-responses.ts::formatOpenAIResponsesError",
         "api/openai-responses.ts::getClientApiKey",
         "api/openai-responses.ts::hasHeader",
-        "api/pi-messages.ts::PiMessagesResponseError",
-        "api/pi-messages.ts::PiMessagesResponseError.constructor",
-        "api/pi-messages.ts::appendRewriteDiagnostic",
-        "api/pi-messages.ts::createEmptyUsage",
-        "api/pi-messages.ts::createErrorEvent",
-        "api/pi-messages.ts::createEventConverter",
-        "api/pi-messages.ts::createPiMessagesResponseError",
-        "api/pi-messages.ts::formatPiMessagesResponseError",
-        "api/pi-messages.ts::parsePiMessagesErrorBody",
-        "api/pi-messages.ts::parsePiMessagesEvent",
-        "api/pi-messages.ts::truncateDiagnosticString",
         "api/simple-options.ts::clampMaxTokensToContext",
         "auth/oauth/device-code.ts::pollOAuthDeviceCodeFlow",
         "auth/oauth/github-copilot.ts::asRecord",
@@ -383,12 +371,8 @@
         "core/cache-stats.ts",
         "core/experimental.ts",
         "core/http-dispatcher.ts",
-        "core/model-config.ts",
-        "core/model-runtime.ts",
-        "core/models-store.ts",
         "core/provider-attribution.ts",
         "core/provider-composer.ts",
-        "core/radius.ts",
         "core/remote-catalog-provider.ts",
         "core/usage-totals.ts",
         "extensions/llama/client.ts",
@@ -475,21 +459,13 @@
         "core/http-dispatcher.ts::formatHttpIdleTimeoutMs",
         "core/http-dispatcher.ts::parseHttpIdleTimeoutMs",
         "core/http-dispatcher.ts::withUndiciErrorListener",
-        "core/model-config.ts::ModelConfig.constructor",
-        "core/model-config.ts::ModelConfig.getError",
-        "core/model-config.ts::ModelConfig.getProvider",
-        "core/model-config.ts::ModelConfig.getProviderIds",
-        "core/model-config.ts::ModelConfig.load",
-        "core/model-config.ts::deepFreeze",
         "core/model-registry.ts::ModelRegistry.getRegisteredNativeProvider",
         "core/model-registry.ts::ModelRegistry.getRegisteredProviderConfig",
         "core/model-registry.ts::ModelRegistry.getRegisteredProviderIds",
         "core/model-resolver.ts::resolveModelScopeWithDiagnostics",
-        "core/model-runtime.ts::ModelRuntime",
         "core/model-runtime.ts::ModelRuntime.checkAuth",
         "core/model-runtime.ts::ModelRuntime.complete",
         "core/model-runtime.ts::ModelRuntime.completeSimple",
-        "core/model-runtime.ts::ModelRuntime.configureRadiusProviders",
         "core/model-runtime.ts::ModelRuntime.constructor",
         "core/model-runtime.ts::ModelRuntime.create",
         "core/model-runtime.ts::ModelRuntime.forceRefreshAvailability",
@@ -528,16 +504,6 @@
         "core/model-runtime.ts::ModelRuntime.unregisterProvider",
         "core/model-runtime.ts::ModelRuntime.updateModelSnapshot",
         "core/model-runtime.ts::mergeHeaders",
-        "core/models-store.ts::FileModelsStore",
-        "core/models-store.ts::FileModelsStore.constructor",
-        "core/models-store.ts::FileModelsStore.delete",
-        "core/models-store.ts::FileModelsStore.parse",
-        "core/models-store.ts::FileModelsStore.read",
-        "core/models-store.ts::FileModelsStore.write",
-        "core/models-store.ts::InMemoryCodingAgentModelsStore",
-        "core/models-store.ts::InMemoryCodingAgentModelsStore.delete",
-        "core/models-store.ts::InMemoryCodingAgentModelsStore.read",
-        "core/models-store.ts::InMemoryCodingAgentModelsStore.write",
         "core/output-guard.ts::getRawStdoutWrite",
         "core/output-guard.ts::waitForRawStdoutBackpressure",
         "core/output-guard.ts::writeRawStdoutChunk",
@@ -921,7 +887,6 @@
         "packages/ai/test/constrained-sampling.test.ts",
         "packages/ai/test/context-estimate.test.ts",
         "packages/ai/test/deferred-tools.test.ts",
-        "packages/ai/test/pi-messages.test.ts",
         "packages/ai/test/reasoning-options.test.ts",
         "packages/ai/test/text.test.ts",
         "packages/ai/test/uuid.test.ts"
@@ -1151,46 +1116,6 @@
           "file": "packages/ai/test/openrouter-cache-control-models.test.ts",
           "line": 12,
           "name": "enables cache control for %s"
-        },
-        {
-          "file": "packages/ai/test/pi-messages.test.ts",
-          "line": 97,
-          "name": "streams text and tool calls and resolves the terminal message"
-        },
-        {
-          "file": "packages/ai/test/pi-messages.test.ts",
-          "line": 155,
-          "name": "appends debug=1 and reports response headers via onResponse"
-        },
-        {
-          "file": "packages/ai/test/pi-messages.test.ts",
-          "line": 177,
-          "name": "surfaces backend error responses with diagnostics"
-        },
-        {
-          "file": "packages/ai/test/pi-messages.test.ts",
-          "line": 194,
-          "name": "propagates server-sent error events"
-        },
-        {
-          "file": "packages/ai/test/pi-messages.test.ts",
-          "line": 207,
-          "name": "errors when no API key is provided"
-        },
-        {
-          "file": "packages/ai/test/pi-messages.test.ts",
-          "line": 216,
-          "name": "errors when the stream ends without a terminal event"
-        },
-        {
-          "file": "packages/ai/test/pi-messages.test.ts",
-          "line": 234,
-          "name": "is registered as a builtin api provider"
-        },
-        {
-          "file": "packages/ai/test/pi-messages.test.ts",
-          "line": 239,
-          "name": "is a known api usable on models"
         },
         {
           "file": "packages/ai/test/reasoning-options.test.ts",
@@ -1600,7 +1525,6 @@
         "packages/coding-agent/test/first-time-setup.test.ts",
         "packages/coding-agent/test/http-dispatcher.test.ts",
         "packages/coding-agent/test/max-thinking.test.ts",
-        "packages/coding-agent/test/radius.test.ts",
         "packages/coding-agent/test/suite/regressions/5661-uppercase-header-values.test.ts",
         "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts"
       ],
@@ -1809,56 +1733,6 @@
           "file": "packages/coding-agent/test/max-thinking.test.ts",
           "line": 28,
           "name": "falls back to thinkingXhigh for legacy themes"
-        },
-        {
-          "file": "packages/coding-agent/test/model-runtime-auth-options.test.ts",
-          "line": 36,
-          "name": "accepts a pi-ai CredentialStore"
-        },
-        {
-          "file": "packages/coding-agent/test/model-runtime-auth-options.test.ts",
-          "line": 163,
-          "name": "lets an explicit Authorization header override authHeader case-insensitively"
-        },
-        {
-          "file": "packages/coding-agent/test/model-runtime-modify-models-compat.test.ts",
-          "line": 26,
-          "name": "registers native pi-ai providers with their auth implementation"
-        },
-        {
-          "file": "packages/coding-agent/test/models-store.test.ts",
-          "line": 32,
-          "name": "persists provider catalogs without replacing unrelated providers"
-        },
-        {
-          "file": "packages/coding-agent/test/radius.test.ts",
-          "line": 50,
-          "name": "restores the legacy credential catalog without network access"
-        },
-        {
-          "file": "packages/coding-agent/test/radius.test.ts",
-          "line": 66,
-          "name": "fetches and stores the catalog for configured Radius auth"
-        },
-        {
-          "file": "packages/coding-agent/test/radius.test.ts",
-          "line": 94,
-          "name": "does not refresh catalogs over the network by default"
-        },
-        {
-          "file": "packages/coding-agent/test/radius.test.ts",
-          "line": 108,
-          "name": "does not fetch or expose Radius models without configured auth"
-        },
-        {
-          "file": "packages/coding-agent/test/radius.test.ts",
-          "line": 121,
-          "name": "supports custom Radius gateways from models.json"
-        },
-        {
-          "file": "packages/coding-agent/test/radius.test.ts",
-          "line": 153,
-          "name": "requires baseUrl for custom Radius gateways"
         },
         {
           "file": "packages/coding-agent/test/remote-catalog-provider.test.ts",
