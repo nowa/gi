@@ -496,6 +496,69 @@ func TestAgentHarnessRefreshesRuntimeStateAtSavePoints(t *testing.T) {
 	}
 }
 
+func TestAgentHarnessResolvesToolContextOncePerTurnSnapshot(t *testing.T) {
+	ctx := context.Background()
+	registration := llm.RegisterFauxProvider()
+	defer registration.Unregister()
+
+	registration.SetResponses([]llm.FauxResponseStep{
+		{Message: llm.FauxAssistantMessage([]llm.ContentPart{
+			llm.FauxToolCall("inspect", map[string]any{}, "call-1"),
+			llm.FauxToolCall("inspect", map[string]any{}, "call-2"),
+		}, "toolUse")},
+		{Message: llm.FauxAssistantMessage([]llm.ContentPart{
+			llm.FauxToolCall("inspect", map[string]any{}, "call-3"),
+		}, "toolUse")},
+		{Message: llm.FauxAssistantText("done")},
+	})
+
+	type turnToolContext struct {
+		Version int
+	}
+	resolutions := 0
+	var executedMu sync.Mutex
+	var executed []int
+	harness := MustNewAgentHarness(AgentHarnessOptions{
+		Session: NewSession(MustInMemorySessionStorage()),
+		Model:   registration.MustModel(),
+		ToolContext: func(context.Context) (any, error) {
+			resolutions++
+			return turnToolContext{Version: resolutions}, nil
+		},
+		HarnessTools: []AgentHarnessTool{{
+			Name:        "inspect",
+			Description: "Inspect the current turn context.",
+			Parameters:  llm.Object(map[string]llm.Schema{}),
+			Execute: func(_ context.Context, _ string, _ map[string]any, _ core.AgentToolUpdateCallback, contextValue any) (core.AgentToolResult, error) {
+				toolContext, ok := contextValue.(turnToolContext)
+				if !ok {
+					return core.AgentToolResult{}, errString("unexpected tool context")
+				}
+				executedMu.Lock()
+				executed = append(executed, toolContext.Version)
+				executedMu.Unlock()
+				return core.AgentToolResult{Content: []llm.ContentPart{llm.Text("ok")}}, nil
+			},
+		}},
+	})
+
+	if _, err := harness.Prompt(ctx, "inspect"); err != nil {
+		t.Fatal(err)
+	}
+	if resolutions != 4 {
+		t.Fatalf("tool context resolutions = %d, want 4", resolutions)
+	}
+	executedMu.Lock()
+	defer executedMu.Unlock()
+	counts := map[int]int{}
+	for _, version := range executed {
+		counts[version]++
+	}
+	if !reflect.DeepEqual(counts, map[int]int{1: 2, 2: 1}) {
+		t.Fatalf("executed context versions = %#v", executed)
+	}
+}
+
 func TestAgentHarnessHookFailurePersistsAssistantError(t *testing.T) {
 	ctx := context.Background()
 	registration := llm.RegisterFauxProvider()

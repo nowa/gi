@@ -91,6 +91,7 @@ type SystemPromptContext struct {
 
 type AgentHarnessOptions struct {
 	Env                 any
+	ToolContext         AgentHarnessToolContextSource
 	Session             *Session
 	Models              SimpleCompletionRuntime
 	Model               llm.Model
@@ -101,6 +102,7 @@ type AgentHarnessOptions struct {
 	Retry               llm.RetryPolicy
 	Resources           AgentHarnessResources
 	Tools               []core.AgentTool
+	HarnessTools        []AgentHarnessTool
 	ActiveToolNames     []string
 	StreamOptions       AgentHarnessStreamOptions
 	SteeringMode        string
@@ -272,6 +274,7 @@ type pendingSessionWrite struct {
 type agentHarnessTurnState struct {
 	Messages      []llm.Message
 	Resources     AgentHarnessResources
+	ToolContext   any
 	StreamOptions AgentHarnessStreamOptions
 	SessionID     string
 	SystemPrompt  string
@@ -299,7 +302,9 @@ type AgentHarness struct {
 	getAPIKeyAndHeaders  func(context.Context, llm.Model) (AgentHarnessAuth, bool, error)
 	retry                llm.RetryPolicy
 	resources            AgentHarnessResources
-	tools                map[string]core.AgentTool
+	toolContext          AgentHarnessToolContextSource
+	tools                map[string]AgentHarnessTool
+	toolNames            []string
 	activeToolNames      []string
 	steerQueue           []llm.Message
 	steeringQueueMode    string
@@ -331,10 +336,25 @@ func NewAgentHarness(options AgentHarnessOptions) (*AgentHarness, error) {
 	if toolExecution == "" {
 		toolExecution = core.ToolExecutionParallel
 	}
-	tools := make(map[string]core.AgentTool, len(options.Tools))
+	tools := make(map[string]AgentHarnessTool, len(options.Tools)+len(options.HarnessTools))
+	toolNames := make([]string, 0, len(options.Tools)+len(options.HarnessTools))
 	activeToolNames := append([]string{}, options.ActiveToolNames...)
 	for _, tool := range options.Tools {
+		if _, exists := tools[tool.Name]; exists {
+			return nil, newAgentHarnessError("invalid_argument", "duplicate tool name: %s", tool.Name)
+		}
+		tools[tool.Name] = ContextFreeAgentHarnessTool(tool)
+		toolNames = append(toolNames, tool.Name)
+		if len(options.ActiveToolNames) == 0 {
+			activeToolNames = append(activeToolNames, tool.Name)
+		}
+	}
+	for _, tool := range options.HarnessTools {
+		if _, exists := tools[tool.Name]; exists {
+			return nil, newAgentHarnessError("invalid_argument", "duplicate tool name: %s", tool.Name)
+		}
 		tools[tool.Name] = tool
+		toolNames = append(toolNames, tool.Name)
 		if len(options.ActiveToolNames) == 0 {
 			activeToolNames = append(activeToolNames, tool.Name)
 		}
@@ -354,8 +374,10 @@ func NewAgentHarness(options AgentHarnessOptions) (*AgentHarness, error) {
 		getAPIKeyAndHeaders: options.GetAPIKeyAndHeaders,
 		retry:               options.Retry,
 		resources:           options.Resources.Clone(),
+		toolContext:         options.ToolContext,
 		streamOptions:       cloneHarnessStreamOptions(options.StreamOptions),
 		tools:               tools,
+		toolNames:           toolNames,
 		activeToolNames:     activeToolNames,
 		steeringQueueMode:   steeringMode,
 		followUpQueueMode:   followUpMode,
@@ -486,9 +508,27 @@ func (h *AgentHarness) SetThinkingLevel(ctx context.Context, level string) error
 }
 
 func (h *AgentHarness) SetTools(tools []core.AgentTool, activeToolNames ...string) error {
-	nextTools := make(map[string]core.AgentTool, len(tools))
+	harnessTools := make([]AgentHarnessTool, 0, len(tools))
 	for _, tool := range tools {
+		harnessTools = append(harnessTools, ContextFreeAgentHarnessTool(tool))
+	}
+	return h.setHarnessTools(harnessTools, activeToolNames...)
+}
+
+// SetHarnessTools replaces the registered context-aware tools.
+func (h *AgentHarness) SetHarnessTools(tools []AgentHarnessTool, activeToolNames ...string) error {
+	return h.setHarnessTools(tools, activeToolNames...)
+}
+
+func (h *AgentHarness) setHarnessTools(tools []AgentHarnessTool, activeToolNames ...string) error {
+	nextTools := make(map[string]AgentHarnessTool, len(tools))
+	nextToolNames := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		if _, exists := nextTools[tool.Name]; exists {
+			return newAgentHarnessError("invalid_argument", "duplicate tool name: %s", tool.Name)
+		}
 		nextTools[tool.Name] = tool
+		nextToolNames = append(nextToolNames, tool.Name)
 	}
 	nextActiveNames := append([]string{}, activeToolNames...)
 	if len(nextActiveNames) == 0 {
@@ -502,6 +542,7 @@ func (h *AgentHarness) SetTools(tools []core.AgentTool, activeToolNames ...strin
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.tools = nextTools
+	h.toolNames = nextToolNames
 	h.activeToolNames = nextActiveNames
 	return nil
 }
@@ -966,9 +1007,19 @@ func (h *AgentHarness) createTurnState(ctx context.Context) (agentHarnessTurnSta
 	buildSystemPrompt := h.buildSystemPrompt
 	activeTools := h.activeToolsLocked()
 	tools := h.toolsLocked()
+	toolContextSource := h.toolContext
 	env := h.Env
 	session := h.session
 	h.mu.Unlock()
+
+	var toolContext any
+	if toolContextSource != nil {
+		toolContext, err = toolContextSource(ctx)
+		if err != nil {
+			return agentHarnessTurnState{}, err
+		}
+	}
+	boundActiveTools := bindHarnessTools(activeTools, toolContext)
 
 	resolvedSystemPrompt := "You are a helpful assistant."
 	if buildSystemPrompt != nil {
@@ -977,7 +1028,7 @@ func (h *AgentHarness) createTurnState(ctx context.Context) (agentHarnessTurnSta
 			Session:       session,
 			Model:         model,
 			ThinkingLevel: thinkingLevel,
-			ActiveTools:   activeTools,
+			ActiveTools:   boundActiveTools,
 			Resources:     resources.Clone(),
 		})
 		if err != nil {
@@ -990,13 +1041,14 @@ func (h *AgentHarness) createTurnState(ctx context.Context) (agentHarnessTurnSta
 	return agentHarnessTurnState{
 		Messages:      cloneMessages(sessionContext.Messages),
 		Resources:     resources,
+		ToolContext:   toolContext,
 		StreamOptions: streamOptions,
 		SessionID:     metadata.ID,
 		SystemPrompt:  resolvedSystemPrompt,
 		Model:         model,
 		ThinkingLevel: thinkingLevel,
-		Tools:         tools,
-		ActiveTools:   activeTools,
+		Tools:         bindHarnessTools(tools, toolContext),
+		ActiveTools:   boundActiveTools,
 	}, nil
 }
 
@@ -1460,8 +1512,8 @@ func (h *AgentHarness) flushPendingSessionWrites() error {
 	}
 }
 
-func (h *AgentHarness) activeToolsLocked() []core.AgentTool {
-	activeTools := make([]core.AgentTool, 0, len(h.activeToolNames))
+func (h *AgentHarness) activeToolsLocked() []AgentHarnessTool {
+	activeTools := make([]AgentHarnessTool, 0, len(h.activeToolNames))
 	for _, name := range h.activeToolNames {
 		if tool, ok := h.tools[name]; ok {
 			activeTools = append(activeTools, tool)
@@ -1470,12 +1522,22 @@ func (h *AgentHarness) activeToolsLocked() []core.AgentTool {
 	return activeTools
 }
 
-func (h *AgentHarness) toolsLocked() []core.AgentTool {
-	tools := make([]core.AgentTool, 0, len(h.tools))
-	for _, tool := range h.tools {
-		tools = append(tools, tool)
+func (h *AgentHarness) toolsLocked() []AgentHarnessTool {
+	tools := make([]AgentHarnessTool, 0, len(h.tools))
+	for _, name := range h.toolNames {
+		if tool, ok := h.tools[name]; ok {
+			tools = append(tools, tool)
+		}
 	}
 	return tools
+}
+
+func bindHarnessTools(tools []AgentHarnessTool, toolContext any) []core.AgentTool {
+	bound := make([]core.AgentTool, 0, len(tools))
+	for _, tool := range tools {
+		bound = append(bound, tool.bind(toolContext))
+	}
+	return bound
 }
 
 func ApplyStreamOptionsPatch(base AgentHarnessStreamOptions, patch AgentHarnessStreamOptionsPatch) AgentHarnessStreamOptions {
@@ -1581,7 +1643,7 @@ func agentEventToHarnessEvent(event core.AgentEvent) AgentHarnessEvent {
 	}
 }
 
-func validateToolNames(names []string, tools map[string]core.AgentTool) error {
+func validateToolNames(names []string, tools map[string]AgentHarnessTool) error {
 	var missing []string
 	for _, name := range names {
 		if _, ok := tools[name]; !ok {
