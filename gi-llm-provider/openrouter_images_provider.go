@@ -19,7 +19,12 @@ func init() {
 }
 
 func (p OpenRouterImagesProvider) GenerateImages(model ImagesModel, imagesContext ImagesContext, options ImagesOptions) (AssistantImages, error) {
-	apiKey := apiKeyOrEnv(model.Provider, options.APIKey)
+	apiKey := options.APIKey
+	if options.APIKeyOverride == nil {
+		apiKey = apiKeyOrEnv(model.Provider, apiKey)
+	} else {
+		apiKey = *options.APIKeyOverride
+	}
 	if apiKey == "" {
 		return ErrorImages(model, fmt.Errorf("missing API key for provider %s", model.Provider)), nil
 	}
@@ -66,15 +71,13 @@ func (p OpenRouterImagesProvider) GenerateImages(model ImagesModel, imagesContex
 }
 
 func openRouterImagesHeaders(model ImagesModel, options ImagesOptions, apiKey string) map[string]string {
-	headers := map[string]string{}
-	for key, value := range model.Headers {
-		headers[key] = value
+	headers := mergeHeadersCaseInsensitive(model.Headers, options.Headers)
+	if headers == nil {
+		headers = map[string]string{}
 	}
-	for key, value := range options.Headers {
-		headers[key] = value
-	}
+	removeHeaderCaseInsensitive(headers, "Authorization")
 	headers["Authorization"] = "Bearer " + apiKey
-	return headers
+	return applyHeaderRemovals(headers, options.HeaderRemovals)
 }
 
 func openRouterImagesEndpoint(baseURL string) string {

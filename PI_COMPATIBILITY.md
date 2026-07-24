@@ -191,6 +191,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/env-api-keys.test.ts` | `gi-llm-provider/env_test.go` |
 | `packages/ai/test/faux-provider.test.ts` | `gi-llm-provider/faux_test.go` |
 | `packages/ai/test/fireworks-models.test.ts` | `gi-llm-provider/model_catalog_test.go` |
+| `packages/ai/test/images-models.test.ts` | `gi-llm-provider/images_models_test.go` |
 | `packages/ai/test/images.test.ts` | `gi-llm-provider/openrouter_images_test.go` |
 | `packages/ai/test/anthropic-eager-tool-input-compat.test.ts` | `gi-llm-provider/anthropic_payload_test.go` |
 | `packages/ai/test/anthropic-eager-tool-input-e2e.test.ts` | `gi-llm-provider/anthropic_e2e_contracts_test.go` |

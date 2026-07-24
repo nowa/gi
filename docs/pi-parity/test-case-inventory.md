@@ -294,7 +294,7 @@ These rows have a candidate Gi test file but no obvious Go test/subtest name mat
 | `packages/ai/test/google-vertex-api-key-resolution.test.ts` | 8 | yes | `gi-llm-provider/config_test.go`<br>`gi-llm-provider/google_convert_test.go`<br>`gi-llm-provider/google_provider_test.go` |
 | `packages/ai/test/image-model-data.test.ts` | 3 | yes | `gi-llm-provider/model_catalog_test.go` |
 | `packages/ai/test/image-tool-result.test.ts` | 34 | yes | `gi-llm-provider/anthropic_payload_test.go`<br>`gi-llm-provider/google_convert_test.go`<br>`gi-llm-provider/openai_responses_stream_test.go` |
-| `packages/ai/test/images-models.test.ts` | 6 | yes | `gi-llm-provider/models_runtime_test.go`<br>`gi-llm-provider/models_test.go`<br>`gi-llm-provider/openrouter_images_test.go` |
+| `packages/ai/test/images-models.test.ts` | 6 | yes | `gi-llm-provider/images_models_test.go` |
 | `packages/ai/test/images.test.ts` | 3 | yes | `gi-llm-provider/openrouter_images_test.go` |
 | `packages/ai/test/interleaved-thinking.test.ts` | 4 | yes | `gi-llm-provider/anthropic_payload_test.go`<br>`gi-llm-provider/bedrock_stream_test.go` |
 | `packages/ai/test/kimi-coding-oauth.test.ts` | 6 | yes | `gi-llm-provider/kimi_oauth_test.go`<br>`gi-llm-provider/oauth_device_code_test.go`<br>`gi-llm-provider/oauth_page_test.go`<br>`gi-llm-provider/oauth_test.go`<br>`gi-llm-provider/openrouter_oauth_test.go` |

@@ -56,12 +56,17 @@ type AssistantImages struct {
 }
 
 type ImagesOptions struct {
-	Context         context.Context
-	APIKey          string
+	Context context.Context
+	APIKey  string
+	// APIKeyOverride distinguishes an explicit empty key from no override.
+	APIKeyOverride  *string
 	Headers         map[string]string
+	HeaderRemovals  []string
+	Env             ProviderEnv
 	TimeoutMillis   int
 	MaxRetries      int
 	MaxRetryDelayMs int
+	Metadata        map[string]any
 	OnPayload       func(payload any, model ImagesModel) (any, bool, error)
 	OnResponse      func(status int, headers map[string]string, model ImagesModel) error
 }

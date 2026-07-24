@@ -172,6 +172,46 @@ func TestOpenRouterImagesProviderPostsAndParsesHTTP(t *testing.T) {
 	}
 }
 
+func TestOpenRouterImagesHeadersMergeCaseInsensitively(t *testing.T) {
+	headers := openRouterImagesHeaders(
+		ImagesModel{Headers: map[string]string{
+			"authorization": "stale",
+			"X-Shared":      "model",
+			"X-Remove":      "remove",
+		}},
+		ImagesOptions{
+			Headers:        map[string]string{"x-shared": "request"},
+			HeaderRemovals: []string{"x-remove"},
+		},
+		"resolved-key",
+	)
+	want := map[string]string{
+		"Authorization": "Bearer resolved-key",
+		"x-shared":      "request",
+	}
+	if !reflect.DeepEqual(headers, want) {
+		t.Fatalf("headers = %#v, want %#v", headers, want)
+	}
+}
+
+func TestOpenRouterImagesExplicitEmptyKeyDoesNotUseAmbientFallback(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "ambient-key")
+	explicitEmpty := ""
+	model := MustGetImageModel("openrouter", "black-forest-labs/flux.2-pro")
+	result, err := NewOpenRouterImagesProvider(nil).GenerateImages(
+		model,
+		ImagesContext{},
+		ImagesOptions{APIKeyOverride: &explicitEmpty},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.StopReason != ImagesStopReasonError ||
+		!strings.Contains(result.ErrorMessage, "missing API key") {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestOpenRouterImagesProviderHandlesHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
