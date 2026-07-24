@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
@@ -34,7 +35,7 @@ func TestInMemorySessionStorage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewInMemorySessionStorage() error = %v", err)
 	}
-	if got := storage.Metadata(); got != metadata {
+	if got := storage.Metadata(); !reflect.DeepEqual(got, metadata) {
 		t.Fatalf("metadata = %#v", got)
 	}
 
@@ -103,7 +104,13 @@ func TestInMemorySessionStorageLabelsAndPath(t *testing.T) {
 func TestJsonlSessionStorage(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "session.jsonl")
-	storage, err := CreateJsonlSessionStorage(filePath, SessionMetadata{ID: "session-1", CreatedAt: "2026-01-01T00:00:00.000Z", CWD: dir, ParentSessionPath: "/tmp/parent.jsonl"})
+	storage, err := CreateJsonlSessionStorage(filePath, SessionMetadata{
+		ID:                "session-1",
+		CreatedAt:         "2026-01-01T00:00:00.000Z",
+		CWD:               dir,
+		ParentSessionPath: "/tmp/parent.jsonl",
+		Metadata:          map[string]any{"source": "test"},
+	})
 	if err != nil {
 		t.Fatalf("CreateJsonlSessionStorage() error = %v", err)
 	}
@@ -125,7 +132,8 @@ func TestJsonlSessionStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if metadata.ID != "session-1" || metadata.CWD != dir || metadata.Path != filePath || metadata.ParentSessionPath != "/tmp/parent.jsonl" {
+	if metadata.ID != "session-1" || metadata.CWD != dir || metadata.Path != filePath || metadata.ParentSessionPath != "/tmp/parent.jsonl" ||
+		!reflect.DeepEqual(metadata.Metadata, map[string]any{"source": "test"}) {
 		t.Fatalf("metadata = %#v", metadata)
 	}
 	loaded, err := OpenJsonlSessionStorage(filePath)
@@ -134,6 +142,125 @@ func TestJsonlSessionStorage(t *testing.T) {
 	}
 	if got := entryIDs(loaded.Entries()); !reflect.DeepEqual(got, []string{"user-1"}) {
 		t.Fatalf("loaded entries = %#v", got)
+	}
+	if !reflect.DeepEqual(loaded.Metadata().Metadata, map[string]any{"source": "test"}) {
+		t.Fatalf("loaded header metadata = %#v", loaded.Metadata().Metadata)
+	}
+}
+
+func TestSessionStorageStatsAndCursor(t *testing.T) {
+	assistant := harnessAssistantMessage("answer")
+	assistant.Usage = llm.Usage{
+		Input:      10,
+		Output:     4,
+		CacheRead:  3,
+		CacheWrite: 2,
+		Cost:       llm.UsageCost{Total: 0.5},
+	}
+	compactionUsage := llm.Usage{
+		Input:      5,
+		Output:     2,
+		CacheRead:  1,
+		CacheWrite: 1,
+		Cost:       llm.UsageCost{Total: 0.2},
+	}
+	storage, err := NewInMemorySessionStorage(nil, []Entry{
+		{Type: "message", ID: "user", Timestamp: nowISO(), Message: harnessUserMessage("question")},
+		{Type: "message", ID: "assistant", ParentID: stringPtr("user"), Timestamp: nowISO(), Message: assistant},
+		{Type: "compaction", ID: "compaction", ParentID: stringPtr("assistant"), Timestamp: nowISO(), Usage: &compactionUsage},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := storage.SessionStats(), (SessionStats{
+		MessageCount:   2,
+		CachedTokens:   4,
+		UncachedTokens: 18,
+		TotalTokens:    28,
+		CostTotal:      0.7,
+	}); got != want {
+		t.Fatalf("stats = %#v, want %#v", got, want)
+	}
+	if got, want := entryIDs(storage.Entries(SessionEntryCursorOptions{AfterEntrySeq: 1, Limit: 1})), []string{"assistant"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("cursor entries = %#v, want %#v", got, want)
+	}
+	if got, want := entryIDs(storage.Entries(SessionEntryCursorOptions{AfterEntrySeq: 1})), []string{"assistant", "compaction"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unbounded cursor entries = %#v, want %#v", got, want)
+	}
+	if got := storage.Entries(SessionEntryCursorOptions{AfterEntrySeq: 99, Limit: 10}); len(got) != 0 {
+		t.Fatalf("out-of-range cursor entries = %#v", got)
+	}
+}
+
+func TestInMemorySessionStorageOwnsStateAndSupportsConcurrentAccess(t *testing.T) {
+	activeToolNames := []string{"read"}
+	storage, err := NewInMemorySessionStorage(nil, []Entry{{
+		Type:            "active_tools_change",
+		ID:              "initial",
+		Timestamp:       nowISO(),
+		ActiveToolNames: activeToolNames,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activeToolNames[0] = "mutated"
+	entry, ok := storage.Entry("initial")
+	if !ok || !reflect.DeepEqual(entry.ActiveToolNames, []string{"read"}) {
+		t.Fatalf("stored entry = %#v", entry)
+	}
+	entry.ActiveToolNames[0] = "returned mutation"
+	entry, _ = storage.Entry("initial")
+	if !reflect.DeepEqual(entry.ActiveToolNames, []string{"read"}) {
+		t.Fatalf("entry mutation escaped storage: %#v", entry)
+	}
+
+	const appendCount = 64
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(appendCount)
+	for index := 0; index < appendCount; index++ {
+		go func() {
+			defer waitGroup.Done()
+			id := storage.CreateEntryID()
+			if err := storage.AppendEntry(Entry{Type: "custom", ID: id, Timestamp: nowISO()}); err != nil {
+				t.Errorf("AppendEntry() error = %v", err)
+			}
+			_ = storage.Entries()
+		}()
+	}
+	waitGroup.Wait()
+	entries := storage.Entries()
+	if got, want := len(entries), appendCount+1; got != want {
+		t.Fatalf("entry count = %d, want %d", got, want)
+	}
+	seen := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if _, exists := seen[entry.ID]; exists {
+			t.Fatalf("duplicate entry id %q", entry.ID)
+		}
+		seen[entry.ID] = struct{}{}
+	}
+}
+
+func TestJsonlAppendFailureDoesNotAdvanceMemoryState(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "session.jsonl")
+	storage, err := CreateJsonlSessionStorage(filePath, SessionMetadata{
+		ID:        "session-1",
+		CreatedAt: nowISO(),
+		CWD:       filepath.Dir(filePath),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filePath); err != nil {
+		t.Fatal(err)
+	}
+	err = storage.AppendEntry(Entry{Type: "custom", ID: storage.CreateEntryID(), Timestamp: nowISO()})
+	if err == nil {
+		t.Fatal("AppendEntry() error = nil")
+	}
+	if got := storage.Entries(); len(got) != 0 {
+		t.Fatalf("in-memory entries advanced after failed append: %#v", got)
 	}
 }
 

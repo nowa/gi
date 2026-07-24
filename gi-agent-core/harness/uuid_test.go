@@ -2,6 +2,7 @@ package harness
 
 import (
 	"regexp"
+	"sync"
 	"testing"
 )
 
@@ -38,5 +39,29 @@ func TestUUIDv7LayoutAndMonotonicOrder(t *testing.T) {
 	}
 	if !(first < second && second < third) {
 		t.Fatalf("uuids are not monotonic: %s %s %s", first, second, third)
+	}
+}
+
+func TestUUIDv7ConcurrentGenerationIsUnique(t *testing.T) {
+	ResetUUIDv7ForTest()
+	const count = 256
+	ids := make(chan string, count)
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(count)
+	for index := 0; index < count; index++ {
+		go func() {
+			defer waitGroup.Done()
+			ids <- UUIDv7()
+		}()
+	}
+	waitGroup.Wait()
+	close(ids)
+
+	seen := make(map[string]struct{}, count)
+	for id := range ids {
+		if _, exists := seen[id]; exists {
+			t.Fatalf("duplicate UUID %q", id)
+		}
+		seen[id] = struct{}{}
 	}
 }

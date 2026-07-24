@@ -91,6 +91,44 @@ func runSessionSuite(t *testing.T, name string, createStorage func(t *testing.T)
 		}
 	})
 
+	t.Run(name+"/restores retained compaction tails without walking old history", func(t *testing.T) {
+		session := NewSession(createStorage(t))
+		oldUser, _ := session.AppendMessage(harnessUserMessage("old user"))
+		_, _ = session.AppendMessage(harnessAssistantMessage("old assistant"))
+		retainedTail := []llm.Message{
+			harnessUserMessage("retained user"),
+			harnessAssistantMessage("retained assistant"),
+		}
+		compactionID, err := session.AppendCompactionWithOptions(
+			"summary",
+			oldUser,
+			1234,
+			SessionEntryOptions{RetainedTail: retainedTail},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		afterID, _ := session.AppendMessage(harnessUserMessage("after"))
+
+		branch, err := session.Branch(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := entryIDs(branch), []string{compactionID, afterID}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("branch ids = %#v, want %#v", got, want)
+		}
+		context, err := session.BuildContext()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := messageRoles(context.Messages), []string{"compactionSummary", "user", "assistant", "user"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("context roles = %#v, want %#v", got, want)
+		}
+		if got := context.Messages[1].Content[0].Text; got != "retained user" {
+			t.Fatalf("retained message = %q", got)
+		}
+	})
+
 	t.Run(name+"/supports moving with branch summary entries in context and supports custom message entries in context", func(t *testing.T) {
 		session := NewSession(createStorage(t))
 		user1, _ := session.AppendMessage(harnessUserMessage("one"))
@@ -191,6 +229,52 @@ func TestSessionSuites(t *testing.T) {
 			t.Fatalf("jsonl content = %s", string(content))
 		}
 	})
+}
+
+func TestSessionContextBuildPipeline(t *testing.T) {
+	session := NewSession(
+		MustInMemorySessionStorage(),
+		SessionContextBuildOptions{
+			EntryTransforms: []ContextEntryTransform{
+				func(entries []Entry) []Entry {
+					filtered := make([]Entry, 0, len(entries))
+					for _, entry := range entries {
+						if entry.Type != "message" {
+							filtered = append(filtered, entry)
+						}
+					}
+					return filtered
+				},
+			},
+			EntryProjectors: map[string]CustomEntryContextMessageProjector{
+				"audit": func(entry Entry, _ int, _ []Entry) []llm.Message {
+					return []llm.Message{llm.UserMessageText("projected: " + entry.Data.(string))}
+				},
+			},
+		},
+	)
+	_, _ = session.AppendMessage(harnessUserMessage("filtered"))
+	_, _ = session.AppendCustomEntry("audit", "kept")
+	_, _ = session.AppendThinkingLevelChange("high")
+	_, _ = session.AppendModelChange("openai", "gpt-5")
+	_, _ = session.AppendActiveToolsChange([]string{"read", "write"})
+
+	context, err := session.BuildContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := messageRoles(context.Messages), []string{"user"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("message roles = %#v, want %#v", got, want)
+	}
+	if got := context.Messages[0].Content[0].Text; got != "projected: kept" {
+		t.Fatalf("projected message = %q", got)
+	}
+	if context.ThinkingLevel != "high" || context.Model == nil || context.Model.Provider != "openai" || context.Model.ModelID != "gpt-5" {
+		t.Fatalf("context state = %#v", context)
+	}
+	if got, want := context.ActiveToolNames, []string{"read", "write"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("active tools = %#v, want %#v", got, want)
+	}
 }
 
 func TestSessionPiCaseNames(t *testing.T) {

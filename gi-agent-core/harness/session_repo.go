@@ -15,11 +15,17 @@ func NewInMemorySessionRepo() *InMemorySessionRepo {
 	return &InMemorySessionRepo{sessions: map[string]*Session{}}
 }
 
-func (r *InMemorySessionRepo) Create(id string) (*Session, error) {
+func (r *InMemorySessionRepo) Create(id string, options ...SessionCreateOptions) (*Session, error) {
 	if id == "" {
 		id = UUIDv7()
 	}
-	storage, err := NewInMemorySessionStorage(&SessionMetadata{ID: id, CreatedAt: nowISO()}, nil)
+	option := lastSessionCreateOptions(options)
+	storage, err := NewInMemorySessionStorage(&SessionMetadata{
+		ID:                id,
+		CreatedAt:         nowISO(),
+		ParentSessionPath: option.ParentSessionPath,
+		Metadata:          cloneSessionMetadataMap(option.Metadata),
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +55,7 @@ func (r *InMemorySessionRepo) Delete(metadata SessionMetadata) {
 	delete(r.sessions, metadata.ID)
 }
 
-func (r *InMemorySessionRepo) Fork(sourceMetadata SessionMetadata, id string, entryID *string, includeEntry bool) (*Session, error) {
+func (r *InMemorySessionRepo) Fork(sourceMetadata SessionMetadata, id string, entryID *string, includeEntry bool, options ...SessionForkOptions) (*Session, error) {
 	source, err := r.Open(sourceMetadata)
 	if err != nil {
 		return nil, err
@@ -61,7 +67,17 @@ func (r *InMemorySessionRepo) Fork(sourceMetadata SessionMetadata, id string, en
 	if id == "" {
 		id = UUIDv7()
 	}
-	storage, err := NewInMemorySessionStorage(&SessionMetadata{ID: id, CreatedAt: nowISO()}, entries)
+	option := lastSessionForkOptions(options)
+	metadata := sourceMetadata.Metadata
+	if option.Metadata != nil {
+		metadata = option.Metadata
+	}
+	storage, err := NewInMemorySessionStorage(&SessionMetadata{
+		ID:                id,
+		CreatedAt:         nowISO(),
+		ParentSessionPath: option.ParentSessionPath,
+		Metadata:          cloneSessionMetadataMap(metadata),
+	}, entries)
 	if err != nil {
 		return nil, err
 	}
@@ -78,14 +94,21 @@ func NewJsonlSessionRepo(root string) *JsonlSessionRepo {
 	return &JsonlSessionRepo{SessionsRoot: root}
 }
 
-func (r *JsonlSessionRepo) Create(cwd, id string) (*Session, error) {
+func (r *JsonlSessionRepo) Create(cwd, id string, options ...SessionCreateOptions) (*Session, error) {
 	if id == "" {
 		id = UUIDv7()
 	}
 	createdAt := nowISO()
 	dir := filepath.Join(r.SessionsRoot, encodeCWD(cwd))
 	path := filepath.Join(dir, strings.NewReplacer(":", "-", ".", "-").Replace(createdAt)+"_"+id+".jsonl")
-	storage, err := CreateJsonlSessionStorage(path, SessionMetadata{ID: id, CreatedAt: createdAt, CWD: cwd})
+	option := lastSessionCreateOptions(options)
+	storage, err := CreateJsonlSessionStorage(path, SessionMetadata{
+		ID:                id,
+		CreatedAt:         createdAt,
+		CWD:               cwd,
+		ParentSessionPath: option.ParentSessionPath,
+		Metadata:          cloneSessionMetadataMap(option.Metadata),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +171,7 @@ func (r *JsonlSessionRepo) Delete(metadata SessionMetadata) error {
 	return os.Remove(metadata.Path)
 }
 
-func (r *JsonlSessionRepo) Fork(sourceMetadata SessionMetadata, cwd, id string, entryID *string, includeEntry bool) (*Session, error) {
+func (r *JsonlSessionRepo) Fork(sourceMetadata SessionMetadata, cwd, id string, entryID *string, includeEntry bool, options ...SessionForkOptions) (*Session, error) {
 	source, err := r.Open(sourceMetadata)
 	if err != nil {
 		return nil, err
@@ -163,7 +186,22 @@ func (r *JsonlSessionRepo) Fork(sourceMetadata SessionMetadata, cwd, id string, 
 	createdAt := nowISO()
 	dir := filepath.Join(r.SessionsRoot, encodeCWD(cwd))
 	path := filepath.Join(dir, strings.NewReplacer(":", "-", ".", "-").Replace(createdAt)+"_"+id+".jsonl")
-	storage, err := CreateJsonlSessionStorage(path, SessionMetadata{ID: id, CreatedAt: createdAt, CWD: cwd, ParentSessionPath: sourceMetadata.Path})
+	option := lastSessionForkOptions(options)
+	parentSessionPath := sourceMetadata.Path
+	if option.ParentSessionPath != "" {
+		parentSessionPath = option.ParentSessionPath
+	}
+	metadata := sourceMetadata.Metadata
+	if option.Metadata != nil {
+		metadata = option.Metadata
+	}
+	storage, err := CreateJsonlSessionStorage(path, SessionMetadata{
+		ID:                id,
+		CreatedAt:         createdAt,
+		CWD:               cwd,
+		ParentSessionPath: parentSessionPath,
+		Metadata:          cloneSessionMetadataMap(metadata),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -200,4 +238,18 @@ func encodeCWD(cwd string) string {
 	trimmed := strings.TrimLeft(cwd, `/\`)
 	replacer := strings.NewReplacer("/", "-", "\\", "-", ":", "-")
 	return "--" + replacer.Replace(trimmed) + "--"
+}
+
+func lastSessionCreateOptions(options []SessionCreateOptions) SessionCreateOptions {
+	if len(options) == 0 {
+		return SessionCreateOptions{}
+	}
+	return options[len(options)-1]
+}
+
+func lastSessionForkOptions(options []SessionForkOptions) SessionForkOptions {
+	if len(options) == 0 {
+		return SessionForkOptions{}
+	}
+	return options[len(options)-1]
 }

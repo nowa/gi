@@ -257,18 +257,19 @@ type handlerEntry struct {
 }
 
 type pendingSessionWrite struct {
-	kind          string
-	message       llm.Message
-	provider      string
-	modelID       string
-	thinkingLevel string
-	customType    string
-	content       any
-	display       bool
-	details       any
-	targetID      string
-	label         string
-	name          string
+	kind            string
+	message         llm.Message
+	provider        string
+	modelID         string
+	thinkingLevel   string
+	customType      string
+	content         any
+	display         bool
+	details         any
+	targetID        string
+	label           string
+	name            string
+	activeToolNames []string
 }
 
 type agentHarnessTurnState struct {
@@ -338,14 +339,15 @@ func NewAgentHarness(options AgentHarnessOptions) (*AgentHarness, error) {
 	}
 	tools := make(map[string]AgentHarnessTool, len(options.Tools)+len(options.HarnessTools))
 	toolNames := make([]string, 0, len(options.Tools)+len(options.HarnessTools))
-	activeToolNames := append([]string{}, options.ActiveToolNames...)
+	activeToolNames := cloneStrings(options.ActiveToolNames)
+	hasExplicitActiveTools := options.ActiveToolNames != nil
 	for _, tool := range options.Tools {
 		if _, exists := tools[tool.Name]; exists {
 			return nil, newAgentHarnessError("invalid_argument", "duplicate tool name: %s", tool.Name)
 		}
 		tools[tool.Name] = ContextFreeAgentHarnessTool(tool)
 		toolNames = append(toolNames, tool.Name)
-		if len(options.ActiveToolNames) == 0 {
+		if !hasExplicitActiveTools {
 			activeToolNames = append(activeToolNames, tool.Name)
 		}
 	}
@@ -355,7 +357,7 @@ func NewAgentHarness(options AgentHarnessOptions) (*AgentHarness, error) {
 		}
 		tools[tool.Name] = tool
 		toolNames = append(toolNames, tool.Name)
-		if len(options.ActiveToolNames) == 0 {
+		if !hasExplicitActiveTools {
 			activeToolNames = append(activeToolNames, tool.Name)
 		}
 	}
@@ -530,17 +532,25 @@ func (h *AgentHarness) setHarnessTools(tools []AgentHarnessTool, activeToolNames
 		nextTools[tool.Name] = tool
 		nextToolNames = append(nextToolNames, tool.Name)
 	}
-	nextActiveNames := append([]string{}, activeToolNames...)
-	if len(nextActiveNames) == 0 {
-		h.mu.Lock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	nextActiveNames := cloneStrings(activeToolNames)
+	if activeToolNames == nil {
 		nextActiveNames = append(nextActiveNames, h.activeToolNames...)
-		h.mu.Unlock()
 	}
 	if err := validateToolNames(nextActiveNames, nextTools); err != nil {
 		return err
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	if h.phase == AgentHarnessPhaseIdle {
+		if _, err := h.session.AppendActiveToolsChange(nextActiveNames); err != nil {
+			return normalizeHarnessError(err, "session")
+		}
+	} else {
+		h.pendingSessionWrites = append(h.pendingSessionWrites, pendingSessionWrite{
+			kind:            "active_tools_change",
+			activeToolNames: append([]string{}, nextActiveNames...),
+		})
+	}
 	h.tools = nextTools
 	h.toolNames = nextToolNames
 	h.activeToolNames = nextActiveNames
@@ -552,6 +562,16 @@ func (h *AgentHarness) SetActiveTools(toolNames []string) error {
 	defer h.mu.Unlock()
 	if err := validateToolNames(toolNames, h.tools); err != nil {
 		return err
+	}
+	if h.phase == AgentHarnessPhaseIdle {
+		if _, err := h.session.AppendActiveToolsChange(toolNames); err != nil {
+			return normalizeHarnessError(err, "session")
+		}
+	} else {
+		h.pendingSessionWrites = append(h.pendingSessionWrites, pendingSessionWrite{
+			kind:            "active_tools_change",
+			activeToolNames: append([]string{}, toolNames...),
+		})
 	}
 	h.activeToolNames = append([]string{}, toolNames...)
 	return nil
@@ -729,9 +749,10 @@ func (h *AgentHarness) Compact(ctx context.Context, customInstructions string) (
 		result.FirstKeptEntryID,
 		result.TokensBefore,
 		SessionEntryOptions{
-			Details:  result.Details,
-			FromHook: fromHook,
-			Usage:    result.Usage,
+			Details:      result.Details,
+			FromHook:     fromHook,
+			Usage:        result.Usage,
+			RetainedTail: result.RetainedTail,
 		},
 	)
 	if err != nil {
@@ -1499,6 +1520,8 @@ func (h *AgentHarness) flushPendingSessionWrites() error {
 			_, err = h.session.AppendLabel(write.targetID, write.label)
 		case "session_info":
 			_, err = h.session.AppendSessionName(write.name)
+		case "active_tools_change":
+			_, err = h.session.AppendActiveToolsChange(write.activeToolNames)
 		}
 		if err != nil {
 			return normalizeHarnessError(err, "session")
@@ -1727,12 +1750,66 @@ func cloneMessages(messages []llm.Message) []llm.Message {
 	if messages == nil {
 		return nil
 	}
-	return append([]llm.Message{}, messages...)
+	cloned := make([]llm.Message, len(messages))
+	for index, message := range messages {
+		cloned[index] = cloneMessage(message)
+	}
+	return cloned
 }
 
 func cloneEntries(entries []Entry) []Entry {
 	if entries == nil {
 		return nil
 	}
-	return append([]Entry{}, entries...)
+	cloned := make([]Entry, len(entries))
+	for index, entry := range entries {
+		cloned[index] = cloneEntry(entry)
+	}
+	return cloned
+}
+
+func cloneEntry(entry Entry) Entry {
+	entry.ParentID = cloneStringPtr(entry.ParentID)
+	entry.TargetID = cloneStringPtr(entry.TargetID)
+	entry.Label = cloneStringPtr(entry.Label)
+	entry.Message = cloneMessage(entry.Message)
+	entry.ActiveToolNames = cloneStrings(entry.ActiveToolNames)
+	entry.RetainedTail = cloneMessages(entry.RetainedTail)
+	entry.Usage = cloneUsagePointer(entry.Usage)
+	switch content := entry.Content.(type) {
+	case []llm.ContentPart:
+		entry.Content = cloneContentParts(content)
+	}
+	return entry
+}
+
+func cloneMessage(message llm.Message) llm.Message {
+	message.Content = cloneContentParts(message.Content)
+	if message.Diagnostics != nil {
+		message.Diagnostics = append([]llm.AssistantMessageDiagnostic{}, message.Diagnostics...)
+		for index := range message.Diagnostics {
+			message.Diagnostics[index].Details = cloneAnyMap(message.Diagnostics[index].Details)
+		}
+	}
+	message.Display = cloneBoolPtr(message.Display)
+	return message
+}
+
+func cloneContentParts(parts []llm.ContentPart) []llm.ContentPart {
+	if parts == nil {
+		return nil
+	}
+	cloned := append([]llm.ContentPart{}, parts...)
+	for index := range cloned {
+		cloned[index].Arguments = cloneAnyMap(cloned[index].Arguments)
+	}
+	return cloned
+}
+
+func cloneBoolPtr(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }

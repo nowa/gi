@@ -7,29 +7,56 @@ import (
 )
 
 type SessionContext struct {
-	Messages      []llm.Message
-	ThinkingLevel string
+	Messages        []llm.Message
+	ThinkingLevel   string
+	Model           *SessionModel
+	ActiveToolNames []string
+
+	// ModelProvider and ModelID are kept as compatibility mirrors. Model is the
+	// canonical representation for new callers.
 	ModelProvider string
 	ModelID       string
 }
 
+type SessionModel struct {
+	Provider string
+	ModelID  string
+}
+
+type ContextEntryTransform func(entries []Entry) []Entry
+
+type CustomEntryContextMessageProjector func(entry Entry, index int, entries []Entry) []llm.Message
+
+type SessionContextBuildOptions struct {
+	EntryTransforms []ContextEntryTransform
+	EntryProjectors map[string]CustomEntryContextMessageProjector
+}
+
 type Session struct {
-	storage SessionStorage
+	storage             SessionStorage
+	contextBuildOptions SessionContextBuildOptions
 }
 
 type SessionEntryOptions struct {
-	Details  any
-	FromHook bool
-	Usage    *llm.Usage
+	Details      any
+	FromHook     bool
+	Usage        *llm.Usage
+	RetainedTail []llm.Message
 }
 
-func NewSession(storage SessionStorage) *Session {
-	return &Session{storage: storage}
+func NewSession(storage SessionStorage, contextBuildOptions ...SessionContextBuildOptions) *Session {
+	session := &Session{storage: storage}
+	for _, options := range contextBuildOptions {
+		session.contextBuildOptions = mergeSessionContextBuildOptions(session.contextBuildOptions, options)
+	}
+	return session
 }
 
-func (s *Session) Storage() SessionStorage       { return s.storage }
-func (s *Session) Metadata() SessionMetadata     { return s.storage.Metadata() }
-func (s *Session) Entries() []Entry              { return s.storage.Entries() }
+func (s *Session) Storage() SessionStorage   { return s.storage }
+func (s *Session) Metadata() SessionMetadata { return s.storage.Metadata() }
+func (s *Session) Entries(options ...SessionEntryCursorOptions) []Entry {
+	return s.storage.Entries(options...)
+}
 func (s *Session) Entry(id string) (Entry, bool) { return s.storage.Entry(id) }
 func (s *Session) LeafID() (*string, error) {
 	id, ok, err := s.storage.LeafID()
@@ -48,27 +75,32 @@ func (s *Session) Branch(fromID *string) ([]Entry, error) {
 		}
 		leaf = current
 	}
-	return s.storage.PathToRoot(leaf)
+	return s.storage.PathToRootOrCompaction(leaf)
 }
 
-func (s *Session) BuildContext() (SessionContext, error) {
+func (s *Session) BuildContextEntries(options ...SessionContextBuildOptions) ([]Entry, error) {
+	branch, err := s.Branch(nil)
+	if err != nil {
+		return nil, err
+	}
+	return BuildContextEntries(branch, s.mergeContextBuildOptions(options...)), nil
+}
+
+func (s *Session) BuildContext(options ...SessionContextBuildOptions) (SessionContext, error) {
 	branch, err := s.Branch(nil)
 	if err != nil {
 		return SessionContext{}, err
 	}
-	return BuildSessionContext(branch), nil
+	return BuildSessionContext(branch, s.mergeContextBuildOptions(options...)), nil
 }
 
 func (s *Session) Label(id string) (string, bool) { return s.storage.Label(id) }
 
 func (s *Session) SessionName() (string, bool) {
-	entries := s.storage.FindEntries("session_info")
-	if len(entries) == 0 {
-		return "", false
-	}
-	name := strings.TrimSpace(entries[len(entries)-1].Name)
-	return name, name != ""
+	return s.storage.SessionName()
 }
+
+func (s *Session) Stats() SessionStats { return s.storage.SessionStats() }
 
 func (s *Session) AppendMessage(message llm.Message) (string, error) {
 	return s.appendEntry(Entry{Type: "message", ID: s.storage.CreateEntryID(), ParentID: s.currentParentID(), Timestamp: nowISO(), Message: message})
@@ -82,6 +114,16 @@ func (s *Session) AppendModelChange(provider, modelID string) (string, error) {
 	return s.appendEntry(Entry{Type: "model_change", ID: s.storage.CreateEntryID(), ParentID: s.currentParentID(), Timestamp: nowISO(), Provider: provider, ModelID: modelID})
 }
 
+func (s *Session) AppendActiveToolsChange(activeToolNames []string) (string, error) {
+	return s.appendEntry(Entry{
+		Type:            "active_tools_change",
+		ID:              s.storage.CreateEntryID(),
+		ParentID:        s.currentParentID(),
+		Timestamp:       nowISO(),
+		ActiveToolNames: append([]string{}, activeToolNames...),
+	})
+}
+
 func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefore int, details ...any) (string, error) {
 	var entryDetails any
 	if len(details) > 0 {
@@ -91,7 +133,30 @@ func (s *Session) AppendCompaction(summary, firstKeptEntryID string, tokensBefor
 }
 
 func (s *Session) AppendCompactionWithOptions(summary, firstKeptEntryID string, tokensBefore int, options SessionEntryOptions) (string, error) {
-	return s.appendEntry(Entry{Type: "compaction", ID: s.storage.CreateEntryID(), ParentID: s.currentParentID(), Timestamp: nowISO(), Summary: summary, FirstKeptEntryID: firstKeptEntryID, TokensBefore: tokensBefore, Details: options.Details, FromHook: options.FromHook, Usage: cloneUsagePointer(options.Usage)})
+	return s.appendEntry(Entry{
+		Type:             "compaction",
+		ID:               s.storage.CreateEntryID(),
+		ParentID:         s.currentParentID(),
+		Timestamp:        nowISO(),
+		Summary:          summary,
+		FirstKeptEntryID: firstKeptEntryID,
+		TokensBefore:     tokensBefore,
+		RetainedTail:     cloneMessages(options.RetainedTail),
+		Details:          options.Details,
+		FromHook:         options.FromHook,
+		Usage:            cloneUsagePointer(options.Usage),
+	})
+}
+
+func (s *Session) AppendCustomEntry(customType string, data any) (string, error) {
+	return s.appendEntry(Entry{
+		Type:       "custom",
+		ID:         s.storage.CreateEntryID(),
+		ParentID:   s.currentParentID(),
+		Timestamp:  nowISO(),
+		CustomType: customType,
+		Data:       data,
+	})
 }
 
 func (s *Session) AppendCustomMessageEntry(customType string, content any, display bool, details any) (string, error) {
@@ -110,7 +175,8 @@ func (s *Session) AppendLabel(targetID, label string) (string, error) {
 }
 
 func (s *Session) AppendSessionName(name string) (string, error) {
-	return s.appendEntry(Entry{Type: "session_info", ID: s.storage.CreateEntryID(), ParentID: s.currentParentID(), Timestamp: nowISO(), Name: strings.TrimSpace(name)})
+	sanitizedName := strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ").Replace(name)
+	return s.appendEntry(Entry{Type: "session_info", ID: s.storage.CreateEntryID(), ParentID: s.currentParentID(), Timestamp: nowISO(), Name: strings.TrimSpace(sanitizedName)})
 }
 
 func (s *Session) MoveTo(entryID *string, summary string, details ...any) (*string, error) {
@@ -167,67 +233,155 @@ func (s *Session) currentParentID() *string {
 	return &id
 }
 
-func BuildSessionContext(pathEntries []Entry) SessionContext {
-	context := SessionContext{ThinkingLevel: "off"}
-	var compaction *Entry
-	for i := range pathEntries {
-		entry := pathEntries[i]
+type sessionContextState struct {
+	thinkingLevel   string
+	model           *SessionModel
+	activeToolNames []string
+}
+
+func deriveSessionContextState(pathEntries []Entry) sessionContextState {
+	state := sessionContextState{thinkingLevel: "off"}
+	for _, entry := range pathEntries {
 		switch entry.Type {
 		case "thinking_level_change":
-			context.ThinkingLevel = entry.ThinkingLevel
+			state.thinkingLevel = entry.ThinkingLevel
 		case "model_change":
-			context.ModelProvider = entry.Provider
-			context.ModelID = entry.ModelID
+			state.model = &SessionModel{Provider: entry.Provider, ModelID: entry.ModelID}
 		case "message":
 			if entry.Message.Role == llm.RoleAssistant {
-				context.ModelProvider = entry.Message.Provider
-				context.ModelID = entry.Message.Model
+				state.model = &SessionModel{Provider: entry.Message.Provider, ModelID: entry.Message.Model}
 			}
-		case "compaction":
-			compaction = &pathEntries[i]
+		case "active_tools_change":
+			state.activeToolNames = append([]string{}, entry.ActiveToolNames...)
 		}
 	}
+	return state
+}
 
-	appendMessage := func(entry Entry) {
-		switch entry.Type {
-		case "message":
-			context.Messages = append(context.Messages, entry.Message)
-		case "custom_message":
-			context.Messages = append(context.Messages, customMessageFromEntry(entry))
-		case "branch_summary":
-			if entry.Summary != "" {
-				context.Messages = append(context.Messages, branchSummaryMessageFromEntry(entry))
-			}
+func DefaultContextEntryTransform(pathEntries []Entry) []Entry {
+	compactionIndex := -1
+	for index, entry := range pathEntries {
+		if entry.Type == "compaction" {
+			compactionIndex = index
 		}
 	}
+	if compactionIndex == -1 {
+		return cloneEntries(pathEntries)
+	}
 
-	if compaction != nil {
-		context.Messages = append(context.Messages, compactionSummaryMessageFromEntry(*compaction))
-		compactionIndex := -1
-		for i, entry := range pathEntries {
-			if entry.ID == compaction.ID {
-				compactionIndex = i
-				break
-			}
-		}
+	compaction := pathEntries[compactionIndex]
+	entries := []Entry{cloneEntry(compaction)}
+	if compaction.RetainedTail != nil {
+		entries = append(entries, cloneEntries(pathEntries[compactionIndex+1:])...)
+		return entries
+	}
+	if compaction.FirstKeptEntryID != "" {
 		foundFirstKept := false
-		for i := 0; i < compactionIndex; i++ {
-			entry := pathEntries[i]
+		for _, entry := range pathEntries[:compactionIndex] {
 			if entry.ID == compaction.FirstKeptEntryID {
 				foundFirstKept = true
 			}
 			if foundFirstKept {
-				appendMessage(entry)
+				entries = append(entries, cloneEntry(entry))
 			}
 		}
-		for i := compactionIndex + 1; i < len(pathEntries); i++ {
-			appendMessage(pathEntries[i])
-		}
-		return context
 	}
+	entries = append(entries, cloneEntries(pathEntries[compactionIndex+1:])...)
+	return entries
+}
 
-	for _, entry := range pathEntries {
-		appendMessage(entry)
+func BuildContextEntries(pathEntries []Entry, options ...SessionContextBuildOptions) []Entry {
+	mergedOptions := mergeSessionContextBuildOptions(SessionContextBuildOptions{}, options...)
+	entries := DefaultContextEntryTransform(pathEntries)
+	for _, transform := range mergedOptions.EntryTransforms {
+		if transform == nil {
+			continue
+		}
+		entries = cloneEntries(transform(cloneEntries(entries)))
+	}
+	return entries
+}
+
+func SessionEntryToContextMessages(entry Entry, index int, entries []Entry, options ...SessionContextBuildOptions) []llm.Message {
+	switch entry.Type {
+	case "message":
+		return []llm.Message{cloneMessage(entry.Message)}
+	case "custom_message":
+		return []llm.Message{customMessageFromEntry(entry)}
+	case "compaction":
+		messages := []llm.Message{compactionSummaryMessageFromEntry(entry)}
+		messages = append(messages, cloneMessages(entry.RetainedTail)...)
+		return messages
+	case "branch_summary":
+		if entry.Summary != "" {
+			return []llm.Message{branchSummaryMessageFromEntry(entry)}
+		}
+	case "custom":
+		mergedOptions := mergeSessionContextBuildOptions(SessionContextBuildOptions{}, options...)
+		if projector := mergedOptions.EntryProjectors[entry.CustomType]; projector != nil {
+			return cloneMessages(projector(entry, index, cloneEntries(entries)))
+		}
+	}
+	return nil
+}
+
+func BuildSessionContext(pathEntries []Entry, options ...SessionContextBuildOptions) SessionContext {
+	mergedOptions := mergeSessionContextBuildOptions(SessionContextBuildOptions{}, options...)
+	state := deriveSessionContextState(pathEntries)
+	context := SessionContext{
+		ThinkingLevel:   state.thinkingLevel,
+		Model:           cloneSessionModel(state.model),
+		ActiveToolNames: cloneStrings(state.activeToolNames),
+	}
+	if state.model != nil {
+		context.ModelProvider = state.model.Provider
+		context.ModelID = state.model.ModelID
+	}
+	contextEntries := BuildContextEntries(pathEntries, mergedOptions)
+	for index, entry := range contextEntries {
+		context.Messages = append(
+			context.Messages,
+			SessionEntryToContextMessages(entry, index, contextEntries, mergedOptions)...,
+		)
 	}
 	return context
+}
+
+func (s *Session) mergeContextBuildOptions(options ...SessionContextBuildOptions) SessionContextBuildOptions {
+	return mergeSessionContextBuildOptions(s.contextBuildOptions, options...)
+}
+
+func mergeSessionContextBuildOptions(base SessionContextBuildOptions, options ...SessionContextBuildOptions) SessionContextBuildOptions {
+	merged := SessionContextBuildOptions{
+		EntryTransforms: append([]ContextEntryTransform{}, base.EntryTransforms...),
+		EntryProjectors: make(map[string]CustomEntryContextMessageProjector, len(base.EntryProjectors)),
+	}
+	for customType, projector := range base.EntryProjectors {
+		merged.EntryProjectors[customType] = projector
+	}
+	for _, option := range options {
+		merged.EntryTransforms = append(merged.EntryTransforms, option.EntryTransforms...)
+		for customType, projector := range option.EntryProjectors {
+			merged.EntryProjectors[customType] = projector
+		}
+	}
+	if len(merged.EntryProjectors) == 0 {
+		merged.EntryProjectors = nil
+	}
+	return merged
+}
+
+func cloneSessionModel(model *SessionModel) *SessionModel {
+	if model == nil {
+		return nil
+	}
+	cloned := *model
+	return &cloned
+}
+
+func cloneStrings(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	return append([]string{}, values...)
 }

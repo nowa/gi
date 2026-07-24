@@ -22,35 +22,62 @@ type PromptTemplate struct {
 }
 
 type SessionMetadata struct {
-	ID                string `json:"id"`
-	CreatedAt         string `json:"createdAt"`
-	CWD               string `json:"cwd,omitempty"`
-	Path              string `json:"path,omitempty"`
-	ParentSessionPath string `json:"parentSessionPath,omitempty"`
+	ID                string         `json:"id"`
+	CreatedAt         string         `json:"createdAt"`
+	CWD               string         `json:"cwd,omitempty"`
+	Path              string         `json:"path,omitempty"`
+	ParentSessionPath string         `json:"parentSessionPath,omitempty"`
+	Metadata          map[string]any `json:"metadata,omitempty"`
 }
 
 type Entry struct {
-	Type             string      `json:"type"`
-	ID               string      `json:"id,omitempty"`
-	ParentID         *string     `json:"parentId,omitempty"`
-	Timestamp        string      `json:"timestamp,omitempty"`
-	Message          llm.Message `json:"message,omitempty"`
-	TargetID         *string     `json:"targetId,omitempty"`
-	Label            *string     `json:"label,omitempty"`
-	ThinkingLevel    string      `json:"thinkingLevel,omitempty"`
-	Provider         string      `json:"provider,omitempty"`
-	ModelID          string      `json:"modelId,omitempty"`
-	Summary          string      `json:"summary,omitempty"`
-	FirstKeptEntryID string      `json:"firstKeptEntryId,omitempty"`
-	TokensBefore     int         `json:"tokensBefore,omitempty"`
-	FromID           string      `json:"fromId,omitempty"`
-	CustomType       string      `json:"customType,omitempty"`
-	Content          any         `json:"content,omitempty"`
-	Display          bool        `json:"display,omitempty"`
-	Details          any         `json:"details,omitempty"`
-	FromHook         bool        `json:"fromHook,omitempty"`
-	Usage            *llm.Usage  `json:"usage,omitempty"`
-	Name             string      `json:"name,omitempty"`
+	Type             string        `json:"type"`
+	ID               string        `json:"id,omitempty"`
+	ParentID         *string       `json:"parentId,omitempty"`
+	Timestamp        string        `json:"timestamp,omitempty"`
+	Message          llm.Message   `json:"message,omitempty"`
+	TargetID         *string       `json:"targetId,omitempty"`
+	Label            *string       `json:"label,omitempty"`
+	ThinkingLevel    string        `json:"thinkingLevel,omitempty"`
+	Provider         string        `json:"provider,omitempty"`
+	ModelID          string        `json:"modelId,omitempty"`
+	ActiveToolNames  []string      `json:"activeToolNames,omitempty"`
+	Summary          string        `json:"summary,omitempty"`
+	FirstKeptEntryID string        `json:"firstKeptEntryId,omitempty"`
+	TokensBefore     int           `json:"tokensBefore,omitempty"`
+	RetainedTail     []llm.Message `json:"retainedTail,omitempty"`
+	FromID           string        `json:"fromId,omitempty"`
+	CustomType       string        `json:"customType,omitempty"`
+	Data             any           `json:"data,omitempty"`
+	Content          any           `json:"content,omitempty"`
+	Display          bool          `json:"display,omitempty"`
+	Details          any           `json:"details,omitempty"`
+	FromHook         bool          `json:"fromHook,omitempty"`
+	Usage            *llm.Usage    `json:"usage,omitempty"`
+	Name             string        `json:"name,omitempty"`
+}
+
+type SessionStats struct {
+	MessageCount   int     `json:"messageCount"`
+	CachedTokens   int     `json:"cachedTokens"`
+	UncachedTokens int     `json:"uncachedTokens"`
+	TotalTokens    int     `json:"totalTokens"`
+	CostTotal      float64 `json:"costTotal"`
+}
+
+type SessionEntryCursorOptions struct {
+	AfterEntrySeq int
+	Limit         int
+}
+
+type SessionCreateOptions struct {
+	ParentSessionPath string
+	Metadata          map[string]any
+}
+
+type SessionForkOptions struct {
+	ParentSessionPath string
+	Metadata          map[string]any
 }
 
 type SessionError struct {

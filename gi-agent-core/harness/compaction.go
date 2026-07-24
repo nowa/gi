@@ -41,6 +41,7 @@ type CompactionPreparation struct {
 	FirstKeptEntryID    string             `json:"firstKeptEntryId"`
 	MessagesToSummarize []llm.Message      `json:"messagesToSummarize"`
 	TurnPrefixMessages  []llm.Message      `json:"turnPrefixMessages"`
+	RetainedTail        []llm.Message      `json:"retainedTail"`
 	IsSplitTurn         bool               `json:"isSplitTurn"`
 	TokensBefore        int                `json:"tokensBefore"`
 	PreviousSummary     string             `json:"previousSummary,omitempty"`
@@ -52,6 +53,7 @@ type CompactionResult struct {
 	Summary              string         `json:"summary"`
 	FirstKeptEntryID     string         `json:"firstKeptEntryId"`
 	TokensBefore         int            `json:"tokensBefore"`
+	RetainedTail         []llm.Message  `json:"retainedTail,omitempty"`
 	EstimatedTokensAfter int            `json:"estimatedTokensAfter,omitempty"`
 	Usage                *llm.Usage     `json:"usage,omitempty"`
 	Details              map[string]any `json:"details,omitempty"`
@@ -354,11 +356,13 @@ func PrepareCompaction(pathEntries []Entry, settings CompactionSettings) (*Compa
 	if cut.IsSplitTurn && cut.TurnStartIndex >= 0 {
 		turnPrefix = entriesToMessages(pathEntries[cut.TurnStartIndex:cut.FirstKeptEntryIndex])
 	}
+	retainedTail := entriesToMessages(pathEntries[cut.FirstKeptEntryIndex:])
 	fileOpsEnd := cut.FirstKeptEntryIndex
 	prep := &CompactionPreparation{
 		FirstKeptEntryID:    firstKept.ID,
 		MessagesToSummarize: messagesToSummarize,
 		TurnPrefixMessages:  turnPrefix,
+		RetainedTail:        retainedTail,
 		IsSplitTurn:         cut.IsSplitTurn,
 		TokensBefore:        tokensBefore,
 		PreviousSummary:     previousSummary,
@@ -683,6 +687,7 @@ func CompactWithOptions(ctx context.Context, prep CompactionPreparation, model l
 		Summary:          summary,
 		FirstKeptEntryID: prep.FirstKeptEntryID,
 		TokensBefore:     prep.TokensBefore,
+		RetainedTail:     cloneMessages(prep.RetainedTail),
 		Usage:            summaryUsage,
 		Details: map[string]any{
 			"readFiles":     readFiles,

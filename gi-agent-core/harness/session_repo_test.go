@@ -95,7 +95,7 @@ func TestJsonlSessionRepoStoresByEncodedCWDAndForks(t *testing.T) {
 	assistant1, _ := source.AppendMessage(harnessAssistantMessage("two"))
 	user2, _ := source.AppendMessage(harnessUserMessage("three"))
 	opened, err := repo.Open(sourceMetadata)
-	if err != nil || opened.Metadata() != sourceMetadata {
+	if err != nil || !reflect.DeepEqual(opened.Metadata(), sourceMetadata) {
 		t.Fatalf("open source = %#v %v", opened.Metadata(), err)
 	}
 	fork, err := repo.Fork(sourceMetadata, "/tmp/target", "fork-session", &user2, false)
@@ -127,6 +127,51 @@ func TestJsonlSessionRepoStoresByEncodedCWDAndForks(t *testing.T) {
 	}
 
 	_ = filepath.Separator
+}
+
+func TestJsonlSessionRepoPersistsHeaderMetadataThroughCreateListAndFork(t *testing.T) {
+	repo := NewJsonlSessionRepo(t.TempDir())
+	source, err := repo.Create(
+		"/tmp/source",
+		"source-session",
+		SessionCreateOptions{Metadata: map[string]any{"profile": "reviewer"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceMetadata := source.Metadata()
+	if got, want := sourceMetadata.Metadata, map[string]any{"profile": "reviewer"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("source metadata = %#v, want %#v", got, want)
+	}
+	listed, err := repo.List("/tmp/source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || !reflect.DeepEqual(listed[0].Metadata, sourceMetadata.Metadata) {
+		t.Fatalf("listed metadata = %#v", listed)
+	}
+
+	inherited, err := repo.Fork(sourceMetadata, "/tmp/target", "fork-session", nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(inherited.Metadata().Metadata, sourceMetadata.Metadata) {
+		t.Fatalf("inherited metadata = %#v", inherited.Metadata().Metadata)
+	}
+	overridden, err := repo.Fork(
+		sourceMetadata,
+		"/tmp/target",
+		"overridden-session",
+		nil,
+		true,
+		SessionForkOptions{Metadata: map[string]any{"profile": "writer"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := overridden.Metadata().Metadata, map[string]any{"profile": "writer"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("overridden metadata = %#v, want %#v", got, want)
+	}
 }
 
 func metadataIDs(metadata []SessionMetadata) []string {

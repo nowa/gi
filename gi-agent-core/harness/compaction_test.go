@@ -108,7 +108,7 @@ func TestPrepareCompactionUsesPreviousSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prep == nil || prep.PreviousSummary != "First summary" || prep.FirstKeptEntryID == "" || prep.TokensBefore == 0 {
+	if prep == nil || prep.PreviousSummary != "First summary" || prep.FirstKeptEntryID == "" || prep.TokensBefore == 0 || len(prep.RetainedTail) == 0 {
 		t.Fatalf("prep = %#v", prep)
 	}
 }
@@ -226,6 +226,7 @@ func TestGenerateSummaryAndCompact(t *testing.T) {
 		FirstKeptEntryID:    "entry-keep",
 		MessagesToSummarize: []llm.Message{llm.UserMessageText("history")},
 		TurnPrefixMessages:  []llm.Message{llm.UserMessageText("prefix")},
+		RetainedTail:        []llm.Message{llm.UserMessageText("tail")},
 		IsSplitTurn:         true,
 		TokensBefore:        600000,
 		FileOps:             FileOps{Read: map[string]bool{"read.ts": true, "write.ts": true}, Written: map[string]bool{"write.ts": true}, Edited: map[string]bool{}},
@@ -235,7 +236,10 @@ func TestGenerateSummaryAndCompact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FirstKeptEntryID != "entry-keep" || result.Summary == "" || !reflect.DeepEqual(result.Details["readFiles"], []string{"read.ts"}) || !reflect.DeepEqual(result.Details["modifiedFiles"], []string{"write.ts"}) {
+	if result.FirstKeptEntryID != "entry-keep" || result.Summary == "" ||
+		!reflect.DeepEqual(result.RetainedTail, prep.RetainedTail) ||
+		!reflect.DeepEqual(result.Details["readFiles"], []string{"read.ts"}) ||
+		!reflect.DeepEqual(result.Details["modifiedFiles"], []string{"write.ts"}) {
 		t.Fatalf("compact result = %#v", result)
 	}
 	if !strings.Contains(result.Summary, "<read-files>\nread.ts\n</read-files>") || !strings.Contains(result.Summary, "<modified-files>\nwrite.ts\n</modified-files>") {

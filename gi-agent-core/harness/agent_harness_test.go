@@ -39,8 +39,9 @@ func TestAgentHarnessConstructsAndExposesQueueModes(t *testing.T) {
 }
 
 func TestAgentHarnessRejectsDuplicateActiveToolNames(t *testing.T) {
+	session := NewSession(MustInMemorySessionStorage())
 	harness := MustNewAgentHarness(AgentHarnessOptions{
-		Session: NewSession(MustInMemorySessionStorage()),
+		Session: session,
 		Model:   llm.Model{ID: "model-1", API: "api", Provider: "provider"},
 		Tools:   []core.AgentTool{calculateTool(), timeTool()},
 	})
@@ -62,6 +63,43 @@ func TestAgentHarnessRejectsDuplicateActiveToolNames(t *testing.T) {
 	harness.mu.Unlock()
 	if want := []string{"calculate", "time"}; !reflect.DeepEqual(activeToolNames, want) {
 		t.Fatalf("active tools changed after failed validation: got %#v, want %#v", activeToolNames, want)
+	}
+	if err := harness.SetActiveTools([]string{"time"}); err != nil {
+		t.Fatal(err)
+	}
+	sessionContext, err := session.BuildContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := sessionContext.ActiveToolNames, []string{"time"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("persisted active tools = %#v, want %#v", got, want)
+	}
+}
+
+func TestAgentHarnessPreservesExplicitEmptyActiveToolSelection(t *testing.T) {
+	session := NewSession(MustInMemorySessionStorage())
+	harness := MustNewAgentHarness(AgentHarnessOptions{
+		Session:         session,
+		Model:           llm.Model{ID: "model-1", API: "api", Provider: "provider"},
+		Tools:           []core.AgentTool{calculateTool()},
+		ActiveToolNames: []string{},
+	})
+
+	harness.mu.Lock()
+	activeToolNames := cloneStrings(harness.activeToolNames)
+	harness.mu.Unlock()
+	if activeToolNames == nil || len(activeToolNames) != 0 {
+		t.Fatalf("constructor active tools = %#v, want explicit empty selection", activeToolNames)
+	}
+	if err := harness.SetTools([]core.AgentTool{calculateTool(), timeTool()}, []string{}...); err != nil {
+		t.Fatal(err)
+	}
+	context, err := session.BuildContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.ActiveToolNames == nil || len(context.ActiveToolNames) != 0 {
+		t.Fatalf("persisted active tools = %#v, want explicit empty selection", context.ActiveToolNames)
 	}
 }
 
@@ -471,8 +509,9 @@ func TestAgentHarnessRefreshesRuntimeStateAtSavePoints(t *testing.T) {
 		}},
 	})
 
+	session := NewSession(MustInMemorySessionStorage())
 	harness := MustNewAgentHarness(AgentHarnessOptions{
-		Session:       NewSession(MustInMemorySessionStorage()),
+		Session:       session,
 		Model:         registration.MustModel("first"),
 		ThinkingLevel: "off",
 		Resources: AgentHarnessResources{Skills: []Skill{
@@ -521,6 +560,13 @@ func TestAgentHarnessRefreshesRuntimeStateAtSavePoints(t *testing.T) {
 	}
 	if !reflect.DeepEqual(captured, want) {
 		t.Fatalf("captured = %#v", captured)
+	}
+	sessionContext, err := session.BuildContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := sessionContext.ActiveToolNames, []string{"time"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("save-point active tools = %#v, want %#v", got, want)
 	}
 }
 
