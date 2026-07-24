@@ -65,8 +65,9 @@ func TestRPCLineProcessorHandlesViewTreeHostActions(t *testing.T) {
 	host.TUIStatus = statusHost
 	processor.HandleLine(context.Background(), `{"type":"request","protocol":"gi-ext-rpc@1","id":"status_1","method":"host.tui.status","params":{"key":"plan-mode","text":"Plan mode","priority":50}}`)
 	assertHostActionResult(t, lines[len(lines)-1], "status_1", "updated", true)
-	if len(statusHost.statuses) != 1 || statusHost.statuses["plan-mode"] != "Plan mode" {
-		t.Fatalf("statuses = %#v", statusHost.statuses)
+	statuses := statusHost.snapshot()
+	if len(statuses) != 1 || statuses["plan-mode"] != "Plan mode" {
+		t.Fatalf("statuses = %#v", statuses)
 	}
 	statusMounts := host.ViewTreeHost.MountsBySlot("footer")
 	if len(statusMounts) != 1 || statusMounts[0].MountID != "status:plan-mode" {
@@ -1559,10 +1560,13 @@ func (h *recordingTUIThinkingLabelHost) SetHiddenThinkingLabel(label string) err
 }
 
 type recordingTUIStatusHost struct {
+	mu       sync.Mutex
 	statuses map[string]string
 }
 
 func (h *recordingTUIStatusHost) SetTUIStatus(key, text string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if h.statuses == nil {
 		h.statuses = map[string]string{}
 	}
@@ -1572,6 +1576,19 @@ func (h *recordingTUIStatusHost) SetTUIStatus(key, text string) error {
 		h.statuses[key] = text
 	}
 	return nil
+}
+
+func (h *recordingTUIStatusHost) status(key string) (string, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	value, ok := h.statuses[key]
+	return value, ok
+}
+
+func (h *recordingTUIStatusHost) snapshot() map[string]string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return cloneStringMap(h.statuses)
 }
 
 type recordingTUIThemeHost struct {

@@ -107,7 +107,8 @@ func TestProtocolExtensionProcessSupervisorClearsOwnedTUIStatusOnStop(t *testing
 		t.Fatalf("status mount = %#v", rendered)
 	}
 	waitForCondition(t, func() bool {
-		return statusHost.statuses["process-status"] == "Process busy"
+		status, _ := statusHost.status("process-status")
+		return status == "Process busy"
 	}, "process status to reach TUI status host")
 
 	if err := supervisor.Stop(context.Background()); err != nil {
@@ -115,7 +116,7 @@ func TestProtocolExtensionProcessSupervisorClearsOwnedTUIStatusOnStop(t *testing
 	}
 	waitForProcessMountGone(t, host, "status:process-status")
 	waitForCondition(t, func() bool {
-		_, ok := statusHost.statuses["process-status"]
+		_, ok := statusHost.status("process-status")
 		return !ok
 	}, "process status to be cleared from TUI status host")
 }

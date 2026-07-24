@@ -85,6 +85,8 @@ func (h *CLIInteractiveTUIHost) EditorFocused() bool {
 	if focused == nil {
 		return false
 	}
+	h.viewProjectionMu.Lock()
+	defer h.viewProjectionMu.Unlock()
 	if h.customEditorActive {
 		return h.editorContainerHasChild(focused)
 	}
@@ -92,13 +94,20 @@ func (h *CLIInteractiveTUIHost) EditorFocused() bool {
 }
 
 func (h *CLIInteractiveTUIHost) EditorCustomActive() bool {
-	return h != nil && h.customEditorActive
+	if h == nil {
+		return false
+	}
+	h.viewProjectionMu.Lock()
+	defer h.viewProjectionMu.Unlock()
+	return h.customEditorActive
 }
 
 func (h *CLIInteractiveTUIHost) activeEditorFocusComponent() gitui.Component {
 	if h == nil {
 		return nil
 	}
+	h.viewProjectionMu.Lock()
+	defer h.viewProjectionMu.Unlock()
 	if h.customEditorActive && h.editorContainer != nil {
 		children := h.editorContainer.Children()
 		if len(children) > 0 {

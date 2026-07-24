@@ -129,6 +129,7 @@ type CLIInteractiveTUIHost struct {
 	footerDataProvider      *FooterDataProvider
 	layout                  *cliInteractiveLayout
 	customEditorActive      bool
+	autocompleteMu          sync.RWMutex
 	autocompleteProvider    gitui.AutocompleteProvider
 	lastStatusText          *gitui.Text
 	lastStatusSpacer        *gitui.Spacer
@@ -145,7 +146,7 @@ type CLIInteractiveTUIHost struct {
 	overlays                map[string]gitui.OverlayHandle
 	inProcessSlots          map[string][]gitui.Component
 	inProcessMounts         map[string]inProcessMountedComponent
-	pendingTools            map[string]*ToolExecutionComponent
+	liveState               cliInteractiveLiveState
 	keybindings             KeybindingsConfig
 	previousTUIKeybindings  *gitui.KeybindingsManager
 	tuiKeybindingsInstalled bool
@@ -154,12 +155,14 @@ type CLIInteractiveTUIHost struct {
 	startupResources        []*cliLoadedResourcesComponent
 	rendered                int
 	renderDeferred          atomic.Bool
+	compactionVisible       atomic.Bool
 	viewTreeTickStarted     atomic.Bool
 	done                    chan struct{}
 	once                    sync.Once
 	uiReady                 chan struct{}
 	uiReadyOnce             sync.Once
 	mu                      sync.Mutex
+	statusMu                sync.Mutex
 	lastClearKeyTime        time.Time
 	lastEscapeKeyTime       time.Time
 	unwatch                 func()
@@ -170,6 +173,8 @@ type CLIInteractiveTUIHost struct {
 	unwatchSession          func()
 	sessionWatchMu          sync.Mutex
 	sessionWatchClosed      bool
+	viewProjectionMu        sync.Mutex
+	inProcessSyncMu         sync.Mutex
 	unwatchInProcess        func()
 	unwatchRuntimeSession   func()
 	restoreRuntimeRebind    func()
@@ -177,13 +182,111 @@ type CLIInteractiveTUIHost struct {
 	processSupervisor       *ProtocolExtensionProcessSupervisor
 	startupNoticesShown     bool
 	anthropicWarningShown   bool
-	streamingMessage        *llm.Message
-	streamingComponent      *cliAssistantMessageComponent
 	activePromptMu          sync.Mutex
 	activePromptCount       int
 	themePreviewActive      bool
 	themePreviewName        string
 	deadTerminal            atomic.Bool
+}
+
+type cliInteractiveLiveState struct {
+	mu                 sync.RWMutex
+	streamingMessage   *llm.Message
+	streamingComponent *cliAssistantMessageComponent
+	pendingTools       map[string]*ToolExecutionComponent
+}
+
+func (s *cliInteractiveLiveState) reset() *cliAssistantMessageComponent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	component := s.streamingComponent
+	s.streamingMessage = nil
+	s.streamingComponent = nil
+	s.pendingTools = map[string]*ToolExecutionComponent{}
+	return component
+}
+
+func (s *cliInteractiveLiveState) setStreaming(message llm.Message, component *cliAssistantMessageComponent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cloned := cloneSessionMessage(message)
+	s.streamingMessage = &cloned
+	s.streamingComponent = component
+}
+
+func (s *cliInteractiveLiveState) updateStreamingMessage(message llm.Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cloned := cloneSessionMessage(message)
+	s.streamingMessage = &cloned
+}
+
+func (s *cliInteractiveLiveState) clearStreaming() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.streamingMessage = nil
+	s.streamingComponent = nil
+}
+
+func (s *cliInteractiveLiveState) streamingSnapshot() (*llm.Message, *cliAssistantMessageComponent) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var message *llm.Message
+	if s.streamingMessage != nil {
+		cloned := cloneSessionMessage(*s.streamingMessage)
+		message = &cloned
+	}
+	return message, s.streamingComponent
+}
+
+func (s *cliInteractiveLiveState) pendingTool(id string) *ToolExecutionComponent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.pendingTools[id]
+}
+
+func (s *cliInteractiveLiveState) storePendingTool(id string, component *ToolExecutionComponent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pendingTools == nil {
+		s.pendingTools = map[string]*ToolExecutionComponent{}
+	}
+	s.pendingTools[id] = component
+}
+
+func (s *cliInteractiveLiveState) loadOrStorePendingTool(id string, component *ToolExecutionComponent) (*ToolExecutionComponent, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing := s.pendingTools[id]; existing != nil {
+		return existing, true
+	}
+	if s.pendingTools == nil {
+		s.pendingTools = map[string]*ToolExecutionComponent{}
+	}
+	s.pendingTools[id] = component
+	return component, false
+}
+
+func (s *cliInteractiveLiveState) deletePendingTool(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.pendingTools, id)
+}
+
+func (s *cliInteractiveLiveState) pendingToolsSnapshot() []*ToolExecutionComponent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	components := make([]*ToolExecutionComponent, 0, len(s.pendingTools))
+	for _, component := range s.pendingTools {
+		components = append(components, component)
+	}
+	return components
+}
+
+func (s *cliInteractiveLiveState) pendingToolCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.pendingTools)
 }
 
 type inProcessMountedComponent struct {
@@ -413,7 +516,7 @@ func (h *CLIInteractiveTUIHost) shouldReserveBottomRegion() bool {
 	if h == nil {
 		return false
 	}
-	if h.compactionLoader != nil {
+	if h.compactionVisible.Load() {
 		return true
 	}
 	session := h.agentSession()
@@ -1255,7 +1358,7 @@ func (h *CLIInteractiveTUIHost) buildUI() {
 	h.overlays = map[string]gitui.OverlayHandle{}
 	h.inProcessSlots = map[string][]gitui.Component{}
 	h.inProcessMounts = map[string]inProcessMountedComponent{}
-	h.pendingTools = map[string]*ToolExecutionComponent{}
+	h.liveState.reset()
 	h.compactionQueue = nil
 	h.editor = gitui.NewEditor(tuiThemeEditor(), gitui.EditorOptions{
 		PaddingX:               editorPaddingX,
@@ -1353,6 +1456,8 @@ func (h *CLIInteractiveTUIHost) focusedDefaultEditor() bool {
 	if focused == h.editor {
 		return true
 	}
+	h.viewProjectionMu.Lock()
+	defer h.viewProjectionMu.Unlock()
 	return h.customEditorActive && h.editorContainerHasChild(focused)
 }
 
@@ -1367,6 +1472,12 @@ func (h *CLIInteractiveTUIHost) activeEditorComponent() (gitui.EditorComponent, 
 	if h == nil {
 		return nil, false
 	}
+	h.viewProjectionMu.Lock()
+	defer h.viewProjectionMu.Unlock()
+	return h.activeEditorComponentLocked()
+}
+
+func (h *CLIInteractiveTUIHost) activeEditorComponentLocked() (gitui.EditorComponent, bool) {
 	if h.customEditorActive && h.editorContainer != nil {
 		children := h.editorContainer.Children()
 		if len(children) > 0 {
@@ -1513,12 +1624,22 @@ func (h *CLIInteractiveTUIHost) applyToolOutputExpansion() {
 			expandable.SetExpanded(h.toolOutputExpanded)
 		}
 	}
-	for _, tool := range h.pendingTools {
+	for _, tool := range h.liveState.pendingToolsSnapshot() {
 		if tool != nil {
 			tool.SetExpanded(h.toolOutputExpanded)
 		}
 	}
+	h.viewProjectionMu.Lock()
+	inProcessMounts := make(
+		[]inProcessMountedComponent,
+		0,
+		len(h.inProcessMounts),
+	)
 	for _, mounted := range h.inProcessMounts {
+		inProcessMounts = append(inProcessMounts, mounted)
+	}
+	h.viewProjectionMu.Unlock()
+	for _, mounted := range inProcessMounts {
 		if expandable, ok := mounted.component.(interface{ SetExpanded(bool) }); ok {
 			expandable.SetExpanded(h.toolOutputExpanded)
 		}
@@ -1619,9 +1740,7 @@ func (h *CLIInteractiveTUIHost) watchAgentSessionQueue() {
 	unwatch := session.Subscribe(func(event AgentSessionEvent) {
 		switch event.Type {
 		case "agent_start":
-			h.pendingTools = map[string]*ToolExecutionComponent{}
-			h.streamingMessage = nil
-			h.streamingComponent = nil
+			h.liveState.reset()
 			h.clearRetryStatus()
 			h.mu.Lock()
 			h.clearLoaderLocked()
@@ -1688,12 +1807,10 @@ func (h *CLIInteractiveTUIHost) handleAgentEnd() {
 		h.editor.DisableSubmit = false
 	}
 	h.mu.Unlock()
-	if h.streamingComponent != nil && h.chat != nil {
-		h.chat.RemoveChild(h.streamingComponent)
+	streamingComponent := h.liveState.reset()
+	if streamingComponent != nil && h.chat != nil {
+		h.chat.RemoveChild(streamingComponent)
 	}
-	h.streamingComponent = nil
-	h.streamingMessage = nil
-	h.pendingTools = map[string]*ToolExecutionComponent{}
 	h.refreshPendingMessagesDisplay()
 	h.requestRender(false)
 }
@@ -1749,8 +1866,7 @@ func (h *CLIInteractiveTUIHost) handleLiveMessageStart(event AgentSessionEvent) 
 	switch message.Role {
 	case llm.RoleAssistant:
 		component := newCLIAssistantMessageComponent(message, h.hideThinkingBlock(), h.hiddenThinkingLabelValue())
-		h.streamingMessage = &message
-		h.streamingComponent = component
+		h.liveState.setStreaming(message, component)
 		if h.chat != nil {
 			h.chat.AddChild(component)
 		}
@@ -1778,7 +1894,7 @@ func (h *CLIInteractiveTUIHost) handleLiveMessageUpdate(event AgentSessionEvent)
 	if message.Role == "" {
 		message.Role = llm.RoleAssistant
 	}
-	h.streamingMessage = &message
+	h.liveState.updateStreamingMessage(message)
 	h.updateLiveAssistantComponent(message)
 	h.updateLiveToolCalls(message)
 	h.requestRender(false)
@@ -1796,8 +1912,7 @@ func (h *CLIInteractiveTUIHost) handleLiveMessageEnd(event AgentSessionEvent) {
 	if message.Role == llm.RoleAssistant {
 		h.updateLiveAssistantComponent(message)
 		h.completeLiveAssistantToolCalls(message)
-		h.streamingMessage = nil
-		h.streamingComponent = nil
+		h.liveState.clearStreaming()
 	} else if message.Role == llm.RoleToolResult {
 		h.addToolResultMessage(message)
 	}
@@ -1810,14 +1925,12 @@ func (h *CLIInteractiveTUIHost) handleLiveToolExecutionStart(event AgentSessionE
 	if h == nil || strings.TrimSpace(event.ToolCallID) == "" {
 		return
 	}
-	component := h.pendingTools[event.ToolCallID]
+	component := h.liveState.pendingTool(event.ToolCallID)
 	if component == nil {
-		component = h.newToolExecutionComponent(event.ToolName, event.ToolCallID, event.Args)
-		if h.pendingTools == nil {
-			h.pendingTools = map[string]*ToolExecutionComponent{}
-		}
-		h.pendingTools[event.ToolCallID] = component
-		if h.chat != nil {
+		candidate := h.newToolExecutionComponent(event.ToolName, event.ToolCallID, event.Args)
+		var loaded bool
+		component, loaded = h.liveState.loadOrStorePendingTool(event.ToolCallID, candidate)
+		if !loaded && h.chat != nil {
 			h.chat.AddChild(component)
 		}
 	} else {
@@ -1831,14 +1944,12 @@ func (h *CLIInteractiveTUIHost) handleLiveToolExecutionUpdate(event AgentSession
 	if h == nil || event.PartialToolResult == nil || strings.TrimSpace(event.ToolCallID) == "" {
 		return
 	}
-	component := h.pendingTools[event.ToolCallID]
+	component := h.liveState.pendingTool(event.ToolCallID)
 	if component == nil {
-		component = h.newToolExecutionComponent(event.ToolName, event.ToolCallID, event.Args)
-		if h.pendingTools == nil {
-			h.pendingTools = map[string]*ToolExecutionComponent{}
-		}
-		h.pendingTools[event.ToolCallID] = component
-		if h.chat != nil {
+		candidate := h.newToolExecutionComponent(event.ToolName, event.ToolCallID, event.Args)
+		var loaded bool
+		component, loaded = h.liveState.loadOrStorePendingTool(event.ToolCallID, candidate)
+		if !loaded && h.chat != nil {
 			h.chat.AddChild(component)
 		}
 	}
@@ -1851,25 +1962,27 @@ func (h *CLIInteractiveTUIHost) handleLiveToolExecutionEnd(event AgentSessionEve
 	if h == nil || event.ToolResult == nil || strings.TrimSpace(event.ToolCallID) == "" {
 		return
 	}
-	component := h.pendingTools[event.ToolCallID]
+	component := h.liveState.pendingTool(event.ToolCallID)
 	if component == nil {
-		component = h.newToolExecutionComponent(event.ToolName, event.ToolCallID, event.Args)
-		if h.pendingTools == nil {
-			h.pendingTools = map[string]*ToolExecutionComponent{}
-		}
-		h.pendingTools[event.ToolCallID] = component
-		if h.chat != nil {
+		candidate := h.newToolExecutionComponent(event.ToolName, event.ToolCallID, event.Args)
+		var loaded bool
+		component, loaded = h.liveState.loadOrStorePendingTool(event.ToolCallID, candidate)
+		if !loaded && h.chat != nil {
 			h.chat.AddChild(component)
 		}
 	}
 	component.MarkExecutionStarted()
 	component.UpdateResult(fileToolResultFromLLMMessage(*event.ToolResult), event.ToolResult.IsError)
-	delete(h.pendingTools, event.ToolCallID)
+	h.liveState.deletePendingTool(event.ToolCallID)
 	h.requestRender(false)
 }
 
 func (h *CLIInteractiveTUIHost) updateLiveAssistantComponent(message llm.Message) {
-	if h == nil || h.streamingComponent == nil {
+	if h == nil {
+		return
+	}
+	_, component := h.liveState.streamingSnapshot()
+	if component == nil {
 		return
 	}
 	if strings.TrimSpace(interactiveAssistantTextFromLLMMessage(message, h.hideThinkingBlock(), h.hiddenThinkingLabelValue())) == "" &&
@@ -1877,7 +1990,7 @@ func (h *CLIInteractiveTUIHost) updateLiveAssistantComponent(message llm.Message
 		message.StopReason == "" {
 		message.StopReason = llm.StopReasonError
 	}
-	h.streamingComponent.SetMessage(message)
+	component.SetMessage(message)
 }
 
 func (h *CLIInteractiveTUIHost) updateLiveToolCalls(message llm.Message) {
@@ -1888,15 +2001,15 @@ func (h *CLIInteractiveTUIHost) updateLiveToolCalls(message llm.Message) {
 		if part.Type != llm.ContentToolCall || strings.TrimSpace(part.ID) == "" {
 			continue
 		}
-		component := h.pendingTools[part.ID]
+		component := h.liveState.pendingTool(part.ID)
 		if component == nil {
-			component = h.newToolExecutionComponent(part.Name, part.ID, part.Arguments)
-			if h.pendingTools == nil {
-				h.pendingTools = map[string]*ToolExecutionComponent{}
+			candidate := h.newToolExecutionComponent(part.Name, part.ID, part.Arguments)
+			var loaded bool
+			component, loaded = h.liveState.loadOrStorePendingTool(part.ID, candidate)
+			if !loaded {
+				h.chat.AddChild(component)
+				continue
 			}
-			h.pendingTools[part.ID] = component
-			h.chat.AddChild(component)
-			continue
 		}
 		component.UpdateArgs(part.Arguments)
 	}
@@ -1910,14 +2023,12 @@ func (h *CLIInteractiveTUIHost) completeLiveAssistantToolCalls(message llm.Messa
 		if part.Type != llm.ContentToolCall || strings.TrimSpace(part.ID) == "" {
 			continue
 		}
-		component := h.pendingTools[part.ID]
+		component := h.liveState.pendingTool(part.ID)
 		if component == nil {
-			component = h.newToolExecutionComponent(part.Name, part.ID, part.Arguments)
-			if h.pendingTools == nil {
-				h.pendingTools = map[string]*ToolExecutionComponent{}
-			}
-			h.pendingTools[part.ID] = component
-			if h.chat != nil {
+			candidate := h.newToolExecutionComponent(part.Name, part.ID, part.Arguments)
+			var loaded bool
+			component, loaded = h.liveState.loadOrStorePendingTool(part.ID, candidate)
+			if !loaded && h.chat != nil {
 				h.chat.AddChild(component)
 			}
 		}
@@ -1926,7 +2037,7 @@ func (h *CLIInteractiveTUIHost) completeLiveAssistantToolCalls(message llm.Messa
 		if message.StopReason == "aborted" || message.StopReason == "error" {
 			errorMessage := assistantToolErrorMessage(message)
 			component.UpdateResult(FileToolResult{Text: errorMessage, Content: []llm.ContentPart{llm.Text(errorMessage)}}, true)
-			delete(h.pendingTools, part.ID)
+			h.liveState.deletePendingTool(part.ID)
 		}
 	}
 }
@@ -1993,12 +2104,8 @@ func (h *CLIInteractiveTUIHost) handleAutoRetryStart(event AgentSessionEvent) {
 	if seconds < 0 {
 		seconds = 0
 	}
-	h.clearRetryStatus()
 	message := fmt.Sprintf("Retrying (%d/%d) in %ds... (Esc to cancel)", event.Attempt, event.MaxAttempts, seconds)
-	h.retryLoader = h.showStatusLoader(message)
-	if h.retryLoader == nil {
-		h.retryStatus = h.addStatus(message)
-	}
+	h.showRetryStatus(message)
 }
 
 func (h *CLIInteractiveTUIHost) handleAutoRetryEnd(event AgentSessionEvent) {
@@ -2017,19 +2124,50 @@ func (h *CLIInteractiveTUIHost) clearRetryStatus() {
 	if h == nil {
 		return
 	}
-	if h.retryLoader != nil {
-		h.retryLoader.Stop()
-		if h.statusContainer != nil {
-			h.statusContainer.Clear()
-		}
-		h.retryLoader = nil
+	h.statusMu.Lock()
+	loader := h.retryLoader
+	status := h.retryStatus
+	h.retryLoader = nil
+	h.retryStatus = nil
+	if loader != nil && h.statusContainer != nil {
+		h.statusContainer.Clear()
+	}
+	if status != nil && h.chat != nil {
+		h.chat.RemoveChild(status)
+	}
+	h.statusMu.Unlock()
+	if loader != nil {
+		loader.Stop()
+	}
+	if loader != nil || status != nil {
 		h.requestRender(false)
 	}
-	if h.retryStatus != nil && h.chat != nil {
-		h.chat.RemoveChild(h.retryStatus)
-		h.retryStatus = nil
-		h.requestRender(false)
+}
+
+func (h *CLIInteractiveTUIHost) showRetryStatus(message string) {
+	if h == nil {
+		return
 	}
+	h.statusMu.Lock()
+	previousLoader := h.retryLoader
+	previousStatus := h.retryStatus
+	h.retryLoader = nil
+	h.retryStatus = nil
+	if previousLoader != nil && h.statusContainer != nil {
+		h.statusContainer.Clear()
+	}
+	if previousStatus != nil && h.chat != nil {
+		h.chat.RemoveChild(previousStatus)
+	}
+	h.retryLoader = h.showStatusLoaderLocked(message)
+	if h.retryLoader == nil {
+		h.retryStatus = h.addStatusLocked(message)
+	}
+	h.statusMu.Unlock()
+	if previousLoader != nil {
+		previousLoader.Stop()
+	}
+	h.requestRender(false)
 }
 
 func (h *CLIInteractiveTUIHost) buildFooter() {
@@ -2051,8 +2189,10 @@ func (h *CLIInteractiveTUIHost) addSlot(slot string) {
 		return
 	}
 	container := gitui.NewContainer()
+	h.viewProjectionMu.Lock()
+	defer h.viewProjectionMu.Unlock()
 	h.slots[slot] = container
-	h.refreshViewTreeSlot(slot)
+	h.refreshViewTreeSlotLocked(slot)
 }
 
 func (h *CLIInteractiveTUIHost) mountInProcessUI() {
@@ -2070,9 +2210,7 @@ func (h *CLIInteractiveTUIHost) syncInProcessUI() {
 	if h == nil || h.inProcessUI == nil {
 		return
 	}
-	if h.inProcessMounts == nil {
-		h.inProcessMounts = map[string]inProcessMountedComponent{}
-	}
+	h.inProcessSyncMu.Lock()
 	session, _ := h.currentAgentSession()
 	context := InProcessComponentContext{
 		Session:     session,
@@ -2085,16 +2223,26 @@ func (h *CLIInteractiveTUIHost) syncInProcessUI() {
 	for _, registration := range registrations {
 		wanted[registration.Key] = registration
 	}
+	h.viewProjectionMu.Lock()
+	nextMounts := make(
+		map[string]inProcessMountedComponent,
+		len(h.inProcessMounts),
+	)
 	for key, mounted := range h.inProcessMounts {
+		nextMounts[key] = mounted
+	}
+	h.viewProjectionMu.Unlock()
+	var removed []inProcessMountedComponent
+	for key, mounted := range nextMounts {
 		next, ok := wanted[key]
 		if ok && mounted.version == next.Version && mounted.slot == normalizeInProcessSlot(next.Slot) {
 			continue
 		}
-		h.removeInProcessMount(mounted)
-		delete(h.inProcessMounts, key)
+		removed = append(removed, mounted)
+		delete(nextMounts, key)
 	}
 	for _, registration := range registrations {
-		if _, ok := h.inProcessMounts[registration.Key]; ok {
+		if _, ok := nextMounts[registration.Key]; ok {
 			continue
 		}
 		component, dispose, err := registration.Factory(context)
@@ -2131,21 +2279,28 @@ func (h *CLIInteractiveTUIHost) syncInProcessUI() {
 				mounted.overlayHandle = h.ui.ShowOverlay(mounted.component)
 			}
 		}
-		h.inProcessMounts[registration.Key] = mounted
+		nextMounts[registration.Key] = mounted
 	}
 	nextSlots := map[string][]gitui.Component{}
 	for _, registration := range registrations {
-		mounted, ok := h.inProcessMounts[registration.Key]
+		mounted, ok := nextMounts[registration.Key]
 		if !ok || mounted.slot == "overlay" {
 			continue
 		}
 		nextSlots[mounted.slot] = append(nextSlots[mounted.slot], mounted.component)
 	}
+	h.viewProjectionMu.Lock()
+	h.inProcessMounts = nextMounts
 	h.inProcessSlots = nextSlots
 	for slot := range h.slots {
-		h.refreshViewTreeSlot(slot)
+		h.refreshViewTreeSlotLocked(slot)
 	}
-	h.refreshViewTreeEditorSlot()
+	h.refreshViewTreeEditorSlotLocked()
+	h.viewProjectionMu.Unlock()
+	h.inProcessSyncMu.Unlock()
+	for _, mounted := range removed {
+		h.removeInProcessMount(mounted)
+	}
 }
 
 func (h *CLIInteractiveTUIHost) configureInProcessEditorComponent(component gitui.Component, currentText string) {
@@ -2165,8 +2320,10 @@ func (h *CLIInteractiveTUIHost) configureInProcessEditorComponent(component gitu
 		}
 		appearance.SetBorderColor(func(text string) string { return text })
 	}
-	if autocomplete, ok := component.(gitui.EditorAutocompleteComponent); ok && h.autocompleteProvider != nil {
-		autocomplete.SetAutocompleteProvider(h.autocompleteProvider)
+	if provider := h.autocompleteProviderSnapshot(); provider != nil {
+		if autocomplete, ok := component.(gitui.EditorAutocompleteComponent); ok {
+			autocomplete.SetAutocompleteProvider(provider)
+		}
 	}
 	if change, ok := component.(gitui.EditorChangeCallbackComponent); ok {
 		change.SetOnChange(func(string) {
@@ -2225,21 +2382,27 @@ func (h *CLIInteractiveTUIHost) refreshViewTreeSlots() {
 	if h == nil {
 		return
 	}
+	h.viewProjectionMu.Lock()
+	defer h.viewProjectionMu.Unlock()
+	h.refreshViewTreeSlotsLocked()
+}
+
+func (h *CLIInteractiveTUIHost) refreshViewTreeSlotsLocked() {
 	seen := map[string]struct{}{}
 	for slot := range h.slots {
 		for _, mount := range h.viewTreeHost.MountsBySlot(slot) {
 			seen[mount.MountID] = struct{}{}
 		}
-		h.refreshViewTreeSlot(slot)
+		h.refreshViewTreeSlotLocked(slot)
 	}
 	for _, mount := range h.viewTreeHost.MountsBySlot("editor") {
 		seen[mount.MountID] = struct{}{}
 	}
-	h.refreshViewTreeEditorSlot()
+	h.refreshViewTreeEditorSlotLocked()
 	for _, mount := range h.viewTreeHost.MountsBySlot("overlay") {
 		seen[mount.MountID] = struct{}{}
 	}
-	h.refreshViewTreeOverlays()
+	h.refreshViewTreeOverlaysLocked()
 	for mountID := range h.views {
 		if _, ok := seen[mountID]; !ok {
 			delete(h.views, mountID)
@@ -2251,6 +2414,12 @@ func (h *CLIInteractiveTUIHost) refreshViewTreeSlot(slot string) {
 	if h == nil || h.viewTreeHost == nil {
 		return
 	}
+	h.viewProjectionMu.Lock()
+	defer h.viewProjectionMu.Unlock()
+	h.refreshViewTreeSlotLocked(slot)
+}
+
+func (h *CLIInteractiveTUIHost) refreshViewTreeSlotLocked(slot string) {
 	container := h.slots[slot]
 	if container == nil {
 		return
@@ -2274,6 +2443,12 @@ func (h *CLIInteractiveTUIHost) refreshViewTreeEditorSlot() {
 	if h == nil || h.viewTreeHost == nil || h.editorContainer == nil {
 		return
 	}
+	h.viewProjectionMu.Lock()
+	defer h.viewProjectionMu.Unlock()
+	h.refreshViewTreeEditorSlotLocked()
+}
+
+func (h *CLIInteractiveTUIHost) refreshViewTreeEditorSlotLocked() {
 	mounts := h.viewTreeHost.MountsBySlot("editor")
 	inProcess := h.inProcessSlots["editor"]
 	if len(mounts) == 0 && len(inProcess) == 0 {
@@ -2281,8 +2456,11 @@ func (h *CLIInteractiveTUIHost) refreshViewTreeEditorSlot() {
 		currentText := ""
 		copyTextBack := false
 		if wasCustom {
-			if active, ok := h.activeEditorComponent(); ok && active != h.editor {
-				currentText = h.activeEditorText()
+			if active, ok := h.activeEditorComponentLocked(); ok && active != h.editor {
+				currentText = active.GetText()
+				if expanded, ok := active.(gitui.EditorExpandedTextProvider); ok {
+					currentText = expanded.GetExpandedText()
+				}
 				copyTextBack = true
 			}
 		}
@@ -2319,6 +2497,12 @@ func (h *CLIInteractiveTUIHost) refreshViewTreeOverlays() {
 	if h == nil || h.ui == nil || h.viewTreeHost == nil {
 		return
 	}
+	h.viewProjectionMu.Lock()
+	defer h.viewProjectionMu.Unlock()
+	h.refreshViewTreeOverlaysLocked()
+}
+
+func (h *CLIInteractiveTUIHost) refreshViewTreeOverlaysLocked() {
 	if h.overlays == nil {
 		h.overlays = map[string]gitui.OverlayHandle{}
 	}
@@ -2442,7 +2626,7 @@ func (h *CLIInteractiveTUIHost) rerenderSessionMessages() {
 		return
 	}
 	h.chat.Clear()
-	h.pendingTools = map[string]*ToolExecutionComponent{}
+	h.liveState.reset()
 	h.rendered = 0
 	h.renderMessagesFrom(0)
 }
@@ -2923,10 +3107,7 @@ func (h *CLIInteractiveTUIHost) addAssistantMessage(message llm.Message) {
 			errorMessage := assistantToolErrorMessage(message)
 			component.UpdateResult(FileToolResult{Text: errorMessage, Content: []llm.ContentPart{llm.Text(errorMessage)}}, true)
 		} else {
-			if h.pendingTools == nil {
-				h.pendingTools = map[string]*ToolExecutionComponent{}
-			}
-			h.pendingTools[part.ID] = component
+			h.liveState.storePendingTool(part.ID, component)
 		}
 		h.chat.AddChild(component)
 	}
@@ -2960,9 +3141,10 @@ func (h *CLIInteractiveTUIHost) updateAssistantThinkingPresentation() {
 			}
 		}
 	}
-	if h.streamingComponent != nil {
-		h.streamingComponent.SetHideThinkingBlock(hide)
-		h.streamingComponent.SetHiddenThinkingLabel(label)
+	_, streamingComponent := h.liveState.streamingSnapshot()
+	if streamingComponent != nil {
+		streamingComponent.SetHideThinkingBlock(hide)
+		streamingComponent.SetHiddenThinkingLabel(label)
 	}
 	h.requestRender(false)
 }
@@ -3035,12 +3217,12 @@ func (h *CLIInteractiveTUIHost) addToolResultMessage(message llm.Message) bool {
 	if h == nil || h.chat == nil || strings.TrimSpace(message.ToolCallID) == "" {
 		return false
 	}
-	component := h.pendingTools[message.ToolCallID]
+	component := h.liveState.pendingTool(message.ToolCallID)
 	if component == nil {
 		return false
 	}
 	component.UpdateResult(fileToolResultFromLLMMessage(message), message.IsError)
-	delete(h.pendingTools, message.ToolCallID)
+	h.liveState.deletePendingTool(message.ToolCallID)
 	h.requestRender(false)
 	return true
 }
@@ -3570,9 +3752,8 @@ func (h *CLIInteractiveTUIHost) resetChatState() {
 	if h.chat != nil {
 		h.chat.Clear()
 	}
-	h.lastStatusSpacer = nil
-	h.lastStatusText = nil
-	h.pendingTools = map[string]*ToolExecutionComponent{}
+	h.resetLastStatus()
+	h.liveState.reset()
 	h.rendered = 0
 	h.updateTerminalTitle()
 	h.requestRender(false)
@@ -3732,11 +3913,23 @@ func (h *CLIInteractiveTUIHost) stopUI() {
 		h.footerDataProvider.Dispose()
 		h.footerDataProvider = nil
 	}
-	for key, mounted := range h.inProcessMounts {
-		h.removeInProcessMount(mounted)
-		delete(h.inProcessMounts, key)
+	h.inProcessSyncMu.Lock()
+	h.viewProjectionMu.Lock()
+	inProcessMounts := make(
+		[]inProcessMountedComponent,
+		0,
+		len(h.inProcessMounts),
+	)
+	for _, mounted := range h.inProcessMounts {
+		inProcessMounts = append(inProcessMounts, mounted)
 	}
+	h.inProcessMounts = nil
 	h.inProcessSlots = nil
+	h.viewProjectionMu.Unlock()
+	h.inProcessSyncMu.Unlock()
+	for _, mounted := range inProcessMounts {
+		h.removeInProcessMount(mounted)
+	}
 	if !h.deadTerminal.Load() {
 		h.setTerminalProgress(false)
 	}

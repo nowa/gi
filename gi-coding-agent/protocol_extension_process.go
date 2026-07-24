@@ -30,6 +30,7 @@ type ProtocolExtensionProcess struct {
 	host                  *RPCSessionHost
 	stdin                 io.WriteCloser
 	stderrTail            *processOutputTail
+	processorMu           sync.RWMutex
 	processor             *RPCLineProcessor
 	writeMu               sync.Mutex
 	eventMu               sync.Mutex
@@ -446,10 +447,11 @@ func (p *ProtocolExtensionProcess) RequestEvent(ctx context.Context, method stri
 	if p == nil || p.cmd == nil {
 		return nil, nil
 	}
-	if p.processor == nil {
+	processor := p.processorSnapshot()
+	if processor == nil {
 		return nil, errors.New("extension process is not ready")
 	}
-	return p.processor.callExtension(ctx, method, params)
+	return processor.callExtension(ctx, method, params)
 }
 
 func (p *ProtocolExtensionProcess) nextEventSeq() int {
@@ -476,7 +478,7 @@ func (p *ProtocolExtensionProcess) readLoop(ctx context.Context, stdout io.Reade
 			_ = p.writeLine(line)
 		},
 	}
-	p.processor = processor
+	p.setProcessor(processor)
 	reader := bufio.NewReader(stdout)
 	for {
 		line, err := reader.ReadBytes('\n')
@@ -792,11 +794,31 @@ func (p *ProtocolExtensionProcess) cleanupRuntimeRegistrations() {
 		return
 	}
 	p.cleanupRuntimeOnce.Do(func() {
-		if p.processor == nil || p.processor.Runtime == nil {
+		processor := p.processorSnapshot()
+		if processor == nil || processor.Runtime == nil {
 			return
 		}
-		p.processor.Runtime.RemoveSource(p.sourceInfo())
+		processor.Runtime.RemoveSource(p.sourceInfo())
 	})
+}
+
+func (p *ProtocolExtensionProcess) setProcessor(processor *RPCLineProcessor) {
+	if p == nil {
+		return
+	}
+	p.processorMu.Lock()
+	p.processor = processor
+	p.processorMu.Unlock()
+}
+
+func (p *ProtocolExtensionProcess) processorSnapshot() *RPCLineProcessor {
+	if p == nil {
+		return nil
+	}
+	p.processorMu.RLock()
+	processor := p.processor
+	p.processorMu.RUnlock()
+	return processor
 }
 
 func (p *ProtocolExtensionProcess) consumeOwnedViewTreeMountIDs() []string {
@@ -941,10 +963,14 @@ func (p *ProtocolExtensionProcess) emitExitDiagnostic(err error) {
 }
 
 func protocolExtensionRuntimeFromHost(host *RPCSessionHost) *ProtocolExtensionRuntime {
-	if host == nil || host.Session == nil {
+	if host == nil {
 		return nil
 	}
-	return host.Session.ExtensionRuntime
+	session := host.sessionSnapshot()
+	if session == nil {
+		return nil
+	}
+	return session.ExtensionRuntime
 }
 
 type processOutputTail struct {

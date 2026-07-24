@@ -38,9 +38,28 @@ type AgentSessionRuntimeHost struct {
 	ExtensionRuntime        *ProtocolExtensionRuntime
 	BeforeSessionInvalidate func()
 	RebindSession           func(*AgentSession) error
+	sessionMu               sync.RWMutex
 	eventListenersMu        sync.Mutex
 	eventListeners          []agentSessionRuntimeEventListenerRegistration
 	nextEventListenerID     int
+}
+
+func (h *AgentSessionRuntimeHost) sessionSnapshot() *AgentSession {
+	if h == nil {
+		return nil
+	}
+	h.sessionMu.RLock()
+	defer h.sessionMu.RUnlock()
+	return h.Session
+}
+
+func (h *AgentSessionRuntimeHost) setSession(session *AgentSession) {
+	if h == nil {
+		return
+	}
+	h.sessionMu.Lock()
+	h.Session = session
+	h.sessionMu.Unlock()
 }
 
 type AgentSessionRuntimeEventListener func(ProtocolSessionEvent) error
@@ -80,10 +99,11 @@ func (h *AgentSessionRuntimeHost) bindCommandContext() {
 	}
 	h.ExtensionRuntime.BindCommandContext(ProtocolCommandContextActions{
 		WaitForIdle: func() error {
-			if h.Session == nil {
+			session := h.sessionSnapshot()
+			if session == nil {
 				return nil
 			}
-			return h.Session.WaitForIdle(context.Background())
+			return session.WaitForIdle(context.Background())
 		},
 		NewSession: func(options ProtocolNewSessionOptions) (ProtocolCommandSwitchResult, error) {
 			result, err := h.NewSession(options)
@@ -102,7 +122,8 @@ func (h *AgentSessionRuntimeHost) bindCommandContext() {
 }
 
 func (h *AgentSessionRuntimeHost) NewSession(options ...ProtocolNewSessionOptions) (AgentSessionRuntimeSwitchResult, error) {
-	if h == nil || h.Session == nil || h.Session.SessionManager == nil {
+	oldSession := h.sessionSnapshot()
+	if oldSession == nil || oldSession.SessionManager == nil {
 		return AgentSessionRuntimeSwitchResult{}, errors.New("session runtime host requires an active session")
 	}
 	option := ProtocolNewSessionOptions{}
@@ -113,7 +134,6 @@ func (h *AgentSessionRuntimeHost) NewSession(options ...ProtocolNewSessionOption
 	if err != nil || result.Cancel {
 		return AgentSessionRuntimeSwitchResult{Cancelled: result.Cancel}, err
 	}
-	oldSession := h.Session
 	oldManager := oldSession.SessionManager
 	newManager, err := CreateSessionManager(oldManager.GetCWD(), oldManager.GetSessionDir())
 	if err != nil {
@@ -133,6 +153,10 @@ func (h *AgentSessionRuntimeHost) NewSession(options ...ProtocolNewSessionOption
 }
 
 func (h *AgentSessionRuntimeHost) SwitchSession(sessionFile string, options ...ProtocolSwitchSessionOptions) (AgentSessionRuntimeSwitchResult, error) {
+	oldSession := h.sessionSnapshot()
+	if oldSession == nil || oldSession.SessionManager == nil {
+		return AgentSessionRuntimeSwitchResult{}, errors.New("session runtime host requires an active session")
+	}
 	option := ProtocolSwitchSessionOptions{}
 	if len(options) > 0 {
 		option = options[0]
@@ -141,7 +165,6 @@ func (h *AgentSessionRuntimeHost) SwitchSession(sessionFile string, options ...P
 	if err != nil || result.Cancel {
 		return AgentSessionRuntimeSwitchResult{Cancelled: result.Cancel}, err
 	}
-	oldSession := h.Session
 	manager, err := OpenSessionManager(sessionFile, oldSession.SessionManager.GetSessionDir())
 	if err != nil {
 		return AgentSessionRuntimeSwitchResult{}, err
@@ -157,22 +180,23 @@ func (h *AgentSessionRuntimeHost) SwitchSession(sessionFile string, options ...P
 }
 
 func (h *AgentSessionRuntimeHost) Reload() error {
-	if h == nil || h.Session == nil {
+	session := h.sessionSnapshot()
+	if session == nil {
 		return errors.New("session runtime host requires an active session")
 	}
 	sessionFile := ""
-	if h.Session.SessionManager != nil {
-		sessionFile = h.Session.SessionManager.GetSessionFile()
+	if session.SessionManager != nil {
+		sessionFile = session.SessionManager.GetSessionFile()
 	}
 	if _, err := h.emitSessionEvent(ProtocolSessionEvent{Type: ProtocolEventSessionShutdown, Reason: "reload", TargetSessionFile: sessionFile}); err != nil {
 		return err
 	}
 	if h.ExtensionRuntime != nil {
-		h.ExtensionRuntime.BindSession(h.Session)
+		h.ExtensionRuntime.BindSession(session)
 		h.bindCommandContext()
-		h.ExtensionRuntime.ApplyToSession(h.Session)
+		h.ExtensionRuntime.ApplyToSession(session)
 	}
-	h.Session.SyncRuntimeSettings()
+	session.SyncRuntimeSettings()
 	_, err := h.emitSessionEvent(ProtocolSessionEvent{Type: ProtocolEventSessionStart, Reason: "reload", PreviousSessionFile: sessionFile})
 	return err
 }
@@ -182,8 +206,8 @@ func (h *AgentSessionRuntimeHost) SetExtensionRuntime(extensionRuntime *Protocol
 		return
 	}
 	h.ExtensionRuntime = extensionRuntime
-	if h.Session != nil {
-		h.Session.ExtensionRuntime = extensionRuntime
+	if session := h.sessionSnapshot(); session != nil {
+		session.ExtensionRuntime = extensionRuntime
 	}
 }
 
@@ -196,7 +220,10 @@ func (h *AgentSessionRuntimeHost) Fork(entryID string, options ...AgentSessionRu
 	if err != nil || result.Cancel {
 		return AgentSessionForkResult{Cancelled: result.Cancel}, err
 	}
-	oldSession := h.Session
+	oldSession := h.sessionSnapshot()
+	if oldSession == nil {
+		return AgentSessionForkResult{}, errors.New("session runtime host requires an active session")
+	}
 	var forkResult AgentSessionForkResult
 	if position == "at" {
 		forkResult, err = oldSession.ForkAt(entryID)
@@ -210,7 +237,7 @@ func (h *AgentSessionRuntimeHost) Fork(entryID string, options ...AgentSessionRu
 	if err := h.replaceSession(forkResult.Session, "fork", forkResult.Session.SessionManager.GetSessionFile(), previousSessionFile, optionsWithSession(options)); err != nil {
 		return AgentSessionForkResult{}, err
 	}
-	forkResult.Session = h.Session
+	forkResult.Session = h.sessionSnapshot()
 	return forkResult, nil
 }
 
@@ -254,7 +281,7 @@ func (h *AgentSessionRuntimeHost) replaceSession(newSession *AgentSession, reaso
 	if h.BeforeSessionInvalidate != nil {
 		h.BeforeSessionInvalidate()
 	}
-	h.Session = newSession
+	h.setSession(newSession)
 	if h.ExtensionRuntime != nil {
 		h.ExtensionRuntime.BindSession(newSession)
 		h.bindCommandContext()

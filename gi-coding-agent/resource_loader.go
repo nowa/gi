@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 )
@@ -90,6 +91,7 @@ type ResourceExtension struct {
 }
 
 type DefaultResourceLoader struct {
+	mu                       sync.RWMutex
 	cwd                      string
 	agentDir                 string
 	settingsManager          *SettingsManager
@@ -162,6 +164,11 @@ func NewDefaultResourceLoader(options DefaultResourceLoaderOptions) *DefaultReso
 }
 
 func (l *DefaultResourceLoader) Reload() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	reason := "startup"
 	if l.reloadCount > 0 {
 		reason = "reload"
@@ -182,6 +189,11 @@ func (l *DefaultResourceLoader) Reload() {
 }
 
 func (l *DefaultResourceLoader) ExtendResources(resources ResourceExtension) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.extendedExtPaths = append(l.extendedExtPaths, resources.ExtensionPaths...)
 	l.extendedSkills = append(l.extendedSkills, resources.SkillPaths...)
 	l.extendedPrompts = append(l.extendedPrompts, resources.PromptPaths...)
@@ -196,11 +208,21 @@ func (l *DefaultResourceLoader) ExtendResources(resources ResourceExtension) {
 }
 
 func (l *DefaultResourceLoader) GetExtensions() ResourceExtensionsResult {
-	return l.extensions
+	if l == nil {
+		return ResourceExtensionsResult{}
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return cloneResourceExtensionsResult(l.extensions)
 }
 
 func (l *DefaultResourceLoader) ApplyExtensionFlagValues(values map[string]any, allowDeferred bool) []ProtocolExtensionDiscoveryError {
-	if l == nil || len(values) == 0 || l.extensions.Runtime == nil {
+	if l == nil || len(values) == 0 {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.extensions.Runtime == nil {
 		return nil
 	}
 	var diagnostics []ProtocolExtensionFlagDiagnostic
@@ -223,27 +245,110 @@ func (l *DefaultResourceLoader) ApplyExtensionFlagValues(values map[string]any, 
 }
 
 func (l *DefaultResourceLoader) GetSkills() ResourceSkillsResult {
-	return l.skills
+	if l == nil {
+		return ResourceSkillsResult{}
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return cloneResourceSkillsResult(l.skills)
 }
 
 func (l *DefaultResourceLoader) GetPrompts() ResourcePromptsResult {
-	return l.prompts
+	if l == nil {
+		return ResourcePromptsResult{}
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return ResourcePromptsResult{
+		Prompts: append([]PromptTemplate(nil), l.prompts.Prompts...),
+	}
 }
 
 func (l *DefaultResourceLoader) GetThemes() ResourceThemesResult {
-	return l.themes
+	if l == nil {
+		return ResourceThemesResult{}
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return ResourceThemesResult{
+		Themes: append([]ResourceTheme(nil), l.themes.Themes...),
+		Diagnostics: append(
+			[]agentharness.SkillDiagnostic(nil),
+			l.themes.Diagnostics...,
+		),
+	}
 }
 
 func (l *DefaultResourceLoader) GetAgentsFiles() ResourceAgentsFilesResult {
-	return l.agentsFiles
+	if l == nil {
+		return ResourceAgentsFilesResult{}
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return ResourceAgentsFilesResult{
+		AgentsFiles: append(
+			[]ResourceContextFile(nil),
+			l.agentsFiles.AgentsFiles...,
+		),
+	}
 }
 
 func (l *DefaultResourceLoader) GetSystemPrompt() string {
+	if l == nil {
+		return ""
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
 	return l.systemPrompt
 }
 
 func (l *DefaultResourceLoader) GetAppendSystemPrompt() string {
+	if l == nil {
+		return ""
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
 	return l.appendSystem
+}
+
+func cloneResourceExtensionsResult(
+	result ResourceExtensionsResult,
+) ResourceExtensionsResult {
+	cloned := ResourceExtensionsResult{
+		Extensions: append(
+			[]ProtocolExtensionSource(nil),
+			result.Extensions...,
+		),
+		ProcessExtensions: make(
+			[]ProtocolPackageProcessExtension,
+			len(result.ProcessExtensions),
+		),
+		Errors:  append([]ProtocolExtensionDiscoveryError(nil), result.Errors...),
+		Runtime: result.Runtime,
+	}
+	for index, extension := range result.ProcessExtensions {
+		cloned.ProcessExtensions[index] = extension
+		cloned.ProcessExtensions[index].Command = append(
+			[]string(nil),
+			extension.Command...,
+		)
+		cloned.ProcessExtensions[index].Capabilities = append(
+			[]string(nil),
+			extension.Capabilities...,
+		)
+		cloned.ProcessExtensions[index].Env = cloneStringMap(extension.Env)
+	}
+	return cloned
+}
+
+func cloneResourceSkillsResult(result ResourceSkillsResult) ResourceSkillsResult {
+	return ResourceSkillsResult{
+		Skills: append([]agentharness.Skill(nil), result.Skills...),
+		Diagnostics: append(
+			[]agentharness.SkillDiagnostic(nil),
+			result.Diagnostics...,
+		),
+	}
 }
 
 func (l *DefaultResourceLoader) loadExtensions() ResourceExtensionsResult {
@@ -714,7 +819,7 @@ func (l *DefaultResourceLoader) loadAppendSystemPrompt() string {
 }
 
 func (l *DefaultResourceLoader) resourceFilters(key string) []string {
-	return settingsStringSlice(l.settingsManager.merged, key)
+	return settingsStringSlice(l.settingsManager.mergedSnapshot(), key)
 }
 
 func (l *DefaultResourceLoader) settingsExtensionSources() []ProtocolExtensionSource {

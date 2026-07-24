@@ -12,6 +12,83 @@ import (
 	gitui "github.com/nowa/gi/gi-tui"
 )
 
+type cliEditorReplacementLifecycle struct {
+	mu      sync.Mutex
+	closed  bool
+	restore func()
+}
+
+func (l *cliEditorReplacementLifecycle) install(restore func()) {
+	if l == nil || restore == nil {
+		return
+	}
+	l.mu.Lock()
+	if !l.closed {
+		l.restore = restore
+		l.mu.Unlock()
+		return
+	}
+	l.mu.Unlock()
+	restore()
+}
+
+func (l *cliEditorReplacementLifecycle) close() bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		return false
+	}
+	l.closed = true
+	restore := l.restore
+	l.restore = nil
+	l.mu.Unlock()
+	if restore != nil {
+		restore()
+		return true
+	}
+	return false
+}
+
+type cliDialogCompletion struct {
+	once        sync.Once
+	replacement cliEditorReplacementLifecycle
+	result      chan TUIDialogResult
+}
+
+func newCLIDialogCompletion() *cliDialogCompletion {
+	return &cliDialogCompletion{result: make(chan TUIDialogResult, 1)}
+}
+
+func (c *cliDialogCompletion) installRestore(restore func()) {
+	if c == nil {
+		return
+	}
+	c.replacement.install(restore)
+}
+
+func (c *cliDialogCompletion) finish(result TUIDialogResult) {
+	if c == nil {
+		return
+	}
+	c.once.Do(func() {
+		c.replacement.close()
+		c.result <- result
+	})
+}
+
+func (c *cliDialogCompletion) wait(done <-chan struct{}) TUIDialogResult {
+	select {
+	case result := <-c.result:
+		return result
+	case <-done:
+		c.finish(TUIDialogResult{Action: "cancelled"})
+		return <-c.result
+	}
+}
+
 func (h *CLIInteractiveTUIHost) RunTUIDialog(request TUIDialogRequest) (TUIDialogResult, error) {
 	if h == nil {
 		return TUIDialogResult{}, errors.New("interactive TUI dialog host is not ready")
@@ -86,17 +163,9 @@ func (h *CLIInteractiveTUIHost) runExtensionOptionDialog(title string, options [
 	selector := NewExtensionSelectorComponent(firstNonEmptyString(title, "Select"), labels)
 	selector.selected = max(0, min(defaultIndex, len(options)-1))
 
-	resultCh := make(chan TUIDialogResult, 1)
-	var closeOnce sync.Once
-	var restore func()
+	completion := newCLIDialogCompletion()
 	finish := func(result TUIDialogResult) {
-		closeOnce.Do(func() {
-			if restore != nil {
-				restore()
-				restore = nil
-			}
-			resultCh <- result
-		})
+		completion.finish(result)
 	}
 	selector.OnSelect = func(_ string) {
 		index := max(0, min(selector.selected, len(options)-1))
@@ -113,16 +182,8 @@ func (h *CLIInteractiveTUIHost) runExtensionOptionDialog(title string, options [
 
 	stopTimeout := h.startExtensionSelectorTimeout(selector, timeout, finish)
 	defer stopTimeout()
-	restore = h.showEditorReplacement(selector, selector)
-	select {
-	case result := <-resultCh:
-		return result, nil
-	case <-h.done:
-		if restore != nil {
-			restore()
-		}
-		return TUIDialogResult{Action: "cancelled"}, nil
-	}
+	completion.installRestore(h.showEditorReplacement(selector, selector))
+	return completion.wait(h.done), nil
 }
 
 func formatTUIDialogNotification(message, noticeType string) string {
@@ -221,33 +282,17 @@ func (h *CLIInteractiveTUIHost) runSelectionDialog(component *cliTUIDialogCompon
 			}
 		})
 	}
-	resultCh := make(chan TUIDialogResult, 1)
-	var closeOnce sync.Once
-	var restore func()
+	completion := newCLIDialogCompletion()
 	finish = func(result TUIDialogResult) {
-		closeOnce.Do(func() {
-			if restore != nil {
-				restore()
-				restore = nil
-			}
-			resultCh <- result
-		})
+		completion.finish(result)
 	}
 	if h.ui == nil {
 		return TUIDialogResult{}, errors.New("interactive TUI is not ready")
 	}
 	stopTimeout := h.startDialogTimeout(component, timeoutValues, finish)
 	defer stopTimeout()
-	restore = h.showEditorReplacement(component, component)
-	select {
-	case result := <-resultCh:
-		return result, nil
-	case <-h.done:
-		if restore != nil {
-			restore()
-		}
-		return TUIDialogResult{Action: "cancelled"}, nil
-	}
+	completion.installRestore(h.showEditorReplacement(component, component))
+	return completion.wait(h.done), nil
 }
 
 func (h *CLIInteractiveTUIHost) startDialogTimeout(component *cliTUIDialogComponent, timeoutValues []int, finish func(TUIDialogResult)) func() {

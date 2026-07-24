@@ -547,11 +547,15 @@ func TestCLIInteractiveTUIHostAgentEndCleansStreamingStatePiStyle(t *testing.T) 
 		Args:       map[string]any{"path": "notes.txt"},
 		ToolResult: &result,
 	})
-	waitUntil(t, func() bool { return host.streamingComponent != nil && len(host.pendingTools) == 1 })
+	waitUntil(t, func() bool {
+		_, component := host.liveState.streamingSnapshot()
+		return component != nil && host.liveState.pendingToolCount() == 1
+	})
 
 	sessionHost.session.emit(AgentSessionEvent{Type: "agent_end"})
 	waitUntil(t, func() bool {
-		return host.streamingComponent == nil && host.streamingMessage == nil && len(host.pendingTools) == 0
+		message, component := host.liveState.streamingSnapshot()
+		return component == nil && message == nil && host.liveState.pendingToolCount() == 0
 	})
 	terminal.WaitForRender()
 	if viewport := strings.Join(terminal.GetViewport(), "\n"); strings.Contains(viewport, "orphan partial answer") {
@@ -4178,7 +4182,10 @@ func TestCLIInteractiveTUIHostDoubleEscapeOpensTreePiStyle(t *testing.T) {
 	host.editor.SetText("tree seed")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Response to: tree seed")
-	waitForCondition(t, func() bool { return host.streamingComponent == nil }, "tree seed response to finish")
+	waitForCondition(t, func() bool {
+		_, component := host.liveState.streamingSnapshot()
+		return component == nil
+	}, "tree seed response to finish")
 	terminal.SendInput("\x1b")
 	terminal.SendInput("\x1b")
 	waitForViewport(t, terminal, "Session Tree")
@@ -4220,7 +4227,10 @@ func TestCLIInteractiveTUIHostDoubleEscapeOpensForkWhenConfiguredPiStyle(t *test
 	host.editor.SetText("fork seed")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Response to: fork seed")
-	waitForCondition(t, func() bool { return host.streamingComponent == nil }, "fork seed response to finish")
+	waitForCondition(t, func() bool {
+		_, component := host.liveState.streamingSnapshot()
+		return component == nil
+	}, "fork seed response to finish")
 	terminal.SendInput("\x1b")
 	terminal.SendInput("\x1b")
 	waitForViewport(t, terminal, "Fork from Message")
@@ -4558,15 +4568,14 @@ func TestCLIInteractiveTUIHostThinkingTogglePreservesStreamingComponentPiStyle(t
 	host := &CLIInteractiveTUIHost{
 		runtimeHost:         runtimeHost,
 		chat:                gitui.NewContainer(),
-		streamingMessage:    &message,
-		streamingComponent:  component,
 		hiddenThinkingLabel: "Thinking...",
 	}
+	host.liveState.setStreaming(message, component)
 	host.chat.AddChild(component)
 
 	host.toggleThinkingBlockVisibility()
 
-	if host.streamingComponent != component {
+	if _, streamingComponent := host.liveState.streamingSnapshot(); streamingComponent != component {
 		t.Fatal("streaming component should be preserved while toggling hidden thinking")
 	}
 	rendered := StripAnsi(strings.Join(host.chat.Render(120), "\n"))
@@ -6009,7 +6018,7 @@ func TestCLIInteractiveTUISettingsListIncludesAndAppliesPiControls(t *testing.T)
 	}
 	tool := NewToolExecutionComponent("read", "tool-settings", map[string]any{"path": "image.png"}, ToolDefinition{Name: "read"}, t.TempDir())
 	host.chat.AddChild(tool)
-	host.pendingTools = map[string]*ToolExecutionComponent{"tool-settings": tool}
+	host.liveState.storePendingTool("tool-settings", tool)
 	host.applySettingsListChange(rpcHost, settings, "autocompact", "false")
 	host.applySettingsListChange(rpcHost, settings, "transport", "websocket-cached")
 	host.applySettingsListChange(rpcHost, settings, "show-images", "false")
@@ -10051,8 +10060,8 @@ func TestCLIInteractiveTUIHostRendersAbortedAssistantToolCallsAsErrors(t *testin
 	}
 
 	waitForViewport(t, terminal, "Operation aborted")
-	if len(host.pendingTools) != 0 {
-		t.Fatalf("pending tools = %#v", host.pendingTools)
+	if count := host.liveState.pendingToolCount(); count != 0 {
+		t.Fatalf("pending tools = %d", count)
 	}
 }
 
@@ -11741,7 +11750,7 @@ func waitForHostSlashSuggestion(t *testing.T, host *CLIInteractiveTUIHost, text,
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if host != nil {
-			if provider, ok := host.autocompleteProvider.(*gitui.CombinedAutocompleteProvider); ok {
+			if provider, ok := host.autocompleteProviderSnapshot().(*gitui.CombinedAutocompleteProvider); ok {
 				suggestions, err := provider.GetSuggestionsContext(context.Background(), []string{text}, 0, len([]rune(text)), false)
 				if err == nil && autocompleteSuggestionsContainValue(suggestions, wantValue) {
 					return
@@ -11758,7 +11767,7 @@ func waitForHostAutocompleteSuggestion(t *testing.T, host *CLIInteractiveTUIHost
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if host != nil {
-			if provider, ok := host.autocompleteProvider.(*gitui.CombinedAutocompleteProvider); ok {
+			if provider, ok := host.autocompleteProviderSnapshot().(*gitui.CombinedAutocompleteProvider); ok {
 				suggestions, err := provider.GetSuggestionsContext(context.Background(), []string{text}, 0, len([]rune(text)), true)
 				if err == nil && autocompleteSuggestionsContainValue(suggestions, wantValue) {
 					return

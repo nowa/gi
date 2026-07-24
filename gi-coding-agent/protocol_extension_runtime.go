@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 	llm "github.com/nowa/gi/gi-llm-provider"
@@ -33,6 +34,11 @@ const CapabilityTUIToolsExpanded = "tui.tools_expanded"
 const CapabilityTUITerminalInput = "tui.terminal_input"
 
 type ProtocolExtensionRuntime struct {
+	// registryMu owns extension-contributed registries and their watcher lists.
+	// Registration publishes under the write lock; readers consume snapshots.
+	// Extension callbacks are always invoked after releasing the lock.
+	registryMu sync.RWMutex
+
 	capabilities              map[string]bool
 	commands                  []ProtocolCommandRegistration
 	handlers                  map[string][]protocolEventHandlerRegistration
@@ -500,6 +506,9 @@ func (r *ProtocolExtensionRuntime) BindSession(session *AgentSession) {
 	if r == nil {
 		return
 	}
+	if session != nil {
+		session.ExtensionRuntime = r
+	}
 	r.boundSession = session
 	if r.hostActionSession != session {
 		r.hostActionHost = nil
@@ -616,9 +625,11 @@ func (c *ProtocolExtensionContext) GetFlag(name string) any {
 	if name == "" {
 		return nil
 	}
+	c.runtime.registryMu.RLock()
+	defer c.runtime.registryMu.RUnlock()
 	for _, flag := range c.runtime.flags {
 		if flag.Name == name && protocolSourceInfoEqual(flag.SourceInfo, c.source) {
-			return c.runtime.FlagValue(name)
+			return c.runtime.flagValues[name]
 		}
 	}
 	return nil
@@ -741,7 +752,9 @@ func (c *ProtocolExtensionContext) On(eventType string, handler ProtocolEventHan
 	if handler == nil {
 		return nil
 	}
+	c.runtime.registryMu.Lock()
 	c.runtime.handlers[eventType] = append(c.runtime.handlers[eventType], protocolEventHandlerRegistration{source: c.source, handler: handler})
+	c.runtime.registryMu.Unlock()
 	return nil
 }
 
@@ -755,10 +768,12 @@ func (c *ProtocolExtensionContext) OnInput(handler ProtocolInputHandler) error {
 	if handler == nil {
 		return nil
 	}
+	c.runtime.registryMu.Lock()
 	c.runtime.inputHandlers = append(c.runtime.inputHandlers, protocolInputHandlerRegistration{
 		source:  c.source,
 		handler: handler,
 	})
+	c.runtime.registryMu.Unlock()
 	return nil
 }
 
@@ -781,7 +796,10 @@ func (r *ProtocolExtensionRuntime) EmitSessionEvent(event ProtocolSessionEvent) 
 			r.hasEventPrompt = previousHasPrompt
 		}()
 	}
-	for _, registration := range r.handlers[currentEvent.Type] {
+	r.registryMu.RLock()
+	handlers := append([]protocolEventHandlerRegistration(nil), r.handlers[currentEvent.Type]...)
+	r.registryMu.RUnlock()
+	for _, registration := range handlers {
 		if currentEvent.Type == "before_agent_start" {
 			r.eventSystemPrompt = currentEvent.SystemPrompt
 		}
@@ -955,13 +973,19 @@ func cloneSDKContentParts(parts []SDKContentPart) []SDKContentPart {
 }
 
 func (r *ProtocolExtensionRuntime) EmitInput(text string, images []llm.ContentPart, source string) ProtocolInputResult {
-	if r == nil || len(r.inputHandlers) == 0 {
+	if r == nil {
+		return ProtocolInputResult{Action: "continue"}
+	}
+	r.registryMu.RLock()
+	handlers := append([]protocolInputHandlerRegistration(nil), r.inputHandlers...)
+	r.registryMu.RUnlock()
+	if len(handlers) == 0 {
 		return ProtocolInputResult{Action: "continue"}
 	}
 	currentText := text
 	currentImages := images
 	changed := false
-	for _, registration := range r.inputHandlers {
+	for _, registration := range handlers {
 		result, err := registration.handler(ProtocolInputEvent{
 			Type:   "input",
 			Text:   currentText,
@@ -997,6 +1021,8 @@ func (r *ProtocolExtensionRuntime) HasHandlers(eventType string) bool {
 	if r == nil {
 		return false
 	}
+	r.registryMu.RLock()
+	defer r.registryMu.RUnlock()
 	if eventType == "input" {
 		return len(r.inputHandlers) > 0
 	}
@@ -1007,9 +1033,13 @@ func (r *ProtocolExtensionRuntime) OnError(listener ProtocolErrorListener) func(
 	if r == nil || listener == nil {
 		return func() {}
 	}
+	r.registryMu.Lock()
 	r.errorListeners = append(r.errorListeners, listener)
+	r.registryMu.Unlock()
 	return func() {
 		target := reflect.ValueOf(listener).Pointer()
+		r.registryMu.Lock()
+		defer r.registryMu.Unlock()
 		for index, candidate := range r.errorListeners {
 			if reflect.ValueOf(candidate).Pointer() != target {
 				continue
@@ -1024,7 +1054,9 @@ func (r *ProtocolExtensionRuntime) emitExtensionError(event ProtocolExtensionErr
 	if r == nil {
 		return
 	}
+	r.registryMu.RLock()
 	listeners := append([]ProtocolErrorListener(nil), r.errorListeners...)
+	r.registryMu.RUnlock()
 	for _, listener := range listeners {
 		listener(event)
 	}
@@ -1144,6 +1176,7 @@ func (r *ProtocolExtensionRuntime) RemoveSource(source ProtocolSourceInfo) {
 	if r == nil || protocolSourceInfoKey(source) == "" {
 		return
 	}
+	r.registryMu.Lock()
 	if len(r.handlers) > 0 {
 		for eventType, registrations := range r.handlers {
 			filtered := registrations[:0]
@@ -1195,6 +1228,7 @@ func (r *ProtocolExtensionRuntime) RemoveSource(source ProtocolSourceInfo) {
 		}
 		r.tools = filtered
 	}
+	r.registryMu.Unlock()
 	if len(r.providerRegistrations) > 0 {
 		affected := map[string]bool{}
 		filtered := r.providerRegistrations[:0]
@@ -1213,6 +1247,7 @@ func (r *ProtocolExtensionRuntime) RemoveSource(source ProtocolSourceInfo) {
 		}
 	}
 
+	r.registryMu.Lock()
 	messageRenderersChanged := false
 	if len(r.messageRegistrations) > 0 {
 		filtered := r.messageRegistrations[:0]
@@ -1225,7 +1260,7 @@ func (r *ProtocolExtensionRuntime) RemoveSource(source ProtocolSourceInfo) {
 		}
 		r.messageRegistrations = filtered
 		if messageRenderersChanged {
-			r.rebuildMessageRenderers()
+			r.rebuildMessageRenderersLocked()
 		}
 	}
 
@@ -1241,13 +1276,13 @@ func (r *ProtocolExtensionRuntime) RemoveSource(source ProtocolSourceInfo) {
 		}
 		r.toolRendererRegistrations = filtered
 		if toolRenderersChanged {
-			r.rebuildToolRenderers()
+			r.rebuildToolRenderersLocked()
 		}
 	}
 
 	if len(r.flags) > 0 {
 		visibleBefore := map[string]ProtocolSourceInfo{}
-		for _, flag := range r.Flags() {
+		for _, flag := range r.visibleFlagRegistrationsLocked() {
 			visibleBefore[flag.Name] = flag.SourceInfo
 		}
 		removedVisibleNames := map[string]bool{}
@@ -1265,7 +1300,7 @@ func (r *ProtocolExtensionRuntime) RemoveSource(source ProtocolSourceInfo) {
 		r.flags = filtered
 		for name := range removedVisibleNames {
 			delete(r.flagValues, name)
-			r.applyVisibleFlagValue(name)
+			r.applyVisibleFlagValueLocked(name)
 		}
 	}
 
@@ -1293,18 +1328,24 @@ func (r *ProtocolExtensionRuntime) RemoveSource(source ProtocolSourceInfo) {
 		r.autocomplete = filtered
 	}
 
+	var removedMountIDs []string
 	if len(r.viewTreeMounts) > 0 {
 		filtered := r.viewTreeMounts[:0]
 		for _, mount := range r.viewTreeMounts {
 			if protocolSourceInfoEqual(mount.SourceInfo, source) {
-				if r.viewTreeHost != nil {
-					r.viewTreeHost.Unmount(mount.MountID)
-				}
+				removedMountIDs = append(removedMountIDs, mount.MountID)
 				continue
 			}
 			filtered = append(filtered, mount)
 		}
 		r.viewTreeMounts = filtered
+	}
+	r.registryMu.Unlock()
+
+	if r.viewTreeHost != nil {
+		for _, mountID := range removedMountIDs {
+			r.viewTreeHost.Unmount(mountID)
+		}
 	}
 
 	if commandsChanged {
@@ -1361,14 +1402,17 @@ func (c *ProtocolExtensionContext) RegisterCommand(name string, definition Proto
 		Handler:            definition.Handler,
 		HandlerWithContext: definition.HandlerWithContext,
 	}
+	c.runtime.registryMu.Lock()
 	for index, existing := range c.runtime.commands {
 		if existing.Name == name && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
 			c.runtime.commands[index] = registration
+			c.runtime.registryMu.Unlock()
 			c.runtime.notifyCommandsChanged()
 			return nil
 		}
 	}
 	c.runtime.commands = append(c.runtime.commands, registration)
+	c.runtime.registryMu.Unlock()
 	c.runtime.notifyCommandsChanged()
 	return nil
 }
@@ -1636,14 +1680,19 @@ func (c *ProtocolExtensionContext) RegisterTool(definition ProtocolToolDefinitio
 		ExecuteWithUpdates: definition.ExecuteWithUpdates,
 		SourceInfo:         sourceInfo,
 	}
+	c.runtime.registryMu.Lock()
+	replaced := false
 	for index, existing := range c.runtime.tools {
 		if existing.Name == tool.Name && protocolSourceInfoEqual(existing.SourceInfo, sourceInfo) {
 			c.runtime.tools[index] = tool
-			c.runtime.ApplyToSession(c.runtime.boundSession)
-			return nil
+			replaced = true
+			break
 		}
 	}
-	c.runtime.tools = append(c.runtime.tools, tool)
+	if !replaced {
+		c.runtime.tools = append(c.runtime.tools, tool)
+	}
+	c.runtime.registryMu.Unlock()
 	c.runtime.ApplyToSession(c.runtime.boundSession)
 	return nil
 }
@@ -1663,16 +1712,20 @@ func (c *ProtocolExtensionContext) RegisterMessageRenderer(customType string, re
 		SourceInfo: c.source,
 		Renderer:   renderer,
 	}
+	c.runtime.registryMu.Lock()
+	replaced := false
 	for index, existing := range c.runtime.messageRegistrations {
 		if existing.CustomType == customType && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
 			c.runtime.messageRegistrations[index] = registration
-			c.runtime.rebuildMessageRenderers()
-			c.runtime.notifyMessageRenderersChanged()
-			return nil
+			replaced = true
+			break
 		}
 	}
-	c.runtime.messageRegistrations = append(c.runtime.messageRegistrations, registration)
-	c.runtime.rebuildMessageRenderers()
+	if !replaced {
+		c.runtime.messageRegistrations = append(c.runtime.messageRegistrations, registration)
+	}
+	c.runtime.rebuildMessageRenderersLocked()
+	c.runtime.registryMu.Unlock()
 	c.runtime.notifyMessageRenderersChanged()
 	return nil
 }
@@ -1694,15 +1747,17 @@ func (c *ProtocolExtensionContext) RegisterToolRenderer(toolName string, definit
 		RenderCall:   definition.RenderCall,
 		RenderResult: definition.RenderResult,
 	}
+	c.runtime.registryMu.Lock()
+	defer c.runtime.registryMu.Unlock()
 	for index, existing := range c.runtime.toolRendererRegistrations {
 		if existing.Name == toolName && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
 			c.runtime.toolRendererRegistrations[index] = registration
-			c.runtime.rebuildToolRenderers()
+			c.runtime.rebuildToolRenderersLocked()
 			return nil
 		}
 	}
 	c.runtime.toolRendererRegistrations = append(c.runtime.toolRendererRegistrations, registration)
-	c.runtime.rebuildToolRenderers()
+	c.runtime.rebuildToolRenderersLocked()
 	return nil
 }
 
@@ -1721,15 +1776,17 @@ func (c *ProtocolExtensionContext) RegisterFlag(name string, definition Protocol
 		Default:     definition.Default,
 		SourceInfo:  c.source,
 	}
+	c.runtime.registryMu.Lock()
+	defer c.runtime.registryMu.Unlock()
 	for index, existing := range c.runtime.flags {
 		if existing.Name == name && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
 			c.runtime.flags[index] = registration
-			c.runtime.applyVisibleFlagValue(name)
+			c.runtime.applyVisibleFlagValueLocked(name)
 			return nil
 		}
 	}
 	c.runtime.flags = append(c.runtime.flags, registration)
-	c.runtime.applyVisibleFlagValue(name)
+	c.runtime.applyVisibleFlagValueLocked(name)
 	return nil
 }
 
@@ -1750,6 +1807,8 @@ func (c *ProtocolExtensionContext) RegisterShortcut(key string, definition Proto
 		SourceInfo:  c.source,
 		Handler:     definition.Handler,
 	}
+	c.runtime.registryMu.Lock()
+	defer c.runtime.registryMu.Unlock()
 	for index, existing := range c.runtime.shortcuts {
 		if existing.Key == key && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
 			c.runtime.shortcuts[index] = registration
@@ -1778,14 +1837,19 @@ func (c *ProtocolExtensionContext) RegisterAutocompleteProvider(id string, defin
 		SourceInfo:  c.source,
 		Handler:     definition.Handler,
 	}
+	c.runtime.registryMu.Lock()
+	replaced := false
 	for index, existing := range c.runtime.autocomplete {
 		if existing.ID == id && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
 			c.runtime.autocomplete[index] = registration
-			c.runtime.notifyAutocompleteProvidersChanged()
-			return nil
+			replaced = true
+			break
 		}
 	}
-	c.runtime.autocomplete = append(c.runtime.autocomplete, registration)
+	if !replaced {
+		c.runtime.autocomplete = append(c.runtime.autocomplete, registration)
+	}
+	c.runtime.registryMu.Unlock()
 	c.runtime.notifyAutocompleteProvidersChanged()
 	return nil
 }
@@ -1824,6 +1888,7 @@ func (r *ProtocolExtensionRuntime) registerViewTreeMount(source ProtocolSourceIn
 		Overlay:    overlay,
 		SourceInfo: source,
 	}
+	r.registryMu.Lock()
 	replaced := false
 	for index, existing := range r.viewTreeMounts {
 		if existing.MountID == mountID {
@@ -1835,6 +1900,7 @@ func (r *ProtocolExtensionRuntime) registerViewTreeMount(source ProtocolSourceIn
 	if !replaced {
 		r.viewTreeMounts = append(r.viewTreeMounts, registration)
 	}
+	r.registryMu.Unlock()
 	return r.applyViewTreeMount(registration)
 }
 
@@ -1842,6 +1908,8 @@ func (r *ProtocolExtensionRuntime) ViewTreeMounts() []ProtocolViewTreeMountRegis
 	if r == nil {
 		return nil
 	}
+	r.registryMu.RLock()
+	defer r.registryMu.RUnlock()
 	return append([]ProtocolViewTreeMountRegistration(nil), r.viewTreeMounts...)
 }
 
@@ -1849,7 +1917,7 @@ func (r *ProtocolExtensionRuntime) applyViewTreeMounts() {
 	if r == nil || r.viewTreeHost == nil {
 		return
 	}
-	for _, registration := range r.viewTreeMounts {
+	for _, registration := range r.ViewTreeMounts() {
 		_ = r.applyViewTreeMount(registration)
 	}
 }
@@ -1870,10 +1938,14 @@ func (r *ProtocolExtensionRuntime) OnAutocompleteProvidersChanged(callback func(
 	if r == nil || callback == nil {
 		return func() {}
 	}
+	r.registryMu.Lock()
 	r.nextAutocomplete++
 	id := r.nextAutocomplete
 	r.autocompleteWatch = append(r.autocompleteWatch, protocolAutocompleteWatcher{id: id, callback: callback})
+	r.registryMu.Unlock()
 	return func() {
+		r.registryMu.Lock()
+		defer r.registryMu.Unlock()
 		for index, watcher := range r.autocompleteWatch {
 			if watcher.id != id {
 				continue
@@ -1888,7 +1960,9 @@ func (r *ProtocolExtensionRuntime) notifyAutocompleteProvidersChanged() {
 	if r == nil {
 		return
 	}
+	r.registryMu.RLock()
 	watchers := append([]protocolAutocompleteWatcher(nil), r.autocompleteWatch...)
+	r.registryMu.RUnlock()
 	for _, watcher := range watchers {
 		if watcher.callback != nil {
 			watcher.callback()
@@ -1900,10 +1974,14 @@ func (r *ProtocolExtensionRuntime) OnCommandsChanged(callback func()) func() {
 	if r == nil || callback == nil {
 		return func() {}
 	}
+	r.registryMu.Lock()
 	r.nextCommandWatch++
 	id := r.nextCommandWatch
 	r.commandWatch = append(r.commandWatch, protocolCommandWatcher{id: id, callback: callback})
+	r.registryMu.Unlock()
 	return func() {
+		r.registryMu.Lock()
+		defer r.registryMu.Unlock()
 		for index, watcher := range r.commandWatch {
 			if watcher.id != id {
 				continue
@@ -1918,7 +1996,9 @@ func (r *ProtocolExtensionRuntime) notifyCommandsChanged() {
 	if r == nil {
 		return
 	}
+	r.registryMu.RLock()
 	watchers := append([]protocolCommandWatcher(nil), r.commandWatch...)
+	r.registryMu.RUnlock()
 	for _, watcher := range watchers {
 		if watcher.callback != nil {
 			watcher.callback()
@@ -1930,10 +2010,14 @@ func (r *ProtocolExtensionRuntime) OnMessageRenderersChanged(callback func()) fu
 	if r == nil || callback == nil {
 		return func() {}
 	}
+	r.registryMu.Lock()
 	r.nextMessageRender++
 	id := r.nextMessageRender
 	r.messageRenderWatch = append(r.messageRenderWatch, protocolMessageRendererWatcher{id: id, callback: callback})
+	r.registryMu.Unlock()
 	return func() {
+		r.registryMu.Lock()
+		defer r.registryMu.Unlock()
 		for index, watcher := range r.messageRenderWatch {
 			if watcher.id != id {
 				continue
@@ -1948,7 +2032,9 @@ func (r *ProtocolExtensionRuntime) notifyMessageRenderersChanged() {
 	if r == nil {
 		return
 	}
+	r.registryMu.RLock()
 	watchers := append([]protocolMessageRendererWatcher(nil), r.messageRenderWatch...)
+	r.registryMu.RUnlock()
 	for _, watcher := range watchers {
 		if watcher.callback != nil {
 			watcher.callback()
@@ -1960,14 +2046,17 @@ func (r *ProtocolExtensionRuntime) RegisteredCommands() []ProtocolCommandRegistr
 	if r == nil {
 		return nil
 	}
+	r.registryMu.RLock()
+	commands := append([]ProtocolCommandRegistration(nil), r.commands...)
+	r.registryMu.RUnlock()
 	counts := map[string]int{}
-	for _, command := range r.commands {
+	for _, command := range commands {
 		counts[command.Name]++
 	}
 	ordinals := map[string]int{}
 	takenInvocationNames := map[string]bool{}
-	result := make([]ProtocolCommandRegistration, 0, len(r.commands))
-	for _, command := range r.commands {
+	result := make([]ProtocolCommandRegistration, 0, len(commands))
+	for _, command := range commands {
 		ordinals[command.Name]++
 		command.InvocationName = command.Name
 		if counts[command.Name] > 1 {
@@ -1993,7 +2082,9 @@ func (r *ProtocolExtensionRuntime) AutocompleteProviders() []ProtocolAutocomplet
 	if r == nil {
 		return nil
 	}
+	r.registryMu.RLock()
 	result := append([]ProtocolAutocompleteProviderRegistration(nil), r.autocomplete...)
+	r.registryMu.RUnlock()
 	sort.SliceStable(result, func(i, j int) bool {
 		return result[i].Priority > result[j].Priority
 	})
@@ -2020,9 +2111,12 @@ func (r *ProtocolExtensionRuntime) RegisteredTools() []SDKTool {
 	if r == nil {
 		return nil
 	}
+	r.registryMu.RLock()
+	tools := append([]SDKTool(nil), r.tools...)
+	r.registryMu.RUnlock()
 	seen := map[string]bool{}
-	result := make([]SDKTool, 0, len(r.tools))
-	for _, tool := range r.tools {
+	result := make([]SDKTool, 0, len(tools))
+	for _, tool := range tools {
 		if tool.Name == "" || seen[tool.Name] {
 			continue
 		}
@@ -2032,7 +2126,9 @@ func (r *ProtocolExtensionRuntime) RegisteredTools() []SDKTool {
 	return result
 }
 
-func (r *ProtocolExtensionRuntime) rebuildMessageRenderers() {
+// rebuildMessageRenderersLocked rebuilds the visible renderer projection.
+// registryMu must be held for writing.
+func (r *ProtocolExtensionRuntime) rebuildMessageRenderersLocked() {
 	if r == nil {
 		return
 	}
@@ -2054,6 +2150,8 @@ func (r *ProtocolExtensionRuntime) GetMessageRenderer(customType string) Protoco
 	if r == nil {
 		return nil
 	}
+	r.registryMu.RLock()
+	defer r.registryMu.RUnlock()
 	return r.messageRenderers[customType]
 }
 
@@ -2061,6 +2159,8 @@ func (r *ProtocolExtensionRuntime) GetToolRenderer(toolName string) *ProtocolToo
 	if r == nil {
 		return nil
 	}
+	r.registryMu.RLock()
+	defer r.registryMu.RUnlock()
 	renderer, ok := r.toolRenderers[toolName]
 	if !ok {
 		return nil
@@ -2069,7 +2169,9 @@ func (r *ProtocolExtensionRuntime) GetToolRenderer(toolName string) *ProtocolToo
 	return &copy
 }
 
-func (r *ProtocolExtensionRuntime) rebuildToolRenderers() {
+// rebuildToolRenderersLocked rebuilds the visible renderer projection.
+// registryMu must be held for writing.
+func (r *ProtocolExtensionRuntime) rebuildToolRenderersLocked() {
 	if r == nil {
 		return
 	}
@@ -2101,13 +2203,17 @@ func (r *ProtocolExtensionRuntime) Flags() []ProtocolFlagRegistration {
 	if r == nil {
 		return nil
 	}
-	return r.visibleFlagRegistrations()
+	r.registryMu.RLock()
+	defer r.registryMu.RUnlock()
+	return r.visibleFlagRegistrationsLocked()
 }
 
 func (r *ProtocolExtensionRuntime) SetCLIFlagValues(values map[string]any) []ProtocolExtensionFlagDiagnostic {
 	if r == nil || len(values) == 0 {
 		return nil
 	}
+	r.registryMu.Lock()
+	defer r.registryMu.Unlock()
 	if r.cliFlagValues == nil {
 		r.cliFlagValues = map[string]any{}
 	}
@@ -2120,25 +2226,35 @@ func (r *ProtocolExtensionRuntime) SetCLIFlagValues(values map[string]any) []Pro
 		r.cliFlagValues[name] = values[key]
 	}
 	before := len(r.flagDiagnostics)
-	for _, flag := range r.Flags() {
-		r.applyCLIFlagValueToRegistration(flag)
+	for _, flag := range r.visibleFlagRegistrationsLocked() {
+		r.applyCLIFlagValueToRegistrationLocked(flag)
 	}
 	return append([]ProtocolExtensionFlagDiagnostic(nil), r.flagDiagnostics[before:]...)
 }
 
 func (r *ProtocolExtensionRuntime) FlagDiagnostics() []ProtocolExtensionFlagDiagnostic {
-	if r == nil || len(r.flagDiagnostics) == 0 {
+	if r == nil {
+		return nil
+	}
+	r.registryMu.RLock()
+	defer r.registryMu.RUnlock()
+	if len(r.flagDiagnostics) == 0 {
 		return nil
 	}
 	return append([]ProtocolExtensionFlagDiagnostic(nil), r.flagDiagnostics...)
 }
 
 func (r *ProtocolExtensionRuntime) UnknownCLIFlagDiagnostics() []ProtocolExtensionFlagDiagnostic {
-	if r == nil || len(r.cliFlagValues) == 0 {
+	if r == nil {
+		return nil
+	}
+	r.registryMu.RLock()
+	defer r.registryMu.RUnlock()
+	if len(r.cliFlagValues) == 0 {
 		return nil
 	}
 	registered := map[string]bool{}
-	for _, flag := range r.Flags() {
+	for _, flag := range r.visibleFlagRegistrationsLocked() {
 		registered[flag.Name] = true
 	}
 	names := make([]string, 0, len(r.cliFlagValues))
@@ -2158,7 +2274,7 @@ func (r *ProtocolExtensionRuntime) UnknownCLIFlagDiagnostics() []ProtocolExtensi
 	return diagnostics
 }
 
-func (r *ProtocolExtensionRuntime) applyCLIFlagValueToRegistration(flag ProtocolFlagRegistration) {
+func (r *ProtocolExtensionRuntime) applyCLIFlagValueToRegistrationLocked(flag ProtocolFlagRegistration) {
 	if r == nil || len(r.cliFlagValues) == 0 {
 		return
 	}
@@ -2176,7 +2292,7 @@ func (r *ProtocolExtensionRuntime) applyCLIFlagValueToRegistration(flag Protocol
 	case "", "string":
 		text, ok := value.(string)
 		if !ok {
-			r.appendFlagDiagnostic(ProtocolExtensionFlagDiagnostic{
+			r.appendFlagDiagnosticLocked(ProtocolExtensionFlagDiagnostic{
 				Name:    name,
 				Message: `Extension flag "--` + name + `" requires a value`,
 			})
@@ -2188,7 +2304,7 @@ func (r *ProtocolExtensionRuntime) applyCLIFlagValueToRegistration(flag Protocol
 	}
 }
 
-func (r *ProtocolExtensionRuntime) applyVisibleFlagValue(name string) {
+func (r *ProtocolExtensionRuntime) applyVisibleFlagValueLocked(name string) {
 	if r == nil {
 		return
 	}
@@ -2196,7 +2312,7 @@ func (r *ProtocolExtensionRuntime) applyVisibleFlagValue(name string) {
 	if name == "" {
 		return
 	}
-	flag, ok := r.visibleFlagRegistration(name)
+	flag, ok := r.visibleFlagRegistrationLocked(name)
 	if !ok {
 		delete(r.flagValues, name)
 		return
@@ -2206,10 +2322,10 @@ func (r *ProtocolExtensionRuntime) applyVisibleFlagValue(name string) {
 			r.flagValues[name] = flag.Default
 		}
 	}
-	r.applyCLIFlagValueToRegistration(flag)
+	r.applyCLIFlagValueToRegistrationLocked(flag)
 }
 
-func (r *ProtocolExtensionRuntime) visibleFlagRegistration(name string) (ProtocolFlagRegistration, bool) {
+func (r *ProtocolExtensionRuntime) visibleFlagRegistrationLocked(name string) (ProtocolFlagRegistration, bool) {
 	if r == nil {
 		return ProtocolFlagRegistration{}, false
 	}
@@ -2225,7 +2341,7 @@ func (r *ProtocolExtensionRuntime) visibleFlagRegistration(name string) (Protoco
 	return ProtocolFlagRegistration{}, false
 }
 
-func (r *ProtocolExtensionRuntime) visibleFlagRegistrations() []ProtocolFlagRegistration {
+func (r *ProtocolExtensionRuntime) visibleFlagRegistrationsLocked() []ProtocolFlagRegistration {
 	if r == nil {
 		return nil
 	}
@@ -2241,7 +2357,7 @@ func (r *ProtocolExtensionRuntime) visibleFlagRegistrations() []ProtocolFlagRegi
 	return result
 }
 
-func (r *ProtocolExtensionRuntime) appendFlagDiagnostic(diagnostic ProtocolExtensionFlagDiagnostic) {
+func (r *ProtocolExtensionRuntime) appendFlagDiagnosticLocked(diagnostic ProtocolExtensionFlagDiagnostic) {
 	if r == nil || strings.TrimSpace(diagnostic.Message) == "" {
 		return
 	}
@@ -2261,6 +2377,8 @@ func (r *ProtocolExtensionRuntime) SetFlagValue(name string, value any) {
 	if name == "" {
 		return
 	}
+	r.registryMu.Lock()
+	defer r.registryMu.Unlock()
 	r.flagValues[name] = value
 }
 
@@ -2269,6 +2387,8 @@ func (r *ProtocolExtensionRuntime) FlagValue(name string) any {
 		return nil
 	}
 	name = normalizeProtocolFlagName(name)
+	r.registryMu.RLock()
+	defer r.registryMu.RUnlock()
 	return r.flagValues[name]
 }
 
@@ -2298,12 +2418,14 @@ func (r *ProtocolExtensionRuntime) ApplyToSession(session *AgentSession) {
 	if r == nil || session == nil || session.Agent == nil {
 		return
 	}
-	if override, ok := r.providerOverrides[session.Agent.State.Model.Provider]; ok {
+	r.registryMu.RLock()
+	override, ok := r.providerOverrides[session.Agent.State.Model.Provider]
+	r.registryMu.RUnlock()
+	if ok {
 		if override.BaseURL != "" {
 			session.Agent.State.Model.BaseURL = override.BaseURL
 		}
 	}
-	session.ExtensionRuntime = r
 	session.DynamicTools = r.RegisteredTools()
 	session.RefreshSystemPrompt()
 }
@@ -2335,7 +2457,10 @@ func (r *ProtocolExtensionRuntime) Shortcuts(keybindings KeybindingsConfig) Prot
 	}
 	builtIns := protocolKeybindingActions(keybindings)
 	reservedKeys := protocolReservedShortcutKeys(keybindings)
-	for _, shortcut := range r.shortcuts {
+	r.registryMu.RLock()
+	shortcuts := append([]ProtocolShortcutRegistration(nil), r.shortcuts...)
+	r.registryMu.RUnlock()
+	for _, shortcut := range shortcuts {
 		if _, reserved := reservedKeys[shortcut.Key]; reserved {
 			result.Warnings = append(result.Warnings, ProtocolShortcutWarning{
 				Key:     shortcut.Key,

@@ -541,7 +541,7 @@ func (h *CLIInteractiveTUIHost) applyToolImageSettings(settings *SettingsManager
 		component.SetShowImages(settings.GetShowImages())
 		component.SetImageWidthCells(settings.GetImageWidthCells())
 	}
-	for _, component := range h.pendingTools {
+	for _, component := range h.liveState.pendingToolsSnapshot() {
 		apply(component)
 	}
 	if h.chat != nil {

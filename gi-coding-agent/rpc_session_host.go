@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -69,9 +68,16 @@ type RPCSessionHost struct {
 	ProcessExecutor       HostProcessExecutor
 	PolicyRequester       HostPolicyRequester
 	ReloadSession         func() error
-	sessionReplaceHooks   []func(*AgentSession)
+	sessionMu             sync.RWMutex
+	sessionReplaceHooks   []rpcSessionReplaceHookRegistration
+	nextSessionHookID     uint64
 	childMu               sync.Mutex
 	childAgents           map[string]*AgentSession
+}
+
+type rpcSessionReplaceHookRegistration struct {
+	id       uint64
+	listener func(*AgentSession)
 }
 
 type RPCScopedModel struct {
@@ -180,6 +186,15 @@ func NewRPCSessionHost(session *AgentSession) *RPCSessionHost {
 	return host
 }
 
+func (h *RPCSessionHost) sessionSnapshot() *AgentSession {
+	if h == nil {
+		return nil
+	}
+	h.sessionMu.RLock()
+	defer h.sessionMu.RUnlock()
+	return h.Session
+}
+
 func rpcScopedModelsFromSession(scopedModels []ScopedModel) []RPCScopedModel {
 	if len(scopedModels) == 0 {
 		return nil
@@ -198,19 +213,32 @@ func (h *RPCSessionHost) SubscribeEvents(listener func(AgentSessionEvent)) func(
 	if h == nil || listener == nil {
 		return func() {}
 	}
+	session := h.sessionSnapshot()
+	if session == nil {
+		return func() {}
+	}
+	var subscriptionMu sync.Mutex
 	active := true
-	unsubscribeSession := h.Session.Subscribe(listener)
+	unsubscribeSession := session.Subscribe(listener)
 	unsubscribeReplace := h.OnSessionReplaced(func(session *AgentSession) {
-		unsubscribeSession()
+		subscriptionMu.Lock()
 		if !active {
+			subscriptionMu.Unlock()
 			return
 		}
+		previousUnsubscribe := unsubscribeSession
 		unsubscribeSession = session.Subscribe(listener)
+		subscriptionMu.Unlock()
+		previousUnsubscribe()
 	})
 	return func() {
-		active = false
-		unsubscribeSession()
 		unsubscribeReplace()
+		subscriptionMu.Lock()
+		active = false
+		unsubscribe := unsubscribeSession
+		unsubscribeSession = func() {}
+		subscriptionMu.Unlock()
+		unsubscribe()
 	}
 }
 
@@ -218,10 +246,19 @@ func (h *RPCSessionHost) OnSessionReplaced(listener func(*AgentSession)) func() 
 	if h == nil || listener == nil {
 		return func() {}
 	}
-	h.sessionReplaceHooks = append(h.sessionReplaceHooks, listener)
+	h.sessionMu.Lock()
+	h.nextSessionHookID++
+	id := h.nextSessionHookID
+	h.sessionReplaceHooks = append(
+		h.sessionReplaceHooks,
+		rpcSessionReplaceHookRegistration{id: id, listener: listener},
+	)
+	h.sessionMu.Unlock()
 	return func() {
-		for index, candidate := range h.sessionReplaceHooks {
-			if reflect.ValueOf(candidate).Pointer() != reflect.ValueOf(listener).Pointer() {
+		h.sessionMu.Lock()
+		defer h.sessionMu.Unlock()
+		for index, registration := range h.sessionReplaceHooks {
+			if registration.id != id {
 				continue
 			}
 			h.sessionReplaceHooks = append(h.sessionReplaceHooks[:index], h.sessionReplaceHooks[index+1:]...)
@@ -234,10 +271,17 @@ func (h *RPCSessionHost) replaceSession(session *AgentSession) {
 	if h == nil || session == nil {
 		return
 	}
+	h.sessionMu.Lock()
 	h.Session = session
-	hooks := append([]func(*AgentSession){}, h.sessionReplaceHooks...)
-	for _, hook := range hooks {
-		hook(session)
+	hooks := make([]func(*AgentSession), 0, len(h.sessionReplaceHooks))
+	for _, registration := range h.sessionReplaceHooks {
+		if registration.listener != nil {
+			hooks = append(hooks, registration.listener)
+		}
+	}
+	h.sessionMu.Unlock()
+	for _, listener := range hooks {
+		listener(session)
 	}
 }
 
@@ -250,7 +294,8 @@ func (h *RPCSessionHost) HandleCommand(ctx context.Context, command RPCCommand) 
 }
 
 func (h *RPCSessionHost) handleCommand(ctx context.Context, command RPCCommand) (any, error) {
-	if h == nil || h.Session == nil || h.Session.SessionManager == nil {
+	session := h.sessionSnapshot()
+	if session == nil || session.SessionManager == nil {
 		return nil, errors.New("RPC session host requires an active session")
 	}
 	switch command.Type {
@@ -258,19 +303,16 @@ func (h *RPCSessionHost) handleCommand(ctx context.Context, command RPCCommand) 
 		if err := h.runPromptPreflight(command); err != nil {
 			return nil, err
 		}
-		return nil, h.Session.PromptWithImages(command.Message, command.Images)
+		return nil, session.PromptWithImages(command.Message, command.Images)
 	case RPCCommandSteer:
-		return nil, h.Session.SteerWithImages(command.Message, command.Images)
+		return nil, session.SteerWithImages(command.Message, command.Images)
 	case RPCCommandFollowUp:
-		return nil, h.Session.FollowUpWithImages(command.Message, command.Images)
+		return nil, session.FollowUpWithImages(command.Message, command.Images)
 	case RPCCommandAbort:
-		return nil, h.Session.Abort()
+		return nil, session.Abort()
 	case RPCCommandNewSession:
-		h.Session.SessionManager.NewSession(NewSessionOptions{ParentSession: command.ParentSession})
-		h.Session.steeringMessages = nil
-		h.Session.followUpMessages = nil
-		h.Session.steeringQueue = nil
-		h.Session.followUpQueue = nil
+		session.SessionManager.NewSession(NewSessionOptions{ParentSession: command.ParentSession})
+		session.queues.clearPrompts()
 		return RPCCloneResult{Cancelled: false}, nil
 	case RPCCommandGetState:
 		return h.GetState(), nil
@@ -293,18 +335,18 @@ func (h *RPCSessionHost) handleCommand(ctx context.Context, command RPCCommand) 
 	case RPCCommandSetFollowUpMode:
 		return nil, h.SetFollowUpMode(command.Mode)
 	case RPCCommandCompact:
-		return h.Session.Compact(command.CustomInstructions)
+		return session.Compact(command.CustomInstructions)
 	case RPCCommandSetAutoCompaction:
 		return nil, h.SetAutoCompaction(command.Enabled)
 	case RPCCommandSetAutoRetry:
 		return nil, h.SetAutoRetry(command.Enabled)
 	case RPCCommandAbortRetry:
-		h.Session.AbortRetry()
+		session.AbortRetry()
 		return nil, nil
 	case RPCCommandBash:
 		return h.Bash(ctx, command.Command)
 	case RPCCommandAbortBash:
-		h.Session.AbortBash()
+		session.AbortBash()
 		return nil, nil
 	case RPCCommandGetSessionStats:
 		return h.GetSessionStats(), nil
@@ -325,11 +367,11 @@ func (h *RPCSessionHost) handleCommand(ctx context.Context, command RPCCommand) 
 		if name == "" {
 			return nil, errors.New("Session name cannot be empty")
 		}
-		return nil, h.Session.SetSessionName(name)
+		return nil, session.SetSessionName(name)
 	case RPCCommandGetForkMessages:
-		return RPCForkMessagesResult{Messages: h.Session.GetUserMessagesForForking()}, nil
+		return RPCForkMessagesResult{Messages: session.GetUserMessagesForForking()}, nil
 	case RPCCommandGetMessages:
-		return RPCMessagesResult{Messages: h.Session.Messages()}, nil
+		return RPCMessagesResult{Messages: session.Messages()}, nil
 	case RPCCommandGetCommands:
 		return h.GetCommands(), nil
 	case RPCCommandClone:
@@ -340,18 +382,19 @@ func (h *RPCSessionHost) handleCommand(ctx context.Context, command RPCCommand) 
 }
 
 func (h *RPCSessionHost) AcceptPrompt(command RPCCommand) error {
-	if h == nil || h.Session == nil {
+	session := h.sessionSnapshot()
+	if session == nil {
 		return errors.New("RPC session host requires an active session")
 	}
 	if strings.TrimSpace(command.Message) == "" {
 		return errors.New("prompt is required")
 	}
-	if h.Session.IsStreaming() {
+	if session.IsStreaming() {
 		switch command.StreamingBehavior {
 		case "steer":
-			return h.Session.SteerWithImages(command.Message, command.Images)
+			return session.SteerWithImages(command.Message, command.Images)
 		case "followUp":
-			return h.Session.FollowUpWithImages(command.Message, command.Images)
+			return session.FollowUpWithImages(command.Message, command.Images)
 		default:
 			return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")
 		}
@@ -360,7 +403,7 @@ func (h *RPCSessionHost) AcceptPrompt(command RPCCommand) error {
 		return err
 	}
 	go func() {
-		_ = h.Session.PromptWithImages(command.Message, command.Images)
+		_ = session.PromptWithImages(command.Message, command.Images)
 	}()
 	return nil
 }
@@ -373,7 +416,10 @@ func (h *RPCSessionHost) runPromptPreflight(command RPCCommand) error {
 }
 
 func (h *RPCSessionHost) GetState() RPCSessionState {
-	session := h.Session
+	session := h.sessionSnapshot()
+	if session == nil || session.SessionManager == nil || session.Agent == nil {
+		return RPCSessionState{}
+	}
 	manager := session.SessionManager
 	model := session.Agent.State.Model
 	return RPCSessionState{
@@ -764,7 +810,7 @@ func (h *RPCSessionHost) ExportJSONL(outputPath string) (string, error) {
 		return "", err
 	}
 	var builder strings.Builder
-	for _, entry := range h.Session.SessionManager.fileEntries {
+	for _, entry := range h.Session.SessionManager.allEntriesSnapshot() {
 		line, err := json.Marshal(entry)
 		if err != nil {
 			return "", err

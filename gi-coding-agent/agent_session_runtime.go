@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -71,11 +70,19 @@ func (s *AgentSession) Subscribe(listener AgentSessionEventListener) func() {
 	if s == nil || listener == nil {
 		return func() {}
 	}
-	s.eventListeners = append(s.eventListeners, listener)
+	s.eventListenersMu.Lock()
+	s.nextEventListenerID++
+	id := s.nextEventListenerID
+	s.eventListeners = append(s.eventListeners, agentSessionEventListenerRegistration{
+		id:       id,
+		listener: listener,
+	})
+	s.eventListenersMu.Unlock()
 	return func() {
-		target := reflect.ValueOf(listener).Pointer()
-		for index, candidate := range s.eventListeners {
-			if reflect.ValueOf(candidate).Pointer() != target {
+		s.eventListenersMu.Lock()
+		defer s.eventListenersMu.Unlock()
+		for index, registration := range s.eventListeners {
+			if registration.id != id {
 				continue
 			}
 			s.eventListeners = append(s.eventListeners[:index], s.eventListeners[index+1:]...)
@@ -96,13 +103,22 @@ func (s *AgentSession) emit(event AgentSessionEvent) {
 			*event.Message,
 		)
 	}
-	if len(s.eventListeners) == 0 {
-		return
-	}
-	listeners := append([]AgentSessionEventListener(nil), s.eventListeners...)
+	listeners := s.eventListenerSnapshot()
 	for _, listener := range listeners {
 		listener(event)
 	}
+}
+
+func (s *AgentSession) eventListenerSnapshot() []AgentSessionEventListener {
+	s.eventListenersMu.RLock()
+	defer s.eventListenersMu.RUnlock()
+	listeners := make([]AgentSessionEventListener, 0, len(s.eventListeners))
+	for _, registration := range s.eventListeners {
+		if registration.listener != nil {
+			listeners = append(listeners, registration.listener)
+		}
+	}
+	return listeners
 }
 
 func (s *AgentSession) Prompt(text string) error {
@@ -182,12 +198,11 @@ func (s *AgentSession) PromptWithImages(text string, images []llm.ContentPart) (
 	}
 	s.SessionManager.AppendMessage(sessionMessageValue(userMessage))
 	s.emit(AgentSessionEvent{Type: "message_end", Message: &userMessage})
-	for _, custom := range s.pendingNextTurn {
+	for _, custom := range s.queues.takeNextTurn() {
 		if err := s.appendCustomMessage(custom, true); err != nil {
 			return err
 		}
 	}
-	s.pendingNextTurn = nil
 	if err := s.applyBeforeAgentStart(expandedPrompt, promptImages); err != nil {
 		return err
 	}
@@ -504,9 +519,9 @@ func (s *AgentSession) dequeueQueuedPrompt(kind string) (string, bool, error) {
 	var messages []QueuedUserMessage
 	switch kind {
 	case "steering":
-		messages = s.takeQueuedMessages(&s.steeringQueue, &s.steeringMessages, s.SteeringMode)
+		messages = s.queues.takePrompt(agentSessionSteeringQueue, s.SteeringMode)
 	case "follow-up":
-		messages = s.takeQueuedMessages(&s.followUpQueue, &s.followUpMessages, s.FollowUpMode)
+		messages = s.queues.takePrompt(agentSessionFollowUpQueue, s.FollowUpMode)
 	default:
 		return "", false, nil
 	}
@@ -522,26 +537,6 @@ func (s *AgentSession) dequeueQueuedPrompt(kind string) (string, bool, error) {
 	}
 	s.emitQueueUpdate()
 	return prompt, true, nil
-}
-
-func (s *AgentSession) takeQueuedMessages(queue *[]QueuedUserMessage, texts *[]string, mode string) []QueuedUserMessage {
-	if queue == nil || len(*queue) == 0 {
-		return nil
-	}
-	count := 1
-	if mode == "all" {
-		count = len(*queue)
-	}
-	messages := append([]QueuedUserMessage(nil), (*queue)[:count]...)
-	*queue = (*queue)[count:]
-	if texts != nil {
-		if len(*texts) <= count {
-			*texts = nil
-		} else {
-			*texts = (*texts)[count:]
-		}
-	}
-	return messages
 }
 
 func (s *AgentSession) appendQueuedUserMessage(message QueuedUserMessage) error {
@@ -1091,8 +1086,7 @@ func (s *AgentSession) SteerWithImages(text string, images []llm.ContentPart) er
 	if err != nil {
 		return err
 	}
-	s.steeringMessages = append(s.steeringMessages, message.Text)
-	s.steeringQueue = append(s.steeringQueue, message)
+	s.queues.enqueuePrompt(agentSessionSteeringQueue, message)
 	s.emitQueueUpdate()
 	return nil
 }
@@ -1109,8 +1103,7 @@ func (s *AgentSession) FollowUpWithImages(text string, images []llm.ContentPart)
 	if err != nil {
 		return err
 	}
-	s.followUpMessages = append(s.followUpMessages, message.Text)
-	s.followUpQueue = append(s.followUpQueue, message)
+	s.queues.enqueuePrompt(agentSessionFollowUpQueue, message)
 	s.emitQueueUpdate()
 	return nil
 }
@@ -1126,11 +1119,9 @@ func (s *AgentSession) QueueExtensionUserMessage(text, deliverAs string) error {
 	message := QueuedUserMessage{Text: text}
 	switch deliverAs {
 	case "followUp":
-		s.followUpMessages = append(s.followUpMessages, message.Text)
-		s.followUpQueue = append(s.followUpQueue, message)
+		s.queues.enqueuePrompt(agentSessionFollowUpQueue, message)
 	default:
-		s.steeringMessages = append(s.steeringMessages, message.Text)
-		s.steeringQueue = append(s.steeringQueue, message)
+		s.queues.enqueuePrompt(agentSessionSteeringQueue, message)
 	}
 	s.emitQueueUpdate()
 	return nil
@@ -1146,18 +1137,16 @@ func (s *AgentSession) SendCustomMessage(message QueuedCustomMessage, options Pr
 	}
 	text := customMessageText(message.Content)
 	if options.DeliverAs == "nextTurn" {
-		s.pendingNextTurn = append(s.pendingNextTurn, message)
+		s.queues.enqueueNextTurn(message)
 		return nil
 	}
 	if s.IsStreaming() {
 		queued := QueuedUserMessage{Text: text, Custom: &message}
 		switch options.DeliverAs {
 		case "followUp":
-			s.followUpMessages = append(s.followUpMessages, text)
-			s.followUpQueue = append(s.followUpQueue, queued)
+			s.queues.enqueuePrompt(agentSessionFollowUpQueue, queued)
 		default:
-			s.steeringMessages = append(s.steeringMessages, text)
-			s.steeringQueue = append(s.steeringQueue, queued)
+			s.queues.enqueuePrompt(agentSessionSteeringQueue, queued)
 		}
 		s.emitQueueUpdate()
 		return nil
@@ -1213,71 +1202,52 @@ func (s *AgentSession) PendingMessageCount() int {
 	if s == nil {
 		return 0
 	}
-	return len(s.steeringMessages) + len(s.followUpMessages)
+	return s.queues.pendingPromptCount()
 }
 
 func (s *AgentSession) GetSteeringMessages() []string {
 	if s == nil {
 		return nil
 	}
-	return append([]string(nil), s.steeringMessages...)
+	return s.queues.promptMessages(agentSessionSteeringQueue)
 }
 
 func (s *AgentSession) GetFollowUpMessages() []string {
 	if s == nil {
 		return nil
 	}
-	return append([]string(nil), s.followUpMessages...)
+	return s.queues.promptMessages(agentSessionFollowUpQueue)
 }
 
 func (s *AgentSession) GetSteeringQueue() []QueuedUserMessage {
 	if s == nil {
 		return nil
 	}
-	return cloneQueuedUserMessages(s.steeringQueue)
+	return s.queues.promptQueue(agentSessionSteeringQueue)
 }
 
 func (s *AgentSession) GetFollowUpQueue() []QueuedUserMessage {
 	if s == nil {
 		return nil
 	}
-	return cloneQueuedUserMessages(s.followUpQueue)
+	return s.queues.promptQueue(agentSessionFollowUpQueue)
 }
 
 func (s *AgentSession) ClearQueue() (steering, followUp []string) {
 	if s == nil {
 		return nil, nil
 	}
-	steering = append([]string(nil), s.steeringMessages...)
-	followUp = append([]string(nil), s.followUpMessages...)
-	s.steeringMessages = nil
-	s.followUpMessages = nil
-	s.steeringQueue = nil
-	s.followUpQueue = nil
+	steering, followUp = s.queues.clearPrompts()
 	s.emitQueueUpdate()
 	return steering, followUp
 }
 
-func cloneQueuedUserMessages(messages []QueuedUserMessage) []QueuedUserMessage {
-	result := make([]QueuedUserMessage, len(messages))
-	for index, message := range messages {
-		result[index] = QueuedUserMessage{
-			Text:   message.Text,
-			Images: append([]llm.ContentPart(nil), message.Images...),
-		}
-		if message.Custom != nil {
-			custom := *message.Custom
-			result[index].Custom = &custom
-		}
-	}
-	return result
-}
-
 func (s *AgentSession) emitQueueUpdate() {
+	steering, followUp := s.queues.promptSnapshot()
 	s.emit(AgentSessionEvent{
 		Type:     "queue_update",
-		Steering: append([]string(nil), s.steeringMessages...),
-		FollowUp: append([]string(nil), s.followUpMessages...),
+		Steering: steering,
+		FollowUp: followUp,
 	})
 }
 

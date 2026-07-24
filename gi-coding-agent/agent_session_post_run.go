@@ -178,9 +178,9 @@ func (s *AgentSession) hasQueuedPrompt(kind string) bool {
 	}
 	switch kind {
 	case "steering":
-		return len(s.steeringQueue) > 0
+		return s.queues.hasPrompt(agentSessionSteeringQueue)
 	case "follow-up":
-		return len(s.followUpQueue) > 0
+		return s.queues.hasPrompt(agentSessionFollowUpQueue)
 	default:
 		return false
 	}
@@ -344,8 +344,7 @@ func (s *AgentSession) beginAgentContinuation(
 func (s *AgentSession) appendAgentQueuedMessages(
 	state *agentPromptRunState,
 ) error {
-	messages := append([]llm.Message(nil), s.agentQueuedMessages...)
-	s.agentQueuedMessages = nil
+	messages := s.queues.takeAgentMessages()
 	state.prompt = ""
 	for _, message := range messages {
 		if message.Timestamp == 0 {

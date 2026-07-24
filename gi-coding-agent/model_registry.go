@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
@@ -133,10 +134,12 @@ type oauthProviderRestore struct {
 }
 
 // ModelRegistry is the synchronous coding-agent compatibility facade.
-// Callers serialize registry mutation with reads; the shared llm.Models,
-// provider catalog state, credential storage, and ModelsStore boundaries it
+// Mutations are serialized under mu and readers consume detached snapshots;
+// the shared llm.Models, credential storage, and ModelsStore boundaries it
 // composes are independently safe for concurrent use.
 type ModelRegistry struct {
+	mu sync.RWMutex
+
 	authStorage              *AuthStorage
 	modelsJSONPath           string
 	modelsStore              llm.ModelsStore
@@ -246,6 +249,15 @@ func ClearAPIKeyCache() {
 }
 
 func (r *ModelRegistry) Refresh() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.refreshLocked()
+}
+
+func (r *ModelRegistry) refreshLocked() {
 	r.providerRequestConfigs = map[string]ProviderRequestConfig{}
 	r.modelRequestHeaders = map[string]map[string]string{}
 	r.loadError = ""
@@ -266,7 +278,12 @@ func (r *ModelRegistry) RefreshModels(
 	ctx context.Context,
 	options ModelRegistryRefreshOptions,
 ) llm.ModelsRefreshResult {
-	if r == nil || r.dynamicModels == nil {
+	if r == nil {
+		return llm.ModelsRefreshResult{Errors: map[string]error{}}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.dynamicModels == nil {
 		return llm.ModelsRefreshResult{Errors: map[string]error{}}
 	}
 	refreshCtx, cancel := modelRegistryRefreshContext(
@@ -313,16 +330,27 @@ func (r *ModelRegistry) applyOAuthModelOverrides() {
 }
 
 func (r *ModelRegistry) GetError() string {
+	if r == nil {
+		return ""
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.loadError
 }
 
 func (r *ModelRegistry) GetAll() []llm.Model {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return append([]llm.Model{}, r.models...)
 }
 
 func (r *ModelRegistry) GetAvailable() []llm.Model {
-	available := make([]llm.Model, 0, len(r.models))
-	for _, model := range r.models {
+	models := r.GetAll()
+	available := make([]llm.Model, 0, len(models))
+	for _, model := range models {
 		if r.HasConfiguredAuth(model) {
 			available = append(available, model)
 		}
@@ -331,6 +359,11 @@ func (r *ModelRegistry) GetAvailable() []llm.Model {
 }
 
 func (r *ModelRegistry) Find(provider, modelID string) (llm.Model, bool) {
+	if r == nil {
+		return llm.Model{}, false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	for _, model := range r.models {
 		if model.Provider == provider && model.ID == modelID {
 			return model, true
@@ -340,16 +373,23 @@ func (r *ModelRegistry) Find(provider, modelID string) (llm.Model, bool) {
 }
 
 func (r *ModelRegistry) HasConfiguredAuth(model llm.Model) bool {
-	if r.hasExplicitAuth(model.Provider) {
+	if r == nil {
+		return false
+	}
+	r.mu.RLock()
+	authStorage := r.authStorage
+	config, hasConfig := r.providerRequestConfigs[model.Provider]
+	dynamicModels := r.dynamicModels
+	r.mu.RUnlock()
+	if hasExplicitAuthStorage(authStorage, model.Provider) {
 		return true
 	}
-	if config, ok := r.providerRequestConfigs[model.Provider]; ok &&
-		config.APIKey != "" {
+	if hasConfig && config.APIKey != "" {
 		return configuredAPIKeyAuthStatus(config.APIKey).Configured
 	}
-	if r.dynamicModels != nil {
-		if _, ok := r.dynamicModels.GetProvider(model.Provider); ok {
-			_, configured, err := r.dynamicModels.CheckAuth(
+	if dynamicModels != nil {
+		if _, ok := dynamicModels.GetProvider(model.Provider); ok {
+			_, configured, err := dynamicModels.CheckAuth(
 				context.Background(),
 				model.Provider,
 			)
@@ -358,17 +398,25 @@ func (r *ModelRegistry) HasConfiguredAuth(model llm.Model) bool {
 			}
 		}
 	}
-	if r.authStorage != nil && r.authStorage.HasAuth(model.Provider) {
+	if authStorage != nil && authStorage.HasAuth(model.Provider) {
 		return true
 	}
 	return false
 }
 
 func (r *ModelRegistry) GetAPIKeyForProvider(provider string) (string, bool) {
-	if r.hasExplicitAuth(provider) {
-		if r.dynamicModels != nil {
-			if _, ok := r.dynamicModels.GetProvider(provider); ok {
-				result, err := r.dynamicModels.GetAuth(
+	if r == nil {
+		return "", false
+	}
+	r.mu.RLock()
+	authStorage := r.authStorage
+	config, hasConfig := r.providerRequestConfigs[provider]
+	dynamicModels := r.dynamicModels
+	r.mu.RUnlock()
+	if hasExplicitAuthStorage(authStorage, provider) {
+		if dynamicModels != nil {
+			if _, ok := dynamicModels.GetProvider(provider); ok {
+				result, err := dynamicModels.GetAuth(
 					context.Background(),
 					provider,
 					llm.AuthResolutionOverrides{},
@@ -381,20 +429,19 @@ func (r *ModelRegistry) GetAPIKeyForProvider(provider string) (string, bool) {
 				return "", false
 			}
 		}
-		return r.authStorage.GetAPIKeyWithOptions(
+		return authStorage.GetAPIKeyWithOptions(
 			provider,
 			AuthStorageOptions{
 				ExcludeEnvironment: true,
 			},
 		)
 	}
-	if config, ok := r.providerRequestConfigs[provider]; ok &&
-		config.APIKey != "" {
+	if hasConfig && config.APIKey != "" {
 		return ResolveConfigValueUncached(config.APIKey)
 	}
-	if r.dynamicModels != nil {
-		if _, ok := r.dynamicModels.GetProvider(provider); ok {
-			result, err := r.dynamicModels.GetAuth(
+	if dynamicModels != nil {
+		if _, ok := dynamicModels.GetProvider(provider); ok {
+			result, err := dynamicModels.GetAuth(
 				context.Background(),
 				provider,
 				llm.AuthResolutionOverrides{},
@@ -404,8 +451,8 @@ func (r *ModelRegistry) GetAPIKeyForProvider(provider string) (string, bool) {
 			}
 		}
 	}
-	if r.authStorage != nil {
-		return r.authStorage.GetAPIKeyWithOptions(
+	if authStorage != nil {
+		return authStorage.GetAPIKeyWithOptions(
 			provider,
 			AuthStorageOptions{},
 		)
@@ -438,29 +485,38 @@ func (r *ModelRegistry) GetAPIKeyAndHeadersWithOverrides(
 	if err := ctx.Err(); err != nil {
 		return ResolvedRequestAuth{Error: err.Error()}
 	}
+	r.mu.RLock()
 	config := r.providerRequestConfigs[model.Provider]
+	config.Headers = cloneStringMap(config.Headers)
+	modelHeaderConfig := cloneStringMap(r.modelRequestHeaders[r.modelRequestKey(
+		model.Provider,
+		model.ID,
+	)])
+	authStorage := r.authStorage
+	dynamicModels := r.dynamicModels
+	r.mu.RUnlock()
 	apiKey := ""
 	var dynamicHeaders map[string]string
 	var headerRemovals []string
 	baseURL := ""
 	requestEnv := cloneResolvedProviderEnv(overrides.Env)
-	authSelected := overrides.APIKey != nil || r.hasExplicitAuth(model.Provider)
+	authSelected := overrides.APIKey != nil || hasExplicitAuthStorage(authStorage, model.Provider)
 	if overrides.APIKey != nil {
 		apiKey = *overrides.APIKey
 	}
 	if authSelected {
-		if r.authStorage != nil &&
-			!r.authStorage.HasRuntimeAPIKey(model.Provider) {
-			if credential, ok := r.authStorage.Get(model.Provider); ok {
+		if authStorage != nil &&
+			!authStorage.HasRuntimeAPIKey(model.Provider) {
+			if credential, ok := authStorage.Get(model.Provider); ok {
 				requestEnv = mergeResolvedProviderEnv(
 					credential.Env,
 					overrides.Env,
 				)
 			}
 		}
-		if r.dynamicModels != nil {
-			if _, ok := r.dynamicModels.GetProvider(model.Provider); ok {
-				result, err := r.dynamicModels.GetModelAuth(
+		if dynamicModels != nil {
+			if _, ok := dynamicModels.GetProvider(model.Provider); ok {
+				result, err := dynamicModels.GetModelAuth(
 					ctx,
 					model,
 					overrides,
@@ -484,18 +540,18 @@ func (r *ModelRegistry) GetAPIKeyAndHeadersWithOverrides(
 						overrides.Env,
 					)
 				}
-			} else if r.authStorage != nil &&
+			} else if authStorage != nil &&
 				overrides.APIKey == nil {
-				apiKey, _ = r.authStorage.GetAPIKeyWithOptions(
+				apiKey, _ = authStorage.GetAPIKeyWithOptions(
 					model.Provider,
 					AuthStorageOptions{
 						ExcludeEnvironment: true,
 					},
 				)
 			}
-		} else if r.authStorage != nil &&
+		} else if authStorage != nil &&
 			overrides.APIKey == nil {
-			apiKey, _ = r.authStorage.GetAPIKeyWithOptions(
+			apiKey, _ = authStorage.GetAPIKeyWithOptions(
 				model.Provider,
 				AuthStorageOptions{
 					ExcludeEnvironment: true,
@@ -518,9 +574,9 @@ func (r *ModelRegistry) GetAPIKeyAndHeadersWithOverrides(
 		apiKey = value
 		authSelected = true
 	}
-	if !authSelected && r.dynamicModels != nil {
-		if _, ok := r.dynamicModels.GetProvider(model.Provider); ok {
-			result, err := r.dynamicModels.GetModelAuth(
+	if !authSelected && dynamicModels != nil {
+		if _, ok := dynamicModels.GetProvider(model.Provider); ok {
+			result, err := dynamicModels.GetModelAuth(
 				ctx,
 				model,
 				overrides,
@@ -544,8 +600,8 @@ func (r *ModelRegistry) GetAPIKeyAndHeadersWithOverrides(
 			}
 		}
 	}
-	if !authSelected && r.authStorage != nil {
-		if key, ok := r.authStorage.GetAPIKeyWithOptions(
+	if !authSelected && authStorage != nil {
+		if key, ok := authStorage.GetAPIKeyWithOptions(
 			model.Provider,
 			AuthStorageOptions{},
 		); ok {
@@ -561,10 +617,6 @@ func (r *ModelRegistry) GetAPIKeyAndHeadersWithOverrides(
 	if err != nil {
 		return ResolvedRequestAuth{OK: false, Error: err.Error()}
 	}
-	modelHeaderConfig := r.modelRequestHeaders[r.modelRequestKey(
-		model.Provider,
-		model.ID,
-	)]
 	modelHeaders, err := resolveHeadersOrError(
 		modelHeaderConfig,
 		fmt.Sprintf(`model "%s/%s"`, model.Provider, model.ID),
@@ -611,21 +663,28 @@ func providerNeedsExplicitAPIKey(provider string) bool {
 }
 
 func (r *ModelRegistry) GetProviderAuthStatus(provider string) AuthStatus {
+	if r == nil {
+		return AuthStatus{Configured: false}
+	}
+	r.mu.RLock()
+	authStorage := r.authStorage
+	config, hasConfig := r.providerRequestConfigs[provider]
+	dynamicModels := r.dynamicModels
+	r.mu.RUnlock()
 	storageStatus := AuthStatus{}
-	if r.authStorage != nil {
-		storageStatus = r.authStorage.GetAuthStatus(provider)
+	if authStorage != nil {
+		storageStatus = authStorage.GetAuthStatus(provider)
 		if storageStatus.Source == "stored" ||
 			storageStatus.Source == "runtime" {
 			return storageStatus
 		}
 	}
-	if config, ok := r.providerRequestConfigs[provider]; ok &&
-		config.APIKey != "" {
+	if hasConfig && config.APIKey != "" {
 		return configuredAPIKeyAuthStatus(config.APIKey)
 	}
-	if r.dynamicModels != nil {
-		if _, ok := r.dynamicModels.GetProvider(provider); ok {
-			check, configured, err := r.dynamicModels.CheckAuth(
+	if dynamicModels != nil {
+		if _, ok := dynamicModels.GetProvider(provider); ok {
+			check, configured, err := dynamicModels.CheckAuth(
 				context.Background(),
 				provider,
 			)
@@ -645,10 +704,19 @@ func (r *ModelRegistry) GetProviderAuthStatus(provider string) AuthStatus {
 }
 
 func (r *ModelRegistry) hasExplicitAuth(provider string) bool {
-	return r != nil &&
-		r.authStorage != nil &&
-		(r.authStorage.HasRuntimeAPIKey(provider) ||
-			r.authStorage.Has(provider))
+	if r == nil {
+		return false
+	}
+	r.mu.RLock()
+	authStorage := r.authStorage
+	r.mu.RUnlock()
+	return hasExplicitAuthStorage(authStorage, provider)
+}
+
+func hasExplicitAuthStorage(authStorage *AuthStorage, provider string) bool {
+	return authStorage != nil &&
+		(authStorage.HasRuntimeAPIKey(provider) ||
+			authStorage.Has(provider))
 }
 
 func configuredAPIKeyAuthStatus(value string) AuthStatus {
@@ -682,7 +750,15 @@ func configuredAPIKeyAuthStatus(value string) AuthStatus {
 }
 
 func (r *ModelRegistry) GetProviderDisplayName(provider string) string {
-	if config, ok := r.registeredProviders[provider]; ok {
+	if r == nil {
+		return provider
+	}
+	r.mu.RLock()
+	config, hasConfig := r.registeredProviders[provider]
+	config = cloneRuntimeProviderConfig(config)
+	dynamicModels := r.dynamicModels
+	r.mu.RUnlock()
+	if hasConfig {
 		if config.Name != "" {
 			return config.Name
 		}
@@ -690,8 +766,8 @@ func (r *ModelRegistry) GetProviderDisplayName(provider string) string {
 			return config.OAuth.Name
 		}
 	}
-	if r.dynamicModels != nil {
-		if dynamic, ok := r.dynamicModels.GetProvider(provider); ok &&
+	if dynamicModels != nil {
+		if dynamic, ok := dynamicModels.GetProvider(provider); ok &&
 			dynamic.Name != "" {
 			return dynamic.Name
 		}
@@ -715,6 +791,8 @@ func (r *ModelRegistry) GetRegisteredProviderConfig(
 	if r == nil {
 		return ProviderConfigInput{}, false
 	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	config, ok := r.registeredProviders[provider]
 	return cloneRuntimeProviderConfig(config), ok
 }
@@ -725,10 +803,14 @@ func (r *ModelRegistry) GetRegisteredProviderIDs() []string {
 	if r == nil {
 		return nil
 	}
-	if r.modelRuntime != nil {
-		return r.modelRuntime.GetRegisteredProviderIDs()
+	r.mu.RLock()
+	modelRuntime := r.modelRuntime
+	registeredOrder := append([]string(nil), r.registeredOrder...)
+	r.mu.RUnlock()
+	if modelRuntime != nil {
+		return modelRuntime.GetRegisteredProviderIDs()
 	}
-	return append([]string(nil), r.registeredOrder...)
+	return registeredOrder
 }
 
 // GetRegisteredNativeProvider projects the native provider owned by the bound
@@ -736,17 +818,29 @@ func (r *ModelRegistry) GetRegisteredProviderIDs() []string {
 func (r *ModelRegistry) GetRegisteredNativeProvider(
 	provider string,
 ) (*llm.Provider, bool) {
-	if r == nil || r.modelRuntime == nil {
+	if r == nil {
 		return nil, false
 	}
-	return r.modelRuntime.GetRegisteredNativeProvider(provider)
+	r.mu.RLock()
+	modelRuntime := r.modelRuntime
+	r.mu.RUnlock()
+	if modelRuntime == nil {
+		return nil, false
+	}
+	return modelRuntime.GetRegisteredNativeProvider(provider)
 }
 
 func (r *ModelRegistry) IsUsingOAuth(model llm.Model) bool {
-	if r.authStorage == nil {
+	if r == nil {
 		return false
 	}
-	credential, ok := r.authStorage.Get(model.Provider)
+	r.mu.RLock()
+	authStorage := r.authStorage
+	r.mu.RUnlock()
+	if authStorage == nil {
+		return false
+	}
+	credential, ok := authStorage.Get(model.Provider)
 	return ok && credential.Type == "oauth"
 }
 
@@ -754,6 +848,8 @@ func (r *ModelRegistry) RegisterProvider(providerName string, config ProviderCon
 	if err := r.validateProviderConfig(providerName, config); err != nil {
 		return err
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.applyProviderConfig(providerName, config)
 	r.applyConfiguredModelOverrides()
 	r.upsertRegisteredProvider(providerName, config)
@@ -761,6 +857,11 @@ func (r *ModelRegistry) RegisterProvider(providerName string, config ProviderCon
 }
 
 func (r *ModelRegistry) UnregisterProvider(providerName string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if _, ok := r.registeredProviders[providerName]; !ok {
 		return
 	}
@@ -768,7 +869,7 @@ func (r *ModelRegistry) UnregisterProvider(providerName string) {
 	r.registeredOrder = removeString(r.registeredOrder, providerName)
 	r.restoreAPIProvider(providerName)
 	r.restoreOAuthProvider(providerName)
-	r.Refresh()
+	r.refreshLocked()
 }
 
 func (r *ModelRegistry) loadModels(

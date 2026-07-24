@@ -1502,10 +1502,7 @@ func (h *RPCSessionHost) sessionActionHostAction(params hostSessionActionParams)
 	switch strings.TrimSpace(params.Action) {
 	case "new", "clear":
 		h.Session.SessionManager.NewSession(NewSessionOptions{ParentSession: params.ParentSession})
-		h.Session.steeringMessages = nil
-		h.Session.followUpMessages = nil
-		h.Session.steeringQueue = nil
-		h.Session.followUpQueue = nil
+		h.Session.queues.clearPrompts()
 		return map[string]any{"action": params.Action, "cancelled": false, "sessionFile": h.Session.SessionManager.GetSessionFile()}, nil
 	case "fork":
 		result, err := h.Fork(params.EntryID)

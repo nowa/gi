@@ -22,13 +22,32 @@ func (h *CLIInteractiveTUIHost) refreshEditorAutocompleteProvider() {
 		}
 	}
 	provider := gitui.NewCombinedAutocompleteProviderWithCommands(h.interactiveCWD(), commands, providers...)
-	h.autocompleteProvider = provider
+	h.setAutocompleteProvider(provider)
 	h.editor.SetAutocompleteProvider(provider)
 	if active, ok := h.activeEditorComponent(); ok && active != h.editor {
 		if editor, ok := active.(gitui.EditorAutocompleteComponent); ok {
 			editor.SetAutocompleteProvider(provider)
 		}
 	}
+}
+
+func (h *CLIInteractiveTUIHost) setAutocompleteProvider(provider gitui.AutocompleteProvider) {
+	if h == nil {
+		return
+	}
+	h.autocompleteMu.Lock()
+	h.autocompleteProvider = provider
+	h.autocompleteMu.Unlock()
+}
+
+func (h *CLIInteractiveTUIHost) autocompleteProviderSnapshot() gitui.AutocompleteProvider {
+	if h == nil {
+		return nil
+	}
+	h.autocompleteMu.RLock()
+	provider := h.autocompleteProvider
+	h.autocompleteMu.RUnlock()
+	return provider
 }
 
 func (h *CLIInteractiveTUIHost) autocompleteSlashCommands() []gitui.SlashCommand {

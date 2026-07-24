@@ -457,7 +457,7 @@ func (m *DefaultPackageManager) ListTopLevelResourceToggles() []PackageResourceT
 				if pattern == "" {
 					continue
 				}
-				enabled := resourceEnabled(resourcePath, settingsStringSlice(m.settingsManager.merged, resourceType), m.cwd, m.agentDir)
+				enabled := resourceEnabled(resourcePath, settingsStringSlice(m.settingsManager.mergedSnapshot(), resourceType), m.cwd, m.agentDir)
 				result = append(result, PackageResourceToggleItem{
 					Source:       "auto",
 					Scope:        scope.scope,

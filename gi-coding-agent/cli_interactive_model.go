@@ -122,14 +122,11 @@ func (h *CLIInteractiveTUIHost) handleScopedModelsSlashCommand() error {
 	if h.ui == nil {
 		return errors.New("interactive TUI is not ready")
 	}
-	var restore func()
+	replacement := &cliEditorReplacementLifecycle{}
 	closeSelector := func() {
-		if restore != nil {
-			restore()
-			restore = nil
-			return
+		if !replacement.close() {
+			h.requestRender(false)
 		}
-		h.requestRender(false)
 	}
 	selector.callbacks.OnChange = func(enabled []string) {
 		setSessionScopedModelsFromEnabledIDs(session, allModels, enabled)
@@ -149,7 +146,7 @@ func (h *CLIInteractiveTUIHost) handleScopedModelsSlashCommand() error {
 		h.requestRender(false)
 	}
 	selector.callbacks.OnCancel = closeSelector
-	restore = h.showEditorReplacement(selector, selector)
+	replacement.install(h.showEditorReplacement(selector, selector))
 	return nil
 }
 
@@ -249,14 +246,11 @@ func (h *CLIInteractiveTUIHost) showModelSelector(host *RPCSessionHost, search s
 		h.addStatus("No models available")
 		return nil
 	}
-	var restore func()
+	replacement := &cliEditorReplacementLifecycle{}
 	closeSelector := func() {
-		if restore != nil {
-			restore()
-			restore = nil
-			return
+		if !replacement.close() {
+			h.requestRender(false)
 		}
-		h.requestRender(false)
 	}
 	selector := NewInteractiveModelSelectorComponent(ModelSelectorConfig{
 		CurrentModel:  host.Session.Agent.State.Model,
@@ -274,7 +268,7 @@ func (h *CLIInteractiveTUIHost) showModelSelector(host *RPCSessionHost, search s
 	selector.callbacks.OnCancel = func() {
 		closeSelector()
 	}
-	restore = h.showEditorReplacement(selector, selector)
+	replacement.install(h.showEditorReplacement(selector, selector))
 	return nil
 }
 

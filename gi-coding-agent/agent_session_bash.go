@@ -72,7 +72,7 @@ func (s *AgentSession) RecordBashResult(command string, result BashResult, optio
 	}
 	message := bashExecutionMessageValue(command, result, opts.ExcludeFromContext)
 	if s.IsStreaming() {
-		s.pendingBashMessages = append(s.pendingBashMessages, message)
+		s.queues.enqueueBashMessage(message)
 		return
 	}
 	s.SessionManager.AppendMessage(message)
@@ -90,17 +90,16 @@ func (s *AgentSession) IsBashRunning() bool {
 }
 
 func (s *AgentSession) HasPendingBashMessages() bool {
-	return s != nil && len(s.pendingBashMessages) > 0
+	return s != nil && s.queues.hasBashMessages()
 }
 
 func (s *AgentSession) flushPendingBashMessages() {
-	if s == nil || s.SessionManager == nil || len(s.pendingBashMessages) == 0 {
+	if s == nil || s.SessionManager == nil {
 		return
 	}
-	for _, message := range s.pendingBashMessages {
+	for _, message := range s.queues.takeBashMessages() {
 		s.SessionManager.AppendMessage(message)
 	}
-	s.pendingBashMessages = nil
 }
 
 func bashExecutionMessageValue(command string, result BashResult, excludeFromContext bool) map[string]any {

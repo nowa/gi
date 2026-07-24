@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
 type agentSessionPrintModeHost struct {
+	sessionMu           sync.RWMutex
 	session             *AgentSession
 	modelRegistry       *ModelRegistry
 	modelRuntime        *ModelRuntime
@@ -22,17 +24,29 @@ type agentSessionPrintModeHost struct {
 	startupWarnings     []string
 }
 
+func (h *agentSessionPrintModeHost) setAgentSession(session *AgentSession) {
+	if h == nil {
+		return
+	}
+	h.sessionMu.Lock()
+	h.session = session
+	h.sessionMu.Unlock()
+}
+
 func (h *agentSessionPrintModeHost) ProtocolExtensionRuntime() *ProtocolExtensionRuntime {
-	if h == nil || h.session == nil {
+	session := h.AgentSession()
+	if session == nil {
 		return nil
 	}
-	return h.session.ExtensionRuntime
+	return session.ExtensionRuntime
 }
 
 func (h *agentSessionPrintModeHost) AgentSession() *AgentSession {
 	if h == nil {
 		return nil
 	}
+	h.sessionMu.RLock()
+	defer h.sessionMu.RUnlock()
 	return h.session
 }
 
@@ -96,7 +110,7 @@ func (h *agentSessionPrintModeHost) NewProtocolExtensionRPCSessionHost(viewTreeH
 	if h == nil {
 		return nil
 	}
-	host := NewRPCSessionHost(h.session)
+	host := NewRPCSessionHost(h.AgentSession())
 	host.Settings = h.settingsManager
 	if h.modelRuntime != nil {
 		host.ProviderAuthStatus = h.modelRuntime.GetProviderAuthStatus
@@ -114,9 +128,9 @@ func (h *agentSessionPrintModeHost) NewProtocolExtensionRPCSessionHost(viewTreeH
 		host.ReloadSession = h.sessionRuntimeHost.Reload
 	}
 	host.OnSessionReplaced(func(session *AgentSession) {
-		h.session = session
+		h.setAgentSession(session)
 		if h.sessionRuntimeHost != nil {
-			h.sessionRuntimeHost.Session = session
+			h.sessionRuntimeHost.setSession(session)
 			if h.sessionRuntimeHost.ExtensionRuntime != nil {
 				h.sessionRuntimeHost.ExtensionRuntime.BindSession(session)
 				h.sessionRuntimeHost.ExtensionRuntime.ApplyToSession(session)
@@ -127,7 +141,8 @@ func (h *agentSessionPrintModeHost) NewProtocolExtensionRPCSessionHost(viewTreeH
 }
 
 func (h *agentSessionPrintModeHost) ImportFromJsonl(inputPath string, cwdOverride ...string) (InteractiveImportResult, error) {
-	if h == nil || h.session == nil || h.session.SessionManager == nil {
+	session := h.AgentSession()
+	if session == nil || session.SessionManager == nil {
 		return InteractiveImportResult{}, errors.New("session host requires an active session")
 	}
 	path := strings.TrimSpace(inputPath)
@@ -135,7 +150,7 @@ func (h *agentSessionPrintModeHost) ImportFromJsonl(inputPath string, cwdOverrid
 		return InteractiveImportResult{}, errors.New("input path is required")
 	}
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(h.session.SessionManager.GetCWD(), path)
+		path = filepath.Join(session.SessionManager.GetCWD(), path)
 	}
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -152,7 +167,7 @@ func (h *agentSessionPrintModeHost) ImportFromJsonl(inputPath string, cwdOverrid
 	if len(cwdOverride) > 0 {
 		override = strings.TrimSpace(cwdOverride[0])
 	}
-	oldSession := h.session
+	oldSession := session
 	manager, err := OpenSessionManager(absPath, oldSession.SessionManager.GetSessionDir(), override)
 	if err != nil {
 		return InteractiveImportResult{}, err
@@ -169,7 +184,7 @@ func (h *agentSessionPrintModeHost) ImportFromJsonl(inputPath string, cwdOverrid
 			return InteractiveImportResult{}, err
 		}
 	} else {
-		h.session = newSession
+		h.setAgentSession(newSession)
 	}
 	return InteractiveImportResult{}, nil
 }
@@ -341,7 +356,7 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 		session.Responder = host.providerResponder(modelRegistry, args, installTelemetryEnabled)
 		session.StreamResponder = host.providerStreamResponder(modelRegistry, args, installTelemetryEnabled)
 	}
-	host.session = session
+	host.setAgentSession(session)
 	host.modelRegistry = modelRegistry
 	host.modelRuntime = modelRuntime
 	host.settingsManager = settingsManager
@@ -357,7 +372,7 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 			return nil, err
 		}
 		runtimeHost.SetRebindSession(func(session *AgentSession) error {
-			host.session = session
+			host.setAgentSession(session)
 			return nil
 		})
 		host.sessionRuntimeHost = runtimeHost
@@ -694,48 +709,56 @@ func (h *agentSessionPrintModeHost) Dispose() error {
 		}
 		h.processSupervisor = nil
 	}
-	if h != nil && h.session != nil {
-		h.session.Dispose()
+	if session := h.AgentSession(); session != nil {
+		session.Dispose()
 	}
 	return nil
 }
 
 func (h *agentSessionPrintModeHost) Prompt(message string, options PrintModePromptOptions) error {
-	if h == nil || h.session == nil {
+	session := h.AgentSession()
+	if session == nil {
 		return errors.New("session is required")
 	}
 	if len(options.Images) == 0 {
-		return h.session.Prompt(message)
+		return session.Prompt(message)
 	}
 	// AgentSession currently stores text user turns. Preserve the visible text
 	// path until the session message model grows first-class image turns.
-	return h.session.Prompt(message)
+	return session.Prompt(message)
 }
 
 func (h *agentSessionPrintModeHost) WaitForIdle() error {
-	if h == nil || h.session == nil {
+	session := h.AgentSession()
+	if session == nil {
 		return nil
 	}
-	return h.session.WaitForIdle(context.Background())
+	return session.WaitForIdle(context.Background())
 }
 
 func (h *agentSessionPrintModeHost) Messages() []llm.Message {
-	if h == nil || h.session == nil {
+	session := h.AgentSession()
+	if session == nil {
 		return nil
 	}
-	return h.session.Messages()
+	return session.Messages()
 }
 
 func (h *agentSessionPrintModeHost) PrintModeCWD() string {
-	if h == nil || h.session == nil || h.session.SessionManager == nil {
+	session := h.AgentSession()
+	if session == nil || session.SessionManager == nil {
 		return ""
 	}
-	return h.session.SessionManager.GetCWD()
+	return session.SessionManager.GetCWD()
 }
 
 func (h *agentSessionPrintModeHost) providerResponder(registry *ModelRegistry, args Args, installTelemetryEnabled bool) AgentSessionResponder {
 	return func(_ string, messages []llm.Message, model llm.Model) (llm.Message, error) {
 		ctx := context.Background()
+		session := h.AgentSession()
+		if session == nil {
+			return llm.Message{}, errors.New("session is required")
+		}
 		runtime, err := h.modelRuntimeForRegistry(registry)
 		if err != nil {
 			return llm.Message{}, err
@@ -747,9 +770,9 @@ func (h *agentSessionPrintModeHost) providerResponder(registry *ModelRegistry, a
 			installTelemetryEnabled,
 		)
 		return runtime.CompleteSimple(ctx, model, llm.Context{
-			SystemPrompt: h.session.SystemPrompt,
+			SystemPrompt: session.SystemPrompt,
 			Messages:     messages,
-			Tools:        h.session.GetActiveLLMTools(),
+			Tools:        session.GetActiveLLMTools(),
 		}, options)
 	}
 }
@@ -757,6 +780,10 @@ func (h *agentSessionPrintModeHost) providerResponder(registry *ModelRegistry, a
 func (h *agentSessionPrintModeHost) providerStreamResponder(registry *ModelRegistry, args Args, installTelemetryEnabled bool) AgentSessionStreamResponder {
 	return func(_ string, messages []llm.Message, model llm.Model) (*llm.AssistantMessageEventStream, error) {
 		ctx := context.Background()
+		session := h.AgentSession()
+		if session == nil {
+			return nil, errors.New("session is required")
+		}
 		runtime, err := h.modelRuntimeForRegistry(registry)
 		if err != nil {
 			return nil, err
@@ -768,9 +795,9 @@ func (h *agentSessionPrintModeHost) providerStreamResponder(registry *ModelRegis
 			installTelemetryEnabled,
 		)
 		return runtime.StreamSimple(ctx, model, llm.Context{
-			SystemPrompt: h.session.SystemPrompt,
+			SystemPrompt: session.SystemPrompt,
 			Messages:     messages,
-			Tools:        h.session.GetActiveLLMTools(),
+			Tools:        session.GetActiveLLMTools(),
 		}, options)
 	}
 }
@@ -796,6 +823,7 @@ func (h *agentSessionPrintModeHost) modelRuntimeStreamOptions(
 	args Args,
 	installTelemetryEnabled bool,
 ) llm.ModelsStreamOptions {
+	session := h.AgentSession()
 	providerRetrySettings := ProviderRetrySettings{
 		MaxRetryDelayMS: defaultProviderMaxRetryDelayMS,
 	}
@@ -808,9 +836,7 @@ func (h *agentSessionPrintModeHost) modelRuntimeStreamOptions(
 			Context: ctx,
 			Reasoning: cliReasoningOption(
 				model,
-				ThinkingLevel(
-					h.session.Agent.State.ThinkingLevel,
-				),
+				printModeSessionThinkingLevel(session),
 			),
 			Transport:       settingsTransport(h.settingsManager),
 			TimeoutMillis:   providerRetrySettings.TimeoutMS,
@@ -820,10 +846,10 @@ func (h *agentSessionPrintModeHost) modelRuntimeStreamOptions(
 				payload any,
 				model llm.Model,
 			) (any, bool, error) {
-				if h.session == nil {
+				if session == nil {
 					return nil, false, nil
 				}
-				return h.session.emitBeforeProviderRequest(
+				return session.emitBeforeProviderRequest(
 					ctx,
 					payload,
 					model,
@@ -834,10 +860,10 @@ func (h *agentSessionPrintModeHost) modelRuntimeStreamOptions(
 				headers map[string]string,
 				model llm.Model,
 			) error {
-				if h.session == nil {
+				if session == nil {
 					return nil
 				}
-				return h.session.emitAfterProviderResponse(
+				return session.emitAfterProviderResponse(
 					ctx,
 					status,
 					headers,
@@ -862,6 +888,13 @@ func (h *agentSessionPrintModeHost) modelRuntimeStreamOptions(
 		options.APIKey = &apiKey
 	}
 	return options
+}
+
+func printModeSessionThinkingLevel(session *AgentSession) ThinkingLevel {
+	if session == nil || session.Agent == nil {
+		return ThinkingOff
+	}
+	return ThinkingLevel(session.Agent.State.ThinkingLevel)
 }
 
 func settingsTransport(settings *SettingsManager) string {

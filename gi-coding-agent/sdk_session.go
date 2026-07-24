@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 	llm "github.com/nowa/gi/gi-llm-provider"
@@ -62,19 +63,31 @@ type AgentSession struct {
 	NoTools              string
 	SteeringMode         string
 	FollowUpMode         string
-	eventListeners       []AgentSessionEventListener
+	eventListenersMu     sync.RWMutex
+	eventListeners       []agentSessionEventListenerRegistration
+	nextEventListenerID  uint64
 	lifecycle            agentSessionLifecycle
 	activeRunMessages    []llm.Message
 	runMessageCapture    bool
 	providerContext      agentSessionProviderContextState
 	overflowRecovered    bool
-	agentQueuedMessages  []llm.Message
-	steeringMessages     []string
-	followUpMessages     []string
-	steeringQueue        []QueuedUserMessage
-	followUpQueue        []QueuedUserMessage
-	pendingNextTurn      []QueuedCustomMessage
-	pendingBashMessages  []map[string]any
+	queues               agentSessionQueueState
+}
+
+type agentSessionEventListenerRegistration struct {
+	id       uint64
+	listener AgentSessionEventListener
+}
+
+type agentSessionQueueState struct {
+	mu                  sync.Mutex
+	agentMessages       []llm.Message
+	steeringMessages    []string
+	followUpMessages    []string
+	steering            []QueuedUserMessage
+	followUp            []QueuedUserMessage
+	pendingNextTurn     []QueuedCustomMessage
+	pendingBashMessages []map[string]any
 }
 
 type AgentSessionStats struct {

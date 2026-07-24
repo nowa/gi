@@ -22,7 +22,7 @@ func (s *AgentSession) RunAutoCompaction(reason string, willRetry bool) error {
 	); err != nil {
 		return err
 	}
-	if len(s.agentQueuedMessages) > 0 && s.AgentContinue != nil {
+	if s.HasAgentQueuedMessages() && s.AgentContinue != nil {
 		if err := s.AgentContinue(); err != nil {
 			return err
 		}
@@ -231,11 +231,11 @@ func (s *AgentSession) QueueAgentMessage(message llm.Message) {
 	if s == nil {
 		return
 	}
-	s.agentQueuedMessages = append(s.agentQueuedMessages, message)
+	s.queues.enqueueAgentMessage(message)
 }
 
 func (s *AgentSession) HasAgentQueuedMessages() bool {
-	return s != nil && len(s.agentQueuedMessages) > 0
+	return s != nil && s.queues.hasAgentMessages()
 }
 
 func (s *AgentSession) shouldThresholdCompact(assistantMessage llm.Message) bool {

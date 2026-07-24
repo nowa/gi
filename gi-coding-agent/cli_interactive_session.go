@@ -140,8 +140,7 @@ func (h *CLIInteractiveTUIHost) addSuccessStatus(text string) *gitui.Text {
 	h.chat.AddChild(gitui.NewSpacer(1))
 	status := gitui.NewText(tuiThemeAccent(text), 1, 1)
 	h.chat.AddChild(status)
-	h.lastStatusSpacer = nil
-	h.lastStatusText = nil
+	h.resetLastStatus()
 	h.requestRender(false)
 	return status
 }
@@ -336,17 +335,9 @@ func (h *CLIInteractiveTUIHost) handleResumeSessionSelector() error {
 		return h.resumeSessionPath(dialogStringValue(result.Value))
 	}
 
-	resultCh := make(chan TUIDialogResult, 1)
-	var closeOnce sync.Once
-	var restore func()
+	completion := newCLIDialogCompletion()
 	finish := func(result TUIDialogResult) {
-		closeOnce.Do(func() {
-			if restore != nil {
-				restore()
-				restore = nil
-			}
-			resultCh <- result
-		})
+		completion.finish(result)
 	}
 	selector := NewLoadingSessionSelectorComponent(
 		func(progress SessionListProgress) ([]SessionInfo, error) {
@@ -391,23 +382,16 @@ func (h *CLIInteractiveTUIHost) handleResumeSessionSelector() error {
 			},
 		},
 	)
-	restore = h.showEditorReplacement(selector, selector)
-	select {
-	case result := <-resultCh:
-		if result.Action != "selected" {
-			return nil
-		}
-		path := dialogStringValue(result.Value)
-		if strings.TrimSpace(path) == "" {
-			return nil
-		}
-		return h.resumeSessionPath(path)
-	case <-h.done:
-		if restore != nil {
-			restore()
-		}
+	completion.installRestore(h.showEditorReplacement(selector, selector))
+	result := completion.wait(h.done)
+	if result.Action != "selected" {
 		return nil
 	}
+	path := dialogStringValue(result.Value)
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	return h.resumeSessionPath(path)
 }
 
 func sessionResumeDialogOptions(manager *SessionManager) []TUIDialogOption {
@@ -648,17 +632,9 @@ func (h *CLIInteractiveTUIHost) selectForkUserMessage(messages []AgentSessionFor
 		return "", true, errors.New("interactive TUI is not ready")
 	}
 	selector := NewUserMessageSelectorComponent(messages, "")
-	resultCh := make(chan TUIDialogResult, 1)
-	var closeOnce sync.Once
-	var restore func()
+	completion := newCLIDialogCompletion()
 	finish := func(result TUIDialogResult) {
-		closeOnce.Do(func() {
-			if restore != nil {
-				restore()
-				restore = nil
-			}
-			resultCh <- result
-		})
+		completion.finish(result)
 	}
 	selector.OnSelect = func(entryID string) {
 		finish(TUIDialogResult{Action: "selected", Value: entryID})
@@ -666,19 +642,12 @@ func (h *CLIInteractiveTUIHost) selectForkUserMessage(messages []AgentSessionFor
 	selector.OnCancel = func() {
 		finish(TUIDialogResult{Action: "cancelled"})
 	}
-	restore = h.showEditorReplacement(selector, selector)
-	select {
-	case result := <-resultCh:
-		if result.Action != "selected" {
-			return "", true, nil
-		}
-		return dialogStringValue(result.Value), false, nil
-	case <-h.done:
-		if restore != nil {
-			restore()
-		}
+	completion.installRestore(h.showEditorReplacement(selector, selector))
+	result := completion.wait(h.done)
+	if result.Action != "selected" {
 		return "", true, nil
 	}
+	return dialogStringValue(result.Value), false, nil
 }
 
 func (h *CLIInteractiveTUIHost) handleTreeSlashCommand(args string) error {
@@ -833,17 +802,9 @@ func (h *CLIInteractiveTUIHost) selectTreeEntry(session *AgentSession, initialSe
 		h.addStatus("No tree entries to switch to")
 		return "", true, nil
 	}
-	resultCh := make(chan TUIDialogResult, 1)
-	var closeOnce sync.Once
-	var restore func()
+	completion := newCLIDialogCompletion()
 	finish := func(result TUIDialogResult) {
-		closeOnce.Do(func() {
-			if restore != nil {
-				restore()
-				restore = nil
-			}
-			resultCh <- result
-		})
+		completion.finish(result)
 	}
 	selector.OnSelect = func(entryID string) {
 		finish(TUIDialogResult{Action: "selected", Value: entryID})
@@ -851,19 +812,12 @@ func (h *CLIInteractiveTUIHost) selectTreeEntry(session *AgentSession, initialSe
 	selector.OnCancel = func() {
 		finish(TUIDialogResult{Action: "cancelled"})
 	}
-	restore = h.showEditorReplacement(selector, selector)
-	select {
-	case result := <-resultCh:
-		if result.Action != "selected" {
-			return "", true, nil
-		}
-		return dialogStringValue(result.Value), false, nil
-	case <-h.done:
-		if restore != nil {
-			restore()
-		}
+	completion.installRestore(h.showEditorReplacement(selector, selector))
+	result := completion.wait(h.done)
+	if result.Action != "selected" {
 		return "", true, nil
 	}
+	return dialogStringValue(result.Value), false, nil
 }
 
 func (h *CLIInteractiveTUIHost) treeSelectorInitialFilter() TreeSelectorFilter {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 )
@@ -15,6 +16,8 @@ type SettingsError struct {
 }
 
 type SettingsManager struct {
+	mu sync.RWMutex
+
 	cwd            string
 	agentDir       string
 	globalPath     string
@@ -164,6 +167,19 @@ func (s *SettingsManager) refreshMerged() {
 	s.merged = mergeSettings(s.global, s.project)
 }
 
+// mergedSnapshot returns the current immutable merged settings view. Writers
+// replace the whole map while holding mu, so readers can safely use the
+// returned snapshot after releasing the lock.
+func (s *SettingsManager) mergedSnapshot() map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	merged := s.merged
+	s.mu.RUnlock()
+	return merged
+}
+
 func mergeSettings(base, overrides map[string]any) map[string]any {
 	result := cloneSettingsMap(base)
 	for key, overrideValue := range overrides {
@@ -205,6 +221,9 @@ func cloneSettingsValue(value any) any {
 }
 
 func (s *SettingsManager) Reload() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.inMemory {
 		clear(s.modifiedGlobal)
 		clear(s.modifiedProject)
@@ -240,25 +259,42 @@ func (s *SettingsManager) Flush() error {
 }
 
 func (s *SettingsManager) DrainErrors() []SettingsError {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	drained := append([]SettingsError(nil), s.errors...)
 	s.errors = nil
 	return drained
 }
 
 func (s *SettingsManager) GetGlobalSettings() map[string]any {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return cloneSettingsMap(s.global)
 }
 
 func (s *SettingsManager) GetProjectSettings() map[string]any {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return cloneSettingsMap(s.project)
 }
 
 func (s *SettingsManager) IsProjectTrusted() bool {
-	return s != nil && s.projectTrusted
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.projectTrusted
 }
 
 func (s *SettingsManager) SetProjectTrusted(trusted bool) {
-	if s == nil || s.projectTrusted == trusted {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.projectTrusted == trusted {
 		return
 	}
 	s.projectTrusted = trusted
@@ -288,6 +324,11 @@ func (s *SettingsManager) SetProjectTrusted(trusted bool) {
 }
 
 func (s *SettingsManager) GetDefaultProjectTrust() DefaultProjectTrust {
+	if s == nil {
+		return normalizeDefaultProjectTrust("")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return normalizeDefaultProjectTrust(DefaultProjectTrust(settingsString(s.global, "defaultProjectTrust")))
 }
 
@@ -296,7 +337,7 @@ func (s *SettingsManager) SetDefaultProjectTrust(defaultProjectTrust DefaultProj
 }
 
 func (s *SettingsManager) GetTheme() string {
-	return settingsString(s.merged, "theme")
+	return settingsString(s.mergedSnapshot(), "theme")
 }
 
 func (s *SettingsManager) SetTheme(theme string) {
@@ -304,7 +345,7 @@ func (s *SettingsManager) SetTheme(theme string) {
 }
 
 func (s *SettingsManager) GetDefaultModel() string {
-	return settingsString(s.merged, "defaultModel")
+	return settingsString(s.mergedSnapshot(), "defaultModel")
 }
 
 func (s *SettingsManager) SetDefaultModel(model string) {
@@ -312,7 +353,7 @@ func (s *SettingsManager) SetDefaultModel(model string) {
 }
 
 func (s *SettingsManager) GetDefaultProvider() string {
-	return settingsString(s.merged, "defaultProvider")
+	return settingsString(s.mergedSnapshot(), "defaultProvider")
 }
 
 func (s *SettingsManager) SetDefaultProvider(provider string) {
@@ -320,7 +361,7 @@ func (s *SettingsManager) SetDefaultProvider(provider string) {
 }
 
 func (s *SettingsManager) GetDefaultThinkingLevel() string {
-	return settingsString(s.merged, "defaultThinkingLevel")
+	return settingsString(s.mergedSnapshot(), "defaultThinkingLevel")
 }
 
 func (s *SettingsManager) SetDefaultThinkingLevel(level string) {
@@ -328,7 +369,7 @@ func (s *SettingsManager) SetDefaultThinkingLevel(level string) {
 }
 
 func (s *SettingsManager) GetTransport() string {
-	return settingsEnum(s.merged, "transport", "auto", []string{"sse", "websocket", "websocket-cached", "auto"})
+	return settingsEnum(s.mergedSnapshot(), "transport", "auto", []string{"sse", "websocket", "websocket-cached", "auto"})
 }
 
 func (s *SettingsManager) SetTransport(transport string) {
@@ -336,7 +377,7 @@ func (s *SettingsManager) SetTransport(transport string) {
 }
 
 func (s *SettingsManager) GetHTTPIdleTimeoutMS() int {
-	timeout := settingsInt(s.merged, "httpIdleTimeoutMs", defaultHTTPIdleTimeoutMS)
+	timeout := settingsInt(s.mergedSnapshot(), "httpIdleTimeoutMs", defaultHTTPIdleTimeoutMS)
 	if timeout < 0 {
 		return defaultHTTPIdleTimeoutMS
 	}
@@ -351,11 +392,11 @@ func (s *SettingsManager) SetHTTPIdleTimeoutMS(timeoutMS int) {
 }
 
 func (s *SettingsManager) GetShellCommandPrefix() string {
-	return settingsString(s.merged, "shellCommandPrefix")
+	return settingsString(s.mergedSnapshot(), "shellCommandPrefix")
 }
 
 func (s *SettingsManager) GetSessionDir() string {
-	sessionDir := settingsString(s.merged, "sessionDir")
+	sessionDir := settingsString(s.mergedSnapshot(), "sessionDir")
 	if sessionDir == "" {
 		return ""
 	}
@@ -363,7 +404,7 @@ func (s *SettingsManager) GetSessionDir() string {
 }
 
 func (s *SettingsManager) GetImageAutoResize() bool {
-	return settingsNestedBool(s.merged, "images", "autoResize", true)
+	return settingsNestedBool(s.mergedSnapshot(), "images", "autoResize", true)
 }
 
 func (s *SettingsManager) SetImageAutoResize(enabled bool) {
@@ -371,7 +412,7 @@ func (s *SettingsManager) SetImageAutoResize(enabled bool) {
 }
 
 func (s *SettingsManager) GetBlockImages() bool {
-	return settingsNestedBool(s.merged, "images", "blockImages", false)
+	return settingsNestedBool(s.mergedSnapshot(), "images", "blockImages", false)
 }
 
 func (s *SettingsManager) SetBlockImages(blocked bool) {
@@ -379,7 +420,7 @@ func (s *SettingsManager) SetBlockImages(blocked bool) {
 }
 
 func (s *SettingsManager) GetShowImages() bool {
-	return settingsNestedBool(s.merged, "terminal", "showImages", true)
+	return settingsNestedBool(s.mergedSnapshot(), "terminal", "showImages", true)
 }
 
 func (s *SettingsManager) SetShowImages(enabled bool) {
@@ -387,7 +428,7 @@ func (s *SettingsManager) SetShowImages(enabled bool) {
 }
 
 func (s *SettingsManager) GetImageWidthCells() int {
-	width := settingsNestedInt(s.merged, "terminal", "imageWidthCells", 60)
+	width := settingsNestedInt(s.mergedSnapshot(), "terminal", "imageWidthCells", 60)
 	if width <= 0 {
 		return 60
 	}
@@ -402,7 +443,7 @@ func (s *SettingsManager) SetImageWidthCells(width int) {
 }
 
 func (s *SettingsManager) GetClearOnShrink() bool {
-	return settingsNestedBool(s.merged, "terminal", "clearOnShrink", false)
+	return settingsNestedBool(s.mergedSnapshot(), "terminal", "clearOnShrink", false)
 }
 
 func (s *SettingsManager) SetClearOnShrink(enabled bool) {
@@ -410,7 +451,7 @@ func (s *SettingsManager) SetClearOnShrink(enabled bool) {
 }
 
 func (s *SettingsManager) GetShowTerminalProgress() bool {
-	return settingsNestedBool(s.merged, "terminal", "showTerminalProgress", false)
+	return settingsNestedBool(s.mergedSnapshot(), "terminal", "showTerminalProgress", false)
 }
 
 func (s *SettingsManager) SetShowTerminalProgress(enabled bool) {
@@ -418,7 +459,7 @@ func (s *SettingsManager) SetShowTerminalProgress(enabled bool) {
 }
 
 func (s *SettingsManager) GetEnableInstallTelemetry() bool {
-	return settingsBool(s.merged, "enableInstallTelemetry", true)
+	return settingsBool(s.mergedSnapshot(), "enableInstallTelemetry", true)
 }
 
 func (s *SettingsManager) SetEnableInstallTelemetry(enabled bool) {
@@ -426,7 +467,7 @@ func (s *SettingsManager) SetEnableInstallTelemetry(enabled bool) {
 }
 
 func (s *SettingsManager) GetEnableSkillCommands() bool {
-	return settingsBool(s.merged, "enableSkillCommands", true)
+	return settingsBool(s.mergedSnapshot(), "enableSkillCommands", true)
 }
 
 func (s *SettingsManager) SetEnableSkillCommands(enabled bool) {
@@ -434,7 +475,7 @@ func (s *SettingsManager) SetEnableSkillCommands(enabled bool) {
 }
 
 func (s *SettingsManager) GetHideThinkingBlock() bool {
-	return settingsBool(s.merged, "hideThinkingBlock", false)
+	return settingsBool(s.mergedSnapshot(), "hideThinkingBlock", false)
 }
 
 func (s *SettingsManager) SetHideThinkingBlock(hidden bool) {
@@ -442,7 +483,7 @@ func (s *SettingsManager) SetHideThinkingBlock(hidden bool) {
 }
 
 func (s *SettingsManager) GetCollapseChangelog() bool {
-	return settingsBool(s.merged, "collapseChangelog", false)
+	return settingsBool(s.mergedSnapshot(), "collapseChangelog", false)
 }
 
 func (s *SettingsManager) SetCollapseChangelog(collapsed bool) {
@@ -450,7 +491,7 @@ func (s *SettingsManager) SetCollapseChangelog(collapsed bool) {
 }
 
 func (s *SettingsManager) GetLastChangelogVersion() string {
-	return settingsString(s.merged, "lastChangelogVersion")
+	return settingsString(s.mergedSnapshot(), "lastChangelogVersion")
 }
 
 func (s *SettingsManager) SetLastChangelogVersion(version string) {
@@ -458,7 +499,7 @@ func (s *SettingsManager) SetLastChangelogVersion(version string) {
 }
 
 func (s *SettingsManager) GetQuietStartup() bool {
-	return settingsBool(s.merged, "quietStartup", false)
+	return settingsBool(s.mergedSnapshot(), "quietStartup", false)
 }
 
 func (s *SettingsManager) SetQuietStartup(enabled bool) {
@@ -466,7 +507,7 @@ func (s *SettingsManager) SetQuietStartup(enabled bool) {
 }
 
 func (s *SettingsManager) GetDoubleEscapeAction() string {
-	return settingsEnum(s.merged, "doubleEscapeAction", "tree", []string{"tree", "fork", "none"})
+	return settingsEnum(s.mergedSnapshot(), "doubleEscapeAction", "tree", []string{"tree", "fork", "none"})
 }
 
 func (s *SettingsManager) SetDoubleEscapeAction(action string) {
@@ -474,7 +515,7 @@ func (s *SettingsManager) SetDoubleEscapeAction(action string) {
 }
 
 func (s *SettingsManager) GetTreeFilterMode() string {
-	return settingsEnum(s.merged, "treeFilterMode", "default", []string{"default", "no-tools", "user-only", "labeled-only", "all"})
+	return settingsEnum(s.mergedSnapshot(), "treeFilterMode", "default", []string{"default", "no-tools", "user-only", "labeled-only", "all"})
 }
 
 func (s *SettingsManager) SetTreeFilterMode(mode string) {
@@ -482,7 +523,7 @@ func (s *SettingsManager) SetTreeFilterMode(mode string) {
 }
 
 func (s *SettingsManager) GetBranchSummarySkipPrompt() bool {
-	return settingsNestedBool(s.merged, "branchSummary", "skipPrompt", false)
+	return settingsNestedBool(s.mergedSnapshot(), "branchSummary", "skipPrompt", false)
 }
 
 func (s *SettingsManager) SetBranchSummarySkipPrompt(skip bool) {
@@ -491,7 +532,7 @@ func (s *SettingsManager) SetBranchSummarySkipPrompt(skip bool) {
 
 func (s *SettingsManager) GetSteeringMode() string {
 	return settingsEnum(
-		s.merged,
+		s.mergedSnapshot(),
 		"steeringMode",
 		"one-at-a-time",
 		[]string{"one-at-a-time", "all"},
@@ -511,7 +552,7 @@ func (s *SettingsManager) SetSteeringMode(mode string) {
 
 func (s *SettingsManager) GetFollowUpMode() string {
 	return settingsEnum(
-		s.merged,
+		s.mergedSnapshot(),
 		"followUpMode",
 		"one-at-a-time",
 		[]string{"one-at-a-time", "all"},
@@ -531,7 +572,7 @@ func (s *SettingsManager) SetFollowUpMode(mode string) {
 
 func (s *SettingsManager) GetCompactionEnabled() bool {
 	return settingsNestedBool(
-		s.merged,
+		s.mergedSnapshot(),
 		"compaction",
 		"enabled",
 		agentharness.DefaultCompactionSettings.Enabled,
@@ -544,7 +585,7 @@ func (s *SettingsManager) SetCompactionEnabled(enabled bool) {
 
 func (s *SettingsManager) GetCompactionReserveTokens() int {
 	return settingsNestedInt(
-		s.merged,
+		s.mergedSnapshot(),
 		"compaction",
 		"reserveTokens",
 		agentharness.DefaultCompactionSettings.ReserveTokens,
@@ -553,7 +594,7 @@ func (s *SettingsManager) GetCompactionReserveTokens() int {
 
 func (s *SettingsManager) GetCompactionKeepRecentTokens() int {
 	return settingsNestedInt(
-		s.merged,
+		s.mergedSnapshot(),
 		"compaction",
 		"keepRecentTokens",
 		agentharness.DefaultCompactionSettings.KeepRecentTokens,
@@ -561,15 +602,16 @@ func (s *SettingsManager) GetCompactionKeepRecentTokens() int {
 }
 
 func (s *SettingsManager) GetCompactionSettings() agentharness.CompactionSettings {
+	merged := s.mergedSnapshot()
 	return agentharness.CompactionSettings{
-		Enabled:          s.GetCompactionEnabled(),
-		ReserveTokens:    s.GetCompactionReserveTokens(),
-		KeepRecentTokens: s.GetCompactionKeepRecentTokens(),
+		Enabled:          settingsNestedBool(merged, "compaction", "enabled", agentharness.DefaultCompactionSettings.Enabled),
+		ReserveTokens:    settingsNestedInt(merged, "compaction", "reserveTokens", agentharness.DefaultCompactionSettings.ReserveTokens),
+		KeepRecentTokens: settingsNestedInt(merged, "compaction", "keepRecentTokens", agentharness.DefaultCompactionSettings.KeepRecentTokens),
 	}
 }
 
 func (s *SettingsManager) GetRetryEnabled() bool {
-	return settingsNestedBool(s.merged, "retry", "enabled", true)
+	return settingsNestedBool(s.mergedSnapshot(), "retry", "enabled", true)
 }
 
 func (s *SettingsManager) SetRetryEnabled(enabled bool) {
@@ -577,15 +619,16 @@ func (s *SettingsManager) SetRetryEnabled(enabled bool) {
 }
 
 func (s *SettingsManager) GetRetrySettings() AgentSessionRetrySettings {
+	merged := s.mergedSnapshot()
 	return AgentSessionRetrySettings{
-		Enabled:     s.GetRetryEnabled(),
-		MaxRetries:  settingsNestedInt(s.merged, "retry", "maxRetries", defaultAgentSessionMaxRetries),
-		BaseDelayMs: settingsNestedInt(s.merged, "retry", "baseDelayMs", defaultAgentSessionBaseDelayMS),
+		Enabled:     settingsNestedBool(merged, "retry", "enabled", true),
+		MaxRetries:  settingsNestedInt(merged, "retry", "maxRetries", defaultAgentSessionMaxRetries),
+		BaseDelayMs: settingsNestedInt(merged, "retry", "baseDelayMs", defaultAgentSessionBaseDelayMS),
 	}
 }
 
 func (s *SettingsManager) GetProviderRetrySettings() ProviderRetrySettings {
-	retrySettings, _ := s.merged["retry"].(map[string]any)
+	retrySettings, _ := s.mergedSnapshot()["retry"].(map[string]any)
 	providerSettings, _ := retrySettings["provider"].(map[string]any)
 	return ProviderRetrySettings{
 		TimeoutMS:       settingsValueInt(providerSettings["timeoutMs"], 0),
@@ -595,7 +638,7 @@ func (s *SettingsManager) GetProviderRetrySettings() ProviderRetrySettings {
 }
 
 func (s *SettingsManager) GetEditorPaddingX() int {
-	padding := settingsInt(s.merged, "editorPaddingX", 0)
+	padding := settingsInt(s.mergedSnapshot(), "editorPaddingX", 0)
 	if padding < 0 {
 		return 0
 	}
@@ -610,7 +653,7 @@ func (s *SettingsManager) SetEditorPaddingX(padding int) {
 }
 
 func (s *SettingsManager) GetAutocompleteMaxVisible() int {
-	visible := settingsInt(s.merged, "autocompleteMaxVisible", 5)
+	visible := settingsInt(s.mergedSnapshot(), "autocompleteMaxVisible", 5)
 	if visible <= 0 {
 		return 5
 	}
@@ -625,7 +668,7 @@ func (s *SettingsManager) SetAutocompleteMaxVisible(visible int) {
 }
 
 func (s *SettingsManager) GetShowHardwareCursor() bool {
-	return settingsBool(s.merged, "showHardwareCursor", false)
+	return settingsBool(s.mergedSnapshot(), "showHardwareCursor", false)
 }
 
 func (s *SettingsManager) SetShowHardwareCursor(enabled bool) {
@@ -634,7 +677,7 @@ func (s *SettingsManager) SetShowHardwareCursor(enabled bool) {
 
 func (s *SettingsManager) GetWarnings() WarningSettings {
 	return WarningSettings{
-		AnthropicExtraUsage: settingsNestedBool(s.merged, "warnings", "anthropicExtraUsage", true),
+		AnthropicExtraUsage: settingsNestedBool(s.mergedSnapshot(), "warnings", "anthropicExtraUsage", true),
 	}
 }
 
@@ -647,7 +690,7 @@ func (s *SettingsManager) SetWarningAnthropicExtraUsage(enabled bool) {
 }
 
 func (s *SettingsManager) GetEnabledModels() []string {
-	return settingsStringSlice(s.merged, "enabledModels")
+	return settingsStringSlice(s.mergedSnapshot(), "enabledModels")
 }
 
 func (s *SettingsManager) SetEnabledModels(models []string) {
@@ -659,7 +702,7 @@ func (s *SettingsManager) SetEnabledModels(models []string) {
 }
 
 func (s *SettingsManager) GetPackages() []any {
-	return settingsSlice(s.merged, "packages")
+	return settingsSlice(s.mergedSnapshot(), "packages")
 }
 
 func (s *SettingsManager) SetPackages(packages []any) {
@@ -671,7 +714,7 @@ func (s *SettingsManager) SetProjectPackages(packages []any) error {
 }
 
 func (s *SettingsManager) GetExtensionPaths() []string {
-	return settingsStringSlice(s.merged, "extensions")
+	return settingsStringSlice(s.mergedSnapshot(), "extensions")
 }
 
 func (s *SettingsManager) SetProjectExtensionPaths(paths []string) error {
@@ -691,6 +734,9 @@ func (s *SettingsManager) SetProjectThemePaths(paths []string) error {
 }
 
 func (s *SettingsManager) setGlobal(key string, value any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.global[key] = cloneSettingsValue(value)
 	s.modifiedGlobal[key] = struct{}{}
 	s.refreshMerged()
@@ -698,6 +744,9 @@ func (s *SettingsManager) setGlobal(key string, value any) {
 }
 
 func (s *SettingsManager) setGlobalNested(key, nestedKey string, value any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	nested, _ := s.global[key].(map[string]any)
 	if nested == nil {
 		nested = map[string]any{}
@@ -710,6 +759,9 @@ func (s *SettingsManager) setGlobalNested(key, nestedKey string, value any) {
 }
 
 func (s *SettingsManager) setProject(key string, value any) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if !s.projectTrusted {
 		return errors.New("Project is not trusted; refusing to write project settings")
 	}

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
@@ -550,6 +551,7 @@ func isValidSessionFile(filePath string) bool {
 }
 
 type SessionManager struct {
+	mu                  sync.RWMutex
 	sessionID           string
 	sessionFile         string
 	sessionDir          string
@@ -764,6 +766,8 @@ func newSessionManager(cwd, sessionDir, sessionFile string, persist bool) (*Sess
 }
 
 func (s *SessionManager) SetSessionFile(sessionFile string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	absPath, err := filepath.Abs(sessionFile)
 	if err != nil {
 		return err
@@ -773,9 +777,9 @@ func (s *SessionManager) SetSessionFile(sessionFile string) error {
 		s.fileEntries = LoadEntriesFromFile(absPath)
 		if len(s.fileEntries) == 0 {
 			explicitPath := s.sessionFile
-			s.newSession("")
+			s.newSessionLocked("")
 			s.sessionFile = explicitPath
-			if err := s.rewriteFile(); err != nil {
+			if err := s.rewriteFileLocked(); err != nil {
 				return err
 			}
 			s.flushed = true
@@ -787,18 +791,18 @@ func (s *SessionManager) SetSessionFile(sessionFile string) error {
 			s.sessionID = agentharness.UUIDv7()
 		}
 		if MigrateSessionEntries(s.fileEntries) {
-			if err := s.rewriteFile(); err != nil {
+			if err := s.rewriteFileLocked(); err != nil {
 				return err
 			}
 		}
-		s.buildIndex()
+		s.buildIndexLocked()
 		s.flushed = true
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	explicitPath := s.sessionFile
-	s.newSession("")
+	s.newSessionLocked("")
 	s.sessionFile = explicitPath
 	return nil
 }
@@ -812,6 +816,12 @@ func (s *SessionManager) NewSession(options ...NewSessionOptions) string {
 }
 
 func (s *SessionManager) newSession(options any) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.newSessionLocked(options)
+}
+
+func (s *SessionManager) newSessionLocked(options any) string {
 	opts := NewSessionOptions{}
 	switch value := options.(type) {
 	case string:
@@ -832,16 +842,22 @@ func (s *SessionManager) newSession(options any) string {
 		CWD:           s.cwd,
 		ParentSession: opts.ParentSession,
 	}}
-	s.buildIndex()
+	s.buildIndexLocked()
 	s.flushed = false
 	if s.persist {
 		fileTimestamp := strings.NewReplacer(":", "-", ".", "-").Replace(timestamp)
-		s.sessionFile = filepath.Join(s.GetSessionDir(), fileTimestamp+"_"+s.sessionID+".jsonl")
+		s.sessionFile = filepath.Join(s.sessionDir, fileTimestamp+"_"+s.sessionID+".jsonl")
 	}
 	return s.sessionFile
 }
 
 func (s *SessionManager) rewriteFile() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rewriteFileLocked()
+}
+
+func (s *SessionManager) rewriteFileLocked() error {
 	if !s.persist || s.sessionFile == "" {
 		return nil
 	}
@@ -861,22 +877,37 @@ func (s *SessionManager) rewriteFile() error {
 }
 
 func (s *SessionManager) appendEntry(entry FileEntry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry.ParentID = cloneStringPtr(s.leafID)
+	if entry.raw != nil {
+		if entry.ParentID == nil {
+			entry.raw["parentId"] = nil
+		} else {
+			entry.raw["parentId"] = *entry.ParentID
+		}
+	}
+	s.appendEntryLocked(entry)
+}
+
+func (s *SessionManager) appendEntryLocked(entry FileEntry) {
+	entry = cloneFileEntry(entry)
 	s.fileEntries = append(s.fileEntries, entry)
 	s.indexEntry(entry)
 	s.leafID = stringPtr(entry.ID)
-	s.persistEntry(entry)
+	s.persistEntryLocked(entry)
 }
 
-func (s *SessionManager) persistEntry(entry FileEntry) {
+func (s *SessionManager) persistEntryLocked(entry FileEntry) {
 	if !s.persist || s.sessionFile == "" {
 		return
 	}
-	if !s.hasAssistantMessage() {
+	if !s.hasAssistantMessageLocked() {
 		s.flushed = false
 		return
 	}
 	if !s.flushed {
-		_ = s.rewriteFile()
+		_ = s.rewriteFileLocked()
 		s.flushed = true
 		return
 	}
@@ -893,6 +924,12 @@ func (s *SessionManager) persistEntry(entry FileEntry) {
 }
 
 func (s *SessionManager) hasAssistantMessage() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.hasAssistantMessageLocked()
+}
+
+func (s *SessionManager) hasAssistantMessageLocked() bool {
 	for _, entry := range s.fileEntries {
 		if entry.Type == "message" && messageRole(entry.Message) == "assistant" {
 			return true
@@ -902,6 +939,12 @@ func (s *SessionManager) hasAssistantMessage() bool {
 }
 
 func (s *SessionManager) buildIndex() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.buildIndexLocked()
+}
+
+func (s *SessionManager) buildIndexLocked() {
 	if s.byID == nil {
 		s.byID = map[string]FileEntry{}
 	}
@@ -941,10 +984,14 @@ func (s *SessionManager) indexEntry(entry FileEntry) {
 }
 
 func (s *SessionManager) IsPersisted() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.persist
 }
 
 func (s *SessionManager) GetSessionID() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.sessionID
 }
 
@@ -953,14 +1000,20 @@ func (s *SessionManager) GetSessionId() string {
 }
 
 func (s *SessionManager) GetSessionFile() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.sessionFile
 }
 
 func (s *SessionManager) GetSessionDir() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.sessionDir
 }
 
 func (s *SessionManager) GetCWD() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.cwd
 }
 
@@ -969,6 +1022,8 @@ func (s *SessionManager) GetCwd() string {
 }
 
 func (s *SessionManager) GetHeader() *SessionHeader {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	for _, entry := range s.fileEntries {
 		if entry.Type != "session" {
 			continue
@@ -986,35 +1041,54 @@ func (s *SessionManager) GetHeader() *SessionHeader {
 }
 
 func (s *SessionManager) GetEntries() []FileEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	entries := make([]FileEntry, 0, len(s.fileEntries))
 	for _, entry := range s.fileEntries {
 		if entry.Type == "session" {
 			continue
 		}
-		entries = append(entries, entry)
+		entries = append(entries, cloneFileEntry(entry))
 	}
 	return entries
 }
 
+func (s *SessionManager) allEntriesSnapshot() []FileEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneFileEntries(s.fileEntries)
+}
+
+func (s *SessionManager) forkConfiguration() (cwd, sessionDir, sessionFile string, persist bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cwd, s.sessionDir, s.sessionFile, s.persist
+}
+
+func (s *SessionManager) replaceEntries(entries []FileEntry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fileEntries = cloneFileEntries(entries)
+	s.buildIndexLocked()
+	s.flushed = false
+}
+
 func (s *SessionManager) AppendMessage(message any) string {
-	parentID := cloneStringPtr(s.leafID)
-	entry := newSessionEntry("message", parentID, map[string]any{"message": message})
+	entry := newSessionEntry("message", nil, map[string]any{"message": message})
 	entry.Message = message
 	s.appendEntry(entry)
 	return entry.ID
 }
 
 func (s *SessionManager) AppendThinkingLevelChange(thinkingLevel string) string {
-	parentID := cloneStringPtr(s.leafID)
-	entry := newSessionEntry("thinking_level_change", parentID, map[string]any{"thinkingLevel": thinkingLevel})
+	entry := newSessionEntry("thinking_level_change", nil, map[string]any{"thinkingLevel": thinkingLevel})
 	entry.ThinkingLevel = thinkingLevel
 	s.appendEntry(entry)
 	return entry.ID
 }
 
 func (s *SessionManager) AppendModelChange(provider, modelID string) string {
-	parentID := cloneStringPtr(s.leafID)
-	entry := newSessionEntry("model_change", parentID, map[string]any{"provider": provider, "modelId": modelID})
+	entry := newSessionEntry("model_change", nil, map[string]any{"provider": provider, "modelId": modelID})
 	entry.Provider = provider
 	entry.ModelID = modelID
 	s.appendEntry(entry)
@@ -1031,14 +1105,13 @@ func (s *SessionManager) AppendCompactionWithOptions(
 	tokensBefore int,
 	options SessionSummaryOptions,
 ) string {
-	parentID := cloneStringPtr(s.leafID)
 	values := map[string]any{
 		"summary":          summary,
 		"firstKeptEntryId": firstKeptEntryID,
 		"tokensBefore":     tokensBefore,
 	}
 	appendSessionSummaryOptions(values, options)
-	entry := newSessionEntry("compaction", parentID, values)
+	entry := newSessionEntry("compaction", nil, values)
 	entry.Summary = summary
 	entry.FirstKeptID = firstKeptEntryID
 	entry.TokensBefore = tokensBefore
@@ -1050,8 +1123,7 @@ func (s *SessionManager) AppendCompactionWithOptions(
 }
 
 func (s *SessionManager) AppendCustomEntry(customType string, data any) string {
-	parentID := cloneStringPtr(s.leafID)
-	entry := newSessionEntry("custom", parentID, map[string]any{"customType": customType, "data": data})
+	entry := newSessionEntry("custom", nil, map[string]any{"customType": customType, "data": data})
 	entry.CustomType = customType
 	entry.Data = data
 	s.appendEntry(entry)
@@ -1063,7 +1135,6 @@ func (s *SessionManager) AppendCustomMessageEntry(customType string, content any
 }
 
 func (s *SessionManager) AppendCustomMessageEntryWithContext(customType string, content any, display bool, details any, includeInContext bool) string {
-	parentID := cloneStringPtr(s.leafID)
 	message := map[string]any{
 		"customType": customType,
 		"content":    content,
@@ -1073,7 +1144,7 @@ func (s *SessionManager) AppendCustomMessageEntryWithContext(customType string, 
 	if includeInContext {
 		message["includeInContext"] = true
 	}
-	entry := newSessionEntry("custom_message", parentID, message)
+	entry := newSessionEntry("custom_message", nil, message)
 	entry.CustomType = customType
 	entry.Content = content
 	entry.Display = display
@@ -1084,14 +1155,15 @@ func (s *SessionManager) AppendCustomMessageEntryWithContext(customType string, 
 
 func (s *SessionManager) AppendSessionInfo(name string) string {
 	name = strings.TrimSpace(name)
-	parentID := cloneStringPtr(s.leafID)
-	entry := newSessionEntry("session_info", parentID, map[string]any{"name": name})
+	entry := newSessionEntry("session_info", nil, map[string]any{"name": name})
 	entry.Name = name
 	s.appendEntry(entry)
 	return entry.ID
 }
 
 func (s *SessionManager) AppendLabelChange(targetID, label string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, ok := s.byID[targetID]; !ok {
 		return "", errors.New("Entry " + targetID + " not found")
 	}
@@ -1099,11 +1171,13 @@ func (s *SessionManager) AppendLabelChange(targetID, label string) (string, erro
 	entry := newSessionEntry("label", parentID, map[string]any{"targetId": targetID, "label": label})
 	entry.TargetID = targetID
 	entry.Label = label
-	s.appendEntry(entry)
+	s.appendEntryLocked(entry)
 	return entry.ID, nil
 }
 
 func (s *SessionManager) GetLeafID() *string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return cloneStringPtr(s.leafID)
 }
 
@@ -1112,36 +1186,55 @@ func (s *SessionManager) GetLeafId() *string {
 }
 
 func (s *SessionManager) GetLeafEntry() *FileEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if s.leafID == nil {
 		return nil
 	}
-	return s.GetEntry(*s.leafID)
+	entry, ok := s.byID[*s.leafID]
+	if !ok {
+		return nil
+	}
+	cloned := cloneFileEntry(entry)
+	return &cloned
 }
 
 func (s *SessionManager) GetEntry(id string) *FileEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	entry, ok := s.byID[id]
 	if !ok {
 		return nil
 	}
-	return &entry
+	cloned := cloneFileEntry(entry)
+	return &cloned
 }
 
 func (s *SessionManager) GetChildren(parentID string) []FileEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	var children []FileEntry
-	for _, entry := range s.GetEntries() {
+	for _, entry := range s.fileEntries {
+		if entry.Type == "session" {
+			continue
+		}
 		if entry.ParentID != nil && *entry.ParentID == parentID {
-			children = append(children, entry)
+			children = append(children, cloneFileEntry(entry))
 		}
 	}
 	return children
 }
 
 func (s *SessionManager) GetLabel(id string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	label, ok := s.labelsByID[id]
 	return label, ok
 }
 
 func (s *SessionManager) GetSessionName() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	for i := len(s.fileEntries) - 1; i >= 0; i-- {
 		entry := s.fileEntries[i]
 		if entry.Type == "session_info" {
@@ -1152,6 +1245,12 @@ func (s *SessionManager) GetSessionName() string {
 }
 
 func (s *SessionManager) GetBranch(fromID ...string) []FileEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.getBranchLocked(fromID...)
+}
+
+func (s *SessionManager) getBranchLocked(fromID ...string) []FileEntry {
 	var startID *string
 	if len(fromID) > 0 {
 		startID = &fromID[0]
@@ -1164,7 +1263,7 @@ func (s *SessionManager) GetBranch(fromID ...string) []FileEntry {
 	var path []FileEntry
 	current, ok := s.byID[*startID]
 	for ok {
-		path = append([]FileEntry{current}, path...)
+		path = append([]FileEntry{cloneFileEntry(current)}, path...)
 		if current.ParentID == nil {
 			break
 		}
@@ -1180,13 +1279,18 @@ func (s *SessionManager) BuildSessionContext() SessionContext {
 func (s *SessionManager) BuildSessionContextWithOptions(
 	options SessionContextOptions,
 ) SessionContext {
-	if s.leafID == nil {
+	s.mu.RLock()
+	entries := cloneFileEntries(s.fileEntries)
+	leafID := cloneStringPtr(s.leafID)
+	byID := cloneFileEntryMap(s.byID)
+	s.mu.RUnlock()
+	if leafID == nil {
 		return SessionContext{ThinkingLevel: "off"}
 	}
 	return BuildSessionContextWithOptions(
-		s.GetEntries(),
-		s.leafID,
-		s.byID,
+		entriesWithoutHeader(entries),
+		leafID,
+		byID,
 		options,
 	)
 }
@@ -1350,14 +1454,18 @@ func jsonStringFallback(value any) string {
 }
 
 func (s *SessionManager) GetTree() []*SessionTreeNode {
-	entries := s.GetEntries()
+	s.mu.RLock()
+	entries := entriesWithoutHeader(cloneFileEntries(s.fileEntries))
+	labelsByID := cloneSessionStringMap(s.labelsByID)
+	labelTimestampsByID := cloneSessionStringMap(s.labelTimestampsByID)
+	s.mu.RUnlock()
 	nodeMap := map[string]*SessionTreeNode{}
 	roots := []*SessionTreeNode{}
 	for _, entry := range entries {
 		nodeMap[entry.ID] = &SessionTreeNode{
 			Entry:          entry,
-			Label:          s.labelsByID[entry.ID],
-			LabelTimestamp: s.labelTimestampsByID[entry.ID],
+			Label:          labelsByID[entry.ID],
+			LabelTimestamp: labelTimestampsByID[entry.ID],
 		}
 	}
 	for _, entry := range entries {
@@ -1386,6 +1494,8 @@ func (s *SessionManager) GetTree() []*SessionTreeNode {
 }
 
 func (s *SessionManager) Branch(branchFromID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, ok := s.byID[branchFromID]; !ok {
 		return errors.New("Entry " + branchFromID + " not found")
 	}
@@ -1394,6 +1504,8 @@ func (s *SessionManager) Branch(branchFromID string) error {
 }
 
 func (s *SessionManager) ResetLeaf() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.leafID = nil
 }
 
@@ -1406,6 +1518,8 @@ func (s *SessionManager) BranchWithSummaryOptions(
 	summary string,
 	options SessionSummaryOptions,
 ) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if branchFromID != nil {
 		if _, ok := s.byID[*branchFromID]; !ok {
 			return "", errors.New("Entry " + *branchFromID + " not found")
@@ -1428,7 +1542,7 @@ func (s *SessionManager) BranchWithSummaryOptions(
 	entry.Details = options.Details
 	entry.FromHook = options.FromHook
 	entry.Usage = cloneSessionUsage(options.Usage)
-	s.appendEntry(entry)
+	s.appendEntryLocked(entry)
 	return entry.ID, nil
 }
 
@@ -1452,9 +1566,140 @@ func cloneSessionUsage(usage *llm.Usage) *llm.Usage {
 	return &cloned
 }
 
+func cloneFileEntries(entries []FileEntry) []FileEntry {
+	if entries == nil {
+		return nil
+	}
+	cloned := make([]FileEntry, len(entries))
+	for index, entry := range entries {
+		cloned[index] = cloneFileEntry(entry)
+	}
+	return cloned
+}
+
+func cloneFileEntryMap(entries map[string]FileEntry) map[string]FileEntry {
+	if entries == nil {
+		return nil
+	}
+	cloned := make(map[string]FileEntry, len(entries))
+	for id, entry := range entries {
+		cloned[id] = cloneFileEntry(entry)
+	}
+	return cloned
+}
+
+func entriesWithoutHeader(entries []FileEntry) []FileEntry {
+	result := make([]FileEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Type != "session" {
+			result = append(result, entry)
+		}
+	}
+	return result
+}
+
+func cloneSessionStringMap(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneFileEntry(entry FileEntry) FileEntry {
+	cloned := entry
+	cloned.ParentID = cloneStringPtr(entry.ParentID)
+	cloned.Message = cloneSessionValue(entry.Message)
+	cloned.Data = cloneSessionValue(entry.Data)
+	cloned.Content = cloneSessionValue(entry.Content)
+	cloned.Details = cloneSessionValue(entry.Details)
+	cloned.Usage = cloneSessionUsage(entry.Usage)
+	cloned.raw = cloneSessionMap(entry.raw)
+	return cloned
+}
+
+func cloneSessionMap(values map[string]any) map[string]any {
+	if values == nil {
+		return nil
+	}
+	cloned := make(map[string]any, len(values))
+	for key, value := range values {
+		cloned[key] = cloneSessionValue(value)
+	}
+	return cloned
+}
+
+func cloneSessionValue(value any) any {
+	switch typed := value.(type) {
+	case llm.Message:
+		return cloneSessionMessage(typed)
+	case *llm.Message:
+		if typed == nil {
+			return (*llm.Message)(nil)
+		}
+		cloned := cloneSessionMessage(*typed)
+		return &cloned
+	case map[string]any:
+		return cloneSessionMap(typed)
+	case map[string]string:
+		cloned := make(map[string]string, len(typed))
+		for key, item := range typed {
+			cloned[key] = item
+		}
+		return cloned
+	case []any:
+		cloned := make([]any, len(typed))
+		for index, item := range typed {
+			cloned[index] = cloneSessionValue(item)
+		}
+		return cloned
+	case []string:
+		return append([]string(nil), typed...)
+	case []llm.ContentPart:
+		return cloneSessionContent(typed)
+	case []byte:
+		return append([]byte(nil), typed...)
+	default:
+		return typed
+	}
+}
+
+func cloneSessionMessage(message llm.Message) llm.Message {
+	cloned := message
+	cloned.Content = cloneSessionContent(message.Content)
+	if message.Diagnostics != nil {
+		cloned.Diagnostics = append([]llm.AssistantMessageDiagnostic(nil), message.Diagnostics...)
+		for index := range cloned.Diagnostics {
+			cloned.Diagnostics[index].Details = cloneSessionMap(message.Diagnostics[index].Details)
+			if message.Diagnostics[index].Error != nil {
+				errorInfo := *message.Diagnostics[index].Error
+				cloned.Diagnostics[index].Error = &errorInfo
+			}
+		}
+	}
+	cloned.Details = cloneSessionValue(message.Details)
+	return cloned
+}
+
+func cloneSessionContent(content []llm.ContentPart) []llm.ContentPart {
+	if content == nil {
+		return nil
+	}
+	cloned := append([]llm.ContentPart(nil), content...)
+	for index := range cloned {
+		cloned[index].Arguments = cloneSessionMap(content[index].Arguments)
+	}
+	return cloned
+}
+
 func (s *SessionManager) CreateBranchedSession(leafID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	previousSessionFile := s.sessionFile
-	path := s.GetBranch(leafID)
+	path := s.getBranchLocked(leafID)
 	if len(path) == 0 {
 		return "", errors.New("Entry " + leafID + " not found")
 	}
@@ -1480,7 +1725,7 @@ func (s *SessionManager) CreateBranchedSession(leafID string) (string, error) {
 	fileTimestamp := strings.NewReplacer(":", "-", ".", "-").Replace(timestamp)
 	newSessionFile := ""
 	if s.persist {
-		newSessionFile = filepath.Join(s.GetSessionDir(), fileTimestamp+"_"+newSessionID+".jsonl")
+		newSessionFile = filepath.Join(s.sessionDir, fileTimestamp+"_"+newSessionID+".jsonl")
 	}
 	labels := s.labelEntriesForPath(pathWithoutLabels)
 	s.fileEntries = append([]FileEntry{header}, pathWithoutLabels...)
@@ -1489,10 +1734,10 @@ func (s *SessionManager) CreateBranchedSession(leafID string) (string, error) {
 	if s.persist {
 		s.sessionFile = newSessionFile
 	}
-	s.buildIndex()
+	s.buildIndexLocked()
 	if s.persist {
-		if s.hasAssistantMessage() {
-			if err := s.rewriteFile(); err != nil {
+		if s.hasAssistantMessageLocked() {
+			if err := s.rewriteFileLocked(); err != nil {
 				return "", err
 			}
 			s.flushed = true

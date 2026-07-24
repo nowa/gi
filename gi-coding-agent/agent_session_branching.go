@@ -156,16 +156,18 @@ func (s *SessionManager) forkEntry(entryID string, includeEntry bool) (*SessionM
 	if target.ID != entryID {
 		return nil, errors.New("Entry " + entryID + " not found")
 	}
+	cwd, sessionDir, sessionFile, persist := s.forkConfiguration()
 	parentSession := ""
-	if s.persist {
-		parentSession = s.sessionFile
+	if persist {
+		parentSession = sessionFile
 	}
-	forked, err := newSessionManager(s.cwd, s.sessionDir, "", s.persist)
+	forked, err := newSessionManager(cwd, sessionDir, "", persist)
 	if err != nil {
 		return nil, err
 	}
 	forked.newSession(NewSessionOptions{ParentSession: parentSession})
-	header := forked.fileEntries[0]
+	forkedEntries := forked.allEntriesSnapshot()
+	header := forkedEntries[0]
 	entries := []FileEntry{header}
 	copyBranch := branch[:len(branch)-1]
 	if includeEntry {
@@ -177,9 +179,7 @@ func (s *SessionManager) forkEntry(entryID string, includeEntry bool) (*SessionM
 		}
 		entries = append(entries, entry)
 	}
-	forked.fileEntries = entries
-	forked.buildIndex()
-	forked.flushed = false
+	forked.replaceEntries(entries)
 	return forked, nil
 }
 

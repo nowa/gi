@@ -77,17 +77,9 @@ func (h *CLIInteractiveTUIHost) selectLoginAuthType() (string, bool, error) {
 	const subscriptionLabel = "Use a subscription"
 	const apiKeyLabel = "Use an API key"
 	selector := NewExtensionSelectorComponent("Select authentication method:", []string{subscriptionLabel, apiKeyLabel})
-	resultCh := make(chan TUIDialogResult, 1)
-	var closeOnce sync.Once
-	var restore func()
+	completion := newCLIDialogCompletion()
 	finish := func(result TUIDialogResult) {
-		closeOnce.Do(func() {
-			if restore != nil {
-				restore()
-				restore = nil
-			}
-			resultCh <- result
-		})
+		completion.finish(result)
 	}
 	selector.OnSelect = func(option string) {
 		value := "api_key"
@@ -99,19 +91,12 @@ func (h *CLIInteractiveTUIHost) selectLoginAuthType() (string, bool, error) {
 	selector.OnCancel = func() {
 		finish(TUIDialogResult{Action: "cancelled"})
 	}
-	restore = h.showEditorReplacement(selector, selector)
-	select {
-	case result := <-resultCh:
-		if result.Action != "selected" {
-			return "", true, nil
-		}
-		return dialogStringValue(result.Value), false, nil
-	case <-h.done:
-		if restore != nil {
-			restore()
-		}
+	completion.installRestore(h.showEditorReplacement(selector, selector))
+	result := completion.wait(h.done)
+	if result.Action != "selected" {
 		return "", true, nil
 	}
+	return dialogStringValue(result.Value), false, nil
 }
 
 func (h *CLIInteractiveTUIHost) runInteractiveLogin(providerID, authType string) error {
@@ -170,17 +155,9 @@ func (h *CLIInteractiveTUIHost) showOAuthLoginDialog(providerID, providerName st
 		return nil
 	}
 	dialog := NewLoginDialogComponent("Login to "+providerName, "")
-	resultCh := make(chan TUIDialogResult, 1)
-	var closeOnce sync.Once
-	var restore func()
+	completion := newCLIDialogCompletion()
 	finish := func(result TUIDialogResult) {
-		closeOnce.Do(func() {
-			if restore != nil {
-				restore()
-				restore = nil
-			}
-			resultCh <- result
-		})
+		completion.finish(result)
 	}
 	dialog.OnSubmit = func(value string) {
 		finish(TUIDialogResult{Action: "submitted", Value: value})
@@ -189,19 +166,12 @@ func (h *CLIInteractiveTUIHost) showOAuthLoginDialog(providerID, providerName st
 		finish(TUIDialogResult{Action: "cancelled"})
 	}
 	dialog.ShowAuth(prompt.URL, prompt.Instructions, prompt.ManualPrompt)
-	restore = h.showEditorReplacement(dialog, dialog)
-	select {
-	case result := <-resultCh:
-		if result.Action == "submitted" {
-			h.addStatus("Subscription login token exchange is not implemented yet for " + providerName + ".")
-		}
-		return nil
-	case <-h.done:
-		if restore != nil {
-			restore()
-		}
-		return nil
+	completion.installRestore(h.showEditorReplacement(dialog, dialog))
+	result := completion.wait(h.done)
+	if result.Action == "submitted" {
+		h.addStatus("Subscription login token exchange is not implemented yet for " + providerName + ".")
 	}
+	return nil
 }
 
 func (h *CLIInteractiveTUIHost) showAnthropicOAuthLoginDialog(providerName string) error {
@@ -579,17 +549,9 @@ func (h *CLIInteractiveTUIHost) promptForGitHubCopilotEnterpriseDomain(providerN
 		return "", true, errors.New("interactive TUI is not ready")
 	}
 	dialog := NewLoginDialogComponent("Login to "+providerName, "GitHub Enterprise URL/domain (blank for github.com)")
-	resultCh := make(chan TUIDialogResult, 1)
-	var closeOnce sync.Once
-	var restore func()
+	completion := newCLIDialogCompletion()
 	finish := func(result TUIDialogResult) {
-		closeOnce.Do(func() {
-			if restore != nil {
-				restore()
-				restore = nil
-			}
-			resultCh <- result
-		})
+		completion.finish(result)
 	}
 	dialog.OnSubmit = func(value string) {
 		finish(TUIDialogResult{Action: "submitted", Value: value})
@@ -597,25 +559,18 @@ func (h *CLIInteractiveTUIHost) promptForGitHubCopilotEnterpriseDomain(providerN
 	dialog.OnCancel = func() {
 		finish(TUIDialogResult{Action: "cancelled"})
 	}
-	restore = h.showEditorReplacement(dialog, dialog)
-	select {
-	case result := <-resultCh:
-		if result.Action != "submitted" {
-			return "", true, nil
-		}
-		value := dialogStringValue(result.Value)
-		domain, ok := normalizeGitHubCopilotDomain(value)
-		if !ok {
-			h.addStatus("Failed to login to " + providerName + ": invalid GitHub Enterprise URL/domain")
-			return "", true, nil
-		}
-		return domain, false, nil
-	case <-h.done:
-		if restore != nil {
-			restore()
-		}
+	completion.installRestore(h.showEditorReplacement(dialog, dialog))
+	result := completion.wait(h.done)
+	if result.Action != "submitted" {
 		return "", true, nil
 	}
+	value := dialogStringValue(result.Value)
+	domain, ok := normalizeGitHubCopilotDomain(value)
+	if !ok {
+		h.addStatus("Failed to login to " + providerName + ": invalid GitHub Enterprise URL/domain")
+		return "", true, nil
+	}
+	return domain, false, nil
 }
 
 func (h *CLIInteractiveTUIHost) promptForAPIKey(providerName string) (string, bool, error) {
@@ -623,17 +578,9 @@ func (h *CLIInteractiveTUIHost) promptForAPIKey(providerName string) (string, bo
 		return "", true, errors.New("interactive TUI is not ready")
 	}
 	dialog := NewLoginDialogComponent("Login to "+providerName, "Enter API key:")
-	resultCh := make(chan TUIDialogResult, 1)
-	var closeOnce sync.Once
-	var restore func()
+	completion := newCLIDialogCompletion()
 	finish := func(result TUIDialogResult) {
-		closeOnce.Do(func() {
-			if restore != nil {
-				restore()
-				restore = nil
-			}
-			resultCh <- result
-		})
+		completion.finish(result)
 	}
 	dialog.OnSubmit = func(value string) {
 		finish(TUIDialogResult{Action: "submitted", Value: value})
@@ -641,19 +588,12 @@ func (h *CLIInteractiveTUIHost) promptForAPIKey(providerName string) (string, bo
 	dialog.OnCancel = func() {
 		finish(TUIDialogResult{Action: "cancelled"})
 	}
-	restore = h.showEditorReplacement(dialog, dialog)
-	select {
-	case result := <-resultCh:
-		if result.Action != "submitted" {
-			return "", true, nil
-		}
-		return dialogStringValue(result.Value), false, nil
-	case <-h.done:
-		if restore != nil {
-			restore()
-		}
+	completion.installRestore(h.showEditorReplacement(dialog, dialog))
+	result := completion.wait(h.done)
+	if result.Action != "submitted" {
 		return "", true, nil
 	}
+	return dialogStringValue(result.Value), false, nil
 }
 
 func (h *CLIInteractiveTUIHost) addBedrockSetupInfo(providerID, providerName string) {
@@ -668,14 +608,11 @@ func (h *CLIInteractiveTUIHost) addBedrockSetupInfo(providerID, providerName str
 		tuiThemeMuted("See:"),
 		tuiThemeAccent("  " + giProvidersDocumentationPath(h.interactiveCWD())),
 	})
-	var restore func()
+	replacement := &cliEditorReplacementLifecycle{}
 	dialog.OnCancel = func() {
-		if restore != nil {
-			restore()
-			restore = nil
-		}
+		replacement.close()
 	}
-	restore = h.showEditorReplacement(dialog, dialog)
+	replacement.install(h.showEditorReplacement(dialog, dialog))
 }
 
 func (h *CLIInteractiveTUIHost) handleLogoutSlashCommand(args string) error {
@@ -768,17 +705,9 @@ func (h *CLIInteractiveTUIHost) selectAuthProvider(mode string, registry *ModelR
 		Providers:      providers,
 		StatusResolver: resolver,
 	})
-	resultCh := make(chan TUIDialogResult, 1)
-	var closeOnce sync.Once
-	var restore func()
+	completion := newCLIDialogCompletion()
 	finish := func(result TUIDialogResult) {
-		closeOnce.Do(func() {
-			if restore != nil {
-				restore()
-				restore = nil
-			}
-			resultCh <- result
-		})
+		completion.finish(result)
 	}
 	selector.OnSelect = func(providerID string) {
 		finish(TUIDialogResult{Action: "selected", Value: providerID})
@@ -786,17 +715,10 @@ func (h *CLIInteractiveTUIHost) selectAuthProvider(mode string, registry *ModelR
 	selector.OnCancel = func() {
 		finish(TUIDialogResult{Action: "cancelled"})
 	}
-	restore = h.showEditorReplacement(selector, selector)
-	select {
-	case result := <-resultCh:
-		if result.Action != "selected" {
-			return "", true, nil
-		}
-		return dialogStringValue(result.Value), false, nil
-	case <-h.done:
-		if restore != nil {
-			restore()
-		}
+	completion.installRestore(h.showEditorReplacement(selector, selector))
+	result := completion.wait(h.done)
+	if result.Action != "selected" {
 		return "", true, nil
 	}
+	return dialogStringValue(result.Value), false, nil
 }

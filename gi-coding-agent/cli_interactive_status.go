@@ -23,13 +23,22 @@ func (h *CLIInteractiveTUIHost) addStatus(text string) *gitui.Text {
 	if strings.TrimSpace(text) == "" || h.chat == nil {
 		return nil
 	}
+	h.statusMu.Lock()
+	status := h.addStatusLocked(text)
+	h.statusMu.Unlock()
+	if status != nil {
+		h.requestRender(false)
+	}
+	return status
+}
+
+func (h *CLIInteractiveTUIHost) addStatusLocked(text string) *gitui.Text {
 	if statusTextCoalescible(text) {
 		children := h.chat.Children()
 		if len(children) > 1 && h.lastStatusText != nil && h.lastStatusSpacer != nil &&
 			children[len(children)-1] == h.lastStatusText &&
 			children[len(children)-2] == h.lastStatusSpacer {
 			h.lastStatusText.SetText(tuiThemeStatusText(text))
-			h.requestRender(false)
 			return h.lastStatusText
 		}
 	}
@@ -47,7 +56,6 @@ func (h *CLIInteractiveTUIHost) addStatus(text string) *gitui.Text {
 		h.lastStatusSpacer = nil
 		h.lastStatusText = nil
 	}
-	h.requestRender(false)
 	return status
 }
 
@@ -62,11 +70,13 @@ func (h *CLIInteractiveTUIHost) addWarning(text string) *gitui.Text {
 	if !strings.HasPrefix(text, "Warning:") {
 		text = "Warning: " + text
 	}
+	h.statusMu.Lock()
 	h.chat.AddChild(gitui.NewSpacer(1))
 	warning := gitui.NewText(tuiThemeWarning(text), 1, 0)
 	h.chat.AddChild(warning)
 	h.lastStatusSpacer = nil
 	h.lastStatusText = nil
+	h.statusMu.Unlock()
 	h.requestRender(false)
 	return warning
 }
@@ -112,12 +122,14 @@ func (h *CLIInteractiveTUIHost) showExtensionError(event ProtocolExtensionError)
 	if message == "" {
 		message = "Unknown error"
 	}
+	h.statusMu.Lock()
 	h.chat.AddChild(gitui.NewText(`Extension "`+path+`" error: `+message, 1, 0))
 	if stackLines := extensionErrorStackLines(event.Stack); len(stackLines) > 0 {
 		h.chat.AddChild(gitui.NewText(strings.Join(stackLines, "\n"), 1, 0))
 	}
 	h.lastStatusSpacer = nil
 	h.lastStatusText = nil
+	h.statusMu.Unlock()
 	h.requestRender(false)
 }
 
@@ -149,6 +161,19 @@ func (h *CLIInteractiveTUIHost) showLoaderLocked() {
 }
 
 func (h *CLIInteractiveTUIHost) showStatusLoader(message string) *gitui.Loader {
+	if h == nil {
+		return nil
+	}
+	h.statusMu.Lock()
+	loader := h.showStatusLoaderLocked(message)
+	h.statusMu.Unlock()
+	if loader != nil {
+		h.requestRender(false)
+	}
+	return loader
+}
+
+func (h *CLIInteractiveTUIHost) showStatusLoaderLocked(message string) *gitui.Loader {
 	if h == nil || h.ui == nil || h.statusContainer == nil || strings.TrimSpace(message) == "" {
 		return nil
 	}
@@ -160,7 +185,6 @@ func (h *CLIInteractiveTUIHost) showStatusLoader(message string) *gitui.Loader {
 	loader := gitui.NewLoader(message, options)
 	h.statusContainer.Clear()
 	h.statusContainer.AddChild(loader)
-	h.requestRender(false)
 	return loader
 }
 
@@ -168,23 +192,49 @@ func (h *CLIInteractiveTUIHost) showCompactionLoader(message string) {
 	if h == nil {
 		return
 	}
-	h.clearCompactionLoader()
-	h.compactionLoader = h.showStatusLoader(message)
-	if h.compactionLoader == nil {
-		h.addStatus(message)
+	h.statusMu.Lock()
+	previous := h.compactionLoader
+	h.compactionLoader = h.showStatusLoaderLocked(message)
+	visible := h.compactionLoader != nil
+	h.compactionVisible.Store(visible)
+	h.statusMu.Unlock()
+	if previous != nil {
+		previous.Stop()
 	}
+	if !visible {
+		h.addStatus(message)
+		return
+	}
+	h.requestRender(false)
 }
 
 func (h *CLIInteractiveTUIHost) clearCompactionLoader() {
-	if h == nil || h.compactionLoader == nil {
+	if h == nil {
 		return
 	}
-	h.compactionLoader.Stop()
-	if h.statusContainer != nil {
+	h.statusMu.Lock()
+	loader := h.compactionLoader
+	h.compactionLoader = nil
+	h.compactionVisible.Store(false)
+	if loader != nil && h.statusContainer != nil {
 		h.statusContainer.Clear()
 	}
-	h.compactionLoader = nil
+	h.statusMu.Unlock()
+	if loader == nil {
+		return
+	}
+	loader.Stop()
 	h.requestRender(false)
+}
+
+func (h *CLIInteractiveTUIHost) resetLastStatus() {
+	if h == nil {
+		return
+	}
+	h.statusMu.Lock()
+	h.lastStatusSpacer = nil
+	h.lastStatusText = nil
+	h.statusMu.Unlock()
 }
 
 func (h *CLIInteractiveTUIHost) workingMessageLocked() string {
