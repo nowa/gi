@@ -172,6 +172,7 @@ func (h *AgentSessionRuntimeHost) Reload() error {
 		h.bindCommandContext()
 		h.ExtensionRuntime.ApplyToSession(h.Session)
 	}
+	h.Session.SyncRuntimeSettings()
 	_, err := h.emitSessionEvent(ProtocolSessionEvent{Type: ProtocolEventSessionStart, Reason: "reload", PreviousSessionFile: sessionFile})
 	return err
 }
@@ -333,6 +334,7 @@ func cloneAgentSessionWithManager(source *AgentSession, manager *SessionManager)
 	cloned, err := CreateAgentSession(AgentSessionOptions{
 		CWD:                  manager.GetCWD(),
 		Model:                source.Agent.State.Model,
+		SettingsManager:      source.SettingsManager,
 		SessionManager:       manager,
 		ResourceLoader:       source.ResourceLoader,
 		CompactionSettings:   &source.CompactionSettings,

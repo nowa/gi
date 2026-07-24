@@ -31,6 +31,7 @@ type AgentSessionEvent struct {
 	FinalError            string                         `json:"finalError,omitempty"`
 	Steering              []string                       `json:"steering,omitempty"`
 	FollowUp              []string                       `json:"followUp,omitempty"`
+	Messages              []llm.Message                  `json:"messages,omitempty"`
 	AssistantMessageEvent *llm.AssistantMessageEvent     `json:"assistantMessageEvent,omitempty"`
 	ToolCallID            string                         `json:"toolCallId,omitempty"`
 	ToolName              string                         `json:"toolName,omitempty"`
@@ -84,7 +85,18 @@ func (s *AgentSession) Subscribe(listener AgentSessionEventListener) func() {
 }
 
 func (s *AgentSession) emit(event AgentSessionEvent) {
-	if s == nil || len(s.eventListeners) == 0 {
+	if s == nil {
+		return
+	}
+	if event.Type == "message_end" &&
+		event.Message != nil &&
+		s.runMessageCapture {
+		s.activeRunMessages = append(
+			s.activeRunMessages,
+			*event.Message,
+		)
+	}
+	if len(s.eventListeners) == 0 {
 		return
 	}
 	listeners := append([]AgentSessionEventListener(nil), s.eventListeners...)
@@ -101,6 +113,7 @@ func (s *AgentSession) PromptWithImages(text string, images []llm.ContentPart) (
 	if s == nil || s.SessionManager == nil {
 		return errors.New("session manager is required")
 	}
+	s.SyncRuntimeSettings()
 	prompt := strings.TrimSpace(text)
 	if prompt == "" {
 		return errors.New("prompt is required")
@@ -152,8 +165,12 @@ func (s *AgentSession) PromptWithImages(text string, images []llm.ContentPart) (
 	s.flushPendingBashMessages()
 	content := []llm.ContentPart{llm.Text(expandedPrompt)}
 	content = append(content, promptImages...)
-	s.emit(AgentSessionEvent{Type: "agent_start"})
-	s.emit(AgentSessionEvent{Type: "turn_start"})
+	if err := s.emitAgentLifecycleEvent(AgentSessionEvent{Type: "agent_start"}); err != nil {
+		return err
+	}
+	if err := s.emitAgentLifecycleEvent(AgentSessionEvent{Type: "turn_start"}); err != nil {
+		return err
+	}
 	userMessage := llm.Message{Role: llm.RoleUser, Content: content, Timestamp: llm.NowMillis()}
 	if err := s.emitMessageStart(userMessage); err != nil {
 		return err
@@ -174,9 +191,7 @@ func (s *AgentSession) PromptWithImages(text string, images []llm.ContentPart) (
 	if err := s.applyBeforeAgentStart(expandedPrompt, promptImages); err != nil {
 		return err
 	}
-	err = s.runPromptLoop(expandedPrompt)
-	s.emit(AgentSessionEvent{Type: "agent_end"})
-	return err
+	return s.runPromptLoop(expandedPrompt)
 }
 
 func parseSlashCommandInvocation(text string) (string, string, bool) {
@@ -294,7 +309,7 @@ func (s *AgentSession) applyBeforeAgentStart(prompt string, images []llm.Content
 }
 
 func (s *AgentSession) providerContextMessages() ([]llm.Message, error) {
-	messages := providerContextFromSessionMessages(s.Messages())
+	messages := s.baseProviderContextMessages()
 	if s == nil || s.ExtensionRuntime == nil || !s.ExtensionRuntime.HasHandlers(ProtocolEventContext) {
 		return messages, nil
 	}
@@ -315,104 +330,41 @@ func providerContextFromSessionMessages(messages []llm.Message) []llm.Message {
 	return agentharness.ConvertToLLM(messages)
 }
 
+func providerContextFromSessionValues(messages []any) []llm.Message {
+	converted := make([]llm.Message, 0, len(messages))
+	for _, message := range messages {
+		if value, ok := sessionMessageToLLM(message); ok {
+			converted = append(converted, value)
+		}
+	}
+	return providerContextFromSessionMessages(converted)
+}
+
 func (s *AgentSession) runPromptLoop(prompt string) error {
 	defer s.lifecycle.setActivity(agentSessionActivityRetrying, false)
-	responder := s.Responder
-	if responder == nil {
-		responder = DefaultAgentSessionResponder
-	}
-	attempt := 0
-	retried := false
+	state := agentPromptRunState{prompt: prompt}
 	for {
-		messages, err := s.providerContextMessages()
+		result, err := s.runAgentPrompt(&state)
 		if err != nil {
 			return err
 		}
-		assistant, err := s.respondToPrompt(prompt, messages, s.Agent.State.Model, responder)
-		streamed := s.StreamResponder != nil && err == nil
-		if err != nil {
-			assistant = llm.Message{Role: llm.RoleAssistant, StopReason: llm.StopReasonError, ErrorMessage: err.Error()}
+		willRetry := s.willRetryAfterAgentRun(state, result)
+		if err := s.emitAgentLifecycleEvent(AgentSessionEvent{
+			Type:      "agent_end",
+			WillRetry: willRetry,
+		}); err != nil {
+			return err
 		}
-		assistant = s.normalizeAssistantMessage(assistant)
-		if !streamed {
-			if err := s.emitMessageStart(assistant); err != nil {
-				return err
-			}
-			assistant, err = s.emitAssistantMessageUpdates(assistant)
-			if err != nil {
-				return err
-			}
-		}
-		if llm.IsRetryableAssistantError(assistant) && s.RetrySettings.Enabled && attempt < s.RetrySettings.MaxRetries {
-			attempt++
-			retried = true
-			delayMs := retryDelayMS(s.RetrySettings.BaseDelayMs, attempt)
-			cancelled, cleanupRetryDelay := s.prepareRetryDelay()
-			s.emit(AgentSessionEvent{Type: "auto_retry_start", Attempt: attempt, MaxAttempts: s.RetrySettings.MaxRetries, DelayMs: delayMs, ErrorMessage: assistant.ErrorMessage})
-			retryDelayCompleted := waitForRetryDelay(delayMs, cancelled)
-			cleanupRetryDelay()
-			if !retryDelayCompleted {
-				s.lifecycle.setActivity(agentSessionActivityRetrying, false)
-				s.emit(AgentSessionEvent{Type: "auto_retry_end", Success: false, Attempt: attempt, FinalError: "Retry cancelled"})
-				s.emit(AgentSessionEvent{Type: "turn_end"})
-				return nil
-			}
-			continue
-		}
-		assistant, err = s.emitExtensionMessageEnd(assistant)
+		continuation, err := s.handlePostAgentRun(&state, result)
 		if err != nil {
 			return err
 		}
-		s.SessionManager.AppendMessage(sessionMessageValue(assistant))
-		s.emit(AgentSessionEvent{Type: "message_end", Message: &assistant})
-		if llm.IsRetryableAssistantError(assistant) {
-			if retried {
-				s.emit(AgentSessionEvent{Type: "auto_retry_end", Success: false, Attempt: attempt, FinalError: assistant.ErrorMessage})
-			}
-			s.lifecycle.setActivity(agentSessionActivityRetrying, false)
-			s.emit(AgentSessionEvent{Type: "turn_end"})
+		if continuation == agentPromptContinuationNone {
 			return nil
 		}
-		if retried {
-			s.emit(AgentSessionEvent{Type: "auto_retry_end", Success: true, Attempt: attempt})
-			s.lifecycle.setActivity(agentSessionActivityRetrying, false)
-		}
-		if assistant.StopReason != "toolUse" {
-			s.emit(AgentSessionEvent{Type: "turn_end"})
-			if len(s.steeringQueue) > 0 {
-				s.emit(AgentSessionEvent{Type: "turn_start"})
-			}
-			if queuedPrompt, ok, err := s.dequeueQueuedPrompt("steering"); err != nil {
-				return err
-			} else if ok {
-				prompt = queuedPrompt
-				continue
-			}
-			if len(s.followUpQueue) > 0 {
-				s.emit(AgentSessionEvent{Type: "turn_start"})
-			}
-			if queuedPrompt, ok, err := s.dequeueQueuedPrompt("follow-up"); err != nil {
-				return err
-			} else if ok {
-				prompt = queuedPrompt
-				continue
-			}
-			return nil
-		}
-		if err := s.executeAssistantToolCalls(assistant); err != nil {
+		if err := s.beginAgentContinuation(&state, continuation); err != nil {
 			return err
 		}
-		s.emit(AgentSessionEvent{Type: "turn_end"})
-		if len(s.steeringQueue) > 0 {
-			s.emit(AgentSessionEvent{Type: "turn_start"})
-		}
-		if queuedPrompt, ok, err := s.dequeueQueuedPrompt("steering"); err != nil {
-			return err
-		} else if ok {
-			prompt = queuedPrompt
-			continue
-		}
-		s.emit(AgentSessionEvent{Type: "turn_start"})
 	}
 }
 
@@ -993,6 +945,9 @@ func (s *AgentSession) emitMessageStart(message llm.Message) error {
 	if s == nil {
 		return nil
 	}
+	if message.Role == llm.RoleUser {
+		s.overflowRecovered = false
+	}
 	if s.ExtensionRuntime != nil {
 		if _, err := s.ExtensionRuntime.EmitSessionEvent(ProtocolSessionEvent{
 			Type:    ProtocolEventMessageStart,
@@ -1185,6 +1140,7 @@ func (s *AgentSession) SendCustomMessage(message QueuedCustomMessage, options Pr
 	if s == nil {
 		return errors.New("session is required")
 	}
+	s.SyncRuntimeSettings()
 	if strings.TrimSpace(message.CustomType) == "" {
 		return errors.New("custom message type is required")
 	}
@@ -1214,14 +1170,16 @@ func (s *AgentSession) SendCustomMessage(message QueuedCustomMessage, options Pr
 		defer func() {
 			returnErr = errors.Join(returnErr, s.settleAgentRun())
 		}()
-		s.emit(AgentSessionEvent{Type: "agent_start"})
-		s.emit(AgentSessionEvent{Type: "turn_start"})
+		if err := s.emitAgentLifecycleEvent(AgentSessionEvent{Type: "agent_start"}); err != nil {
+			return err
+		}
+		if err := s.emitAgentLifecycleEvent(AgentSessionEvent{Type: "turn_start"}); err != nil {
+			return err
+		}
 		if err := s.appendCustomMessage(message, true); err != nil {
 			return err
 		}
-		err := s.runPromptLoop(text)
-		s.emit(AgentSessionEvent{Type: "agent_end"})
-		return err
+		return s.runPromptLoop(text)
 	}
 	return s.appendCustomMessage(message, false)
 }
@@ -1345,6 +1303,7 @@ func (s *AgentSession) Compact(customInstructions ...string) (agentharness.Compa
 	if s == nil || s.SessionManager == nil {
 		return agentharness.CompactionResult{}, errors.New("session manager is required")
 	}
+	s.SyncRuntimeSettings()
 	if s.Agent == nil || strings.TrimSpace(s.Agent.State.Model.ID) == "" {
 		return agentharness.CompactionResult{}, errors.New("No model selected")
 	}
@@ -1372,7 +1331,12 @@ func (s *AgentSession) Compact(customInstructions ...string) (agentharness.Compa
 		cancel()
 	}()
 	s.emit(AgentSessionEvent{Type: "compaction_start", Reason: "manual"})
-	result, err := s.compactManual(ctx, instructions)
+	result, err := s.compactSession(
+		ctx,
+		instructions,
+		"manual",
+		false,
+	)
 	s.lifecycle.beginActivitySettlement(agentSessionActivityCompacting)
 	defer s.lifecycle.finishSettlement()
 	if err != nil {
@@ -1400,7 +1364,12 @@ func (s *AgentSession) Compact(customInstructions ...string) (agentharness.Compa
 	return result, nil
 }
 
-func (s *AgentSession) compactManual(ctx context.Context, customInstructions string) (agentharness.CompactionResult, error) {
+func (s *AgentSession) compactSession(
+	ctx context.Context,
+	customInstructions string,
+	reason string,
+	willRetry bool,
+) (agentharness.CompactionResult, error) {
 	branch := s.SessionManager.GetBranch()
 	if len(branch) == 0 {
 		return agentharness.CompactionResult{}, errors.New("Nothing to compact (session too small)")
@@ -1420,7 +1389,8 @@ func (s *AgentSession) compactManual(ctx context.Context, customInstructions str
 		*preparation,
 		branch,
 		customInstructions,
-		"manual",
+		reason,
+		willRetry,
 	)
 	if err != nil {
 		return agentharness.CompactionResult{}, err
@@ -1445,8 +1415,15 @@ func (s *AgentSession) compactManual(ctx context.Context, customInstructions str
 		},
 	)
 	if entry := s.SessionManager.GetEntry(entryID); entry != nil {
-		_ = s.emitExtensionEvent(ProtocolSessionEvent{Type: "session_compact", CompactionEntry: entry, FromExtension: fromExtension})
+		_ = s.emitExtensionEvent(ProtocolSessionEvent{
+			Type:            "session_compact",
+			Reason:          reason,
+			WillRetry:       willRetry,
+			CompactionEntry: entry,
+			FromExtension:   fromExtension,
+		})
 	}
+	result.EstimatedTokensAfter = estimateMessagesTokens(s.Messages())
 	return result, nil
 }
 
@@ -1456,16 +1433,20 @@ func (s *AgentSession) resolveCompactionResult(
 	branch []FileEntry,
 	customInstructions string,
 	reason string,
+	willRetry bool,
 ) (agentharness.CompactionResult, bool, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if s.ExtensionRuntime != nil {
 		event := ProtocolSessionEvent{
-			Context:       ctx,
-			Type:          "session_before_compact",
-			Preparation:   &preparation,
-			BranchEntries: append([]FileEntry(nil), branch...),
+			Context:            ctx,
+			Type:               "session_before_compact",
+			Reason:             reason,
+			WillRetry:          willRetry,
+			Preparation:        &preparation,
+			BranchEntries:      append([]FileEntry(nil), branch...),
+			CustomInstructions: customInstructions,
 		}
 		result, err := s.ExtensionRuntime.EmitSessionEvent(event)
 		if err == nil {
@@ -1495,6 +1476,14 @@ func (s *AgentSession) resolveCompactionResult(
 		return agentharness.CompactionResult{}, false, errCompactionCancelled
 	}
 	return result, false, err
+}
+
+func estimateMessagesTokens(messages []llm.Message) int {
+	total := 0
+	for _, message := range messages {
+		total += agentharness.EstimateTokens(message)
+	}
+	return total
 }
 
 func DefaultAgentSessionCompactionSummarizer(preparation agentharness.CompactionPreparation, customInstructions string) (agentharness.CompactionResult, error) {

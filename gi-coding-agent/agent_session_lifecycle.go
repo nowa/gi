@@ -301,6 +301,10 @@ func (s *AgentSession) settleAgentRun() error {
 	if s == nil {
 		return nil
 	}
+	defer func() {
+		s.activeRunMessages = nil
+		s.runMessageCapture = false
+	}()
 	s.lifecycle.beginAgentSettlement()
 	defer s.lifecycle.finishSettlement()
 	err := s.emitExtensionEvent(ProtocolSessionEvent{Type: ProtocolEventAgentSettled})

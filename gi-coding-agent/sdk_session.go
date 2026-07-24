@@ -16,6 +16,7 @@ type AgentSessionOptions struct {
 	Model                llm.Model
 	ThinkingLevel        string
 	Preflight            AgentSessionPreflight
+	SettingsManager      *SettingsManager
 	SessionManager       *SessionManager
 	ResourceLoader       AgentSessionResourceLoader
 	CompactionSettings   *agentharness.CompactionSettings
@@ -37,6 +38,7 @@ type AgentSessionOptions struct {
 
 type AgentSession struct {
 	SessionManager       *SessionManager
+	SettingsManager      *SettingsManager
 	ResourceLoader       AgentSessionResourceLoader
 	BaseSystemPrompt     string
 	SystemPrompt         string
@@ -62,6 +64,9 @@ type AgentSession struct {
 	FollowUpMode         string
 	eventListeners       []AgentSessionEventListener
 	lifecycle            agentSessionLifecycle
+	activeRunMessages    []llm.Message
+	runMessageCapture    bool
+	providerContext      agentSessionProviderContextState
 	overflowRecovered    bool
 	agentQueuedMessages  []llm.Message
 	steeringMessages     []string
@@ -190,14 +195,26 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		resourceLoader = NewDefaultAgentSessionResourceLoader(cwd, agentDir)
 	}
 	compactionSettings := agentharness.DefaultCompactionSettings
+	if options.SettingsManager != nil {
+		compactionSettings = options.SettingsManager.GetCompactionSettings()
+	}
 	if options.CompactionSettings != nil {
 		compactionSettings = *options.CompactionSettings
 	}
 	compactionSummarizer := options.CompactionSummarizer
 	branchSummarizer := options.BranchSummarizer
 	retrySettings := DefaultAgentSessionRetrySettings()
+	if options.SettingsManager != nil {
+		retrySettings = options.SettingsManager.GetRetrySettings()
+	}
 	if options.RetrySettings != nil {
 		retrySettings = *options.RetrySettings
+	}
+	steeringMode := "one-at-a-time"
+	followUpMode := "one-at-a-time"
+	if options.SettingsManager != nil {
+		steeringMode = options.SettingsManager.GetSteeringMode()
+		followUpMode = options.SettingsManager.GetFollowUpMode()
 	}
 	responder := options.Responder
 	summaryRuntime := options.SummaryRuntime
@@ -232,6 +249,7 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 	}}
 	return &AgentSession{
 		SessionManager:       sessionManager,
+		SettingsManager:      options.SettingsManager,
 		ResourceLoader:       resourceLoader,
 		BaseSystemPrompt:     systemPrompt,
 		SystemPrompt:         systemPrompt,
@@ -251,8 +269,8 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 		Tools:                append([]string(nil), options.Tools...),
 		ToolsSet:             options.ToolsSet,
 		NoTools:              options.NoTools,
-		SteeringMode:         "one-at-a-time",
-		FollowUpMode:         "one-at-a-time",
+		SteeringMode:         steeringMode,
+		FollowUpMode:         followUpMode,
 	}, nil
 }
 

@@ -184,6 +184,46 @@ func TestSettingsManagerInMemoryReloadPiRegression(t *testing.T) {
 	}
 }
 
+func TestSettingsManagerAgentRuntimeSettings(t *testing.T) {
+	manager := NewInMemorySettingsManager(map[string]any{
+		"steeringMode": "all",
+		"followUpMode": "one-at-a-time",
+		"compaction": map[string]any{
+			"enabled":          false,
+			"reserveTokens":    1234,
+			"keepRecentTokens": 5678,
+		},
+	})
+	if manager.GetSteeringMode() != "all" ||
+		manager.GetFollowUpMode() != "one-at-a-time" {
+		t.Fatalf(
+			"queue modes = %q/%q",
+			manager.GetSteeringMode(),
+			manager.GetFollowUpMode(),
+		)
+	}
+	compaction := manager.GetCompactionSettings()
+	if compaction.Enabled ||
+		compaction.ReserveTokens != 1234 ||
+		compaction.KeepRecentTokens != 5678 {
+		t.Fatalf("compaction settings = %#v", compaction)
+	}
+
+	manager.SetSteeringMode("one-at-a-time")
+	manager.SetFollowUpMode("all")
+	manager.SetCompactionEnabled(true)
+	if manager.GetSteeringMode() != "one-at-a-time" ||
+		manager.GetFollowUpMode() != "all" ||
+		!manager.GetCompactionEnabled() {
+		t.Fatalf(
+			"updated runtime settings = %q/%q/%v",
+			manager.GetSteeringMode(),
+			manager.GetFollowUpMode(),
+			manager.GetCompactionEnabled(),
+		)
+	}
+}
+
 func TestSettingsManagerBranchSummarySkipPromptPiStyle(t *testing.T) {
 	manager := NewInMemorySettingsManager(nil)
 	if manager.GetBranchSummarySkipPrompt() {

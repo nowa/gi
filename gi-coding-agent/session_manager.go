@@ -40,6 +40,13 @@ type SessionSummaryOptions struct {
 	Usage    *llm.Usage
 }
 
+// SessionContextOptions controls the projection from the append-only session
+// tree into the live provider context. Exclusions do not mutate persisted
+// history; they only hide selected entries from the model-facing view.
+type SessionContextOptions struct {
+	ExcludeEntryIDs map[string]struct{}
+}
+
 type FileEntry struct {
 	Type          string
 	ID            string
@@ -1167,13 +1174,38 @@ func (s *SessionManager) GetBranch(fromID ...string) []FileEntry {
 }
 
 func (s *SessionManager) BuildSessionContext() SessionContext {
+	return s.BuildSessionContextWithOptions(SessionContextOptions{})
+}
+
+func (s *SessionManager) BuildSessionContextWithOptions(
+	options SessionContextOptions,
+) SessionContext {
 	if s.leafID == nil {
 		return SessionContext{ThinkingLevel: "off"}
 	}
-	return BuildSessionContext(s.GetEntries(), s.leafID, s.byID)
+	return BuildSessionContextWithOptions(
+		s.GetEntries(),
+		s.leafID,
+		s.byID,
+		options,
+	)
 }
 
 func BuildSessionContext(entries []FileEntry, leafID *string, byID map[string]FileEntry) SessionContext {
+	return BuildSessionContextWithOptions(
+		entries,
+		leafID,
+		byID,
+		SessionContextOptions{},
+	)
+}
+
+func BuildSessionContextWithOptions(
+	entries []FileEntry,
+	leafID *string,
+	byID map[string]FileEntry,
+	options SessionContextOptions,
+) SessionContext {
 	if byID == nil {
 		byID = map[string]FileEntry{}
 		for _, entry := range entries {
@@ -1211,6 +1243,9 @@ func BuildSessionContext(entries []FileEntry, leafID *string, byID map[string]Fi
 
 	compactionIndex := -1
 	for idx, entry := range path {
+		if _, excluded := options.ExcludeEntryIDs[entry.ID]; excluded {
+			continue
+		}
 		switch entry.Type {
 		case "thinking_level_change":
 			context.ThinkingLevel = entry.ThinkingLevel
@@ -1228,6 +1263,9 @@ func BuildSessionContext(entries []FileEntry, leafID *string, byID map[string]Fi
 	}
 
 	appendEntryMessage := func(entry FileEntry) {
+		if _, excluded := options.ExcludeEntryIDs[entry.ID]; excluded {
+			return
+		}
 		switch entry.Type {
 		case "message":
 			context.Messages = append(context.Messages, entry.Message)

@@ -49,11 +49,12 @@ type CompactionPreparation struct {
 }
 
 type CompactionResult struct {
-	Summary          string         `json:"summary"`
-	FirstKeptEntryID string         `json:"firstKeptEntryId"`
-	TokensBefore     int            `json:"tokensBefore"`
-	Usage            *llm.Usage     `json:"usage,omitempty"`
-	Details          map[string]any `json:"details,omitempty"`
+	Summary              string         `json:"summary"`
+	FirstKeptEntryID     string         `json:"firstKeptEntryId"`
+	TokensBefore         int            `json:"tokensBefore"`
+	EstimatedTokensAfter int            `json:"estimatedTokensAfter,omitempty"`
+	Usage                *llm.Usage     `json:"usage,omitempty"`
+	Details              map[string]any `json:"details,omitempty"`
 }
 
 // SimpleCompletionRuntime is the minimal model-runtime contract required by

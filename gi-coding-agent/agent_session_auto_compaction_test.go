@@ -48,7 +48,11 @@ func TestAgentSessionAutoCompactionDoesNotRepeatOverflowRecovery(t *testing.T) {
 	if *calls != 1 {
 		t.Fatalf("auto compaction calls = %d, want 1", *calls)
 	}
-	if len(events) != 1 || events[0].Reason != "overflow" || events[0].ErrorMessage == "" {
+	if len(events) != 2 ||
+		events[0].Reason != "overflow" ||
+		!events[0].WillRetry ||
+		events[1].Reason != "overflow" ||
+		events[1].ErrorMessage == "" {
 		t.Fatalf("events = %#v, want overflow failure", events)
 	}
 }

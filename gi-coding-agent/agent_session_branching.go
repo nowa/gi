@@ -60,6 +60,7 @@ func (s *AgentSession) Fork(entryID string) (AgentSessionForkResult, error) {
 		Model:                s.Agent.State.Model,
 		ThinkingLevel:        s.Agent.State.ThinkingLevel,
 		Preflight:            s.Preflight,
+		SettingsManager:      s.SettingsManager,
 		SessionManager:       forkedManager,
 		ResourceLoader:       s.ResourceLoader,
 		CompactionSettings:   &s.CompactionSettings,
@@ -80,6 +81,8 @@ func (s *AgentSession) Fork(entryID string) (AgentSessionForkResult, error) {
 	if err != nil {
 		return AgentSessionForkResult{}, err
 	}
+	forkedSession.SteeringMode = s.SteeringMode
+	forkedSession.FollowUpMode = s.FollowUpMode
 	return AgentSessionForkResult{SelectedText: selectedText, Session: forkedSession}, nil
 }
 
@@ -96,6 +99,7 @@ func (s *AgentSession) ForkAt(entryID string) (AgentSessionForkResult, error) {
 		Model:                s.Agent.State.Model,
 		ThinkingLevel:        s.Agent.State.ThinkingLevel,
 		Preflight:            s.Preflight,
+		SettingsManager:      s.SettingsManager,
 		SessionManager:       forkedManager,
 		ResourceLoader:       s.ResourceLoader,
 		CompactionSettings:   &s.CompactionSettings,
@@ -116,6 +120,8 @@ func (s *AgentSession) ForkAt(entryID string) (AgentSessionForkResult, error) {
 	if err != nil {
 		return AgentSessionForkResult{}, err
 	}
+	forkedSession.SteeringMode = s.SteeringMode
+	forkedSession.FollowUpMode = s.FollowUpMode
 	return AgentSessionForkResult{Session: forkedSession}, nil
 }
 

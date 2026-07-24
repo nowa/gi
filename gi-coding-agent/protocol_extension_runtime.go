@@ -277,6 +277,7 @@ type ProtocolSessionEvent struct {
 	Context               context.Context
 	Type                  string
 	Reason                string
+	WillRetry             bool
 	TargetSessionFile     string
 	PreviousSessionFile   string
 	Prompt                string
@@ -308,6 +309,7 @@ type ProtocolSessionEvent struct {
 	FollowUp              []string
 	Preparation           *agentharness.CompactionPreparation
 	BranchEntries         []FileEntry
+	CustomInstructions    string
 	CompactionEntry       *FileEntry
 	FromExtension         bool
 	Name                  string

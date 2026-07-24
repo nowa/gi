@@ -1426,6 +1426,7 @@ func (h *RPCSessionHost) newChildAgentSession(manager *SessionManager, params ho
 	noTools := firstNonEmptyString(params.NoTools, h.Session.NoTools)
 	return CreateAgentSession(AgentSessionOptions{
 		CWD:                  manager.GetCWD(),
+		SettingsManager:      h.Session.SettingsManager,
 		SessionManager:       manager,
 		ResourceLoader:       h.Session.ResourceLoader,
 		Model:                h.Session.Agent.State.Model,

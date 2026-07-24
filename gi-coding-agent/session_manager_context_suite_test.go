@@ -101,6 +101,33 @@ func TestBuildSessionContextPiParityCases(t *testing.T) {
 		}
 	})
 
+	t.Run("provider projection excludes persisted retry entries", func(t *testing.T) {
+		entries := []FileEntry{
+			contextUserEntry("1", nil, "first"),
+			contextAssistantEntry("2", stringPtr("1"), "retry error"),
+			contextCompactionEntry("3", stringPtr("2"), "Summary", "1"),
+			contextUserEntry("4", stringPtr("3"), "second"),
+		}
+		ctx := BuildSessionContextWithOptions(
+			entries,
+			stringPtr("4"),
+			nil,
+			SessionContextOptions{
+				ExcludeEntryIDs: map[string]struct{}{"2": {}},
+			},
+		)
+		if got := contextMessageRoles(ctx.Messages); !reflect.DeepEqual(
+			got,
+			[]string{"compactionSummary", "user", "user"},
+		) {
+			t.Fatalf("roles = %#v", got)
+		}
+		if contextMessageText(ctx.Messages[1]) != "first" ||
+			contextMessageText(ctx.Messages[2]) != "second" {
+			t.Fatalf("messages = %#v", ctx.Messages)
+		}
+	})
+
 	t.Run("multiple compactions uses latest", func(t *testing.T) {
 		entries := []FileEntry{
 			contextUserEntry("1", nil, "a"),

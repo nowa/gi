@@ -1,9 +1,10 @@
 package gicodingagent
 
 import (
+	"context"
 	"errors"
-	"strings"
 
+	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
@@ -13,11 +14,12 @@ func (s *AgentSession) RunAutoCompaction(reason string, willRetry bool) error {
 	if s == nil {
 		return errors.New("session is required")
 	}
-	if s.AutoCompactionRunner != nil {
-		if err := s.AutoCompactionRunner(reason, willRetry); err != nil {
-			return err
-		}
-	} else if _, err := s.Compact(); err != nil {
+	s.SyncRuntimeSettings()
+	if _, err := s.runAutoCompaction(
+		context.Background(),
+		reason,
+		willRetry,
+	); err != nil {
 		return err
 	}
 	if len(s.agentQueuedMessages) > 0 && s.AgentContinue != nil {
@@ -32,46 +34,197 @@ func (s *AgentSession) CheckCompaction(assistantMessage llm.Message, skipAborted
 	if s == nil {
 		return errors.New("session is required")
 	}
-	if assistantMessage.StopReason == llm.StopReasonAborted && len(skipAbortedCheck) == 0 {
-		return nil
+	s.SyncRuntimeSettings()
+	skipAborted := true
+	if len(skipAbortedCheck) > 0 {
+		skipAborted = skipAbortedCheck[0]
 	}
-	if isContextOverflowError(assistantMessage) {
+	_, err := s.checkCompaction(
+		context.Background(),
+		assistantMessage,
+		"",
+		skipAborted,
+	)
+	return err
+}
+
+func (s *AgentSession) checkCompactionAfterAgentRun(
+	ctx context.Context,
+	assistantMessage llm.Message,
+	entryID string,
+) (bool, error) {
+	continued, err := s.checkCompaction(
+		ctx,
+		assistantMessage,
+		entryID,
+		true,
+	)
+	if err != nil {
+		// Automatic compaction is recovery/maintenance work. Its terminal event
+		// carries the actionable error; it must not turn an otherwise completed
+		// agent run into a Prompt error.
+		return false, nil
+	}
+	return continued, nil
+}
+
+func (s *AgentSession) checkCompaction(
+	ctx context.Context,
+	assistantMessage llm.Message,
+	entryID string,
+	skipAborted bool,
+) (bool, error) {
+	if !s.CompactionSettings.Enabled {
+		return false, nil
+	}
+	if skipAborted &&
+		assistantMessage.StopReason == llm.StopReasonAborted {
+		return false, nil
+	}
+	if s.isStaleBeforeLastCompaction(assistantMessage) {
+		return false, nil
+	}
+
+	contextWindow := s.contextWindow()
+	sameModel := s.sameModelAsCurrent(assistantMessage)
+	if sameModel &&
+		llm.IsContextOverflow(assistantMessage, contextWindow) {
+		willRetry := assistantMessage.StopReason != llm.StopReasonStop
+		if !willRetry {
+			return s.runAutoCompaction(ctx, "overflow", false)
+		}
 		if s.overflowRecovered {
 			s.emit(AgentSessionEvent{
 				Type:         "compaction_end",
 				Reason:       "overflow",
+				Aborted:      false,
+				WillRetry:    false,
 				ErrorMessage: "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
 			})
-			return nil
+			return false, nil
 		}
 		s.overflowRecovered = true
-		return s.RunAutoCompaction("overflow", true)
-	}
-	if assistantMessage.StopReason != llm.StopReasonError && s.isStaleBeforeLastCompaction(assistantMessage) {
-		return nil
+		s.providerContext.exclude(entryID)
+		return s.runAutoCompaction(ctx, "overflow", true)
 	}
 	if s.shouldThresholdCompact(assistantMessage) {
-		return s.RunAutoCompaction("threshold", false)
+		return s.runAutoCompaction(ctx, "threshold", false)
 	}
-	return nil
+	return false, nil
+}
+
+func (s *AgentSession) sameModelAsCurrent(message llm.Message) bool {
+	if s == nil || s.Agent == nil {
+		return false
+	}
+	current := s.Agent.State.Model
+	providerMatches := message.Provider == "" ||
+		message.Provider == current.Provider
+	modelMatches := message.Model == "" ||
+		message.Model == current.ID
+	return providerMatches && modelMatches
+}
+
+func (s *AgentSession) runAutoCompaction(
+	parent context.Context,
+	reason string,
+	willRetry bool,
+) (bool, error) {
+	if s == nil || s.Agent == nil ||
+		s.Agent.State.Model.ID == "" {
+		return false, errors.New("No model selected")
+	}
+	if s.Preflight != nil {
+		if err := s.Preflight(s.Agent.State.Model); err != nil {
+			return false, err
+		}
+	}
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
+	cleanup := s.lifecycle.startNestedCancellableActivity(
+		agentSessionActivityCompacting,
+		agentSessionCancellationCompaction,
+		cancel,
+	)
+	defer func() {
+		cleanup()
+		cancel()
+		s.lifecycle.setActivity(agentSessionActivityCompacting, false)
+	}()
+
+	s.emit(AgentSessionEvent{
+		Type:   "compaction_start",
+		Reason: reason,
+	})
+	var result *agentharness.CompactionResult
+	var err error
+	if s.AutoCompactionRunner != nil {
+		err = s.AutoCompactionRunner(reason, willRetry)
+	} else {
+		value, compactErr := s.compactSession(
+			ctx,
+			"",
+			reason,
+			willRetry,
+		)
+		err = compactErr
+		if err == nil {
+			result = &value
+		}
+	}
+	if err != nil {
+		aborted := isCompactionCancelledError(err)
+		errorMessage := autoCompactionErrorMessage(reason, err)
+		if aborted {
+			errorMessage = ""
+		}
+		s.emit(AgentSessionEvent{
+			Type:         "compaction_end",
+			Reason:       reason,
+			Aborted:      aborted,
+			WillRetry:    false,
+			ErrorMessage: errorMessage,
+		})
+		return false, err
+	}
+	event := AgentSessionEvent{
+		Type:      "compaction_end",
+		Reason:    reason,
+		Aborted:   false,
+		WillRetry: willRetry,
+		Result:    result,
+	}
+	s.emit(event)
+	return willRetry || s.hasPostRunQueue(), nil
+}
+
+func autoCompactionErrorMessage(reason string, err error) string {
+	if err == nil {
+		return ""
+	}
+	if reason == "overflow" {
+		return "Context overflow recovery failed: " + err.Error()
+	}
+	return "Auto-compaction failed: " + err.Error()
+}
+
+func (s *AgentSession) hasPostRunQueue() bool {
+	return s.hasQueuedPrompt("steering") ||
+		s.hasQueuedPrompt("follow-up") ||
+		s.HasAgentQueuedMessages()
 }
 
 func (s *AgentSession) isStaleBeforeLastCompaction(message llm.Message) bool {
-	if lastSessionCompactionIndex(s.sessionBranch()) < 0 {
-		return false
-	}
 	branch := s.sessionBranch()
 	compactionIndex := lastSessionCompactionIndex(branch)
-	for index := compactionIndex + 1; index < len(branch); index++ {
-		entryMessage, ok := sessionMessageToLLM(branch[index].Message)
-		if !ok || entryMessage.Role != llm.RoleAssistant {
-			continue
-		}
-		if entryMessage.Timestamp == message.Timestamp {
-			return false
-		}
+	if compactionIndex < 0 {
+		return false
 	}
-	return true
+	return message.Timestamp <= sessionEntryTimestampMillis(
+		branch[compactionIndex].Timestamp,
+	)
 }
 
 func (s *AgentSession) QueueAgentMessage(message llm.Message) {
@@ -93,42 +246,50 @@ func (s *AgentSession) shouldThresholdCompact(assistantMessage llm.Message) bool
 	if contextWindow == 0 {
 		return false
 	}
-	usage := llm.Usage{}
-	if assistantMessage.StopReason == llm.StopReasonError {
+	tokens := usageTokenTotal(assistantMessage.Usage)
+	if assistantMessage.StopReason == llm.StopReasonError || tokens == 0 {
 		var ok bool
-		usage, ok = s.lastSuccessfulUsageAfterCompaction()
+		tokens, ok = s.estimatedContextTokensAfterCompaction()
 		if !ok {
 			return false
 		}
-	} else {
-		usage = assistantMessage.Usage
-	}
-	tokens := usageTokenTotal(usage)
-	if tokens == 0 {
-		return false
 	}
 	return tokens > contextWindow-s.CompactionSettings.ReserveTokens
 }
 
-func (s *AgentSession) lastSuccessfulUsageAfterCompaction() (llm.Usage, bool) {
+func (s *AgentSession) estimatedContextTokensAfterCompaction() (int, bool) {
+	messages := s.baseProviderContextMessages()
+	compactionTimestamp := int64(0)
 	branch := s.sessionBranch()
-	start := 0
-	if compactionIndex := lastSessionCompactionIndex(branch); compactionIndex >= 0 {
-		start = compactionIndex + 1
+	if index := lastSessionCompactionIndex(branch); index >= 0 {
+		compactionTimestamp = sessionEntryTimestampMillis(
+			branch[index].Timestamp,
+		)
 	}
-	for index := len(branch) - 1; index >= start; index-- {
-		usage, ok := assistantEntryUsage(branch[index])
-		if ok {
-			return usage, true
-		}
-	}
-	return llm.Usage{}, false
-}
 
-func isContextOverflowError(message llm.Message) bool {
-	if message.StopReason != llm.StopReasonError {
-		return false
+	lastUsageIndex := -1
+	tokens := 0
+	for index := len(messages) - 1; index >= 0; index-- {
+		message := messages[index]
+		if message.Role != llm.RoleAssistant ||
+			message.StopReason == llm.StopReasonError ||
+			message.StopReason == llm.StopReasonAborted ||
+			usageTokenTotal(message.Usage) == 0 {
+			continue
+		}
+		if compactionTimestamp != 0 &&
+			message.Timestamp <= compactionTimestamp {
+			return 0, false
+		}
+		lastUsageIndex = index
+		tokens = usageTokenTotal(message.Usage)
+		break
 	}
-	text := strings.ToLower(message.ErrorMessage)
-	return strings.Contains(text, "prompt is too long") || strings.Contains(text, "context") && strings.Contains(text, "overflow")
+	if lastUsageIndex < 0 {
+		return 0, false
+	}
+	for index := lastUsageIndex + 1; index < len(messages); index++ {
+		tokens += agentharness.EstimateTokens(messages[index])
+	}
+	return tokens, true
 }

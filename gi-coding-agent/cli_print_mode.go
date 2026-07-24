@@ -314,19 +314,20 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	preflight := cliModelRuntimePreflight(modelRuntime, args)
 	retrySettings := settingsManager.GetRetrySettings()
 	session, err := CreateAgentSession(AgentSessionOptions{
-		CWD:            cwd,
-		AgentDir:       agentDir,
-		SessionManager: sessionManager,
-		Model:          *model,
-		ThinkingLevel:  string(thinkingLevel),
-		ScopedModels:   scopedModels,
-		Preflight:      preflight,
-		ResourceLoader: resourceLoader,
-		RetrySettings:  &retrySettings,
-		ModelRuntime:   modelRuntime,
-		Tools:          args.Tools,
-		ToolsSet:       args.Tools != nil,
-		NoTools:        cliNoToolsMode(args),
+		CWD:             cwd,
+		AgentDir:        agentDir,
+		SettingsManager: settingsManager,
+		SessionManager:  sessionManager,
+		Model:           *model,
+		ThinkingLevel:   string(thinkingLevel),
+		ScopedModels:    scopedModels,
+		Preflight:       preflight,
+		ResourceLoader:  resourceLoader,
+		RetrySettings:   &retrySettings,
+		ModelRuntime:    modelRuntime,
+		Tools:           args.Tools,
+		ToolsSet:        args.Tools != nil,
+		NoTools:         cliNoToolsMode(args),
 	})
 	if err != nil {
 		return nil, err

@@ -167,6 +167,7 @@ func NewRPCSessionHost(session *AgentSession) *RPCSessionHost {
 		ViewTreeHost:          NewViewTreeHost(),
 	}
 	if session != nil {
+		host.Settings = session.SettingsManager
 		host.AutoCompactionEnabled = session.CompactionSettings.Enabled
 		if session.SteeringMode != "" {
 			host.SteeringMode = session.SteeringMode
@@ -556,9 +557,16 @@ func (h *RPCSessionHost) SetSteeringMode(mode string) error {
 	if mode != "all" && mode != "one-at-a-time" {
 		return errors.New("invalid steering mode: " + mode)
 	}
+	if h.Settings != nil {
+		h.Settings.SetSteeringMode(mode)
+	}
 	h.SteeringMode = mode
 	if h.Session != nil {
-		h.Session.SteeringMode = mode
+		if h.Session.SettingsManager != nil {
+			h.Session.SyncRuntimeSettings()
+		} else {
+			h.Session.SteeringMode = mode
+		}
 	}
 	return nil
 }
@@ -567,9 +575,16 @@ func (h *RPCSessionHost) SetFollowUpMode(mode string) error {
 	if mode != "all" && mode != "one-at-a-time" {
 		return errors.New("invalid follow-up mode: " + mode)
 	}
+	if h.Settings != nil {
+		h.Settings.SetFollowUpMode(mode)
+	}
 	h.FollowUpMode = mode
 	if h.Session != nil {
-		h.Session.FollowUpMode = mode
+		if h.Session.SettingsManager != nil {
+			h.Session.SyncRuntimeSettings()
+		} else {
+			h.Session.FollowUpMode = mode
+		}
 	}
 	return nil
 }
@@ -578,8 +593,15 @@ func (h *RPCSessionHost) SetAutoCompaction(enabled *bool) error {
 	if enabled == nil {
 		return errors.New("auto compaction enabled value is required")
 	}
+	if h.Settings != nil {
+		h.Settings.SetCompactionEnabled(*enabled)
+	}
 	h.AutoCompactionEnabled = *enabled
-	h.Session.CompactionSettings.Enabled = *enabled
+	if h.Session.SettingsManager != nil {
+		h.Session.SyncRuntimeSettings()
+	} else {
+		h.Session.CompactionSettings.Enabled = *enabled
+	}
 	return nil
 }
 
@@ -587,9 +609,16 @@ func (h *RPCSessionHost) SetAutoRetry(enabled *bool) error {
 	if enabled == nil {
 		return errors.New("auto retry enabled value is required")
 	}
-	h.Session.RetrySettings.Enabled = *enabled
-	if *enabled && h.Session.RetrySettings.MaxRetries == 0 {
-		h.Session.RetrySettings.MaxRetries = 3
+	if h.Settings != nil {
+		h.Settings.SetRetryEnabled(*enabled)
+	}
+	if h.Session.SettingsManager != nil {
+		h.Session.SyncRuntimeSettings()
+	} else {
+		h.Session.RetrySettings.Enabled = *enabled
+		if *enabled && h.Session.RetrySettings.MaxRetries == 0 {
+			h.Session.RetrySettings.MaxRetries = 3
+		}
 	}
 	return nil
 }

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 )
 
 type SettingsError struct {
@@ -485,6 +487,85 @@ func (s *SettingsManager) GetBranchSummarySkipPrompt() bool {
 
 func (s *SettingsManager) SetBranchSummarySkipPrompt(skip bool) {
 	s.setGlobalNested("branchSummary", "skipPrompt", skip)
+}
+
+func (s *SettingsManager) GetSteeringMode() string {
+	return settingsEnum(
+		s.merged,
+		"steeringMode",
+		"one-at-a-time",
+		[]string{"one-at-a-time", "all"},
+	)
+}
+
+func (s *SettingsManager) SetSteeringMode(mode string) {
+	s.setGlobal(
+		"steeringMode",
+		normalizeSettingsEnum(
+			mode,
+			"one-at-a-time",
+			[]string{"one-at-a-time", "all"},
+		),
+	)
+}
+
+func (s *SettingsManager) GetFollowUpMode() string {
+	return settingsEnum(
+		s.merged,
+		"followUpMode",
+		"one-at-a-time",
+		[]string{"one-at-a-time", "all"},
+	)
+}
+
+func (s *SettingsManager) SetFollowUpMode(mode string) {
+	s.setGlobal(
+		"followUpMode",
+		normalizeSettingsEnum(
+			mode,
+			"one-at-a-time",
+			[]string{"one-at-a-time", "all"},
+		),
+	)
+}
+
+func (s *SettingsManager) GetCompactionEnabled() bool {
+	return settingsNestedBool(
+		s.merged,
+		"compaction",
+		"enabled",
+		agentharness.DefaultCompactionSettings.Enabled,
+	)
+}
+
+func (s *SettingsManager) SetCompactionEnabled(enabled bool) {
+	s.setGlobalNested("compaction", "enabled", enabled)
+}
+
+func (s *SettingsManager) GetCompactionReserveTokens() int {
+	return settingsNestedInt(
+		s.merged,
+		"compaction",
+		"reserveTokens",
+		agentharness.DefaultCompactionSettings.ReserveTokens,
+	)
+}
+
+func (s *SettingsManager) GetCompactionKeepRecentTokens() int {
+	return settingsNestedInt(
+		s.merged,
+		"compaction",
+		"keepRecentTokens",
+		agentharness.DefaultCompactionSettings.KeepRecentTokens,
+	)
+}
+
+func (s *SettingsManager) GetCompactionSettings() agentharness.CompactionSettings {
+	return agentharness.CompactionSettings{
+		Enabled:          s.GetCompactionEnabled(),
+		ReserveTokens:    s.GetCompactionReserveTokens(),
+		KeepRecentTokens: s.GetCompactionKeepRecentTokens(),
+	}
 }
 
 func (s *SettingsManager) GetRetryEnabled() bool {
