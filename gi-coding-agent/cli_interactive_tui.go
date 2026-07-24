@@ -168,6 +168,8 @@ type CLIInteractiveTUIHost struct {
 	unwatchRenderers        func()
 	unwatchFooterBranch     func()
 	unwatchSession          func()
+	sessionWatchMu          sync.Mutex
+	sessionWatchClosed      bool
 	unwatchInProcess        func()
 	unwatchRuntimeSession   func()
 	restoreRuntimeRebind    func()
@@ -1155,9 +1157,7 @@ func (h *CLIInteractiveTUIHost) rebindInteractiveSession(session *AgentSession) 
 	if h.processSupervisor != nil {
 		h.processSupervisor.BindSession(session)
 	}
-	if h.unwatchSession != nil {
-		h.unwatchSession()
-		h.unwatchSession = nil
+	if h.removeSessionWatcher(false) {
 		h.watchAgentSessionQueue()
 	}
 	h.refreshPendingMessagesDisplay()
@@ -1616,7 +1616,7 @@ func (h *CLIInteractiveTUIHost) watchAgentSessionQueue() {
 	if session == nil {
 		return
 	}
-	h.unwatchSession = session.Subscribe(func(event AgentSessionEvent) {
+	unwatch := session.Subscribe(func(event AgentSessionEvent) {
 		switch event.Type {
 		case "agent_start":
 			h.pendingTools = map[string]*ToolExecutionComponent{}
@@ -1672,6 +1672,7 @@ func (h *CLIInteractiveTUIHost) watchAgentSessionQueue() {
 			h.handleAutoRetryEnd(event)
 		}
 	})
+	h.installSessionWatcher(unwatch)
 	h.refreshPendingMessagesDisplay()
 }
 
@@ -1942,7 +1943,49 @@ func (h *CLIInteractiveTUIHost) syncRenderedMessageCount() {
 }
 
 func (h *CLIInteractiveTUIHost) liveSessionEventRendering() bool {
-	return h != nil && h.unwatchSession != nil && h.agentSession() != nil
+	if h == nil {
+		return false
+	}
+	h.sessionWatchMu.Lock()
+	watching := h.unwatchSession != nil
+	h.sessionWatchMu.Unlock()
+	return watching && h.agentSession() != nil
+}
+
+func (h *CLIInteractiveTUIHost) installSessionWatcher(unwatch func()) {
+	if h == nil || unwatch == nil {
+		return
+	}
+	h.sessionWatchMu.Lock()
+	if h.sessionWatchClosed {
+		h.sessionWatchMu.Unlock()
+		unwatch()
+		return
+	}
+	previous := h.unwatchSession
+	h.unwatchSession = unwatch
+	h.sessionWatchMu.Unlock()
+	if previous != nil {
+		previous()
+	}
+}
+
+func (h *CLIInteractiveTUIHost) removeSessionWatcher(closeWatcher bool) bool {
+	if h == nil {
+		return false
+	}
+	h.sessionWatchMu.Lock()
+	unwatch := h.unwatchSession
+	h.unwatchSession = nil
+	if closeWatcher {
+		h.sessionWatchClosed = true
+	}
+	h.sessionWatchMu.Unlock()
+	if unwatch != nil {
+		unwatch()
+		return true
+	}
+	return false
 }
 
 func (h *CLIInteractiveTUIHost) handleAutoRetryStart(event AgentSessionEvent) {
@@ -3665,10 +3708,7 @@ func (h *CLIInteractiveTUIHost) stopUI() {
 		h.unwatchFooterBranch()
 		h.unwatchFooterBranch = nil
 	}
-	if h.unwatchSession != nil {
-		h.unwatchSession()
-		h.unwatchSession = nil
-	}
+	h.removeSessionWatcher(true)
 	if h.unwatchRuntimeSession != nil {
 		h.unwatchRuntimeSession()
 		h.unwatchRuntimeSession = nil

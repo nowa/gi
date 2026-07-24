@@ -2,6 +2,7 @@ package gicodingagent
 
 import (
 	"strings"
+	"sync"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 	gitui "github.com/nowa/gi/gi-tui"
@@ -10,6 +11,18 @@ import (
 const bashExecutionPreviewLines = 20
 
 type BashExecutionComponent struct {
+	mu                 sync.RWMutex
+	command            string
+	outputLines        []string
+	status             string
+	exitCode           int
+	expanded           bool
+	truncated          bool
+	fullOutput         string
+	excludeFromContext bool
+}
+
+type bashExecutionSnapshot struct {
 	command            string
 	outputLines        []string
 	status             string
@@ -38,6 +51,8 @@ func NewBashExecutionComponent(command string, options ...BashExecutionOptions) 
 }
 
 func (b *BashExecutionComponent) SetExpanded(expanded bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.expanded = expanded
 }
 
@@ -46,6 +61,8 @@ func (b *BashExecutionComponent) Invalidate() {}
 func (b *BashExecutionComponent) AppendOutput(chunk string) {
 	clean := sanitizeInteractiveBashOutput(chunk)
 	newLines := strings.Split(clean, "\n")
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if len(b.outputLines) > 0 && len(newLines) > 0 {
 		b.outputLines[len(b.outputLines)-1] += newLines[0]
 		b.outputLines = append(b.outputLines, newLines[1:]...)
@@ -72,6 +89,8 @@ func sanitizeInteractiveBashOutput(chunk string) string {
 }
 
 func (b *BashExecutionComponent) SetComplete(exitCode int, cancelled bool, options ...BashExecutionCompleteOptions) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.exitCode = exitCode
 	if len(options) > 0 {
 		b.truncated = options[0].Truncated
@@ -91,16 +110,17 @@ func (b *BashExecutionComponent) Render(width int) []string {
 	if width <= 0 {
 		return nil
 	}
-	borderStyle := b.borderStyle()
+	state := b.snapshot()
+	borderStyle := state.borderStyle()
 	lines := []string{
 		"",
 		borderStyle(strings.Repeat("─", width)),
 	}
-	lines = append(lines, gitui.NewText(b.commandHeader(), 1, 0).Render(width)...)
+	lines = append(lines, gitui.NewText(state.commandHeader(), 1, 0).Render(width)...)
 
-	availableLines, contextTruncated := b.availableOutputLines()
+	availableLines, contextTruncated := state.availableOutputLines()
 	if len(availableLines) > 0 {
-		if b.expanded {
+		if state.expanded {
 			displayText := "\n" + strings.Join(themeBashOutputLines(availableLines), "\n")
 			lines = append(lines, gitui.NewText(displayText, 1, 0).Render(width)...)
 		} else {
@@ -111,10 +131,10 @@ func (b *BashExecutionComponent) Render(width int) []string {
 		}
 	}
 
-	if b.status == "running" {
+	if state.status == "running" {
 		lines = append(lines, gitui.NewText(tuiThemeMuted("Running... (Esc to cancel)"), 1, 0).Render(width)...)
 	} else {
-		statusLines := b.statusLines(availableLines, contextTruncated)
+		statusLines := state.statusLines(availableLines, contextTruncated)
 		if len(statusLines) > 0 {
 			lines = append(lines, gitui.NewText("\n"+strings.Join(statusLines, "\n"), 1, 0).Render(width)...)
 		}
@@ -123,23 +143,39 @@ func (b *BashExecutionComponent) Render(width int) []string {
 	return lines
 }
 
-func (b *BashExecutionComponent) borderStyle() func(string) string {
-	if b != nil && b.excludeFromContext {
+func (b *BashExecutionComponent) snapshot() bashExecutionSnapshot {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return bashExecutionSnapshot{
+		command:            b.command,
+		outputLines:        append([]string(nil), b.outputLines...),
+		status:             b.status,
+		exitCode:           b.exitCode,
+		expanded:           b.expanded,
+		truncated:          b.truncated,
+		fullOutput:         b.fullOutput,
+		excludeFromContext: b.excludeFromContext,
+	}
+}
+
+func (s bashExecutionSnapshot) borderStyle() func(string) string {
+	if s.excludeFromContext {
 		return tuiThemeDim
 	}
 	return tuiThemeBashMode
 }
 
-func (b *BashExecutionComponent) commandHeader() string {
-	header := tuiThemeBold("$ " + b.command)
-	if b != nil && b.excludeFromContext && b.status == "running" {
+func (s bashExecutionSnapshot) commandHeader() string {
+	header := tuiThemeBold("$ " + s.command)
+	if s.excludeFromContext && s.status == "running" {
 		return tuiThemeDim(header)
 	}
 	return tuiThemeBashMode(header)
 }
 
 func (b *BashExecutionComponent) Output() string {
-	return strings.Join(b.outputLines, "\n")
+	state := b.snapshot()
+	return strings.Join(state.outputLines, "\n")
 }
 
 func (b *BashExecutionComponent) GetOutput() string {
@@ -147,14 +183,16 @@ func (b *BashExecutionComponent) GetOutput() string {
 }
 
 func (b *BashExecutionComponent) GetCommand() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
 	return b.command
 }
 
-func (b *BashExecutionComponent) availableOutputLines() ([]string, bool) {
-	if len(b.outputLines) == 0 {
+func (s bashExecutionSnapshot) availableOutputLines() ([]string, bool) {
+	if len(s.outputLines) == 0 {
 		return nil, false
 	}
-	output := strings.Join(b.outputLines, "\n")
+	output := strings.Join(s.outputLines, "\n")
 	truncated := agentharness.TruncateTail(output, agentharness.TruncationOptions{})
 	if truncated.Content == "" {
 		return nil, truncated.Truncated
@@ -162,24 +200,24 @@ func (b *BashExecutionComponent) availableOutputLines() ([]string, bool) {
 	return strings.Split(truncated.Content, "\n"), truncated.Truncated
 }
 
-func (b *BashExecutionComponent) statusLines(availableLines []string, contextTruncated bool) []string {
+func (s bashExecutionSnapshot) statusLines(availableLines []string, contextTruncated bool) []string {
 	hiddenLineCount := len(availableLines) - len(tailStrings(availableLines, bashExecutionPreviewLines))
 	var lines []string
 	if hiddenLineCount > 0 {
-		if b.expanded {
+		if s.expanded {
 			lines = append(lines, tuiThemeMuted("(to collapse)"))
 		} else {
 			lines = append(lines, tuiThemeMuted("... "+formatFooterTokens(hiddenLineCount)+" more lines (to expand)"))
 		}
 	}
-	switch b.status {
+	switch s.status {
 	case "cancelled":
 		lines = append(lines, tuiThemeWarning("(cancelled)"))
 	case "error":
-		lines = append(lines, tuiThemeError("(exit "+formatFooterTokens(b.exitCode)+")"))
+		lines = append(lines, tuiThemeError("(exit "+formatFooterTokens(s.exitCode)+")"))
 	}
-	if (b.truncated || contextTruncated) && strings.TrimSpace(b.fullOutput) != "" {
-		lines = append(lines, tuiThemeWarning("Output truncated. Full output: "+b.fullOutput))
+	if (s.truncated || contextTruncated) && strings.TrimSpace(s.fullOutput) != "" {
+		lines = append(lines, tuiThemeWarning("Output truncated. Full output: "+s.fullOutput))
 	}
 	return lines
 }
