@@ -2,6 +2,8 @@ package gillmprovider
 
 import "encoding/json"
 
+const openAIResponsesMinimumOutputTokens = 16
+
 type OpenAIResponsesCompat struct {
 	SendSessionIDHeader        bool
 	SupportsLongCacheRetention bool
@@ -203,7 +205,7 @@ func buildOpenAIResponsesPayload(
 		payload.PromptCacheRetention = "24h"
 	}
 	if options.MaxTokens > 0 {
-		payload.MaxOutputTokens = options.MaxTokens
+		payload.MaxOutputTokens = max(options.MaxTokens, openAIResponsesMinimumOutputTokens)
 	}
 	if options.Temperature != nil {
 		payload.Temperature = options.Temperature

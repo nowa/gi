@@ -125,10 +125,14 @@ func init() {
 }
 
 func (p MistralProvider) Stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {
-	return p.StreamSimple(model, llmContext, options)
+	return p.stream(model, llmContext, options)
 }
 
 func (p MistralProvider) StreamSimple(model Model, llmContext Context, options SimpleStreamOptions) (*AssistantMessageEventStream, error) {
+	return p.stream(model, llmContext, prepareSimpleStreamOptions(model, llmContext, options))
+}
+
+func (p MistralProvider) stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {
 	apiKey := apiKeyOrEnv(model.Provider, options.APIKey)
 	if apiKey == "" {
 		return streamError(model, "missing API key for provider %s", model.Provider), nil

@@ -121,6 +121,18 @@ func TestAzureOpenAIResponsesDisablesServerSideResponseStorage(t *testing.T) {
 	}
 }
 
+func TestAzureOpenAIResponsesPayloadEnforcesMinimumOutputTokens(t *testing.T) {
+	model := Model{ID: "gpt-test", Provider: "azure-openai-responses", API: "azure-openai-responses"}
+	payload := BuildAzureOpenAIResponsesPayload(
+		model,
+		Context{Messages: []Message{UserMessageText("hello")}},
+		AzureOpenAIResponsesPayloadOptions{MaxTokens: 1},
+	)
+	if payload.MaxOutputTokens != openAIResponsesMinimumOutputTokens {
+		t.Fatalf("max output tokens = %d, want %d", payload.MaxOutputTokens, openAIResponsesMinimumOutputTokens)
+	}
+}
+
 func TestAzureOpenAIResponsesHonorsSupportsStrictModeFalse(t *testing.T) {
 	model := Model{
 		ID:       "gpt-4o-mini",

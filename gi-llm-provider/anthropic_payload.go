@@ -47,17 +47,18 @@ type AnthropicCompat struct {
 }
 
 type AnthropicPayloadOptions struct {
-	MaxTokens        int
-	Temperature      *float64
-	CacheRetention   string
-	SessionID        string
-	Reasoning        string
-	ThinkingBudgets  map[string]int
-	ThinkingDisplay  string
-	Metadata         map[string]any
-	Headers          map[string]string
-	IsOAuthToken     bool
-	InterleavedThink *bool
+	MaxTokens          int
+	Temperature        *float64
+	CacheRetention     string
+	SessionID          string
+	Reasoning          string
+	ThinkingBudgets    map[string]int
+	ThinkingDisplay    string
+	Metadata           map[string]any
+	Headers            map[string]string
+	IsOAuthToken       bool
+	InterleavedThink   *bool
+	thinkingAllocation *ThinkingTokenAllocation
 }
 
 type AnthropicPayload struct {
@@ -243,9 +244,16 @@ func buildAnthropicPayload(model Model, context Context, options AnthropicPayloa
 			if display == "" {
 				display = "summarized"
 			}
-			adjustedMaxTokens, budget := adjustAnthropicMaxTokensForThinking(maxTokens, model.MaxTokens, reasoning, options.ThinkingBudgets)
-			payload.MaxTokens = adjustedMaxTokens
-			payload.Thinking = map[string]any{"type": "enabled", "budget_tokens": budget, "display": display}
+			allocation := AdjustMaxTokensForThinking(maxTokens, model.MaxTokens, reasoning, options.ThinkingBudgets)
+			if options.thinkingAllocation != nil {
+				allocation = *options.thinkingAllocation
+			}
+			payload.MaxTokens = allocation.MaxTokens
+			payload.Thinking = map[string]any{
+				"type":          "enabled",
+				"budget_tokens": allocation.ThinkingBudget,
+				"display":       display,
+			}
 		}
 	} else {
 		if compat.SupportsTemperature {
@@ -696,41 +704,4 @@ func normalizeAnthropicToolCallID(id string) string {
 		}
 	}
 	return b.String()
-}
-
-func anthropicThinkingBudget(level string, overrides map[string]int) int {
-	defaults := map[string]int{
-		"minimal": 1024,
-		"low":     2048,
-		"medium":  8192,
-		"high":    16384,
-	}
-	if level == "xhigh" {
-		level = "high"
-	}
-	if overrides != nil {
-		if value, ok := overrides[level]; ok {
-			return value
-		}
-	}
-	if value, ok := defaults[level]; ok {
-		return value
-	}
-	return 1024
-}
-
-func adjustAnthropicMaxTokensForThinking(baseMaxTokens, modelMaxTokens int, level string, overrides map[string]int) (int, int) {
-	budget := anthropicThinkingBudget(level, overrides)
-	maxTokens := baseMaxTokens + budget
-	if modelMaxTokens > 0 && maxTokens > modelMaxTokens {
-		maxTokens = modelMaxTokens
-	}
-	if maxTokens <= budget {
-		const minOutputTokens = 1024
-		budget = maxTokens - minOutputTokens
-		if budget < 0 {
-			budget = 0
-		}
-	}
-	return maxTokens, budget
 }

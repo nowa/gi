@@ -101,6 +101,18 @@ func TestBuildOpenAIResponsesPayloadCacheRetentionAndTools(t *testing.T) {
 	}
 }
 
+func TestOpenAIResponsesPayloadEnforcesMinimumOutputTokens(t *testing.T) {
+	model := Model{ID: "gpt-test", Provider: "openai", API: "openai-responses"}
+	payload := BuildOpenAIResponsesPayload(
+		model,
+		Context{Messages: []Message{UserMessageText("hello")}},
+		OpenAIResponsesPayloadOptions{MaxTokens: 1},
+	)
+	if payload.MaxOutputTokens != openAIResponsesMinimumOutputTokens {
+		t.Fatalf("max output tokens = %d, want %d", payload.MaxOutputTokens, openAIResponsesMinimumOutputTokens)
+	}
+}
+
 func TestOpenAIResponsesServiceTierPricing(t *testing.T) {
 	model := Model{ID: "gpt-5.5", Cost: ModelCost{Input: 5, Output: 30}}
 	usage := ParseOpenAIResponsesUsage(OpenAIResponsesUsage{

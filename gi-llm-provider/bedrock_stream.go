@@ -82,10 +82,24 @@ func NewBedrockConverseStreamProvider(transport BedrockConverseStreamTransport) 
 }
 
 func (p BedrockConverseStreamProvider) Stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {
-	return p.StreamSimple(model, llmContext, options)
+	return p.stream(model, llmContext, options, false)
 }
 
 func (p BedrockConverseStreamProvider) StreamSimple(model Model, llmContext Context, options SimpleStreamOptions) (*AssistantMessageEventStream, error) {
+	return p.stream(
+		model,
+		llmContext,
+		prepareSimpleStreamOptions(model, llmContext, options),
+		true,
+	)
+}
+
+func (p BedrockConverseStreamProvider) stream(
+	model Model,
+	llmContext Context,
+	options StreamOptions,
+	simple bool,
+) (*AssistantMessageEventStream, error) {
 	transport := p.Transport
 	if transport == nil {
 		return streamError(model, "Bedrock Converse Stream transport is not configured"), nil
@@ -100,6 +114,23 @@ func (p BedrockConverseStreamProvider) StreamSimple(model Model, llmContext Cont
 		if reasoning == "off" {
 			reasoning = ""
 		}
+	}
+	if simple &&
+		reasoning != "" &&
+		IsAnthropicClaudeBedrockModel(model) &&
+		!SupportsBedrockAdaptiveThinking(model) {
+		allocation := AdjustMaxTokensForThinking(
+			options.MaxTokens,
+			model.MaxTokens,
+			reasoning,
+			options.ThinkingBudgets,
+		)
+		allocation = clampThinkingTokenAllocationToContext(model, llmContext, allocation)
+		options.MaxTokens = allocation.MaxTokens
+		if options.ThinkingBudgets == nil {
+			options.ThinkingBudgets = map[string]int{}
+		}
+		options.ThinkingBudgets[normalizeThinkingBudgetLevel(reasoning)] = allocation.ThinkingBudget
 	}
 	payloadOptions := BedrockPayloadOptions{
 		Reasoning:       reasoning,

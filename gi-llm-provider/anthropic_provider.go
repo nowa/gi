@@ -19,10 +19,24 @@ func init() {
 }
 
 func (p AnthropicMessagesProvider) Stream(model Model, llmContext Context, options StreamOptions) (*AssistantMessageEventStream, error) {
-	return p.StreamSimple(model, llmContext, options)
+	return p.stream(model, llmContext, options, false)
 }
 
 func (p AnthropicMessagesProvider) StreamSimple(model Model, llmContext Context, options SimpleStreamOptions) (*AssistantMessageEventStream, error) {
+	return p.stream(
+		model,
+		llmContext,
+		prepareSimpleStreamOptions(model, llmContext, options),
+		true,
+	)
+}
+
+func (p AnthropicMessagesProvider) stream(
+	model Model,
+	llmContext Context,
+	options StreamOptions,
+	simple bool,
+) (*AssistantMessageEventStream, error) {
 	apiKey := apiKeyOrEnv(model.Provider, options.APIKey)
 	if apiKey == "" && !hasCloudflareAIGatewayAuthorization(model, options.Headers) {
 		return streamError(model, "missing API key for provider %s", model.Provider), nil
@@ -32,16 +46,36 @@ func (p AnthropicMessagesProvider) StreamSimple(model Model, llmContext Context,
 		ctx = context.Background()
 	}
 	isOAuthToken := model.Provider == "anthropic" && isAnthropicOAuthToken(apiKey)
+	reasoning := ""
+	if options.Reasoning != "" {
+		reasoning = ClampThinkingLevel(model, options.Reasoning)
+	}
+	var thinkingAllocation *ThinkingTokenAllocation
+	if simple &&
+		model.Reasoning &&
+		reasoning != "" &&
+		reasoning != "off" &&
+		!SupportsAnthropicAdaptiveThinking(model) {
+		allocation := AdjustMaxTokensForThinking(
+			options.MaxTokens,
+			model.MaxTokens,
+			reasoning,
+			options.ThinkingBudgets,
+		)
+		allocation = clampThinkingTokenAllocationToContext(model, llmContext, allocation)
+		thinkingAllocation = &allocation
+	}
 	payloadOptions := AnthropicPayloadOptions{
-		MaxTokens:       options.MaxTokens,
-		Temperature:     options.Temperature,
-		CacheRetention:  options.CacheRetention,
-		SessionID:       options.SessionID,
-		Reasoning:       options.Reasoning,
-		ThinkingBudgets: options.ThinkingBudgets,
-		Metadata:        options.Metadata,
-		Headers:         options.Headers,
-		IsOAuthToken:    isOAuthToken,
+		MaxTokens:          options.MaxTokens,
+		Temperature:        options.Temperature,
+		CacheRetention:     options.CacheRetention,
+		SessionID:          options.SessionID,
+		Reasoning:          reasoning,
+		ThinkingBudgets:    options.ThinkingBudgets,
+		Metadata:           options.Metadata,
+		Headers:            options.Headers,
+		IsOAuthToken:       isOAuthToken,
+		thinkingAllocation: thinkingAllocation,
 	}
 	payload, err := BuildAnthropicPayloadChecked(model, llmContext, payloadOptions)
 	if err != nil {

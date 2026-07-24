@@ -129,6 +129,47 @@ func TestBedrockConverseStreamProviderBuildsRequestAndStreams(t *testing.T) {
 	}
 }
 
+func TestBedrockStreamSimpleKeepsThinkingBudgetWithinRemainingContext(t *testing.T) {
+	model := Model{
+		ID:            "anthropic.claude-sonnet-4-5",
+		Name:          "Claude Sonnet 4.5",
+		Provider:      "amazon-bedrock",
+		API:           "bedrock-converse-stream",
+		Reasoning:     true,
+		ContextWindow: 10_000,
+		MaxTokens:     8_000,
+	}
+	contextValue := Context{
+		Messages: []Message{UserMessageText(strings.Repeat("x", 8000))},
+	}
+	var captured BedrockConverseStreamRequest
+	provider := NewBedrockConverseStreamProvider(func(
+		_ context.Context,
+		request BedrockConverseStreamRequest,
+	) (<-chan BedrockConverseStreamEvent, error) {
+		captured = request
+		events := make(chan BedrockConverseStreamEvent)
+		close(events)
+		return events, nil
+	})
+
+	stream, err := provider.StreamSimple(
+		model,
+		contextValue,
+		SimpleStreamOptions{Reasoning: "high"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Result(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	thinking, ok := captured.Payload.AdditionalModelRequestFields["thinking"].(map[string]any)
+	if !ok || captured.MaxTokens != 3_904 || thinking["budget_tokens"] != 2_880 {
+		t.Fatalf("request max=%d additional=%#v", captured.MaxTokens, captured.Payload.AdditionalModelRequestFields)
+	}
+}
+
 func TestBedrockConverseStreamProviderMissingTransportReturnsAssistantError(t *testing.T) {
 	model := Model{ID: "bedrock-test", Provider: "amazon-bedrock", API: "bedrock-converse-stream"}
 	stream, err := NewBedrockConverseStreamProvider(nil).StreamSimple(model, Context{}, SimpleStreamOptions{})
