@@ -576,28 +576,15 @@ func xaiOAuthExpiryMillis(
 	now time.Time,
 	expiresInSeconds float64,
 ) (int64, error) {
-	const (
-		maxInt64Exclusive = float64(1 << 63)
-		maxInt64          = int64(^uint64(0) >> 1)
-		minInt64          = -maxInt64 - 1
+	expires, err := oauthExpiryMillis(
+		now,
+		expiresInSeconds,
+		xaiOAuthRefreshSkew,
 	)
-	lifetimeMillis := expiresInSeconds * float64(time.Second/time.Millisecond)
-	if math.IsNaN(expiresInSeconds) ||
-		math.IsInf(expiresInSeconds, 0) ||
-		expiresInSeconds <= 0 ||
-		math.IsInf(lifetimeMillis, 0) ||
-		lifetimeMillis >= maxInt64Exclusive {
+	if err != nil {
 		return 0, errors.New(
 			"Invalid xAI OAuth response field: expires_in",
 		)
 	}
-	delta := int64(lifetimeMillis) - xaiOAuthRefreshSkew.Milliseconds()
-	nowMillis := now.UnixMilli()
-	if (delta > 0 && nowMillis > maxInt64-delta) ||
-		(delta < 0 && nowMillis < minInt64-delta) {
-		return 0, errors.New(
-			"Invalid xAI OAuth response field: expires_in",
-		)
-	}
-	return nowMillis + delta, nil
+	return expires, nil
 }

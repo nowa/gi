@@ -144,12 +144,14 @@ func RetryAssistantCall(
 	}
 }
 
-// ProviderRetryOptions configures retries around one provider request. A nil
-// MaxRetryDelay applies DefaultMaxProviderRetryDelay; a pointer to zero
-// explicitly disables the server-requested delay cap.
+// ProviderRetryOptions configures retries around one provider request. A
+// non-positive BaseDelay uses 500ms. A nil MaxRetryDelay applies
+// DefaultMaxProviderRetryDelay; a pointer to zero explicitly disables the
+// server-requested delay cap.
 type ProviderRetryOptions struct {
 	MaxRetries    int
 	MaxRetryDelay *time.Duration
+	BaseDelay     time.Duration
 	Now           func() time.Time
 	Sleep         func(context.Context, time.Duration) error
 	Jitter        func() float64
@@ -247,7 +249,14 @@ func providerRetryDelay(err error, retryIndex int, options ProviderRetryOptions)
 	if retryIndex < 0 {
 		retryIndex = 0
 	}
-	exponential := min(500*time.Millisecond*time.Duration(1<<min(retryIndex, 30)), 8*time.Second)
+	baseDelay := 500 * time.Millisecond
+	if options.BaseDelay > 0 {
+		baseDelay = options.BaseDelay
+	}
+	exponential := min(
+		exponentialRetryDelay(baseDelay, retryIndex+1),
+		8*time.Second,
+	)
 	jitter := rand.Float64
 	if options.Jitter != nil {
 		jitter = options.Jitter

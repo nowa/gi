@@ -61,10 +61,9 @@ var builtinProviderSpecs = []builtinProviderSpec{
 	{id: "kimi-coding", name: "Kimi For Coding", auth: func() ProviderAuth {
 		return ProviderAuth{
 			APIKey: EnvAPIKeyAuth("Kimi API key", "KIMI_API_KEY"),
-			OAuth: registeredOAuthAuth(
+			OAuth: registeredOrBuiltinOAuthAuth(
 				"kimi-coding",
-				"Kimi Code (subscription)",
-				"Sign in with Kimi Code",
+				NewKimiCodingOAuth(KimiCodingOAuthOptions{}),
 			),
 		}
 	}},

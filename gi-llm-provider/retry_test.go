@@ -347,6 +347,45 @@ func TestRetryProviderRequestRetriesRetryableErrors(t *testing.T) {
 	}
 }
 
+func TestRetryProviderRequestUsesConfiguredBaseDelay(t *testing.T) {
+	t.Parallel()
+
+	attempts := 0
+	var delays []time.Duration
+	value, err := RetryProviderRequest(
+		context.Background(),
+		ProviderRetryOptions{
+			MaxRetries: 2,
+			BaseDelay:  time.Second,
+			Jitter:     func() float64 { return 0 },
+			Sleep: func(_ context.Context, delay time.Duration) error {
+				delays = append(delays, delay)
+				return nil
+			},
+		},
+		func(context.Context) (string, error) {
+			attempts++
+			if attempts <= 2 {
+				return "", &ProviderError{
+					StatusCode: http.StatusTooManyRequests,
+					Err:        errors.New("provider error: 429"),
+				}
+			}
+			return "ok", nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != "ok" || attempts != 3 {
+		t.Fatalf("value=%q attempts=%d", value, attempts)
+	}
+	want := []time.Duration{time.Second, 2 * time.Second}
+	if !reflect.DeepEqual(delays, want) {
+		t.Fatalf("delays = %v, want %v", delays, want)
+	}
+}
+
 func TestRetryProviderRequestHonorsNonRetryableHeader(t *testing.T) {
 	t.Parallel()
 
