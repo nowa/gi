@@ -24,12 +24,15 @@ file/function parity audit, not a completion claim.
 | `keybindings.ts` | `TUI_KEYBINDINGS`, `KeybindingsManager`, conflict/default resolution | `keybindings.go` | direct | Defaults, user bindings, conflicts, resolved bindings, matching, and global manager state are represented. |
 | `keys.ts` | `Key`, `matchesKey`, `parseKey`, Kitty/modifyOtherKeys helpers, release/repeat detection | `keys.go` | direct | Gi covers Kitty protocol state, CSI-u/modifyOtherKeys parsing, key IDs, repeat/release detection, and printable decoding. |
 | `kill-ring.ts` | `KillRing` | `history.go` | direct | Push/peek/rotate/length semantics are represented. |
+| `native-modifiers.ts` | native modifier state used by Apple Terminal input normalization | `native_modifiers.go`, `native_modifiers_darwin.go`, `native_modifiers_unsupported.go` | go-native | Gi uses build-selected implementations: ApplicationServices on Darwin with cgo and a deterministic unsupported-platform fallback. |
 | `stdin-buffer.ts` | `StdinBuffer`, paste/sequence splitting, incomplete escape buffering | `stdin_buffer.go` | direct | Sequence completeness, paste handling, Kitty/mouse dedupe, timeout flush, and callback locking behavior are covered by Go tests. |
+| `terminal-colors.ts` | OSC 11 background colors and CSI color-scheme reports | `terminal_colors.go` | direct | Strict response recognition, variable-width hexadecimal channel scaling, FIFO queries, late-response consumption, and color-scheme notifications are represented. |
 | `terminal-image.ts` | image protocol detection, Kitty/iTerm2 encoding, dimensions, fallbacks, hyperlinks | `terminal_image.go` | direct | Capabilities, image IDs, encoders, dimension readers, fallback text, and hyperlink helpers are represented. |
-| `terminal.ts` | `Terminal`, `ProcessTerminal` raw mode, resize, cursor/title/progress/Kitty keyboard | `terminal.go`, `terminal_native.go`, `terminal_resize_*.go` | direct | Go implementation is native rather than Node stream-based; raw mode, start/stop, resize, cursor, title, progress, and input drain are represented. |
+| `terminal.ts` | `Terminal`, `ProcessTerminal` raw mode, resize, cursor/title/progress/Kitty keyboard | `terminal.go`, `terminal_native.go`, `terminal_resize_*.go`, `native_modifiers*.go` | direct | Go implementation is native rather than Node stream-based; raw mode, start/stop, resize, cursor, title, progress, input drain, DA-sentinel keyboard negotiation, split-response buffering, modifyOtherKeys fallback, and Apple Terminal Shift+Enter normalization are represented. |
 | `tui.ts` | `Component`, `Focusable`, `Container`, `TUI`, overlays, diff rendering, cursor marker | `tui.go`, `virtual_terminal.go` | direct | Container mutation, focus/input routing, overlays, differential/full redraw, cursor marker, image cleanup, and clear-on-shrink policies are represented. |
 | `undo-stack.ts` | `UndoStack` | `history.go` | direct | Snapshot push/pop/length semantics are represented. |
 | `utils.ts` | `visibleWidth`, `wrapTextWithAnsi`, `truncateToWidth`, ANSI slicing/segments, background application | `utils.go`, `ansi_shared.go`, `internal/width`, `internal/vtemu/width.go` | direct | Visual-width and ANSI-aware wrapping/truncation/slicing helpers are represented; shared grapheme/terminal-cell width logic now lives in `internal/width` and is used by both the public TUI package and the headless emulator. |
+| `word-navigation.ts` | pure forward/backward word movement with custom and atomic segmentation | `word_navigation.go`, `components_editor.go`, `components_input.go` | direct | Gi measures cursor positions in runes, exposes a custom `WordSegmenter`, and shares the same pure helpers between `Input` and `Editor`; valid paste markers remain indivisible. |
 
 ## Component Files
 
@@ -62,6 +65,26 @@ file/function parity audit, not a completion claim.
   keyboard fallback.
 - Pi `StdinBuffer` escape-sequence and paste handling maps to Gi
   `stdin_buffer.go` and is covered by the Pi matrix tests in `terminal_test.go`.
+- Pi v0.82 terminal input negotiation maps to a single Go-owned state machine:
+  Kitty flags and DA responses are consumed, incomplete negotiation prefixes
+  are buffered and replayed, and modifyOtherKeys is enabled only after a
+  negative Kitty result.
+- Terminal color replies are consumed before general input listeners and
+  focused components. OSC 11 requests retain FIFO reply slots after context
+  timeout so late terminal responses cannot leak into editor input.
+
+## Pi v0.82 Terminal Input And Color Symbols
+
+| Pi file | Pi implementation symbols | Gi equivalent | Status |
+| --- | --- | --- | --- |
+| `native-modifiers.ts` | `isNativeModifiersHelper`, `loadNativeModifiersHelper`, `isNativeModifierPressed` | build-selected `nativeModifierPressed`, public `IsNativeModifierPressed` | go-native |
+| `terminal-colors.ts` | `hexToRgb`, `parseOscHexChannel`, `isOsc11BackgroundColorResponse`, `parseOsc11BackgroundColor`, `parseTerminalColorSchemeReport` | `hexToRGB`, `parseOSCHexChannel`, `IsOSC11BackgroundColorResponse`, `ParseOSC11BackgroundColor`, `ParseTerminalColorSchemeReport` | direct |
+| `terminal.ts` | `parseKeyboardProtocolNegotiationSequence`, `isKeyboardProtocolNegotiationSequencePrefix`, `isAppleTerminalSession`, `normalizeAppleTerminalInput` | `ParseKeyboardProtocolNegotiationSequence`, `isKeyboardProtocolNegotiationSequencePrefix`, `IsAppleTerminalSession`, `NormalizeAppleTerminalInput` | direct |
+| `terminal.ts` | `ProcessTerminal.modifyOtherKeysActive`, `ProcessTerminal.handleKeyboardProtocolNegotiationSequence`, `ProcessTerminal.readKeyboardProtocolNegotiationSequence`, `ProcessTerminal.setKeyboardProtocolNegotiationBuffer`, `ProcessTerminal.clearKeyboardProtocolNegotiationBuffer` | `ProcessTerminal.ModifyOtherKeysActive`, `handleKeyboardProtocolNegotiationSequence`, `readKeyboardProtocolNegotiationSequence`, `setKeyboardProtocolNegotiationBufferLocked`, `clearKeyboardProtocolNegotiationBufferLocked` | direct |
+| `terminal.ts` | `ProcessTerminal.flushKeyboardProtocolNegotiationBufferAsInput`, `ProcessTerminal.scheduleKeyboardProtocolNegotiationBufferFlush`, `ProcessTerminal.clearKeyboardProtocolNegotiationBufferFlushTimer`, `ProcessTerminal.forwardInputSequence`, `ProcessTerminal.enableModifyOtherKeys`, `ProcessTerminal.disableModifyOtherKeys` | same-purpose Go methods in `terminal.go`, with `Locked` suffixes where the lock contract is explicit | direct |
+| `tui.ts` | `TUI.onTerminalColorSchemeChange`, `TUI.setTerminalColorSchemeNotifications`, `TUI.consumeOsc11BackgroundResponse`, `TUI.consumeTerminalColorSchemeReport`, `TUI.queryTerminalBackgroundColor`, `TUI.queryTerminalColorScheme` | `OnTerminalColorSchemeChange`, `SetTerminalColorSchemeNotifications`, `consumeOSC11BackgroundResponse`, `consumeTerminalColorSchemeReport`, `QueryTerminalBackgroundColor`, `QueryTerminalColorScheme` | direct |
+| `utils.ts` | `getGraphemeSegmenter`, `getWordSegmenter` | shared grapheme spans in `internal/width`; `defaultWordSegments` plus injectable `WordSegmenter` in `word_navigation.go` | go-native |
+| `word-navigation.ts` | `findWordBackward`, `findWordForward` | `FindWordBackward`, `FindWordForward` | direct |
 
 ## Exported Symbol Audit
 

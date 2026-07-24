@@ -153,9 +153,27 @@ const modules = [
 			"packages/tui/test/overlay-short-content.test.ts": ["gi-tui/tui_test.go"],
 			"packages/tui/test/regression-regional-indicator-width.test.ts": ["gi-tui/utils_test.go"],
 			"packages/tui/test/select-list.test.ts": ["gi-tui/components_test.go"],
+			"packages/tui/test/terminal-colors.test.ts": ["gi-tui/terminal_colors_test.go"],
 			"packages/tui/test/truncate-to-width.test.ts": ["gi-tui/utils_test.go"],
 			"packages/tui/test/truncated-text.test.ts": ["gi-tui/components_test.go"],
+			"packages/tui/test/word-navigation.test.ts": ["gi-tui/word_navigation_test.go"],
 			"packages/tui/test/wrap-ansi.test.ts": ["gi-tui/utils_test.go"],
+		},
+		caseAliases: {
+			"packages/tui/test/word-navigation.test.ts": {
+				"basic words: hello world": ["gi-tui/word_navigation_test.go"],
+				"dotted: foo.bar": ["gi-tui/word_navigation_test.go"],
+				"colon: foo:bar": ["gi-tui/word_navigation_test.go"],
+				"path: path/to/file": ["gi-tui/word_navigation_test.go"],
+				"CJK mixed": ["gi-tui/word_navigation_test.go"],
+				"whitespace at boundaries": ["gi-tui/word_navigation_test.go"],
+				"punctuation run: foo...bar": ["gi-tui/word_navigation_test.go"],
+				"cursor at 0 returns 0": ["gi-tui/word_navigation_test.go"],
+				"cursor at end returns end": ["gi-tui/word_navigation_test.go"],
+				"backward skips word then stops before atomic marker": ["gi-tui/word_navigation_test.go"],
+				"backward skips whitespace then atomic marker as one unit": ["gi-tui/word_navigation_test.go"],
+				"forward skips atomic marker as one unit": ["gi-tui/word_navigation_test.go"],
+			},
 		},
 	},
 	{
@@ -294,6 +312,11 @@ const modules = [
 			],
 		},
 		caseAliases: {
+			"packages/coding-agent/test/model-runtime-auth-options.test.ts": {
+				"transforms fully assembled headers once without forwarding the transform": [
+					"gi-llm-provider/models_runtime_test.go",
+				],
+			},
 			"packages/coding-agent/test/runtime-credentials.test.ts": {
 				"enumeration merges overrides without exposing keys": ["gi-coding-agent/auth_storage_test.go"],
 				"delete clears both the override and persisted credential": ["gi-coding-agent/auth_storage_test.go"],

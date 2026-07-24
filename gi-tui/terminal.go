@@ -6,17 +6,65 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
 )
 
 const (
-	terminalProgressActive = "\x1b]9;4;3\x07"
-	terminalProgressClear  = "\x1b]9;4;0;\x07"
+	terminalProgressActive                     = "\x1b]9;4;3\x07"
+	terminalProgressClear                      = "\x1b]9;4;0;\x07"
+	appleTerminalShiftEnter                    = "\x1b[13;2u"
+	keyboardProtocolNegotiationFragmentTimeout = 150 * time.Millisecond
+	kittyKeyboardProtocolQuery                 = "\x1b[>7u\x1b[?u\x1b[c"
 )
 
-var kittyKeyboardResponsePattern = regexp.MustCompile(`^\x1b\[\?([0-9]+)u$`)
+var (
+	kittyKeyboardResponsePattern  = regexp.MustCompile(`^\x1b\[\?([0-9]+)u$`)
+	deviceAttributesPattern       = regexp.MustCompile(`^\x1b\[\?[\d;]*c$`)
+	keyboardProtocolPrefixPattern = regexp.MustCompile(`^\x1b\[\?[\d;]*$`)
+)
+
+type KeyboardProtocolNegotiationType string
+
+const (
+	KeyboardProtocolKittyFlags       KeyboardProtocolNegotiationType = "kitty-flags"
+	KeyboardProtocolDeviceAttributes KeyboardProtocolNegotiationType = "device-attributes"
+)
+
+type KeyboardProtocolNegotiationSequence struct {
+	Type  KeyboardProtocolNegotiationType
+	Flags int
+}
+
+func ParseKeyboardProtocolNegotiationSequence(sequence string) (KeyboardProtocolNegotiationSequence, bool) {
+	if match := kittyKeyboardResponsePattern.FindStringSubmatch(sequence); len(match) == 2 {
+		flags, err := strconv.Atoi(match[1])
+		if err == nil {
+			return KeyboardProtocolNegotiationSequence{Type: KeyboardProtocolKittyFlags, Flags: flags}, true
+		}
+	}
+	if deviceAttributesPattern.MatchString(sequence) {
+		return KeyboardProtocolNegotiationSequence{Type: KeyboardProtocolDeviceAttributes}, true
+	}
+	return KeyboardProtocolNegotiationSequence{}, false
+}
+
+func isKeyboardProtocolNegotiationSequencePrefix(sequence string) bool {
+	return sequence == "\x1b[" || keyboardProtocolPrefixPattern.MatchString(sequence)
+}
+
+func IsAppleTerminalSession() bool {
+	return runtime.GOOS == "darwin" && os.Getenv("TERM_PROGRAM") == "Apple_Terminal"
+}
+
+func NormalizeAppleTerminalInput(data string, isAppleTerminal, isShiftPressed bool) string {
+	if isAppleTerminal && isShiftPressed && data == "\r" {
+		return appleTerminalShiftEnter
+	}
+	return data
+}
 
 // Terminal is the output/input boundary used by TUI. Implementations can be a
 // real process terminal, an xterm-headless test adapter, or an in-memory fake.
@@ -42,24 +90,26 @@ type Terminal interface {
 // input through StdinBuffer, and negotiates Kitty keyboard / modifyOtherKeys
 // sequences the same way pi-tui does at the process boundary.
 type ProcessTerminal struct {
-	in                    io.Reader
-	out                   io.Writer
-	cols                  int
-	rows                  int
-	dynamicSize           bool
-	stopCh                chan struct{}
-	once                  sync.Once
-	mu                    sync.Mutex
-	stdinBuffer           *StdinBuffer
-	rawRestore            func() error
-	keyboardFallbackTimer *time.Timer
-	progressStop          chan struct{}
-	resizeStop            func()
-	inputHandler          func(string)
-	lastInputAt           time.Time
-	writeLogPath          string
-	kittyProtocolActive   bool
-	modifyOtherKeysActive bool
+	in                               io.Reader
+	out                              io.Writer
+	cols                             int
+	rows                             int
+	dynamicSize                      bool
+	stopCh                           chan struct{}
+	once                             sync.Once
+	mu                               sync.Mutex
+	stdinBuffer                      *StdinBuffer
+	rawRestore                       func() error
+	keyboardProtocolPushed           bool
+	keyboardProtocolBuffer           string
+	keyboardProtocolBufferFlushTimer *time.Timer
+	progressStop                     chan struct{}
+	resizeStop                       func()
+	inputHandler                     func(string)
+	lastInputAt                      time.Time
+	writeLogPath                     string
+	kittyProtocolActive              bool
+	modifyOtherKeysActive            bool
 }
 
 func NewProcessTerminal() *ProcessTerminal {
@@ -110,6 +160,10 @@ func (t *ProcessTerminal) Start(onInput func(string), onResize func()) {
 	t.inputHandler = onInput
 	t.resizeStop = startProcessResizeWatcher(onResize)
 	t.stdinBuffer = NewStdinBuffer(StdinBufferOptions{Timeout: 10 * time.Millisecond})
+	t.keyboardProtocolPushed = false
+	t.kittyProtocolActive = false
+	t.modifyOtherKeysActive = false
+	t.clearKeyboardProtocolNegotiationBufferLocked()
 	buffer := t.stdinBuffer
 	if file, ok := t.in.(*os.File); ok {
 		if restore, err := enableProcessRawMode(file); err == nil {
@@ -117,14 +171,10 @@ func (t *ProcessTerminal) Start(onInput func(string), onResize func()) {
 		}
 	}
 	t.mu.Unlock()
+	SetKittyProtocolActive(false)
 
 	buffer.OnData(func(sequence string) {
-		if t.handleKeyboardProtocolResponse(sequence) {
-			return
-		}
-		if handler := t.recordInputAndHandler(); handler != nil {
-			handler(sequence)
-		}
+		t.readKeyboardProtocolNegotiationSequence(sequence)
 	})
 	buffer.OnPaste(func(content string) {
 		if handler := t.recordInputAndHandler(); handler != nil {
@@ -133,8 +183,7 @@ func (t *ProcessTerminal) Start(onInput func(string), onResize func()) {
 	})
 
 	_ = t.Write("\x1b[?2004h")
-	_ = t.Write("\x1b[?u")
-	t.scheduleModifyOtherKeysFallback()
+	t.queryAndEnableKittyProtocol()
 	if onResize != nil {
 		onResize()
 	}
@@ -165,7 +214,7 @@ func (t *ProcessTerminal) Stop() {
 		}
 		resizeStop := t.resizeStop
 		t.resizeStop = nil
-		t.stopKeyboardFallbackLocked()
+		t.clearKeyboardProtocolNegotiationBufferLocked()
 		t.mu.Unlock()
 		if resizeStop != nil {
 			resizeStop()
@@ -294,6 +343,12 @@ func (t *ProcessTerminal) KittyProtocolActive() bool {
 	return t.kittyProtocolActive
 }
 
+func (t *ProcessTerminal) ModifyOtherKeysActive() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.modifyOtherKeysActive
+}
+
 func (t *ProcessTerminal) recordInputAndHandler() func(string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -301,55 +356,168 @@ func (t *ProcessTerminal) recordInputAndHandler() func(string) {
 	return t.inputHandler
 }
 
-func (t *ProcessTerminal) handleKeyboardProtocolResponse(sequence string) bool {
-	if !kittyKeyboardResponsePattern.MatchString(sequence) {
-		return false
-	}
+func (t *ProcessTerminal) queryAndEnableKittyProtocol() {
 	t.mu.Lock()
-	if !t.kittyProtocolActive {
-		t.kittyProtocolActive = true
-		SetKittyProtocolActive(true)
-		t.stopKeyboardFallbackLocked()
-		t.mu.Unlock()
-		_ = t.Write("\x1b[>7u")
-		return true
-	}
+	t.keyboardProtocolPushed = true
+	t.clearKeyboardProtocolNegotiationBufferLocked()
 	t.mu.Unlock()
-	return false
+	_ = t.Write(kittyKeyboardProtocolQuery)
 }
 
-func (t *ProcessTerminal) scheduleModifyOtherKeysFallback() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.stopKeyboardFallbackLocked()
-	t.keyboardFallbackTimer = time.AfterFunc(150*time.Millisecond, func() {
+func (t *ProcessTerminal) handleKeyboardProtocolNegotiationSequence(
+	negotiation KeyboardProtocolNegotiationSequence,
+) bool {
+	switch negotiation.Type {
+	case KeyboardProtocolKittyFlags:
+		if negotiation.Flags == 0 {
+			_ = t.enableModifyOtherKeys()
+			return true
+		}
+		_ = t.disableModifyOtherKeys()
 		t.mu.Lock()
-		if t.kittyProtocolActive || t.modifyOtherKeysActive {
+		changed := !t.kittyProtocolActive
+		t.kittyProtocolActive = true
+		t.mu.Unlock()
+		if changed {
+			SetKittyProtocolActive(true)
+		}
+		return true
+	case KeyboardProtocolDeviceAttributes:
+		t.mu.Lock()
+		kittyActive := t.kittyProtocolActive
+		t.mu.Unlock()
+		if !kittyActive {
+			_ = t.enableModifyOtherKeys()
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func (t *ProcessTerminal) readKeyboardProtocolNegotiationSequence(sequence string) {
+	t.mu.Lock()
+	if t.keyboardProtocolBuffer != "" {
+		combined := t.keyboardProtocolBuffer + sequence
+		if negotiation, ok := ParseKeyboardProtocolNegotiationSequence(combined); ok {
+			t.clearKeyboardProtocolNegotiationBufferLocked()
 			t.mu.Unlock()
+			t.handleKeyboardProtocolNegotiationSequence(negotiation)
 			return
 		}
-		t.modifyOtherKeysActive = true
+		if isKeyboardProtocolNegotiationSequencePrefix(combined) {
+			t.setKeyboardProtocolNegotiationBufferLocked(combined)
+			t.mu.Unlock()
+			t.scheduleKeyboardProtocolNegotiationBufferFlush()
+			return
+		}
+		buffered := t.keyboardProtocolBuffer
+		t.clearKeyboardProtocolNegotiationBufferLocked()
 		t.mu.Unlock()
-		_ = t.Write("\x1b[>4;2m")
+		t.forwardInputSequence(buffered)
+		t.readKeyboardProtocolNegotiationSequence(sequence)
+		return
+	}
+
+	if negotiation, ok := ParseKeyboardProtocolNegotiationSequence(sequence); ok {
+		t.mu.Unlock()
+		t.handleKeyboardProtocolNegotiationSequence(negotiation)
+		return
+	}
+	if isKeyboardProtocolNegotiationSequencePrefix(sequence) {
+		t.setKeyboardProtocolNegotiationBufferLocked(sequence)
+		t.mu.Unlock()
+		t.scheduleKeyboardProtocolNegotiationBufferFlush()
+		return
+	}
+	t.mu.Unlock()
+	t.forwardInputSequence(sequence)
+}
+
+func (t *ProcessTerminal) setKeyboardProtocolNegotiationBufferLocked(sequence string) {
+	t.clearKeyboardProtocolNegotiationBufferFlushTimerLocked()
+	t.keyboardProtocolBuffer = sequence
+}
+
+func (t *ProcessTerminal) clearKeyboardProtocolNegotiationBufferLocked() {
+	t.clearKeyboardProtocolNegotiationBufferFlushTimerLocked()
+	t.keyboardProtocolBuffer = ""
+}
+
+func (t *ProcessTerminal) flushKeyboardProtocolNegotiationBufferAsInput() {
+	t.mu.Lock()
+	sequence := t.keyboardProtocolBuffer
+	t.keyboardProtocolBuffer = ""
+	t.keyboardProtocolBufferFlushTimer = nil
+	t.mu.Unlock()
+	if sequence != "" {
+		t.forwardInputSequence(sequence)
+	}
+}
+
+func (t *ProcessTerminal) scheduleKeyboardProtocolNegotiationBufferFlush() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.keyboardProtocolBuffer == "" || t.keyboardProtocolBufferFlushTimer != nil {
+		return
+	}
+	t.keyboardProtocolBufferFlushTimer = time.AfterFunc(keyboardProtocolNegotiationFragmentTimeout, func() {
+		t.flushKeyboardProtocolNegotiationBufferAsInput()
 	})
 }
 
-func (t *ProcessTerminal) stopKeyboardFallbackLocked() {
-	if t.keyboardFallbackTimer != nil {
-		t.keyboardFallbackTimer.Stop()
-		t.keyboardFallbackTimer = nil
+func (t *ProcessTerminal) clearKeyboardProtocolNegotiationBufferFlushTimerLocked() {
+	if t.keyboardProtocolBufferFlushTimer != nil {
+		t.keyboardProtocolBufferFlushTimer.Stop()
+		t.keyboardProtocolBufferFlushTimer = nil
 	}
+}
+
+func (t *ProcessTerminal) forwardInputSequence(sequence string) {
+	handler := t.recordInputAndHandler()
+	if handler == nil {
+		return
+	}
+	isAppleTerminal := sequence == "\r" && IsAppleTerminalSession()
+	handler(NormalizeAppleTerminalInput(
+		sequence,
+		isAppleTerminal,
+		isAppleTerminal && IsNativeModifierPressed(ModifierShift),
+	))
+}
+
+func (t *ProcessTerminal) enableModifyOtherKeys() error {
+	t.mu.Lock()
+	if t.kittyProtocolActive || t.modifyOtherKeysActive {
+		t.mu.Unlock()
+		return nil
+	}
+	t.modifyOtherKeysActive = true
+	t.mu.Unlock()
+	return t.Write("\x1b[>4;2m")
+}
+
+func (t *ProcessTerminal) disableModifyOtherKeys() error {
+	t.mu.Lock()
+	if !t.modifyOtherKeysActive {
+		t.mu.Unlock()
+		return nil
+	}
+	t.modifyOtherKeysActive = false
+	t.mu.Unlock()
+	return t.Write("\x1b[>4;0m")
 }
 
 func (t *ProcessTerminal) disableKeyboardProtocols() error {
 	t.mu.Lock()
-	kittyActive := t.kittyProtocolActive
+	disableKitty := t.keyboardProtocolPushed || t.kittyProtocolActive
 	modifyActive := t.modifyOtherKeysActive
+	t.keyboardProtocolPushed = false
 	t.kittyProtocolActive = false
 	t.modifyOtherKeysActive = false
-	t.stopKeyboardFallbackLocked()
+	t.clearKeyboardProtocolNegotiationBufferLocked()
 	t.mu.Unlock()
-	if kittyActive {
+	if disableKitty {
 		SetKittyProtocolActive(false)
 		if err := t.Write("\x1b[<u"); err != nil {
 			return err

@@ -157,11 +157,7 @@
     },
     {
       "module": "tui",
-      "missingFiles": [
-        "native-modifiers.ts",
-        "terminal-colors.ts",
-        "word-navigation.ts"
-      ],
+      "missingFiles": [],
       "missingSymbols": [
         "components/editor.ts::Editor.exitHistoryBrowsing",
         "components/editor.ts::Editor.setAutocompleteTriggerCharacters",
@@ -172,53 +168,20 @@
         "components/markdown.ts::Markdown.getOrderedListMarker",
         "components/markdown.ts::Markdown.getUnorderedListMarker",
         "components/markdown.ts::trimPartialClosingFences",
-        "native-modifiers.ts::isNativeModifierPressed",
-        "native-modifiers.ts::isNativeModifiersHelper",
-        "native-modifiers.ts::loadNativeModifiersHelper",
-        "terminal-colors.ts::hexToRgb",
-        "terminal-colors.ts::isOsc11BackgroundColorResponse",
-        "terminal-colors.ts::parseOsc11BackgroundColor",
-        "terminal-colors.ts::parseOscHexChannel",
-        "terminal-colors.ts::parseTerminalColorSchemeReport",
         "terminal-image.ts::probeTmuxHyperlinks",
-        "terminal.ts::ProcessTerminal.clearKeyboardProtocolNegotiationBuffer",
-        "terminal.ts::ProcessTerminal.clearKeyboardProtocolNegotiationBufferFlushTimer",
-        "terminal.ts::ProcessTerminal.disableModifyOtherKeys",
-        "terminal.ts::ProcessTerminal.enableModifyOtherKeys",
-        "terminal.ts::ProcessTerminal.flushKeyboardProtocolNegotiationBufferAsInput",
-        "terminal.ts::ProcessTerminal.forwardInputSequence",
-        "terminal.ts::ProcessTerminal.handleKeyboardProtocolNegotiationSequence",
-        "terminal.ts::ProcessTerminal.modifyOtherKeysActive",
-        "terminal.ts::ProcessTerminal.readKeyboardProtocolNegotiationSequence",
-        "terminal.ts::ProcessTerminal.scheduleKeyboardProtocolNegotiationBufferFlush",
-        "terminal.ts::ProcessTerminal.setKeyboardProtocolNegotiationBuffer",
-        "terminal.ts::isAppleTerminalSession",
-        "terminal.ts::isKeyboardProtocolNegotiationSequencePrefix",
-        "terminal.ts::normalizeAppleTerminalInput",
-        "terminal.ts::parseKeyboardProtocolNegotiationSequence",
         "tui.ts::TUI.clearOverlayFocusRestore",
         "tui.ts::TUI.clearOverlayFocusRestoreFor",
-        "tui.ts::TUI.consumeOsc11BackgroundResponse",
-        "tui.ts::TUI.consumeTerminalColorSchemeReport",
         "tui.ts::TUI.containsComponent",
         "tui.ts::TUI.expandChangedRangeForKittyImages",
         "tui.ts::TUI.getKittyImageReservedRows",
         "tui.ts::TUI.getVisibleOverlayFocusRestore",
         "tui.ts::TUI.isComponentMounted",
         "tui.ts::TUI.isOverlayFocusAncestor",
-        "tui.ts::TUI.onTerminalColorSchemeChange",
-        "tui.ts::TUI.queryTerminalBackgroundColor",
-        "tui.ts::TUI.queryTerminalColorScheme",
         "tui.ts::TUI.resolveBlockedOverlayFocusResume",
         "tui.ts::TUI.retargetOverlayPreFocus",
         "tui.ts::TUI.setFocusInternal",
-        "tui.ts::TUI.setTerminalColorSchemeNotifications",
         "tui.ts::extractKittyImageRows",
-        "tui.ts::parseKittyImageHeader",
-        "utils.ts::getGraphemeSegmenter",
-        "utils.ts::getWordSegmenter",
-        "word-navigation.ts::findWordBackward",
-        "word-navigation.ts::findWordForward"
+        "tui.ts::parseKittyImageHeader"
       ]
     },
     {
@@ -937,8 +900,7 @@
       "module": "tui",
       "undocumentedFiles": [],
       "noCandidateFiles": [
-        "packages/tui/test/regression-overlay-cjk-boundary.test.ts",
-        "packages/tui/test/word-navigation.test.ts"
+        "packages/tui/test/regression-overlay-cjk-boundary.test.ts"
       ],
       "noCandidateCases": [
         {
@@ -975,106 +937,6 @@
           "file": "packages/tui/test/tab-width.test.ts",
           "line": 72,
           "name": "keeps tab-containing overlays on one physical terminal row"
-        },
-        {
-          "file": "packages/tui/test/terminal-colors.test.ts",
-          "line": 114,
-          "name": "parses color scheme reports"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 6,
-          "name": "basic words: hello world"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 12,
-          "name": "dotted: foo.bar"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 19,
-          "name": "colon: foo:bar"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 26,
-          "name": "path: path/to/file"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 36,
-          "name": "CJK mixed"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 44,
-          "name": "whitespace at boundaries"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 50,
-          "name": "punctuation run: foo...bar"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 57,
-          "name": "cursor at 0 returns 0"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 63,
-          "name": "basic words: hello world"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 69,
-          "name": "dotted: foo.bar"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 76,
-          "name": "colon: foo:bar"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 83,
-          "name": "path: path/to/file"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 92,
-          "name": "CJK mixed"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 107,
-          "name": "whitespace at boundaries"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 113,
-          "name": "punctuation run: foo...bar"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 120,
-          "name": "cursor at end returns end"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 180,
-          "name": "backward skips word then stops before atomic marker"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 184,
-          "name": "backward skips whitespace then atomic marker as one unit"
-        },
-        {
-          "file": "packages/tui/test/word-navigation.test.ts",
-          "line": 188,
-          "name": "forward skips atomic marker as one unit"
         }
       ]
     },

@@ -100,6 +100,10 @@ test names alone.
 | TUI terminal image capabilities match Pi for unknown terminals, Ghostty, cmux+Ghostty, and VSCode hyperlink behavior | `TestDetectCapabilitiesPiCaseNames` subtests | covered |
 | TUI Kitty image rendering honors `maxHeightCells` by reducing rendered width | `TestRenderImagePiCaseNames/honors_maxHeightCells_by_reducing_rendered_width` | covered |
 | TUI OSC 8 hyperlinks work with `file://` URIs | `TestHyperlinkPiOSC8ExactRendering/works_with_file://_URIs` | covered |
+| TUI v0.82 word navigation preserves ASCII punctuation boundaries, Unicode/CJK movement, whitespace runs, and atomic paste markers | `TestFindWordBackwardPiMatrix`, `TestFindWordForwardPiMatrix`, `TestFindWordNavigationTreatsCustomAtomicSegmentsAsUnits`, plus shared `Input`/`Editor` integration tests | covered |
+| TUI v0.82 terminal input negotiates Kitty flags through a DA sentinel, buffers split replies, falls back to modifyOtherKeys, and normalizes Apple Terminal Shift+Enter | `TestParseKeyboardProtocolNegotiationSequence`, `TestProcessTerminalReassemblesSplitKeyboardNegotiation`, `TestProcessTerminalFallsBackImmediatelyForZeroKittyFlags`, `TestNormalizeAppleTerminalInput` | covered |
+| TUI v0.82 terminal color parsing and queries consume OSC 11 / color-scheme reports before normal input, including invalid and late FIFO replies | `TestParseOSC11BackgroundColorPiMatrix`, `TestTUIQueryTerminalBackgroundColorUsesFIFOInputBoundary`, `TestTUIBackgroundQueryLeavesUnrelatedInputAndConsumesLateReply`, `TestTUIQueryTerminalColorSchemeAndNotifications` | covered |
+| Coding-agent request header transforms see the fully assembled auth/provider/model/explicit header set exactly once and are not forwarded downstream | `gi-llm-provider/models_runtime_test.go` `adds model headers only for model auth and transforms assembled headers once` | covered through the shared Go model runtime |
 
 ## Remaining Work
 

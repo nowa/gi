@@ -3,7 +3,6 @@ package gitui
 import (
 	"strings"
 	"sync"
-	"unicode"
 )
 
 type Input struct {
@@ -471,22 +470,8 @@ func (i *Input) wordBackwardDeleteRange() (int, int) {
 	if i.cursor <= 0 {
 		return 0, 0
 	}
-	runes := []rune(i.text)
-	end := min(i.cursor, len(runes))
-	start := end
-	for start > 0 && unicode.IsSpace(runes[start-1]) {
-		start--
-	}
-	if start > 0 && isEditorPunctuationRune(runes[start-1]) {
-		for start > 0 && isEditorPunctuationRune(runes[start-1]) {
-			start--
-		}
-	} else {
-		for start > 0 && !unicode.IsSpace(runes[start-1]) && !isEditorPunctuationRune(runes[start-1]) {
-			start--
-		}
-	}
-	return start, end
+	end := min(i.cursor, len([]rune(i.text)))
+	return FindWordBackward(i.text, end), end
 }
 
 func (i *Input) wordForwardDeleteRange() (int, int) {
@@ -503,19 +488,5 @@ func (i *Input) wordBackward() int {
 }
 
 func (i *Input) wordForward() int {
-	runes := []rune(i.text)
-	pos := min(i.cursor, len(runes))
-	for pos < len(runes) && unicode.IsSpace(runes[pos]) {
-		pos++
-	}
-	if pos < len(runes) && isEditorPunctuationRune(runes[pos]) {
-		for pos < len(runes) && isEditorPunctuationRune(runes[pos]) {
-			pos++
-		}
-	} else {
-		for pos < len(runes) && !unicode.IsSpace(runes[pos]) && !isEditorPunctuationRune(runes[pos]) {
-			pos++
-		}
-	}
-	return pos
+	return FindWordForward(i.text, i.cursor)
 }

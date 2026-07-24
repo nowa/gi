@@ -61,7 +61,140 @@ func TestProcessTerminalNegotiatesKittyKeyboard(t *testing.T) {
 	}
 }
 
-func TestProcessTerminalOnlyConsumesInitialKittyKeyboardResponseLikePi(t *testing.T) {
+func TestParseKeyboardProtocolNegotiationSequence(t *testing.T) {
+	tests := []struct {
+		data string
+		want KeyboardProtocolNegotiationSequence
+		ok   bool
+	}{
+		{
+			data: "\x1b[?7u",
+			want: KeyboardProtocolNegotiationSequence{Type: KeyboardProtocolKittyFlags, Flags: 7},
+			ok:   true,
+		},
+		{
+			data: "\x1b[?0u",
+			want: KeyboardProtocolNegotiationSequence{Type: KeyboardProtocolKittyFlags},
+			ok:   true,
+		},
+		{
+			data: "\x1b[?62;4;52c",
+			want: KeyboardProtocolNegotiationSequence{Type: KeyboardProtocolDeviceAttributes},
+			ok:   true,
+		},
+		{data: "\x1b[?7"},
+		{data: "a"},
+	}
+	for _, test := range tests {
+		got, ok := ParseKeyboardProtocolNegotiationSequence(test.data)
+		if got != test.want || ok != test.ok {
+			t.Fatalf("ParseKeyboardProtocolNegotiationSequence(%q) = %#v, %v, want %#v, %v", test.data, got, ok, test.want, test.ok)
+		}
+	}
+}
+
+func TestNormalizeAppleTerminalInput(t *testing.T) {
+	tests := []struct {
+		name            string
+		data            string
+		isAppleTerminal bool
+		isShiftPressed  bool
+		want            string
+	}{
+		{
+			name:            "shift return",
+			data:            "\r",
+			isAppleTerminal: true,
+			isShiftPressed:  true,
+			want:            "\x1b[13;2u",
+		},
+		{name: "plain return", data: "\r", isAppleTerminal: true, want: "\r"},
+		{name: "other terminal", data: "\r", isShiftPressed: true, want: "\r"},
+		{
+			name:            "already encoded",
+			data:            "\x1b[13;2u",
+			isAppleTerminal: true,
+			isShiftPressed:  true,
+			want:            "\x1b[13;2u",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := NormalizeAppleTerminalInput(test.data, test.isAppleTerminal, test.isShiftPressed); got != test.want {
+				t.Fatalf("NormalizeAppleTerminalInput(...) = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestProcessTerminalReassemblesSplitKeyboardNegotiation(t *testing.T) {
+	out := &safeBuffer{}
+	terminal := NewProcessTerminalWithIO(strings.NewReader(""), out, 80, 24)
+	var inputMu sync.Mutex
+	var input []string
+	terminal.mu.Lock()
+	terminal.inputHandler = func(data string) {
+		inputMu.Lock()
+		defer inputMu.Unlock()
+		input = append(input, data)
+	}
+	terminal.mu.Unlock()
+
+	terminal.readKeyboardProtocolNegotiationSequence("\x1b[?7")
+	time.Sleep(20 * time.Millisecond)
+	inputMu.Lock()
+	if len(input) != 0 {
+		t.Fatalf("partial negotiation should be buffered, got %#v", input)
+	}
+	inputMu.Unlock()
+
+	terminal.readKeyboardProtocolNegotiationSequence("u")
+	if !terminal.KittyProtocolActive() {
+		t.Fatalf("split Kitty confirmation should activate the protocol")
+	}
+	inputMu.Lock()
+	defer inputMu.Unlock()
+	if len(input) != 0 {
+		t.Fatalf("reassembled negotiation should be consumed, got %#v", input)
+	}
+}
+
+func TestProcessTerminalFlushesIncompleteKeyboardNegotiationAsInput(t *testing.T) {
+	terminal := NewProcessTerminalWithIO(strings.NewReader(""), &safeBuffer{}, 80, 24)
+	input := make(chan string, 1)
+	terminal.mu.Lock()
+	terminal.inputHandler = func(data string) { input <- data }
+	terminal.mu.Unlock()
+
+	terminal.readKeyboardProtocolNegotiationSequence("\x1b[")
+	select {
+	case got := <-input:
+		t.Fatalf("partial negotiation flushed too early: %q", got)
+	case <-time.After(20 * time.Millisecond):
+	}
+	select {
+	case got := <-input:
+		if got != "\x1b[" {
+			t.Fatalf("flushed input = %q, want CSI prefix", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("partial negotiation was not flushed")
+	}
+}
+
+func TestProcessTerminalFallsBackImmediatelyForZeroKittyFlags(t *testing.T) {
+	out := &safeBuffer{}
+	terminal := NewProcessTerminalWithIO(strings.NewReader("\x1b[?0u"), out, 80, 24)
+	terminal.Start(func(string) {}, func() {})
+	waitFor(t, func() bool { return terminal.ModifyOtherKeysActive() })
+	terminal.Stop()
+
+	if got := strings.Count(out.String(), "\x1b[>4;2m"); got != 1 {
+		t.Fatalf("modifyOtherKeys enable count = %d, want 1: %q", got, out.String())
+	}
+}
+
+func TestProcessTerminalConsumesAllKeyboardNegotiationResponsesLikePi(t *testing.T) {
 	out := &safeBuffer{}
 	terminal := NewProcessTerminalWithIO(strings.NewReader("\x1b[?1u\x1b[?1u"), out, 80, 24)
 
@@ -72,11 +205,8 @@ func TestProcessTerminalOnlyConsumesInitialKittyKeyboardResponseLikePi(t *testin
 		defer inputMu.Unlock()
 		input = append(input, data)
 	}, func() {})
-	waitFor(t, func() bool {
-		inputMu.Lock()
-		defer inputMu.Unlock()
-		return len(input) == 1
-	})
+	waitFor(t, func() bool { return terminal.KittyProtocolActive() })
+	time.Sleep(20 * time.Millisecond)
 	terminal.Stop()
 
 	inputMu.Lock()
@@ -85,8 +215,8 @@ func TestProcessTerminalOnlyConsumesInitialKittyKeyboardResponseLikePi(t *testin
 	if !strings.Contains(out.String(), "\x1b[<u") {
 		t.Fatalf("terminal should clean up negotiated Kitty protocol, output=%q", out.String())
 	}
-	if !equalLines(gotInput, []string{"\x1b[?1u"}) {
-		t.Fatalf("only repeated Kitty response should reach input handler, got %#v", gotInput)
+	if len(gotInput) != 0 {
+		t.Fatalf("keyboard negotiation responses should be consumed, got %#v", gotInput)
 	}
 	if count := strings.Count(out.String(), "\x1b[>7u"); count != 1 {
 		t.Fatalf("Kitty enable sequence count = %d, want 1: %q", count, out.String())
@@ -235,10 +365,10 @@ func TestProcessTerminalWriteLogPath(t *testing.T) {
 
 func TestProcessTerminalFallsBackToModifyOtherKeys(t *testing.T) {
 	out := &safeBuffer{}
-	terminal := NewProcessTerminalWithIO(strings.NewReader(""), out, 80, 24)
+	terminal := NewProcessTerminalWithIO(strings.NewReader("\x1b[?62;4;52c"), out, 80, 24)
 
 	terminal.Start(func(string) {}, func() {})
-	waitFor(t, func() bool { return strings.Contains(out.String(), "\x1b[>4;2m") })
+	waitFor(t, func() bool { return terminal.ModifyOtherKeysActive() })
 	terminal.Stop()
 
 	if output := out.String(); !strings.Contains(output, "\x1b[>4;2m") || !strings.Contains(output, "\x1b[>4;0m") {

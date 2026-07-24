@@ -276,6 +276,28 @@ func TestPiTUIIndexPublicSurfaceCompiles(t *testing.T) {
 	if r, ok := gitui.DecodePrintableKey("\x1b[65;2u"); !ok || r != 'A' {
 		t.Fatalf("decode printable = %q %v, want A true", r, ok)
 	}
+	if got := gitui.NormalizeAppleTerminalInput("\r", true, true); got != "\x1b[13;2u" {
+		t.Fatalf("Apple Terminal Shift+Enter normalization = %q", got)
+	}
+	if sequence, ok := gitui.ParseKeyboardProtocolNegotiationSequence("\x1b[?7u"); !ok || sequence.Flags != 7 {
+		t.Fatalf("keyboard negotiation parser = %#v %v", sequence, ok)
+	}
+	var _ func(gitui.ModifierKey) bool = gitui.IsNativeModifierPressed
+
+	wordOptions := gitui.WordNavigationOptions{
+		Segment: func(text string) []gitui.WordSegment {
+			return []gitui.WordSegment{{Text: text, WordLike: true}}
+		},
+	}
+	_ = gitui.FindWordBackward("hello", 5, wordOptions)
+	_ = gitui.FindWordForward("hello", 0, wordOptions)
+
+	if color, ok := gitui.ParseOSC11BackgroundColor("\x1b]11;#ffffff\x07"); !ok || color.R != 255 {
+		t.Fatalf("terminal background parser = %#v %v", color, ok)
+	}
+	if scheme, ok := gitui.ParseTerminalColorSchemeReport("\x1b[?997;1n"); !ok || scheme != gitui.TerminalColorSchemeDark {
+		t.Fatalf("terminal color scheme parser = %q %v", scheme, ok)
+	}
 
 	stdin := gitui.NewStdinBuffer(gitui.StdinBufferOptions{Timeout: time.Millisecond})
 	stdin.OnData(func(string) {})
@@ -316,6 +338,10 @@ func TestPiTUIIndexPublicSurfaceCompiles(t *testing.T) {
 	}
 	ui.AddChild(component)
 	ui.SetFocus(component)
+	var _ func(*gitui.TUI, context.Context) (gitui.RGBColor, bool, error) = (*gitui.TUI).QueryTerminalBackgroundColor
+	var _ func(*gitui.TUI, context.Context) (gitui.TerminalColorScheme, bool, error) = (*gitui.TUI).QueryTerminalColorScheme
+	removeColorListener := ui.OnTerminalColorSchemeChange(func(gitui.TerminalColorScheme) {})
+	removeColorListener()
 	removeListener := ui.AddInputListener(func(data string) gitui.InputListenerResult {
 		return gitui.InputListenerData(data)
 	})

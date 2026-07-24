@@ -329,27 +329,32 @@ func (h *overlayHandle) IsFocused() bool { return h.t.FocusedComponent() == h.en
 // TUI manages component focus, input routing, overlays, and terminal rendering.
 type TUI struct {
 	*Container
-	terminal               Terminal
-	previousLines          []string
-	previousWidth          int
-	previousHeight         int
-	previousViewportTop    int
-	cursorPosition         terminalCursorPosition
-	hardwareCursorRow      int
-	originAnchored         bool
-	focusedComponent       Component
-	listeners              []inputListenerEntry
-	nextListenerID         int
-	overlays               []*overlayEntry
-	focusCounter           int
-	stopped                bool
-	clearOnShrink          bool
-	showCursor             bool
-	fullRedraws            int
-	onDebug                func()
-	onTerminalError        func(error)
-	mu                     sync.Mutex
-	terminalErrorHandlerMu sync.RWMutex
+	terminal                                Terminal
+	previousLines                           []string
+	previousWidth                           int
+	previousHeight                          int
+	previousViewportTop                     int
+	cursorPosition                          terminalCursorPosition
+	hardwareCursorRow                       int
+	originAnchored                          bool
+	focusedComponent                        Component
+	listeners                               []inputListenerEntry
+	nextListenerID                          int
+	overlays                                []*overlayEntry
+	focusCounter                            int
+	stopped                                 bool
+	clearOnShrink                           bool
+	showCursor                              bool
+	fullRedraws                             int
+	onDebug                                 func()
+	onTerminalError                         func(error)
+	pendingTerminalBackgroundReplies        int
+	pendingTerminalBackgroundQueries        []*pendingTerminalBackgroundQuery
+	terminalColorSchemeListeners            []terminalColorSchemeListenerEntry
+	nextTerminalColorSchemeListenerID       int
+	terminalColorSchemeNotificationsEnabled bool
+	mu                                      sync.Mutex
+	terminalErrorHandlerMu                  sync.RWMutex
 }
 
 type TUIStartOptions struct {
@@ -528,6 +533,7 @@ func (t *TUI) Start() {
 func (t *TUI) StartWithOptions(options TUIStartOptions) {
 	t.mu.Lock()
 	t.stopped = false
+	colorNotificationsEnabled := t.terminalColorSchemeNotificationsEnabled
 	t.mu.Unlock()
 	var resizeRenderEnabled atomic.Bool
 	resizeRenderEnabled.Store(options.InitialRender)
@@ -538,6 +544,9 @@ func (t *TUI) StartWithOptions(options TUIStartOptions) {
 	})
 	resizeRenderEnabled.Store(true)
 	t.reportTerminalError(t.terminal.HideCursor())
+	if colorNotificationsEnabled {
+		t.reportTerminalError(t.terminal.Write(terminalColorNotificationsOn))
+	}
 	t.queryCellSize()
 	if options.InitialRender {
 		t.RequestRender(false)
@@ -559,7 +568,11 @@ func (t *TUI) Stop() {
 	t.stopped = true
 	lines := len(t.previousLines)
 	hardwareCursorRow := t.hardwareCursorRow
+	colorNotificationsEnabled := t.terminalColorSchemeNotificationsEnabled
 	t.mu.Unlock()
+	if colorNotificationsEnabled {
+		t.reportTerminalError(t.terminal.Write(terminalColorNotificationsOff))
+	}
 	if lines > 0 {
 		t.reportTerminalError(t.terminal.MoveBy(lines - hardwareCursorRow))
 		t.reportTerminalError(t.terminal.Write("\r\n"))
@@ -575,7 +588,11 @@ func (t *TUI) StopWithoutRender() {
 		return
 	}
 	t.stopped = true
+	colorNotificationsEnabled := t.terminalColorSchemeNotificationsEnabled
 	t.mu.Unlock()
+	if colorNotificationsEnabled {
+		t.reportTerminalError(t.terminal.Write(terminalColorNotificationsOff))
+	}
 	t.terminal.Stop()
 }
 
@@ -618,6 +635,12 @@ func (t *TUI) removeInputListenerByIDLocked(id int) {
 }
 
 func (t *TUI) HandleInput(data string) {
+	if t.consumeOSC11BackgroundResponse(data) {
+		return
+	}
+	if t.consumeTerminalColorSchemeReport(data) {
+		return
+	}
 	t.mu.Lock()
 	listeners := make([]InputListener, 0, len(t.listeners))
 	for _, listener := range t.listeners {

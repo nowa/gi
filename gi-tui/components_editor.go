@@ -1030,26 +1030,7 @@ func (e *Editor) wordBackwardDeleteRange() (int, int) {
 	if runes[end-1] == '\n' {
 		return end - 1, end
 	}
-	start := end
-	for start > 0 && isHorizontalWhitespace(runes[start-1]) {
-		start--
-	}
-	if start > 0 && isEditorPunctuationRune(runes[start-1]) {
-		for start > 0 && runes[start-1] != '\n' && isEditorPunctuationRune(runes[start-1]) {
-			if markerStart, _ := e.markerSpanBeforePosition(start); markerStart >= 0 {
-				return markerStart, end
-			}
-			start--
-		}
-	} else {
-		for start > 0 && runes[start-1] != '\n' && !isHorizontalWhitespace(runes[start-1]) && !isEditorPunctuationRune(runes[start-1]) {
-			if markerStart, _ := e.markerSpanBeforePosition(start); markerStart >= 0 {
-				return markerStart, end
-			}
-			start--
-		}
-	}
-	return start, end
+	return e.wordBackward(), end
 }
 
 func (e *Editor) wordForwardDeleteRange() (int, int) {
@@ -1674,25 +1655,18 @@ func (e *Editor) wordBackward() int {
 	}
 	runes := []rune(e.text)
 	pos := min(e.cursor, len(runes))
-	for pos > 0 && unicode.IsSpace(runes[pos-1]) {
-		pos--
+	lineStart := pos
+	for lineStart > 0 && runes[lineStart-1] != '\n' {
+		lineStart--
 	}
-	if pos > 0 && isEditorPunctuationRune(runes[pos-1]) {
-		for pos > 0 && isEditorPunctuationRune(runes[pos-1]) {
-			if markerStart, _ := e.markerSpanBeforePosition(pos); markerStart >= 0 {
-				return markerStart
-			}
-			pos--
+	if pos == lineStart {
+		if pos > 0 {
+			return pos - 1
 		}
-	} else {
-		for pos > 0 && !unicode.IsSpace(runes[pos-1]) && !isEditorPunctuationRune(runes[pos-1]) {
-			if markerStart, _ := e.markerSpanBeforePosition(pos); markerStart >= 0 {
-				return markerStart
-			}
-			pos--
-		}
+		return 0
 	}
-	return pos
+	line := string(runes[lineStart:pos])
+	return lineStart + FindWordBackward(line, len([]rune(line)), e.wordNavigationOptions())
 }
 
 func (e *Editor) wordForward() int {
@@ -1701,30 +1675,60 @@ func (e *Editor) wordForward() int {
 	}
 	runes := []rune(e.text)
 	pos := min(e.cursor, len(runes))
-	for pos < len(runes) && unicode.IsSpace(runes[pos]) {
-		pos++
+	lineStart := pos
+	for lineStart > 0 && runes[lineStart-1] != '\n' {
+		lineStart--
 	}
-	if _, end := e.markerSpanAtPosition(pos); end >= 0 {
-		return end
+	lineEnd := pos
+	for lineEnd < len(runes) && runes[lineEnd] != '\n' {
+		lineEnd++
 	}
-	if pos < len(runes) && isEditorPunctuationRune(runes[pos]) {
-		for pos < len(runes) && isEditorPunctuationRune(runes[pos]) {
-			if start, end := e.markerSpanAtPosition(pos); start >= 0 {
-				pos = end
-				continue
-			}
-			pos++
+	if pos == lineEnd {
+		if lineEnd < len(runes) {
+			return lineEnd + 1
 		}
-	} else {
-		for pos < len(runes) && !unicode.IsSpace(runes[pos]) && !isEditorPunctuationRune(runes[pos]) {
-			if start, end := e.markerSpanAtPosition(pos); start >= 0 {
-				pos = end
-				continue
-			}
-			pos++
-		}
+		return lineEnd
 	}
-	return pos
+	line := string(runes[lineStart:lineEnd])
+	return lineStart + FindWordForward(line, pos-lineStart, e.wordNavigationOptions())
+}
+
+func (e *Editor) wordNavigationOptions() WordNavigationOptions {
+	return WordNavigationOptions{
+		Segment:         e.wordSegments,
+		IsAtomicSegment: isPasteMarkerSegment,
+	}
+}
+
+func (e *Editor) wordSegments(text string) []WordSegment {
+	if len(e.pastes) == 0 || !strings.Contains(text, "[paste #") {
+		return defaultWordSegments(text)
+	}
+	matches := pasteMarkerPattern.FindAllStringSubmatchIndex(text, -1)
+	segments := make([]WordSegment, 0, len(matches)*2+1)
+	cursor := 0
+	for _, match := range matches {
+		if len(match) < 4 {
+			continue
+		}
+		id, err := strconv.Atoi(text[match[2]:match[3]])
+		if err != nil {
+			continue
+		}
+		if _, ok := e.pastes[id]; !ok {
+			continue
+		}
+		segments = append(segments, defaultWordSegments(text[cursor:match[0]])...)
+		segments = append(segments, WordSegment{Text: text[match[0]:match[1]], WordLike: true})
+		cursor = match[1]
+	}
+	segments = append(segments, defaultWordSegments(text[cursor:])...)
+	return segments
+}
+
+func isPasteMarkerSegment(segment string) bool {
+	match := pasteMarkerPattern.FindStringIndex(segment)
+	return match != nil && match[0] == 0 && match[1] == len(segment)
 }
 
 func (e *Editor) markerSpanBeforeCursor() (int, int) {
