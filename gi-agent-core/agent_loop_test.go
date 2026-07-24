@@ -3,6 +3,7 @@ package giagentcore
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -155,6 +156,57 @@ func TestAgentLoopHandlesToolCallsAndResults(t *testing.T) {
 	}
 	if !contains(eventTypes(events), "tool_execution_start") || !contains(eventTypes(events), "tool_execution_end") {
 		t.Fatalf("events = %#v, want tool execution lifecycle", eventTypes(events))
+	}
+}
+
+func TestAgentLoopDoesNotExecuteToolCallsFromLengthTruncatedMessage(t *testing.T) {
+	executions := 0
+	tool := AgentTool{
+		Name:        "write",
+		Description: "write a file",
+		Parameters:  llm.Object(map[string]llm.Schema{"content": llm.String()}, "content"),
+		Execute: func(context.Context, string, map[string]any, AgentToolUpdateCallback) (AgentToolResult, error) {
+			executions++
+			return AgentToolResult{Content: []llm.ContentPart{llm.Text("written")}}, nil
+		},
+	}
+	truncated := testAssistantMessage([]llm.ContentPart{
+		llm.ToolCall("call-1", "write", map[string]any{"content": "possibly incomplete"}),
+	}, llm.StopReasonLength)
+	final := testAssistantMessage([]llm.ContentPart{llm.Text("retry complete")}, llm.StopReasonStop)
+	events, messages := collectAgentStream(t, AgentLoop(
+		[]llm.Message{llm.UserMessageText("write it")},
+		AgentContext{Tools: []AgentTool{tool}},
+		AgentLoopConfig{Model: testModel(), ConvertToLLM: identityConverter},
+		context.Background(),
+		sequenceStream(truncated, final),
+	))
+
+	if executions != 0 {
+		t.Fatalf("truncated tool executed %d time(s)", executions)
+	}
+	var result *llm.Message
+	for index := range messages {
+		if messages[index].Role == llm.RoleToolResult {
+			result = &messages[index]
+			break
+		}
+	}
+	if result == nil || !result.IsError || !strings.Contains(result.Content[0].Text, "arguments may be truncated") {
+		t.Fatalf("tool result = %#v", result)
+	}
+	var lifecycle []string
+	for _, event := range events {
+		if event.ToolCallID == "call-1" || event.Message.ToolCallID == "call-1" {
+			lifecycle = append(lifecycle, event.Type)
+		}
+	}
+	wantLifecycle := []string{"tool_execution_start", "tool_execution_end", "message_start", "message_end"}
+	if !reflect.DeepEqual(lifecycle, wantLifecycle) {
+		t.Fatalf("tool lifecycle = %#v, want %#v", lifecycle, wantLifecycle)
+	}
+	if got := messages[len(messages)-1].Content[0].Text; got != "retry complete" {
+		t.Fatalf("final message = %q", got)
 	}
 }
 

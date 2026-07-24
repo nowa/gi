@@ -2,6 +2,7 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"sync"
@@ -34,6 +35,33 @@ func TestAgentHarnessConstructsAndExposesQueueModes(t *testing.T) {
 	harness.SetFollowUpMode(core.QueueOneAtTime)
 	if harness.GetSteeringMode() != core.QueueOneAtTime || harness.GetFollowUpMode() != core.QueueOneAtTime {
 		t.Fatalf("updated queue modes = %s / %s", harness.GetSteeringMode(), harness.GetFollowUpMode())
+	}
+}
+
+func TestAgentHarnessRejectsDuplicateActiveToolNames(t *testing.T) {
+	harness := MustNewAgentHarness(AgentHarnessOptions{
+		Session: NewSession(MustInMemorySessionStorage()),
+		Model:   llm.Model{ID: "model-1", API: "api", Provider: "provider"},
+		Tools:   []core.AgentTool{calculateTool(), timeTool()},
+	})
+
+	err := harness.SetActiveTools([]string{"calculate", "time", "calculate", "time", "calculate"})
+	if err == nil {
+		t.Fatal("SetActiveTools() error = nil")
+	}
+	var harnessErr *AgentHarnessError
+	if !errors.As(err, &harnessErr) || harnessErr.Code != "invalid_argument" {
+		t.Fatalf("SetActiveTools() error = %#v", err)
+	}
+	if got, want := err.Error(), "duplicate active tool name(s): calculate, time"; got != want {
+		t.Fatalf("SetActiveTools() error = %q, want %q", got, want)
+	}
+
+	harness.mu.Lock()
+	activeToolNames := append([]string{}, harness.activeToolNames...)
+	harness.mu.Unlock()
+	if want := []string{"calculate", "time"}; !reflect.DeepEqual(activeToolNames, want) {
+		t.Fatalf("active tools changed after failed validation: got %#v, want %#v", activeToolNames, want)
 	}
 }
 

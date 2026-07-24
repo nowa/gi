@@ -1644,6 +1644,13 @@ func agentEventToHarnessEvent(event core.AgentEvent) AgentHarnessEvent {
 }
 
 func validateToolNames(names []string, tools map[string]AgentHarnessTool) error {
+	if duplicates := findDuplicateNames(names); len(duplicates) > 0 {
+		return newAgentHarnessError(
+			"invalid_argument",
+			"duplicate active tool name(s): %s",
+			strings.Join(duplicates, ", "),
+		)
+	}
 	var missing []string
 	for _, name := range names {
 		if _, ok := tools[name]; !ok {
@@ -1651,9 +1658,26 @@ func validateToolNames(names []string, tools map[string]AgentHarnessTool) error 
 		}
 	}
 	if len(missing) > 0 {
-		return newAgentHarnessError("invalid_argument", "unknown tool(s): %v", missing)
+		return newAgentHarnessError("invalid_argument", "unknown tool(s): %s", strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+func findDuplicateNames(names []string) []string {
+	seen := make(map[string]struct{}, len(names))
+	duplicateSet := make(map[string]struct{})
+	duplicates := make([]string, 0)
+	for _, name := range names {
+		if _, exists := seen[name]; exists {
+			if _, alreadyReported := duplicateSet[name]; !alreadyReported {
+				duplicateSet[name] = struct{}{}
+				duplicates = append(duplicates, name)
+			}
+			continue
+		}
+		seen[name] = struct{}{}
+	}
+	return duplicates
 }
 
 func cloneHarnessStreamOptions(options AgentHarnessStreamOptions) AgentHarnessStreamOptions {

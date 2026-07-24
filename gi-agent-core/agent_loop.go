@@ -149,7 +149,12 @@ func runLoop(ctx context.Context, initialContext AgentContext, newMessages *[]ll
 			toolResults := []llm.Message{}
 			hasMoreToolCalls = false
 			if len(toolCalls) > 0 {
-				batch, err := executeToolCalls(ctx, currentContext, message, toolCalls, config, emit)
+				var batch executedToolCallBatch
+				if message.StopReason == llm.StopReasonLength {
+					batch, err = failToolCallsFromTruncatedMessage(toolCalls, emit)
+				} else {
+					batch, err = executeToolCalls(ctx, currentContext, message, toolCalls, config, emit)
+				}
 				if err != nil {
 					return err
 				}
@@ -350,6 +355,37 @@ func toolCallsFromMessage(message llm.Message) []AgentToolCall {
 type executedToolCallBatch struct {
 	messages  []llm.Message
 	terminate bool
+}
+
+func failToolCallsFromTruncatedMessage(toolCalls []AgentToolCall, emit AgentEventSink) (executedToolCallBatch, error) {
+	messages := make([]llm.Message, 0, len(toolCalls))
+	for _, toolCall := range toolCalls {
+		if err := emit(AgentEvent{
+			Type:       "tool_execution_start",
+			ToolCallID: toolCall.ID,
+			ToolName:   toolCall.Name,
+			Args:       toolCall.Arguments,
+		}); err != nil {
+			return executedToolCallBatch{}, err
+		}
+		finalized := finalizedToolCall{
+			toolCall: toolCall,
+			result: createErrorToolResult(fmt.Sprintf(
+				"Tool call %q was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.",
+				toolCall.Name,
+			)),
+			isError: true,
+		}
+		if err := emitToolExecutionEnd(finalized, emit); err != nil {
+			return executedToolCallBatch{}, err
+		}
+		message := createToolResultMessage(finalized)
+		if err := emitToolResultMessage(message, emit); err != nil {
+			return executedToolCallBatch{}, err
+		}
+		messages = append(messages, message)
+	}
+	return executedToolCallBatch{messages: messages}, nil
 }
 
 func executeToolCalls(ctx context.Context, agentContext AgentContext, assistantMessage llm.Message, toolCalls []AgentToolCall, config AgentLoopConfig, emit AgentEventSink) (executedToolCallBatch, error) {
