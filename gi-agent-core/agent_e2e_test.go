@@ -244,7 +244,7 @@ func newFauxAgent(model llm.Model, tools []AgentTool) *Agent {
 		Model:         model,
 		ThinkingLevel: "off",
 		Tools:         tools,
-	}))
+	}), WithStreamFn(llm.StreamSimple))
 }
 
 func calculateTestTool() AgentTool {

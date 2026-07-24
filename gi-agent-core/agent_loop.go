@@ -260,7 +260,10 @@ func streamAssistantResponse(ctx context.Context, agentContext *AgentContext, co
 
 	streamFunction := streamFn
 	if streamFunction == nil {
-		streamFunction = llm.StreamSimple
+		streamFunction, err = GetDefaultStreamFn()
+		if err != nil {
+			return llm.Message{}, err
+		}
 	}
 	stream, err := streamFunction(config.Model, llmContext, config.SimpleStreamOptions)
 	if err != nil {
