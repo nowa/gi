@@ -96,6 +96,14 @@ func TestEstimateTextAndImageContentUsesUTF16AndFixedImageCost(t *testing.T) {
 	if got := EstimateTextTokens("🙂🙂"); got != 1 {
 		t.Fatalf("emoji estimate = %d, want 1", got)
 	}
+	content := []ContentPart{
+		Text("🙂"),
+		Image("data", "image/png"),
+		Thinking("ignored"),
+	}
+	if got := EstimateTextAndImageContentChars(content); got != 4802 {
+		t.Fatalf("content characters = %d, want 4802", got)
+	}
 	if got := EstimateTextAndImageContentTokens([]ContentPart{Image("data", "image/png")}); got != 1200 {
 		t.Fatalf("image estimate = %d, want 1200", got)
 	}

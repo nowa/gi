@@ -209,16 +209,43 @@ func GetLastAssistantUsage(entries []Entry) *llm.Usage {
 	return nil
 }
 
+func isCutPointMessage(message llm.Message) bool {
+	switch message.Role {
+	case llm.RoleUser, llm.RoleAssistant, "bashExecution", "custom", "branchSummary", "compactionSummary":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTurnStartMessage(message llm.Message) bool {
+	switch message.Role {
+	case llm.RoleUser, "bashExecution", "custom", "branchSummary", "compactionSummary":
+		return true
+	default:
+		return false
+	}
+}
+
+func compactionContextMessages(entries []Entry, index int) []llm.Message {
+	if index < 0 || index >= len(entries) || entries[index].Type == "compaction" {
+		return nil
+	}
+	return SessionEntryToContextMessages(entries[index], index, entries)
+}
+
+func isTurnStartEntry(entries []Entry, index int) bool {
+	for _, message := range compactionContextMessages(entries, index) {
+		if isTurnStartMessage(message) {
+			return true
+		}
+	}
+	return false
+}
+
 func FindTurnStartIndex(entries []Entry, index, minIndex int) int {
 	for i := index; i >= minIndex; i-- {
-		entry := entries[i]
-		if entry.Type == "branch_summary" || entry.Type == "custom_message" {
-			return i
-		}
-		if entry.Type != "message" {
-			continue
-		}
-		if entry.Message.Role == llm.RoleUser || entry.Message.Role == "bashExecution" {
+		if isTurnStartEntry(entries, i) {
 			return i
 		}
 	}
@@ -236,10 +263,14 @@ func FindCutPoint(entries []Entry, start, end, keepRecentTokens int) CutPoint {
 	accumulatedTokens := 0
 	cutIndex := cutPoints[0]
 	for i := end - 1; i >= start; i-- {
-		if entries[i].Type != "message" {
+		messageTokens := 0
+		for _, message := range compactionContextMessages(entries, i) {
+			messageTokens += EstimateTokens(message)
+		}
+		if messageTokens == 0 {
 			continue
 		}
-		accumulatedTokens += EstimateTokens(entries[i].Message)
+		accumulatedTokens += messageTokens
 		if accumulatedTokens >= keepRecentTokens {
 			for _, candidate := range cutPoints {
 				if candidate >= i {
@@ -252,18 +283,17 @@ func FindCutPoint(entries []Entry, start, end, keepRecentTokens int) CutPoint {
 	}
 	for cutIndex > start {
 		previous := entries[cutIndex-1]
-		if previous.Type == "compaction" || previous.Type == "message" {
+		if previous.Type == "compaction" || len(compactionContextMessages(entries, cutIndex-1)) > 0 {
 			break
 		}
 		cutIndex--
 	}
-	cutEntry := entries[cutIndex]
-	isUserMessage := cutEntry.Type == "message" && cutEntry.Message.Role == llm.RoleUser
+	startsTurn := isTurnStartEntry(entries, cutIndex)
 	turnStart := -1
-	if !isUserMessage {
+	if !startsTurn {
 		turnStart = FindTurnStartIndex(entries, cutIndex, start)
 	}
-	return CutPoint{FirstKeptEntryIndex: cutIndex, TurnStartIndex: turnStart, IsSplitTurn: !isUserMessage && turnStart != -1}
+	return CutPoint{FirstKeptEntryIndex: cutIndex, TurnStartIndex: turnStart, IsSplitTurn: !startsTurn && turnStart != -1}
 }
 
 func PrepareCompaction(pathEntries []Entry, settings CompactionSettings) (*CompactionPreparation, error) {
@@ -677,15 +707,11 @@ func cloneUsage(usage llm.Usage) *llm.Usage {
 func findValidCutPoints(entries []Entry, start, end int) []int {
 	var cutPoints []int
 	for i := start; i < end; i++ {
-		entry := entries[i]
-		if entry.Type == "message" {
-			switch entry.Message.Role {
-			case "bashExecution", "custom", "branchSummary", "compactionSummary", llm.RoleUser, llm.RoleAssistant:
+		for _, message := range compactionContextMessages(entries, i) {
+			if isCutPointMessage(message) {
 				cutPoints = append(cutPoints, i)
+				break
 			}
-		}
-		if entry.Type == "branch_summary" || entry.Type == "custom_message" {
-			cutPoints = append(cutPoints, i)
 		}
 	}
 	return cutPoints
@@ -693,11 +719,8 @@ func findValidCutPoints(entries []Entry, start, end int) []int {
 
 func entriesToMessages(entries []Entry) []llm.Message {
 	var messages []llm.Message
-	for _, entry := range entries {
-		message := entryMessage(entry)
-		if message.Role != "unknown" {
-			messages = append(messages, message)
-		}
+	for index := range entries {
+		messages = append(messages, compactionContextMessages(entries, index)...)
 	}
 	return messages
 }

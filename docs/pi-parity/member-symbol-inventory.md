@@ -303,10 +303,6 @@ No missing files or symbols.
 | `config.ts::normalizeSelfUpdatePackageTarget` |
 | `config.ts::getPathComparisonCandidates` |
 | `config.ts::getEntrypointPackageDir` |
-| `core/compaction/compaction.ts::estimateTextAndImageContentChars` |
-| `core/compaction/compaction.ts::isCutPointMessage` |
-| `core/compaction/compaction.ts::isTurnStartMessage` |
-| `core/compaction/compaction.ts::isTurnStartEntry` |
 | `core/extensions/loader.ts::clearExtensionCache` |
 | `core/extensions/loader.ts::useExtensionCacheCwd` |
 | `core/extensions/loader.ts::isCurrentCacheToken` |
@@ -544,7 +540,7 @@ No missing files or symbols.
 | `core/bash-executor.ts` | `executeBashWithOperations` |  |
 | `core/cache-stats.ts` | `detectMiss`<br>`asPreviousRequest`<br>`scan`<br>`computeCacheWaste`<br>`collectCacheMisses`<br>`detectCacheMiss` |  |
 | `core/compaction/branch-summarization.ts` | `collectEntriesForBranchSummary`<br>`getMessageFromEntry`<br>`prepareBranchEntries`<br>`generateBranchSummary` |  |
-| `core/compaction/compaction.ts` | `extractFileOperations`<br>`getMessageFromEntryForCompaction`<br>`combineUsage`<br>`calculateContextTokens`<br>`getAssistantUsage`<br>`getLastAssistantUsage`<br>`getLastAssistantUsageInfo`<br>`estimateContextTokens`<br>`shouldCompact`<br>`estimateTextAndImageContentChars`<br>`estimateTokens`<br>`isCutPointMessage`<br>`isTurnStartMessage`<br>`isTurnStartEntry`<br>`findValidCutPoints`<br>`findTurnStartIndex`<br>`findCutPoint`<br>`createSummarizationOptions`<br>`completeSummarization`<br>`generateSummary`<br>`generateSummaryWithUsage`<br>`prepareCompaction`<br>`compact`<br>`generateTurnPrefixSummary` | `estimateTextAndImageContentChars`<br>`isCutPointMessage`<br>`isTurnStartMessage`<br>`isTurnStartEntry` |
+| `core/compaction/compaction.ts` | `extractFileOperations`<br>`getMessageFromEntryForCompaction`<br>`combineUsage`<br>`calculateContextTokens`<br>`getAssistantUsage`<br>`getLastAssistantUsage`<br>`getLastAssistantUsageInfo`<br>`estimateContextTokens`<br>`shouldCompact`<br>`estimateTextAndImageContentChars`<br>`estimateTokens`<br>`isCutPointMessage`<br>`isTurnStartMessage`<br>`isTurnStartEntry`<br>`findValidCutPoints`<br>`findTurnStartIndex`<br>`findCutPoint`<br>`createSummarizationOptions`<br>`completeSummarization`<br>`generateSummary`<br>`generateSummaryWithUsage`<br>`prepareCompaction`<br>`compact`<br>`generateTurnPrefixSummary` |  |
 | `core/compaction/index.ts` | _none_ |  |
 | `core/compaction/utils.ts` | `createFileOps`<br>`extractFileOpsFromMessage`<br>`computeFileLists`<br>`formatFileOperations`<br>`truncateForSummary`<br>`serializeConversation` |  |
 | `core/defaults.ts` | _none_ |  |

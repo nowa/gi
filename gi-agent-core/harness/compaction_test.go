@@ -79,6 +79,59 @@ func TestEstimateTokensUsesPiContentHeuristic(t *testing.T) {
 	}
 }
 
+func TestCompactionMessageClassification(t *testing.T) {
+	tests := []struct {
+		role      string
+		cutPoint  bool
+		turnStart bool
+	}{
+		{role: llm.RoleUser, cutPoint: true, turnStart: true},
+		{role: llm.RoleAssistant, cutPoint: true},
+		{role: "bashExecution", cutPoint: true, turnStart: true},
+		{role: "custom", cutPoint: true, turnStart: true},
+		{role: "branchSummary", cutPoint: true, turnStart: true},
+		{role: "compactionSummary", cutPoint: true, turnStart: true},
+		{role: llm.RoleToolResult},
+		{role: "unknown"},
+	}
+	for _, test := range tests {
+		t.Run(test.role, func(t *testing.T) {
+			message := llm.Message{Role: test.role}
+			if got := isCutPointMessage(message); got != test.cutPoint {
+				t.Fatalf("isCutPointMessage() = %t, want %t", got, test.cutPoint)
+			}
+			if got := isTurnStartMessage(message); got != test.turnStart {
+				t.Fatalf("isTurnStartMessage() = %t, want %t", got, test.turnStart)
+			}
+		})
+	}
+}
+
+func TestCompactionTurnStartEntryUsesContextProjection(t *testing.T) {
+	entries := []Entry{
+		messageEntry("user", nil, llm.UserMessageText("user")),
+		messageEntry("assistant", stringPtr("user"), harnessAssistantMessage("assistant")),
+		messageEntry("tool", stringPtr("assistant"), llm.Message{Role: llm.RoleToolResult}),
+		messageEntry("bash", stringPtr("tool"), llm.Message{Role: "bashExecution"}),
+		messageEntry("custom-role", stringPtr("bash"), llm.Message{Role: "custom"}),
+		messageEntry("branch-role", stringPtr("custom-role"), llm.Message{Role: "branchSummary"}),
+		messageEntry("compaction-role", stringPtr("branch-role"), llm.Message{Role: "compactionSummary"}),
+		{Type: "branch_summary", ID: "branch", Summary: "summary"},
+		{Type: "branch_summary", ID: "empty-branch"},
+		{Type: "custom_message", ID: "custom", Content: "content"},
+		compactionEntry("compaction", stringPtr("custom"), "summary", "user"),
+	}
+	want := []bool{true, false, false, true, true, true, true, true, false, true, false}
+	for index := range entries {
+		if got := isTurnStartEntry(entries, index); got != want[index] {
+			t.Fatalf("isTurnStartEntry(%d) = %t, want %t", index, got, want[index])
+		}
+	}
+	if messages := compactionContextMessages(entries, len(entries)-1); messages != nil {
+		t.Fatalf("compaction context messages = %#v, want nil", messages)
+	}
+}
+
 func TestFindCutPointAndTurnStartEdgeCases(t *testing.T) {
 	thinking := Entry{Type: "thinking_level_change", ID: "thinking", ThinkingLevel: "high"}
 	modelChange := Entry{Type: "model_change", ID: "model", ParentID: stringPtr("thinking"), Provider: "openai", ModelID: "gpt-4"}
@@ -107,6 +160,25 @@ func TestFindCutPointAndTurnStartEdgeCases(t *testing.T) {
 	assistant := messageEntry("assistant", stringPtr("compact"), harnessAssistantMessage("assistant"))
 	if cut := FindCutPoint([]Entry{user, compaction, assistant}, 0, 3, 1); cut.FirstKeptEntryIndex != 2 {
 		t.Fatalf("cut after compaction = %#v", cut)
+	}
+
+	largeBranchSummary := Entry{
+		Type:    "branch_summary",
+		ID:      "large-branch",
+		Summary: strings.Repeat("x", 400),
+	}
+	cut := FindCutPoint(
+		[]Entry{
+			messageEntry("small-user", nil, llm.UserMessageText("u")),
+			largeBranchSummary,
+			messageEntry("small-assistant", stringPtr("large-branch"), harnessAssistantMessage("a")),
+		},
+		0,
+		3,
+		50,
+	)
+	if cut.FirstKeptEntryIndex != 1 || cut.TurnStartIndex != -1 || cut.IsSplitTurn {
+		t.Fatalf("branch-summary cut = %#v", cut)
 	}
 }
 

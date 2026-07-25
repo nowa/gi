@@ -34,9 +34,9 @@ func EstimateTextTokens(text string) int {
 	return divideCharactersIntoTokens(utf16CodeUnits(text))
 }
 
-// EstimateTextAndImageContentTokens estimates text blocks and assigns the same
-// fixed 1,200-token budget Pi uses for each image.
-func EstimateTextAndImageContentTokens(content []ContentPart) int {
+// EstimateTextAndImageContentChars estimates the UTF-16 content size and
+// assigns the same fixed 4,800-character budget Pi uses for each image.
+func EstimateTextAndImageContentChars(content []ContentPart) int {
 	characters := 0
 	for _, part := range content {
 		switch part.Type {
@@ -46,7 +46,13 @@ func EstimateTextAndImageContentTokens(content []ContentPart) int {
 			characters += estimatedImageCharacters
 		}
 	}
-	return divideCharactersIntoTokens(characters)
+	return characters
+}
+
+// EstimateTextAndImageContentTokens estimates text blocks and assigns the same
+// fixed 1,200-token budget Pi uses for each image.
+func EstimateTextAndImageContentTokens(content []ContentPart) int {
+	return divideCharactersIntoTokens(EstimateTextAndImageContentChars(content))
 }
 
 // EstimateMessageTokens estimates one canonical LLM message. Unknown roles are
