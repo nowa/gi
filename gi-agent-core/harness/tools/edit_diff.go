@@ -32,6 +32,17 @@ type editOccurrence struct {
 	end   int
 }
 
+type lineSpan struct {
+	start int
+	end   int
+}
+
+type replacementLineGroup struct {
+	startLine    int
+	endLine      int
+	replacements []editRange
+}
+
 func DetectLineEnding(content string) string {
 	crlfIndex := strings.Index(content, "\r\n")
 	lfIndex := strings.Index(content, "\n")
@@ -70,6 +81,143 @@ func NormalizeForFuzzyMatch(content string) string {
 	return normalized
 }
 
+func splitLinesWithEndings(content string) []string {
+	if content == "" {
+		return nil
+	}
+	lines := make([]string, 0, strings.Count(content, "\n")+1)
+	for len(content) > 0 {
+		if newline := strings.IndexByte(content, '\n'); newline >= 0 {
+			lines = append(lines, content[:newline+1])
+			content = content[newline+1:]
+			continue
+		}
+		lines = append(lines, content)
+		break
+	}
+	return lines
+}
+
+func getLineSpans(content string) []lineSpan {
+	lines := splitLinesWithEndings(content)
+	spans := make([]lineSpan, 0, len(lines))
+	offset := 0
+	for _, line := range lines {
+		span := lineSpan{start: offset, end: offset + len(line)}
+		spans = append(spans, span)
+		offset = span.end
+	}
+	return spans
+}
+
+func getReplacementLineRange(lines []lineSpan, replacement editRange) (int, int, error) {
+	replacementStart := replacement.start
+	replacementEnd := replacement.end
+	startLine := -1
+	for index, line := range lines {
+		if replacementStart >= line.start && replacementStart < line.end {
+			startLine = index
+			break
+		}
+	}
+	if startLine < 0 {
+		return 0, 0, fmt.Errorf("replacement range is outside the base content")
+	}
+	endLine := startLine
+	for endLine < len(lines) && lines[endLine].end < replacementEnd {
+		endLine++
+	}
+	if endLine >= len(lines) {
+		return 0, 0, fmt.Errorf("replacement range is outside the base content")
+	}
+	return startLine, endLine + 1, nil
+}
+
+func applyReplacements(content string, replacements []editRange, offset int) (string, error) {
+	sorted := append([]editRange(nil), replacements...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].start < sorted[j].start
+	})
+	result := content
+	for index := len(sorted) - 1; index >= 0; index-- {
+		replacement := sorted[index]
+		start := replacement.start - offset
+		end := replacement.end - offset
+		if start < 0 || end < start || end > len(result) {
+			return "", fmt.Errorf("replacement range is outside the base content")
+		}
+		result = result[:start] + replacement.replacement + result[end:]
+	}
+	return result, nil
+}
+
+func groupReplacementsByLine(baseContent string, replacements []editRange) ([]replacementLineGroup, error) {
+	baseLines := getLineSpans(baseContent)
+	sorted := append([]editRange(nil), replacements...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].start < sorted[j].start
+	})
+	groups := make([]replacementLineGroup, 0, len(sorted))
+	for _, replacement := range sorted {
+		startLine, endLine, err := getReplacementLineRange(baseLines, replacement)
+		if err != nil {
+			return nil, err
+		}
+		if len(groups) > 0 && startLine < groups[len(groups)-1].endLine {
+			current := &groups[len(groups)-1]
+			current.endLine = max(current.endLine, endLine)
+			current.replacements = append(current.replacements, replacement)
+			continue
+		}
+		groups = append(groups, replacementLineGroup{
+			startLine:    startLine,
+			endLine:      endLine,
+			replacements: []editRange{replacement},
+		})
+	}
+	return groups, nil
+}
+
+func preservingReplacementRanges(originalContent, baseContent string, replacements []editRange) ([]editRange, error) {
+	originalLines := getLineSpans(originalContent)
+	baseLines := getLineSpans(baseContent)
+	if len(originalLines) != len(baseLines) {
+		return nil, fmt.Errorf("cannot preserve unchanged lines because the base content has a different line count")
+	}
+	groups, err := groupReplacementsByLine(baseContent, replacements)
+	if err != nil {
+		return nil, err
+	}
+	ranges := make([]editRange, 0, len(groups))
+	for _, group := range groups {
+		groupStartOffset := baseLines[group.startLine].start
+		groupEndOffset := baseLines[group.endLine-1].end
+		rewritten, err := applyReplacements(
+			baseContent[groupStartOffset:groupEndOffset],
+			group.replacements,
+			groupStartOffset,
+		)
+		if err != nil {
+			return nil, err
+		}
+		ranges = append(ranges, editRange{
+			start:       originalLines[group.startLine].start,
+			end:         originalLines[group.endLine-1].end,
+			index:       group.replacements[0].index,
+			replacement: rewritten,
+		})
+	}
+	return ranges, nil
+}
+
+func applyReplacementsPreservingUnchangedLines(originalContent, baseContent string, replacements []editRange) (string, error) {
+	ranges, err := preservingReplacementRanges(originalContent, baseContent, replacements)
+	if err != nil {
+		return "", err
+	}
+	return applyReplacements(originalContent, ranges, 0)
+}
+
 // ApplyEditsToNormalizedContent matches every edit against the same original
 // LF-normalized content and applies non-overlapping replacements atomically.
 func ApplyEditsToNormalizedContent(content string, edits []Edit, path string) (AppliedEditsResult, error) {
@@ -84,10 +232,23 @@ func ApplyEditsToNormalizedContent(content string, edits []Edit, path string) (A
 		}
 	}
 
+	usedFuzzyMatch := false
+	for _, edit := range normalizedEdits {
+		if len(findExactOccurrences(content, edit.OldText)) == 0 &&
+			len(findFuzzyOccurrences(content, edit.OldText)) > 0 {
+			usedFuzzyMatch = true
+			break
+		}
+	}
+	replacementBaseContent := content
+	if usedFuzzyMatch {
+		replacementBaseContent = NormalizeForFuzzyMatch(content)
+	}
+
 	ranges := make([]editRange, 0, len(normalizedEdits))
 	for index, edit := range normalizedEdits {
-		exactOccurrences := findExactOccurrences(content, edit.OldText)
-		fuzzyOccurrences := findFuzzyOccurrences(content, edit.OldText)
+		exactOccurrences := findExactOccurrences(replacementBaseContent, edit.OldText)
+		fuzzyOccurrences := findFuzzyOccurrences(replacementBaseContent, edit.OldText)
 		var occurrence editOccurrence
 		switch {
 		case len(exactOccurrences) > 0:
@@ -124,24 +285,30 @@ func ApplyEditsToNormalizedContent(content string, edits []Edit, path string) (A
 		}
 	}
 
-	var builder strings.Builder
-	cursor := 0
-	for _, editRange := range ranges {
-		builder.WriteString(content[cursor:editRange.start])
-		builder.WriteString(editRange.replacement)
-		cursor = editRange.end
+	appliedRanges := ranges
+	var newContent string
+	var err error
+	if usedFuzzyMatch {
+		appliedRanges, err = preservingReplacementRanges(content, replacementBaseContent, ranges)
+		if err != nil {
+			return AppliedEditsResult{}, err
+		}
+		newContent, err = applyReplacements(content, appliedRanges, 0)
+	} else {
+		newContent, err = applyReplacements(replacementBaseContent, ranges, 0)
 	}
-	builder.WriteString(content[cursor:])
-	newContent := builder.String()
+	if err != nil {
+		return AppliedEditsResult{}, err
+	}
 	if newContent == content {
 		return AppliedEditsResult{}, editNoChangeError(path, len(edits))
 	}
 	return AppliedEditsResult{
 		BaseContent:      content,
 		NewContent:       newContent,
-		Diff:             generateDiffStringWithRanges(content, newContent, ranges, 4),
-		Patch:            generateUnifiedPatchWithRanges(path, content, newContent, ranges, 4),
-		FirstChangedLine: firstChangedLine(content, ranges),
+		Diff:             generateDiffStringWithRanges(content, newContent, appliedRanges, 4),
+		Patch:            generateUnifiedPatchWithRanges(path, content, newContent, appliedRanges, 4),
+		FirstChangedLine: firstChangedLine(content, appliedRanges),
 	}, nil
 }
 

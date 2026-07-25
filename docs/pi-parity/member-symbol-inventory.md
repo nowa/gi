@@ -344,12 +344,6 @@ No missing files or symbols.
 | `core/resource-loader.ts::DefaultResourceLoader.addExtensionConflictDiagnostics` |
 | `core/timings.ts::printTimingGroup` |
 | `core/tools/bash.ts::resolveTimeoutMs` |
-| `core/tools/edit-diff.ts::splitLinesWithEndings` |
-| `core/tools/edit-diff.ts::getLineSpans` |
-| `core/tools/edit-diff.ts::getReplacementLineRange` |
-| `core/tools/edit-diff.ts::applyReplacements` |
-| `core/tools/edit-diff.ts::applyReplacementsPreservingUnchangedLines` |
-| `core/tools/edit-diff.ts::generateUnifiedPatch` |
 | `core/tools/file-mutation-queue.ts::isMissingPathError` |
 | `core/tools/path-utils.ts::pathExists` |
 | `core/tools/path-utils.ts::resolveReadPathAsync` |
@@ -605,7 +599,7 @@ No missing files or symbols.
 | `core/telemetry.ts` | `isTruthyEnvFlag`<br>`isInstallTelemetryEnabled` |  |
 | `core/timings.ts` | `resetTimings`<br>`time`<br>`printTimingGroup`<br>`printTimings` | `printTimingGroup` |
 | `core/tools/bash.ts` | `resolveTimeoutMs`<br>`createLocalBashOperations`<br>`resolveSpawnContext`<br>`BashResultRenderComponent`<br>`formatDuration`<br>`formatBashCall`<br>`rebuildBashResultRenderComponent`<br>`createBashToolDefinition`<br>`createBashTool` | `resolveTimeoutMs` |
-| `core/tools/edit-diff.ts` | `detectLineEnding`<br>`normalizeToLF`<br>`restoreLineEndings`<br>`normalizeForFuzzyMatch`<br>`splitLinesWithEndings`<br>`getLineSpans`<br>`getReplacementLineRange`<br>`applyReplacements`<br>`applyReplacementsPreservingUnchangedLines`<br>`fuzzyFindText`<br>`stripBom`<br>`countOccurrences`<br>`getNotFoundError`<br>`getDuplicateError`<br>`getEmptyOldTextError`<br>`getNoChangeError`<br>`applyEditsToNormalizedContent`<br>`generateUnifiedPatch`<br>`generateDiffString`<br>`computeEditsDiff`<br>`computeEditDiff` | `splitLinesWithEndings`<br>`getLineSpans`<br>`getReplacementLineRange`<br>`applyReplacements`<br>`applyReplacementsPreservingUnchangedLines`<br>`generateUnifiedPatch` |
+| `core/tools/edit-diff.ts` | `detectLineEnding`<br>`normalizeToLF`<br>`restoreLineEndings`<br>`normalizeForFuzzyMatch`<br>`splitLinesWithEndings`<br>`getLineSpans`<br>`getReplacementLineRange`<br>`applyReplacements`<br>`applyReplacementsPreservingUnchangedLines`<br>`fuzzyFindText`<br>`stripBom`<br>`countOccurrences`<br>`getNotFoundError`<br>`getDuplicateError`<br>`getEmptyOldTextError`<br>`getNoChangeError`<br>`applyEditsToNormalizedContent`<br>`generateUnifiedPatch`<br>`generateDiffString`<br>`computeEditsDiff`<br>`computeEditDiff` |  |
 | `core/tools/edit.ts` | `prepareEditArguments`<br>`validateEditInput`<br>`createEditCallRenderComponent`<br>`getEditCallRenderComponent`<br>`getRenderablePreviewInput`<br>`formatEditCall`<br>`formatEditResult`<br>`getEditHeaderBg`<br>`buildEditCallComponent`<br>`setEditPreview`<br>`createEditToolDefinition`<br>`createEditTool` |  |
 | `core/tools/file-mutation-queue.ts` | `isMissingPathError`<br>`getMutationQueueKey`<br>`withFileMutationQueue` | `isMissingPathError` |
 | `core/tools/find.ts` | `toPosixPath`<br>`formatFindCall`<br>`formatFindResult`<br>`createFindToolDefinition`<br>`createFindTool` |  |
