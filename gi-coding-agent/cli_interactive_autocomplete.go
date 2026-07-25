@@ -202,6 +202,7 @@ func builtinInteractiveSlashCommands() []interactiveSlashCommand {
 		{Name: "tree", Description: "Navigate session tree (switch branches)"},
 		{Name: "login", Description: "Configure provider authentication"},
 		{Name: "logout", Description: "Remove provider authentication"},
+		{Name: "llama", Description: builtinLlamaCommandDescription},
 		{Name: "new", Description: "Start a new session"},
 		{Name: "compact", Description: "Manually compact the session context"},
 		{Name: "resume", Description: "Resume a different session"},

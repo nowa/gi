@@ -24,6 +24,7 @@ type agentSessionPrintModeHost struct {
 	requestRuntime      providerRequestRuntime
 	extensionFlagValues map[string]any
 	startupWarnings     []string
+	llamaManager        *builtinLlamaManager
 }
 
 func (h *agentSessionPrintModeHost) setAgentSession(session *AgentSession) {
@@ -78,6 +79,13 @@ func (h *agentSessionPrintModeHost) ModelRuntime() *ModelRuntime {
 		return nil
 	}
 	return h.modelRuntime
+}
+
+func (h *agentSessionPrintModeHost) LlamaManager() *builtinLlamaManager {
+	if h == nil {
+		return nil
+	}
+	return h.llamaManager
 }
 
 func (h *agentSessionPrintModeHost) StartupWarnings() []string {
@@ -374,6 +382,18 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	if err != nil {
 		return nil, err
 	}
+	llamaManager, err := newBuiltinLlamaManager(modelRuntime)
+	if err != nil {
+		return nil, err
+	}
+	llamaRefreshWarning := ""
+	if err := llamaManager.refreshConfigured(
+		context.Background(),
+		!args.Offline,
+	); err != nil {
+		llamaRefreshWarning = "Could not refresh llama.cpp models: " +
+			err.Error()
+	}
 
 	resolvedModel, err := resolveCLIPrintModeModelForSession(args, modelRuntime, settingsManager, sessionManager)
 	if err != nil {
@@ -436,11 +456,18 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	host.setAgentSession(session)
 	host.modelRegistry = modelRegistry
 	host.modelRuntime = modelRuntime
+	host.llamaManager = llamaManager
 	host.settingsManager = settingsManager
 	host.extensionFlagValues = cloneMapAny(args.UnknownFlags)
 	host.processExtensions = extensions.ProcessExtensions
 	host.startupWarnings = startupWarningLines(resolvedModel.Warning)
 	host.startupWarnings = append(host.startupWarnings, projectTrustWarnings...)
+	if llamaRefreshWarning != "" {
+		host.startupWarnings = append(
+			host.startupWarnings,
+			llamaRefreshWarning,
+		)
+	}
 	if warning := projectTrustStartupWarning(cwd, projectTrusted); warning != "" {
 		host.startupWarnings = append(host.startupWarnings, warning)
 	}

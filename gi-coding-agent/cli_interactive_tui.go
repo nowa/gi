@@ -3811,6 +3811,11 @@ func (h *CLIInteractiveTUIHost) handleBuiltinSlashCommand(text string) (bool, er
 			return false, nil
 		}
 		return true, h.handleLogoutSlashCommand(args)
+	case "llama":
+		if hasArgs {
+			return false, nil
+		}
+		return true, h.handleLlamaSlashCommand()
 	case "compact":
 		return true, h.handleCompactSlashCommand(args)
 	case "reload":

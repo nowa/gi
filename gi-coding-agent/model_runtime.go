@@ -596,6 +596,32 @@ func (r *ModelRuntime) CheckAuth(
 	return models.CheckAuth(ctx, providerID)
 }
 
+// GetProviderAuth resolves one provider-scoped auth snapshot without
+// requiring a catalog model. Management-plane clients use this to share the
+// same stored credential and environment precedence as inference requests.
+func (r *ModelRuntime) GetProviderAuth(
+	ctx context.Context,
+	providerID string,
+) (*llm.AuthResult, error) {
+	if r == nil {
+		return nil, errors.New("model runtime is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	r.mu.RLock()
+	models := r.models
+	r.mu.RUnlock()
+	if models == nil {
+		return nil, errors.New("model runtime is not initialized")
+	}
+	return models.GetAuth(
+		ctx,
+		strings.TrimSpace(providerID),
+		llm.AuthResolutionOverrides{},
+	)
+}
+
 // GetAvailable returns the last fully published availability snapshot and
 // implements CodingModelRegistry without hidden network access.
 func (r *ModelRuntime) GetAvailable() []llm.Model {

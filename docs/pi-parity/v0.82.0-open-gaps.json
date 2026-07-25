@@ -29,8 +29,6 @@
     {
       "module": "coding",
       "missingFiles": [
-        "extensions/llama/index.ts",
-        "extensions/llama/ui.ts",
         "rpc-entry.ts",
         "utils/deprecation.ts",
         "utils/json.ts",
@@ -62,42 +60,6 @@
         "core/package-manager.ts::getNpmVersionRange",
         "core/package-manager.ts::isExactNpmVersion",
         "core/timings.ts::printTimingGroup",
-        "extensions/llama/index.ts::configuredClient",
-        "extensions/llama/index.ts::connectionErrorMessage",
-        "extensions/llama/index.ts::isConnectionError",
-        "extensions/llama/index.ts::modelIsLoaded",
-        "extensions/llama/index.ts::parseHuggingFaceModel",
-        "extensions/llama/ui.ts::HuggingFaceSearch",
-        "extensions/llama/ui.ts::HuggingFaceSearch.close",
-        "extensions/llama/ui.ts::HuggingFaceSearch.constructor",
-        "extensions/llama/ui.ts::HuggingFaceSearch.filterResults",
-        "extensions/llama/ui.ts::HuggingFaceSearch.focused",
-        "extensions/llama/ui.ts::HuggingFaceSearch.handleInput",
-        "extensions/llama/ui.ts::HuggingFaceSearch.runSearch",
-        "extensions/llama/ui.ts::HuggingFaceSearch.scheduleSearch",
-        "extensions/llama/ui.ts::HuggingFaceSearch.updateResults",
-        "extensions/llama/ui.ts::LlamaView",
-        "extensions/llama/ui.ts::LlamaView.confirm",
-        "extensions/llama/ui.ts::LlamaView.connectionError",
-        "extensions/llama/ui.ts::LlamaView.constructor",
-        "extensions/llama/ui.ts::LlamaView.focused",
-        "extensions/llama/ui.ts::LlamaView.handleInput",
-        "extensions/llama/ui.ts::LlamaView.invalidate",
-        "extensions/llama/ui.ts::LlamaView.progress",
-        "extensions/llama/ui.ts::LlamaView.render",
-        "extensions/llama/ui.ts::LlamaView.searchModels",
-        "extensions/llama/ui.ts::LlamaView.select",
-        "extensions/llama/ui.ts::LlamaView.setContent",
-        "extensions/llama/ui.ts::LlamaView.showModels",
-        "extensions/llama/ui.ts::LlamaView.showStatus",
-        "extensions/llama/ui.ts::LlamaView.updateProgress",
-        "extensions/llama/ui.ts::compactCount",
-        "extensions/llama/ui.ts::contextLabel",
-        "extensions/llama/ui.ts::frame",
-        "extensions/llama/ui.ts::modelDescription",
-        "extensions/llama/ui.ts::runWithProgress",
-        "extensions/llama/ui.ts::selectTheme",
-        "extensions/llama/ui.ts::showLlamaUi",
         "main.ts::findLocalSessionByExactId",
         "main.ts::isPlainRuntimeMetadataCommand",
         "main.ts::openSessionOrExit",
@@ -207,11 +169,6 @@
           "name": "handles empty ours or theirs sections"
         },
         {
-          "file": "packages/coding-agent/test/llama-extension.test.ts",
-          "line": 56,
-          "name": "normalizes management and inference URLs"
-        },
-        {
           "file": "packages/coding-agent/test/max-thinking.test.ts",
           "line": 19,
           "name": "is accepted by CLI and settings"
@@ -220,6 +177,21 @@
           "file": "packages/coding-agent/test/max-thinking.test.ts",
           "line": 28,
           "name": "falls back to thinkingXhigh for legacy themes"
+        },
+        {
+          "file": "packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts",
+          "line": 172,
+          "name": "re-entrant shutdown is a no-op"
+        },
+        {
+          "file": "packages/coding-agent/test/suite/regressions/5433-extension-oauth-prompt-input.test.ts",
+          "line": 40,
+          "name": "keeps previous prompt input stable when a later prompt is active"
+        },
+        {
+          "file": "packages/coding-agent/test/suite/regressions/5433-extension-oauth-prompt-input.test.ts",
+          "line": 99,
+          "name": "keeps previous manual input stable when a later prompt is active"
         },
         {
           "file": "packages/coding-agent/test/suite/regressions/5661-uppercase-header-values.test.ts",

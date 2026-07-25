@@ -18,7 +18,9 @@ import (
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
-func TestLlamaURLsAndProgressFormatting(t *testing.T) {
+func TestLlamaNormalizesManagementAndInferenceURLsAndFormatsProgress(
+	t *testing.T,
+) {
 	tests := []struct {
 		input string
 		want  string
