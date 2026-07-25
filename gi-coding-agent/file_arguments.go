@@ -1,9 +1,9 @@
 package gicodingagent
 
 import (
-	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strings"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
@@ -60,23 +60,13 @@ func ProcessFileArguments(paths []string, options ...ProcessFileArgumentsOptions
 			continue
 		}
 		if mimeType := detectSupportedImageMIMEType(content); mimeType != "" {
-			imagePart := llm.Image(base64.StdEncoding.EncodeToString(content), mimeType)
-			if autoResizeImages {
-				resized := resizeImage(imagePart, ImageResizeOptions{})
-				if resized == nil {
-					result.Text += `<file name="` + absolutePath + `">[Image omitted: could not be resized below the inline image size limit.]</file>` + "\n"
-					continue
-				}
-				imagePart = llm.Image(resized.Data, resized.MIMEType)
-				if dimensionNote := FormatDimensionNote(*resized); dimensionNote != "" {
-					result.Text += `<file name="` + absolutePath + `">` + dimensionNote + `</file>` + "\n"
-				} else {
-					result.Text += `<file name="` + absolutePath + `"></file>` + "\n"
-				}
-			} else {
-				result.Text += `<file name="` + absolutePath + `"></file>` + "\n"
+			processed := processImageWithResize(content, mimeType, autoResizeImages, resizeImage)
+			if !processed.OK {
+				result.Text += `<file name="` + absolutePath + `">` + processed.Message + `</file>` + "\n"
+				continue
 			}
-			result.Images = append(result.Images, imagePart)
+			result.Text += `<file name="` + absolutePath + `">` + strings.Join(processed.Hints, "\n") + `</file>` + "\n"
+			result.Images = append(result.Images, llm.Image(processed.Data, processed.MIMEType))
 			continue
 		}
 		result.Text += `<file name="` + absolutePath + `">` + "\n" + string(content) + "\n</file>\n"

@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -44,6 +45,88 @@ func TestConvertToPNGPiMatrix(t *testing.T) {
 	if got := converted.Bounds().Size(); got.X != 1 || got.Y != 2 {
 		t.Fatalf("EXIF orientation 6 converted size = %dx%d, want 1x2", got.X, got.Y)
 	}
+}
+
+func TestProcessImageConvertsBMPBeforeOptionalResize(t *testing.T) {
+	bmp := createTinyBMP1x1Red24BPP()
+	original := append([]byte(nil), bmp...)
+
+	autoResize := false
+	withoutResize := ProcessImage(bmp, "image/bmp; charset=binary", ProcessImageOptions{
+		AutoResizeImages: &autoResize,
+	})
+	if !withoutResize.OK ||
+		withoutResize.MIMEType != "image/png" ||
+		!reflect.DeepEqual(withoutResize.Hints, []string{"[Image converted from image/bmp to image/png.]"}) {
+		t.Fatalf("process without resize = %#v", withoutResize)
+	}
+	assertPNGBase64(t, withoutResize.Data)
+	if !bytes.Equal(bmp, original) {
+		t.Fatal("ProcessImage mutated caller bytes")
+	}
+
+	var resizeInputMIME string
+	withResize := ProcessImage(bmp, "image/bmp", ProcessImageOptions{
+		ResizeImage: func(data []byte, mimeType string, _ ImageResizeOptions) *ResizedImage {
+			resizeInputMIME = mimeType
+			if len(data) < 4 || !bytes.Equal(data[:4], []byte{0x89, 0x50, 0x4e, 0x47}) {
+				t.Fatalf("resize input is not PNG: %#v", data)
+			}
+			return &ResizedImage{
+				Data:           base64.StdEncoding.EncodeToString(data),
+				MIMEType:       "image/png",
+				OriginalWidth:  1,
+				OriginalHeight: 1,
+				Width:          1,
+				Height:         1,
+			}
+		},
+	})
+	if !withResize.OK ||
+		resizeInputMIME != "image/png" ||
+		!reflect.DeepEqual(withResize.Hints, []string{"[Image converted from image/bmp to image/png.]"}) {
+		t.Fatalf("process with resize = %#v, input MIME = %q", withResize, resizeInputMIME)
+	}
+	assertPNGBase64(t, withResize.Data)
+
+	invalid := ProcessImage([]byte("not an image"), "application/octet-stream")
+	if invalid.OK || !strings.Contains(invalid.Message, "could not be converted") {
+		t.Fatalf("invalid process result = %#v", invalid)
+	}
+}
+
+func TestImageProcessingCallersConvertBMPWhenAutoResizeDisabled(t *testing.T) {
+	dir := t.TempDir()
+	imagePath := filepath.Join(dir, "image.bmp")
+	if err := os.WriteFile(imagePath, createTinyBMP1x1Red24BPP(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	autoResize := false
+
+	processed, err := ProcessFileArguments([]string{imagePath}, ProcessFileArgumentsOptions{
+		AutoResizeImages: &autoResize,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(processed.Images) != 1 ||
+		processed.Images[0].MIMEType != "image/png" ||
+		!strings.Contains(processed.Text, "[Image converted from image/bmp to image/png.]") {
+		t.Fatalf("file arguments = %#v", processed)
+	}
+	assertPNGBase64(t, processed.Images[0].Data)
+
+	tool := NewReadToolWithOptions(dir, ReadToolOptions{AutoResizeImages: &autoResize})
+	result, err := tool.Execute("read-bmp", ReadToolInput{Path: imagePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Content) != 2 ||
+		result.Content[1].MIMEType != "image/png" ||
+		!strings.Contains(result.Content[0].Text, "[Image converted from image/bmp to image/png.]") {
+		t.Fatalf("read BMP result = %#v", result)
+	}
+	assertPNGBase64(t, result.Content[1].Data)
 }
 
 func TestResizeImagePiMatrix(t *testing.T) {
@@ -84,6 +167,14 @@ func TestResizeImagePiMatrix(t *testing.T) {
 	result = ResizeImage(llm.Image(tinyJPEG, "image/jpeg"), ImageResizeOptions{MaxWidth: 100, MaxHeight: 100, MaxBytes: 1024 * 1024})
 	if result == nil || result.WasResized || result.OriginalWidth != 2 || result.OriginalHeight != 2 {
 		t.Fatalf("JPEG resize result = %#v", result)
+	}
+}
+
+func assertPNGBase64(t *testing.T, data string) {
+	t.Helper()
+	decoded := mustDecodeBase64(t, data)
+	if len(decoded) < 4 || !bytes.Equal(decoded[:4], []byte{0x89, 0x50, 0x4e, 0x47}) {
+		t.Fatalf("PNG magic = %#v", decoded[:minInt(len(decoded), 4)])
 	}
 }
 

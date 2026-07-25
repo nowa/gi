@@ -1,17 +1,14 @@
 package clipboard
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
-	"image"
-	"image/color"
-	"image/png"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/nowa/gi/gi-coding-agent/internal/imageresize"
 )
 
 const (
@@ -351,71 +348,7 @@ func convertClipboardImageToPNG(data []byte, mimeType string) ([]byte, bool) {
 	if baseImageMIMEType(mimeType) != "image/bmp" {
 		return nil, false
 	}
-	img, ok := decodeClipboardBMP(data)
-	if !ok {
-		return nil, false
-	}
-	var buffer bytes.Buffer
-	if err := png.Encode(&buffer, img); err != nil {
-		return nil, false
-	}
-	return buffer.Bytes(), true
-}
-
-func decodeClipboardBMP(data []byte) (image.Image, bool) {
-	if len(data) < 54 || string(data[:2]) != "BM" {
-		return nil, false
-	}
-	pixelOffset := int(binary.LittleEndian.Uint32(data[10:14]))
-	dibSize := int(binary.LittleEndian.Uint32(data[14:18]))
-	if dibSize < 40 || pixelOffset < 14+dibSize || pixelOffset > len(data) {
-		return nil, false
-	}
-	width := int(int32(binary.LittleEndian.Uint32(data[18:22])))
-	heightRaw := int32(binary.LittleEndian.Uint32(data[22:26]))
-	if width <= 0 || heightRaw == 0 || heightRaw == -2147483648 {
-		return nil, false
-	}
-	topDown := heightRaw < 0
-	height := int(heightRaw)
-	if topDown {
-		height = -height
-	}
-	planes := binary.LittleEndian.Uint16(data[26:28])
-	bitsPerPixel := int(binary.LittleEndian.Uint16(data[28:30]))
-	compression := binary.LittleEndian.Uint32(data[30:34])
-	if planes != 1 || compression != 0 || (bitsPerPixel != 24 && bitsPerPixel != 32) {
-		return nil, false
-	}
-	rowStride := ((width*bitsPerPixel + 31) / 32) * 4
-	required := pixelOffset + rowStride*height
-	if rowStride <= 0 || required < pixelOffset || required > len(data) {
-		return nil, false
-	}
-
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	bytesPerPixel := bitsPerPixel / 8
-	for y := 0; y < height; y++ {
-		sourceY := y
-		if !topDown {
-			sourceY = height - 1 - y
-		}
-		rowOffset := pixelOffset + sourceY*rowStride
-		for x := 0; x < width; x++ {
-			offset := rowOffset + x*bytesPerPixel
-			alpha := uint8(0xff)
-			if bitsPerPixel == 32 {
-				alpha = data[offset+3]
-			}
-			img.SetRGBA(x, y, color.RGBA{
-				R: data[offset+2],
-				G: data[offset+1],
-				B: data[offset],
-				A: alpha,
-			})
-		}
-	}
-	return img, true
+	return imageresize.ConvertImageBytesToPNG(data)
 }
 
 func currentEnvMap() map[string]string {

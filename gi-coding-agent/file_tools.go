@@ -2,7 +2,6 @@ package gicodingagent
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -232,28 +231,17 @@ func textFromContentParts(content []llm.ContentPart) string {
 
 func codingReadImageProcessor(ops FileToolOperations) harnesstools.ReadImageProcessor {
 	return func(_ context.Context, content []byte, mimeType string, autoResizeImages bool) (harnesstools.ReadImageProcessorResult, error) {
-		if !autoResizeImages {
+		processed := processImageWithResize(content, mimeType, autoResizeImages, ops.ResizeImage)
+		if !processed.OK {
 			return harnesstools.ReadImageProcessorResult{
-				OK:       true,
-				Data:     base64.StdEncoding.EncodeToString(content),
-				MIMEType: mimeType,
+				Message: processed.Message,
 			}, nil
-		}
-		resized := ops.ResizeImage(llm.Image(base64.StdEncoding.EncodeToString(content), mimeType), ImageResizeOptions{})
-		if resized == nil {
-			return harnesstools.ReadImageProcessorResult{
-				Message: "[Image omitted: could not be resized below the inline image size limit.]",
-			}, nil
-		}
-		var hints []string
-		if dimensionNote := FormatDimensionNote(*resized); dimensionNote != "" {
-			hints = append(hints, dimensionNote)
 		}
 		return harnesstools.ReadImageProcessorResult{
 			OK:       true,
-			Data:     resized.Data,
-			MIMEType: resized.MIMEType,
-			Hints:    hints,
+			Data:     processed.Data,
+			MIMEType: processed.MIMEType,
+			Hints:    append([]string(nil), processed.Hints...),
 		}, nil
 	}
 }

@@ -5,14 +5,16 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
-	"image/color"
+	imagedraw "image/draw"
 	_ "image/gif"
-	_ "image/jpeg"
+	"image/jpeg"
 	"image/png"
 	"math"
 	"strings"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
+	_ "golang.org/x/image/bmp"
+	xdraw "golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
 )
 
@@ -40,6 +42,45 @@ type ResizedImage struct {
 	WasResized     bool
 }
 
+type ProcessImageOptions struct {
+	AutoResizeImages *bool
+	ResizeOptions    ImageResizeOptions
+	ResizeImage      func([]byte, string, ImageResizeOptions) *ResizedImage
+}
+
+type ProcessImageResult struct {
+	OK       bool
+	Data     string
+	MIMEType string
+	Hints    []string
+	Message  string
+}
+
+type normalizedImage struct {
+	bytes         []byte
+	mimeType      string
+	convertedFrom string
+}
+
+type encodedCandidate struct {
+	data        string
+	encodedSize int
+	mimeType    string
+}
+
+func ConvertImageBytesToPNG(data []byte) ([]byte, bool) {
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, false
+	}
+	img = applyImageEXIFOrientation(img, data)
+	var buffer bytes.Buffer
+	if err := png.Encode(&buffer, img); err != nil {
+		return nil, false
+	}
+	return buffer.Bytes(), true
+}
+
 func ConvertToPNG(base64Data, mimeType string) *ConvertedImage {
 	if baseImageMIMEType(mimeType) == "image/png" {
 		return &ConvertedImage{Data: base64Data, MIMEType: "image/png"}
@@ -48,39 +89,39 @@ func ConvertToPNG(base64Data, mimeType string) *ConvertedImage {
 	if err != nil {
 		return nil
 	}
-	img, _, err := image.Decode(bytes.NewReader(decoded))
-	if err != nil {
+	converted, ok := ConvertImageBytesToPNG(decoded)
+	if !ok {
 		return nil
 	}
-	img = applyImageEXIFOrientation(img, decoded)
-	var buffer bytes.Buffer
-	if err := png.Encode(&buffer, img); err != nil {
-		return nil
-	}
-	return &ConvertedImage{Data: base64.StdEncoding.EncodeToString(buffer.Bytes()), MIMEType: "image/png"}
+	return &ConvertedImage{Data: base64.StdEncoding.EncodeToString(converted), MIMEType: "image/png"}
 }
 
 func ResizeImage(part llm.ContentPart, options ...ImageResizeOptions) *ResizedImage {
-	opts := normalizeImageResizeOptions(options...)
 	decoded, err := base64.StdEncoding.DecodeString(part.Data)
 	if err != nil {
 		return nil
 	}
-	img, _, err := image.Decode(bytes.NewReader(decoded))
+	return ResizeImageBytes(decoded, part.MIMEType, options...)
+}
+
+func ResizeImageBytes(inputBytes []byte, mimeType string, options ...ImageResizeOptions) *ResizedImage {
+	opts := normalizeImageResizeOptions(options...)
+	img, _, err := image.Decode(bytes.NewReader(inputBytes))
 	if err != nil {
 		return nil
 	}
-	img = applyImageEXIFOrientation(img, decoded)
+	img = applyImageEXIFOrientation(img, inputBytes)
 	bounds := img.Bounds()
 	originalWidth := bounds.Dx()
 	originalHeight := bounds.Dy()
 	if originalWidth <= 0 || originalHeight <= 0 {
 		return nil
 	}
-	if originalWidth <= opts.MaxWidth && originalHeight <= opts.MaxHeight && len(part.Data) < opts.MaxBytes {
+	inputBase64Size := ((len(inputBytes) + 2) / 3) * 4
+	if originalWidth <= opts.MaxWidth && originalHeight <= opts.MaxHeight && inputBase64Size < opts.MaxBytes {
 		return &ResizedImage{
-			Data:           part.Data,
-			MIMEType:       firstNonEmptyString(part.MIMEType, "image/png"),
+			Data:           base64.StdEncoding.EncodeToString(inputBytes),
+			MIMEType:       firstNonEmptyString(mimeType, "image/png"),
 			OriginalWidth:  originalWidth,
 			OriginalHeight: originalHeight,
 			Width:          originalWidth,
@@ -90,26 +131,20 @@ func ResizeImage(part llm.ContentPart, options ...ImageResizeOptions) *ResizedIm
 	}
 
 	targetWidth, targetHeight := fitImageDimensions(originalWidth, originalHeight, opts.MaxWidth, opts.MaxHeight)
-	if len(part.Data) >= opts.MaxBytes && opts.MaxBytes > 0 {
-		sizeScale := math.Sqrt(float64(opts.MaxBytes) / float64(len(part.Data)))
-		if sizeScale > 0 && sizeScale < 1 {
-			targetWidth = maxInt(1, int(math.Floor(float64(targetWidth)*sizeScale)))
-			targetHeight = maxInt(1, int(math.Floor(float64(targetHeight)*sizeScale)))
-		}
-	}
-
+	qualitySteps := uniqueJPEGQualities(opts.JPEGQuality, 85, 70, 55, 40)
 	for {
-		resized := resizeNearestNeighbor(img, targetWidth, targetHeight)
-		encoded, ok := encodePNGBase64(resized)
-		if ok && len(encoded) < opts.MaxBytes {
-			return &ResizedImage{
-				Data:           encoded,
-				MIMEType:       "image/png",
-				OriginalWidth:  originalWidth,
-				OriginalHeight: originalHeight,
-				Width:          targetWidth,
-				Height:         targetHeight,
-				WasResized:     true,
+		resized := resizeImageWithCatmullRom(img, targetWidth, targetHeight)
+		for _, candidate := range encodeCandidates(resized, qualitySteps) {
+			if candidate.encodedSize < opts.MaxBytes {
+				return &ResizedImage{
+					Data:           candidate.data,
+					MIMEType:       candidate.mimeType,
+					OriginalWidth:  originalWidth,
+					OriginalHeight: originalHeight,
+					Width:          targetWidth,
+					Height:         targetHeight,
+					WasResized:     true,
+				}
 			}
 		}
 		if targetWidth == 1 && targetHeight == 1 {
@@ -130,6 +165,55 @@ func ResizeImage(part llm.ContentPart, options ...ImageResizeOptions) *ResizedIm
 		targetHeight = nextHeight
 	}
 	return nil
+}
+
+func ProcessImage(data []byte, mimeType string, options ...ProcessImageOptions) ProcessImageResult {
+	opts := ProcessImageOptions{}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	autoResizeImages := true
+	if opts.AutoResizeImages != nil {
+		autoResizeImages = *opts.AutoResizeImages
+	}
+	normalized, ok := normalizeImage(data, mimeType)
+	if !ok {
+		return ProcessImageResult{
+			Message: "[Image omitted: could not be converted to a supported inline image format.]",
+		}
+	}
+
+	if autoResizeImages {
+		resizeImage := opts.ResizeImage
+		if resizeImage == nil {
+			resizeImage = func(data []byte, mimeType string, options ImageResizeOptions) *ResizedImage {
+				return ResizeImageBytes(data, mimeType, options)
+			}
+		}
+		resized := resizeImage(normalized.bytes, normalized.mimeType, opts.ResizeOptions)
+		if resized == nil {
+			return ProcessImageResult{
+				Message: "[Image omitted: could not be resized below the inline image size limit.]",
+			}
+		}
+		hints := imageProcessingHints(normalized, resized.MIMEType)
+		if note := FormatDimensionNote(*resized); note != "" {
+			hints = append(hints, note)
+		}
+		return ProcessImageResult{
+			OK:       true,
+			Data:     resized.Data,
+			MIMEType: resized.MIMEType,
+			Hints:    hints,
+		}
+	}
+
+	return ProcessImageResult{
+		OK:       true,
+		Data:     base64.StdEncoding.EncodeToString(normalized.bytes),
+		MIMEType: normalized.mimeType,
+		Hints:    imageProcessingHints(normalized, normalized.mimeType),
+	}
 }
 
 func FormatDimensionNote(result ResizedImage) string {
@@ -177,27 +261,89 @@ func fitImageDimensions(width, height, maxWidth, maxHeight int) (int, int) {
 	return maxInt(1, targetWidth), maxInt(1, targetHeight)
 }
 
-func resizeNearestNeighbor(src image.Image, width, height int) *image.RGBA {
-	dst := image.NewRGBA(image.Rect(0, 0, width, height))
-	bounds := src.Bounds()
-	sourceWidth := bounds.Dx()
-	sourceHeight := bounds.Dy()
-	for y := 0; y < height; y++ {
-		sourceY := bounds.Min.Y + y*sourceHeight/height
-		for x := 0; x < width; x++ {
-			sourceX := bounds.Min.X + x*sourceWidth/width
-			dst.Set(x, y, color.NRGBAModel.Convert(src.At(sourceX, sourceY)))
-		}
-	}
+func resizeImageWithCatmullRom(src image.Image, width, height int) *image.NRGBA {
+	dst := image.NewNRGBA(image.Rect(0, 0, width, height))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), imagedraw.Src, nil)
 	return dst
 }
 
-func encodePNGBase64(img image.Image) (string, bool) {
-	var buffer bytes.Buffer
-	if err := png.Encode(&buffer, img); err != nil {
-		return "", false
+func encodeCandidates(img image.Image, jpegQualities []int) []encodedCandidate {
+	candidates := make([]encodedCandidate, 0, 1+len(jpegQualities))
+	var pngBuffer bytes.Buffer
+	if err := png.Encode(&pngBuffer, img); err == nil {
+		candidates = append(candidates, newEncodedCandidate(pngBuffer.Bytes(), "image/png"))
 	}
-	return base64.StdEncoding.EncodeToString(buffer.Bytes()), true
+	for _, quality := range jpegQualities {
+		var jpegBuffer bytes.Buffer
+		if err := jpeg.Encode(&jpegBuffer, img, &jpeg.Options{Quality: quality}); err == nil {
+			candidates = append(candidates, newEncodedCandidate(jpegBuffer.Bytes(), "image/jpeg"))
+		}
+	}
+	return candidates
+}
+
+func newEncodedCandidate(data []byte, mimeType string) encodedCandidate {
+	encoded := base64.StdEncoding.EncodeToString(data)
+	return encodedCandidate{data: encoded, encodedSize: len(encoded), mimeType: mimeType}
+}
+
+func uniqueJPEGQualities(values ...int) []int {
+	seen := make(map[int]struct{}, len(values))
+	qualities := make([]int, 0, len(values))
+	for _, value := range values {
+		value = min(100, maxInt(1, value))
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		qualities = append(qualities, value)
+	}
+	return qualities
+}
+
+func normalizeSupportedImageMIMEType(mimeType string) string {
+	switch baseImageMIMEType(mimeType) {
+	case "image/png":
+		return "image/png"
+	case "image/jpeg", "image/jpg":
+		return "image/jpeg"
+	case "image/gif":
+		return "image/gif"
+	case "image/webp":
+		return "image/webp"
+	default:
+		return ""
+	}
+}
+
+func normalizeImage(data []byte, mimeType string) (normalizedImage, bool) {
+	if supportedMIMEType := normalizeSupportedImageMIMEType(mimeType); supportedMIMEType != "" {
+		return normalizedImage{bytes: data, mimeType: supportedMIMEType}, true
+	}
+	converted, ok := ConvertImageBytesToPNG(data)
+	if !ok {
+		return normalizedImage{}, false
+	}
+	return normalizedImage{
+		bytes:         converted,
+		mimeType:      "image/png",
+		convertedFrom: baseImageMIMEType(mimeType),
+	}, true
+}
+
+func conversionHint(from, to string) string {
+	if from == "" || from == to {
+		return ""
+	}
+	return fmt.Sprintf("[Image converted from %s to %s.]", from, to)
+}
+
+func imageProcessingHints(image normalizedImage, outputMIMEType string) []string {
+	hint := conversionHint(image.convertedFrom, outputMIMEType)
+	if hint == "" {
+		return nil
+	}
+	return []string{hint}
 }
 
 func maxInt(a, b int) int {

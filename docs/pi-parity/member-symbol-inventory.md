@@ -286,9 +286,6 @@ No missing files or symbols.
 | `modes/interactive/components/custom-entry.ts` |
 | `rpc-entry.ts` |
 | `utils/deprecation.ts` |
-| `utils/image-process.ts` |
-| `utils/image-resize-core.ts` |
-| `utils/image-resize-worker.ts` |
 | `utils/json.ts` |
 | `utils/open-browser.ts` |
 | `utils/windows-self-update.ts` |
@@ -481,20 +478,6 @@ No missing files or symbols.
 | `utils/clipboard.ts::readClipboardText` |
 | `utils/deprecation.ts::warnDeprecation` |
 | `utils/deprecation.ts::clearDeprecationWarningsForTests` |
-| `utils/image-convert.ts::convertImageBytesToPng` |
-| `utils/image-process.ts::normalizeSupportedImageMimeType` |
-| `utils/image-process.ts::normalizeImage` |
-| `utils/image-process.ts::conversionHint` |
-| `utils/image-process.ts::processImage` |
-| `utils/image-resize-core.ts::resizeImageInProcess` |
-| `utils/image-resize-worker.ts::isResizeImageWorkerRequest` |
-| `utils/image-resize.ts::toTransferableBytes` |
-| `utils/image-resize.ts::isResizeImageWorkerResponse` |
-| `utils/image-resize.ts::createResizeWorker` |
-| `utils/image-resize.ts::resizeImageInWorker` |
-| `utils/mime.ts::isBmp` |
-| `utils/mime.ts::readUint16LE` |
-| `utils/mime.ts::readUint32LE` |
 | `utils/open-browser.ts::openBrowser` |
 | `utils/paths.ts::markPathIgnoredByCloudSync` |
 | `utils/shell.ts::isLegacyWslBashPath` |
@@ -668,13 +651,13 @@ No missing files or symbols.
 | `utils/git.ts` | `splitRef`<br>`decodeForValidation`<br>`hasUnsafeGitInstallPart`<br>`buildGitSource`<br>`parseGenericGitUrl`<br>`parseGitUrl` |  |
 | `utils/highlight-js-lib-index.d.ts` | _none_ |  |
 | `utils/html.ts` | `decodeCodePoint`<br>`decodeHtmlEntity`<br>`decodeHtmlEntityAt` |  |
-| `utils/image-convert.ts` | `convertImageBytesToPng`<br>`convertToPng` | `convertImageBytesToPng` |
-| `utils/image-process.ts` | `baseMimeType`<br>`normalizeSupportedImageMimeType`<br>`normalizeImage`<br>`conversionHint`<br>`processImage` | `normalizeSupportedImageMimeType`<br>`normalizeImage`<br>`conversionHint`<br>`processImage` |
-| `utils/image-resize-core.ts` | `encodeCandidate`<br>`resizeImageInProcess` | `resizeImageInProcess` |
-| `utils/image-resize-worker.ts` | `isResizeImageWorkerRequest` | `isResizeImageWorkerRequest` |
-| `utils/image-resize.ts` | `toTransferableBytes`<br>`isResizeImageWorkerResponse`<br>`createResizeWorker`<br>`resizeImageInWorker`<br>`resizeImage`<br>`formatDimensionNote` | `toTransferableBytes`<br>`isResizeImageWorkerResponse`<br>`createResizeWorker`<br>`resizeImageInWorker` |
+| `utils/image-convert.ts` | `convertImageBytesToPng`<br>`convertToPng` |  |
+| `utils/image-process.ts` | `baseMimeType`<br>`normalizeSupportedImageMimeType`<br>`normalizeImage`<br>`conversionHint`<br>`processImage` |  |
+| `utils/image-resize-core.ts` | `encodeCandidate`<br>`resizeImageInProcess` |  |
+| `utils/image-resize-worker.ts` | `isResizeImageWorkerRequest` |  |
+| `utils/image-resize.ts` | `toTransferableBytes`<br>`isResizeImageWorkerResponse`<br>`createResizeWorker`<br>`resizeImageInWorker`<br>`resizeImage`<br>`formatDimensionNote` |  |
 | `utils/json.ts` | `stripJsonComments` |  |
-| `utils/mime.ts` | `detectSupportedImageMimeType`<br>`detectSupportedImageMimeTypeFromFile`<br>`isPng`<br>`isAnimatedPng`<br>`isBmp`<br>`readUint16LE`<br>`readUint32BE`<br>`readUint32LE`<br>`startsWith`<br>`startsWithAscii` | `isBmp`<br>`readUint16LE`<br>`readUint32LE` |
+| `utils/mime.ts` | `detectSupportedImageMimeType`<br>`detectSupportedImageMimeTypeFromFile`<br>`isPng`<br>`isAnimatedPng`<br>`isBmp`<br>`readUint16LE`<br>`readUint32BE`<br>`readUint32LE`<br>`startsWith`<br>`startsWithAscii` |  |
 | `utils/open-browser.ts` | `openBrowser` | `openBrowser` |
 | `utils/paths.ts` | `canonicalizePath`<br>`isLocalPath`<br>`normalizePath`<br>`resolvePath`<br>`getCwdRelativePath`<br>`formatPathRelativeToCwdOrAbsolute`<br>`markPathIgnoredByCloudSync` | `markPathIgnoredByCloudSync` |
 | `utils/photon.ts` | `pathOrNull`<br>`getFallbackWasmPaths`<br>`patchPhotonWasmRead`<br>`loadPhoton` |  |
