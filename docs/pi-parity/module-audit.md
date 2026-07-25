@@ -150,7 +150,7 @@ The member-level source inventory currently reports:
 | LLM provider | 169 | 100 | 632 | 0 | 0 |
 | Agent core | 35 | 35 | 327 | 0 | 0 |
 | TUI | 28 | 32 | 449 | 0 | 0 |
-| Coding agent | 177 | 173 | 2115 | 24 | 350 |
+| Coding agent | 177 | 173 | 2115 | 23 | 343 |
 
 `docs/pi-parity/member-symbol-inventory.md` is the generated per-file detail.
 A mentioned symbol means its ownership or gap has been classified; it does not

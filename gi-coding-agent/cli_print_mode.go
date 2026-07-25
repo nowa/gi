@@ -848,6 +848,13 @@ func (h *agentSessionPrintModeHost) modelRuntimeStreamOptions(
 	if err != nil {
 		return llm.ModelsStreamOptions{}, err
 	}
+	attributionContext := ProviderAttributionContext{
+		InstallTelemetryEnabled: installTelemetryEnabled,
+	}
+	if session != nil && session.SessionManager != nil {
+		attributionContext.SessionID =
+			session.SessionManager.GetSessionID()
+	}
 	options := llm.ModelsStreamOptions{
 		StreamOptions: llm.StreamOptions{
 			Context: ctx,
@@ -888,9 +895,9 @@ func (h *agentSessionPrintModeHost) modelRuntimeStreamOptions(
 			_ context.Context,
 			headers map[string]string,
 		) (map[string]string, error) {
-			return BuildSDKStreamHeaders(
+			return MergeProviderAttributionHeaders(
 				model,
-				installTelemetryEnabled,
+				attributionContext,
 				headers,
 				nil,
 			), nil

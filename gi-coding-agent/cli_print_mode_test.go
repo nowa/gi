@@ -2,6 +2,7 @@ package gicodingagent
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -1004,6 +1005,62 @@ func TestAgentSessionPrintModeProviderResponderUsesProviderRetrySettingsPiStyle(
 		*captured.Timeouts.WebSocketConnect != 0 ||
 		captured.HTTPClient == nil {
 		t.Fatalf("provider runtime options = %#v", captured)
+	}
+}
+
+func TestAgentSessionPrintModeProviderHeadersIncludeSessionState(
+	t *testing.T,
+) {
+	tempDir := t.TempDir()
+	manager, err := InMemorySessionManager(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.NewSession(NewSessionOptions{
+		ID: "opencode-session",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	model := testAttributionModel(
+		"opencode",
+		"https://opencode.ai/zen/v1",
+	)
+	session, err := CreateAgentSession(AgentSessionOptions{
+		CWD:            tempDir,
+		AgentDir:       filepath.Join(tempDir, "agent"),
+		Model:          model,
+		SessionManager: manager,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := &agentSessionPrintModeHost{
+		session:         session,
+		settingsManager: NewInMemorySettingsManager(nil),
+	}
+	t.Cleanup(host.requestRuntime.close)
+
+	options, err := host.modelRuntimeStreamOptions(
+		context.Background(),
+		model,
+		Args{},
+		true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers, err := options.TransformHeaders(
+		context.Background(),
+		map[string]string{
+			"x-opencode-client": "configured-client",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if headers["x-opencode-session"] != "opencode-session" ||
+		headers["x-opencode-client"] != "configured-client" {
+		t.Fatalf("headers = %#v", headers)
 	}
 }
 

@@ -100,6 +100,7 @@ not to the agent runtime.
 | `core/messages.ts` | coding-agent session message helpers | `message_components.go`, `gi-agent-core/harness/messages.go`, session manager files | split | UI render and model-context projection are split by ownership. |
 | `core/output-guard.ts` | stdout guard | writer injection plus `stdout_cleanliness_test.go` | go-native | Gi does not monkey-patch global stdout. |
 | `core/package-manager.ts` | package source resolution, resource precedence, install/update/remove | `package_manager.go`, `protocol_package_resolver.go`, `official_packages.go` | protocol | Gi preserves resource/filter semantics but intentionally removes npm source support. |
+| `core/provider-attribution.ts` | `matchesHost`, `isOpenRouterModel`, `isNvidiaNimModel`, `isCloudflareModel`, `getDefaultAttributionHeaders`, `getSessionHeaders`, `mergeProviderAttributionHeaders` | `internal/attribution/sdk_attribution.go` `matchesHost`, `isOpenRouterModel`, `isNVIDIANIMModel`, `isCloudflareModel`, `GetAttributionHeaders`, `getSessionHeaders`, `MergeProviderHeaders`; `sdk_attribution.go` `ProviderAttributionContext`, `MergeProviderAttributionHeaders` | go-native | One immutable request context carries telemetry policy and session identity. OpenRouter, NVIDIA NIM, Cloudflare, and OpenCode defaults are merged before configured/request headers, so explicit headers win. Gi keeps product-specific attribution values while preserving Pi's routing and host-match rules. |
 | `core/prompt-templates.ts`, `core/resource-loader.ts`, `core/skills.ts`, `core/system-prompt.ts` | resources and prompt assembly | `prompt_templates.go`, `resource_loader.go`, `system_prompt.go`, harness skill helpers | split | `.gi` resource discovery replaces `.pi` paths by design. |
 | `core/sdk.ts` | SDK session, attribution headers, and tool/provider registration | `sdk_session.go`, `internal/attribution`, `sdk_attribution.go` facade, protocol runtime | protocol | Go SDK shape is not a TS API clone; behaviors are covered through host/runtime tests, and attribution header merging now lives in a focused SDK metadata subpackage. |
 | `core/settings-manager.ts` | global/project settings, migrations, reload; `parseTimeoutSetting`, `SettingsManager.getHttpIdleTimeoutMs`, `SettingsManager.setHttpIdleTimeoutMs`, `SettingsManager.getWebSocketConnectTimeoutMs` | `settings_manager.go` `SettingsManager.HTTPIdleTimeout`, `SettingsManager.SetHTTPIdleTimeoutMS`, `SettingsManager.WebSocketConnectTimeout`; `http_runtime.go` `parseTimeoutSetting`, `providerRequestSettings` | direct | Settings reload and migration cases are covered, including the default-off `showCacheMissNotices` setting. Timeout values accept Pi's number/string/`disabled` forms, surface malformed persisted values, and preserve explicit zero through presence-aware `time.Duration` pointers. |
@@ -280,6 +281,29 @@ validated value snapshot, and `ModelRuntime` clones its pointer-valued timeout
 fields before provider dispatch. Explicit zero therefore remains distinct from
 an absent value. The Go transport owns socket read deadlines and disables HTTP/2
 so one connection's idle policy cannot affect multiplexed requests.
+
+### Provider Header State And Data Flow
+
+```text
+session id ───────────────┐
+telemetry setting ────────┼─> ProviderAttributionContext
+model provider/base URL ──┘              |
+                                         v
+                            protocol/product defaults
+                                         |
+resolved auth + provider/model headers ──┼─> one request header map
+explicit request headers ────────────────┘            |
+                                                      v
+                                         before-provider transform
+                                                      |
+                                                      v
+                                             provider transport
+```
+
+Session and telemetry state are captured once per request. Header sources are
+then applied in precedence order, and `ModelRuntime` gives the extension
+transform one detached final map. Attribution state is neither persisted in
+the session log nor stored as mutable provider-global state.
 
 ### Project Trust State And Data Flow
 
