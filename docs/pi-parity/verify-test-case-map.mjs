@@ -309,6 +309,16 @@ const modules = [
 				"gi-coding-agent/prompt_templates_test.go",
 				"gi-coding-agent/pi_coding_agent_case_names_test.go",
 			],
+			"packages/coding-agent/test/rpc.test.ts": [
+				"gi-coding-agent/rpc_client_test.go",
+				"gi-coding-agent/rpc_process_transport_test.go",
+				"gi-coding-agent/rpc_session_host_test.go",
+				"gi-coding-agent/rpc_mode_cli_test.go",
+				"gi-coding-agent/rpc_prompt_response_semantics_test.go",
+			],
+			"packages/coding-agent/test/rpc-client-process-exit.test.ts": [
+				"gi-coding-agent/rpc_process_transport_test.go",
+			],
 			"packages/coding-agent/test/restore-sandbox-env.test.ts": ["gi-coding-agent/pi_coding_agent_case_names_test.go"],
 			"packages/coding-agent/test/session-manager/labels.test.ts": [
 				"gi-coding-agent/session_manager_migration_list_test.go",

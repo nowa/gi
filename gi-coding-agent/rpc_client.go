@@ -28,6 +28,7 @@ type RPCCommand struct {
 	OutputPath         string            `json:"outputPath,omitempty"`
 	SessionPath        string            `json:"sessionPath,omitempty"`
 	EntryID            string            `json:"entryId,omitempty"`
+	Since              *string           `json:"since,omitempty"`
 	Name               string            `json:"name,omitempty"`
 	ParentSession      string            `json:"parentSession,omitempty"`
 }
@@ -65,6 +66,63 @@ type RPCClient struct {
 
 func NewRPCClient(sender RPCCommandSender) *RPCClient {
 	return &RPCClient{sender: sender}
+}
+
+type rpcClientLifecycle interface {
+	Start(context.Context) error
+	Stop(context.Context) error
+}
+
+type rpcClientEventSource interface {
+	OnEvent(func(AgentSessionEvent)) func()
+}
+
+type rpcClientStderrSource interface {
+	GetStderr() string
+}
+
+func (c *RPCClient) Start(ctx context.Context) error {
+	if c == nil || c.sender == nil {
+		return errors.New("RPC client has no process transport")
+	}
+	lifecycle, ok := c.sender.(rpcClientLifecycle)
+	if !ok {
+		return errors.New("RPC client sender does not support process lifecycle")
+	}
+	return lifecycle.Start(ctx)
+}
+
+func (c *RPCClient) Stop(ctx context.Context) error {
+	if c == nil || c.sender == nil {
+		return nil
+	}
+	lifecycle, ok := c.sender.(rpcClientLifecycle)
+	if !ok {
+		return nil
+	}
+	return lifecycle.Stop(ctx)
+}
+
+func (c *RPCClient) OnEvent(listener func(AgentSessionEvent)) func() {
+	if c == nil || c.sender == nil {
+		return func() {}
+	}
+	source, ok := c.sender.(rpcClientEventSource)
+	if !ok {
+		return func() {}
+	}
+	return source.OnEvent(listener)
+}
+
+func (c *RPCClient) GetStderr() string {
+	if c == nil || c.sender == nil {
+		return ""
+	}
+	source, ok := c.sender.(rpcClientStderrSource)
+	if !ok {
+		return ""
+	}
+	return source.GetStderr()
 }
 
 func (c *RPCClient) Prompt(ctx context.Context, message string) error {
@@ -149,6 +207,18 @@ func (c *RPCClient) CycleThinkingLevel(ctx context.Context) (*RPCThinkingLevelRe
 		return nil, err
 	}
 	return rpcResponseData[*RPCThinkingLevelResult](response)
+}
+
+func (c *RPCClient) GetAvailableThinkingLevels(ctx context.Context) ([]string, error) {
+	response, err := c.send(ctx, RPCCommand{Type: RPCCommandGetAvailableThinkingLevels})
+	if err != nil {
+		return nil, err
+	}
+	result, err := rpcResponseData[RPCThinkingLevelsResult](response)
+	if err != nil {
+		return nil, err
+	}
+	return result.Levels, nil
 }
 
 func (c *RPCClient) SetSteeringMode(ctx context.Context, mode string) error {
@@ -241,6 +311,29 @@ func (c *RPCClient) GetForkMessages(ctx context.Context) ([]AgentSessionForkMess
 		return nil, err
 	}
 	return result.Messages, nil
+}
+
+func (c *RPCClient) GetEntries(ctx context.Context, since ...string) (RPCEntriesResult, error) {
+	if len(since) > 1 {
+		return RPCEntriesResult{}, errors.New("get entries accepts at most one since entry ID")
+	}
+	command := RPCCommand{Type: RPCCommandGetEntries}
+	if len(since) == 1 {
+		command.Since = &since[0]
+	}
+	response, err := c.send(ctx, command)
+	if err != nil {
+		return RPCEntriesResult{}, err
+	}
+	return rpcResponseData[RPCEntriesResult](response)
+}
+
+func (c *RPCClient) GetTree(ctx context.Context) (RPCTreeResult, error) {
+	response, err := c.send(ctx, RPCCommand{Type: RPCCommandGetTree})
+	if err != nil {
+		return RPCTreeResult{}, err
+	}
+	return rpcResponseData[RPCTreeResult](response)
 }
 
 func (c *RPCClient) GetLastAssistantText(ctx context.Context) (*string, error) {

@@ -590,10 +590,24 @@ type SessionContext struct {
 }
 
 type SessionTreeNode struct {
-	Entry          FileEntry
-	Children       []*SessionTreeNode
-	Label          string
-	LabelTimestamp string
+	Entry          FileEntry          `json:"entry"`
+	Children       []*SessionTreeNode `json:"children"`
+	Label          string             `json:"label,omitempty"`
+	LabelTimestamp string             `json:"labelTimestamp,omitempty"`
+}
+
+// SessionEntriesSnapshot is a detached append-order view of a session and the
+// leaf selected in the same locked manager revision.
+type SessionEntriesSnapshot struct {
+	Entries []FileEntry `json:"entries"`
+	LeafID  *string     `json:"leafId"`
+}
+
+// SessionTreeSnapshot is a detached tree projection and the leaf selected in
+// the same locked manager revision.
+type SessionTreeSnapshot struct {
+	Tree   []*SessionTreeNode `json:"tree"`
+	LeafID *string            `json:"leafId"`
 }
 
 type SessionInfo struct {
@@ -1319,6 +1333,10 @@ func (s *SessionManager) GetHeader() *SessionHeader {
 }
 
 func (s *SessionManager) GetEntries() []FileEntry {
+	return s.GetEntriesSnapshot().Entries
+}
+
+func (s *SessionManager) GetEntriesSnapshot() SessionEntriesSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	entries := make([]FileEntry, 0, len(s.fileEntries))
@@ -1328,7 +1346,10 @@ func (s *SessionManager) GetEntries() []FileEntry {
 		}
 		entries = append(entries, cloneFileEntry(entry))
 	}
-	return entries
+	return SessionEntriesSnapshot{
+		Entries: entries,
+		LeafID:  cloneStringPtr(s.leafID),
+	}
 }
 
 func (s *SessionManager) allEntriesSnapshot() []FileEntry {
@@ -1857,16 +1878,34 @@ func jsonStringFallback(value any) string {
 }
 
 func (s *SessionManager) GetTree() []*SessionTreeNode {
+	return s.GetTreeSnapshot().Tree
+}
+
+func (s *SessionManager) GetTreeSnapshot() SessionTreeSnapshot {
 	s.mu.RLock()
 	entries := entriesWithoutHeader(cloneFileEntries(s.fileEntries))
 	labelsByID := cloneSessionStringMap(s.labelsByID)
 	labelTimestampsByID := cloneSessionStringMap(s.labelTimestampsByID)
+	leafID := cloneStringPtr(s.leafID)
 	s.mu.RUnlock()
+
+	return SessionTreeSnapshot{
+		Tree:   buildSessionTree(entries, labelsByID, labelTimestampsByID),
+		LeafID: leafID,
+	}
+}
+
+func buildSessionTree(
+	entries []FileEntry,
+	labelsByID map[string]string,
+	labelTimestampsByID map[string]string,
+) []*SessionTreeNode {
 	nodeMap := map[string]*SessionTreeNode{}
 	roots := []*SessionTreeNode{}
 	for _, entry := range entries {
 		nodeMap[entry.ID] = &SessionTreeNode{
 			Entry:          entry,
+			Children:       []*SessionTreeNode{},
 			Label:          labelsByID[entry.ID],
 			LabelTimestamp: labelTimestampsByID[entry.ID],
 		}

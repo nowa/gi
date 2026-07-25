@@ -158,6 +158,64 @@ func TestRPCSessionHostThinkingLevelCommands(t *testing.T) {
 	}
 }
 
+func TestRPCSessionHostIntrospectionUsesCoherentSnapshots(t *testing.T) {
+	host, _, manager := createRPCSessionHostForTest(t)
+	mustRPCPrompt(t, host, "first")
+	mustRPCPrompt(t, host, "second")
+	beforeCompaction := manager.GetEntries()
+	preCompactionID := beforeCompaction[0].ID
+	manager.AppendCompaction("summary", beforeCompaction[2].ID, 128)
+
+	levels := mustRPCHandleData[RPCThinkingLevelsResult](t, host, RPCCommand{
+		Type: RPCCommandGetAvailableThinkingLevels,
+	})
+	wantLevels := llm.GetSupportedThinkingLevels(host.Session.Agent.State.Model)
+	if !reflect.DeepEqual(levels.Levels, wantLevels) {
+		t.Fatalf("thinking levels = %#v, want %#v", levels.Levels, wantLevels)
+	}
+
+	all := mustRPCHandleData[RPCEntriesResult](t, host, RPCCommand{Type: RPCCommandGetEntries})
+	if len(all.Entries) < 5 ||
+		all.Entries[0].ID != preCompactionID ||
+		all.LeafID == nil ||
+		*all.LeafID != all.Entries[len(all.Entries)-1].ID {
+		t.Fatalf("entry snapshot = %#v", all)
+	}
+	since := all.Entries[1].ID
+	incremental := mustRPCHandleData[RPCEntriesResult](t, host, RPCCommand{
+		Type:  RPCCommandGetEntries,
+		Since: &since,
+	})
+	if !reflect.DeepEqual(incremental.Entries, all.Entries[2:]) ||
+		incremental.LeafID == nil ||
+		*incremental.LeafID != *all.LeafID {
+		t.Fatalf("incremental entry snapshot = %#v, all = %#v", incremental, all)
+	}
+
+	tree := mustRPCHandleData[RPCTreeResult](t, host, RPCCommand{Type: RPCCommandGetTree})
+	if len(tree.Tree) == 0 || tree.LeafID == nil || *tree.LeafID != *all.LeafID {
+		t.Fatalf("tree snapshot = %#v", tree)
+	}
+	treeJSON := mustMarshalJSON(t, tree)
+	assertJSONContains(t, treeJSON, `"tree":`, `"entry":`, `"children":`)
+	assertJSONNotContains(t, treeJSON, `"Tree":`, `"Entry":`, `"Children":`, `"children":null`)
+
+	all.Entries[0].ID = "mutated"
+	tree.Tree[0].Entry.ID = "mutated"
+	if manager.GetEntries()[0].ID == "mutated" || manager.GetTree()[0].Entry.ID == "mutated" {
+		t.Fatal("RPC session projections alias manager state")
+	}
+
+	missing := "missing-entry"
+	response := host.HandleCommand(context.Background(), RPCCommand{
+		Type:  RPCCommandGetEntries,
+		Since: &missing,
+	})
+	if response.Success || response.Error != "Entry not found: missing-entry" {
+		t.Fatalf("missing since response = %#v", response)
+	}
+}
+
 func TestRPCSessionHostGetAvailableModels(t *testing.T) {
 	host, _, _ := createRPCSessionHostForTest(t)
 	host.AvailableModels = []llm.Model{llm.MustGetModel("anthropic", "claude-sonnet-4-5")}

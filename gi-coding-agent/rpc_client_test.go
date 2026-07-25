@@ -89,6 +89,9 @@ func TestRPCClientDataMethodsDecodePiResponses(t *testing.T) {
 	ctx := context.Background()
 	model := llm.Model{Provider: "openai", ID: "gpt-4o-mini", ContextWindow: 128000}
 	lastText := "done"
+	leafID := "entry-2"
+	entry := FileEntry{Type: "message", ID: leafID, Message: llm.UserMessageText("hello")}
+	tree := []*SessionTreeNode{{Entry: entry, Children: []*SessionTreeNode{}}}
 	client := NewRPCClient(RPCCommandSenderFunc(func(ctx context.Context, command RPCCommand) (RPCResponse, error) {
 		var data any
 		switch command.Type {
@@ -104,6 +107,8 @@ func TestRPCClientDataMethodsDecodePiResponses(t *testing.T) {
 			data = RPCAvailableModelsResult{Models: []llm.Model{model}}
 		case RPCCommandCycleThinkingLevel:
 			data = RPCThinkingLevelResult{Level: "high"}
+		case RPCCommandGetAvailableThinkingLevels:
+			data = RPCThinkingLevelsResult{Levels: []string{"off", "low", "high"}}
 		case RPCCommandCompact:
 			data = agentharness.CompactionResult{Summary: "summary", TokensBefore: 42}
 		case RPCCommandBash:
@@ -116,6 +121,13 @@ func TestRPCClientDataMethodsDecodePiResponses(t *testing.T) {
 			data = RPCForkResult{Text: "hello", Cancelled: false}
 		case RPCCommandGetForkMessages:
 			data = RPCForkMessagesResult{Messages: []AgentSessionForkMessage{{EntryID: "entry-1", Text: "hello"}}}
+		case RPCCommandGetEntries:
+			if command.Since == nil || *command.Since != "entry-1" {
+				t.Fatalf("get entries command = %#v", command)
+			}
+			data = RPCEntriesResult{Entries: []FileEntry{entry}, LeafID: &leafID}
+		case RPCCommandGetTree:
+			data = RPCTreeResult{Tree: tree, LeafID: &leafID}
 		case RPCCommandGetLastAssistantText:
 			data = RPCLastAssistantTextResult{Text: &lastText}
 		case RPCCommandGetMessages:
@@ -146,6 +158,9 @@ func TestRPCClientDataMethodsDecodePiResponses(t *testing.T) {
 	if result, err := client.CycleThinkingLevel(ctx); err != nil || result == nil || result.Level != "high" {
 		t.Fatalf("CycleThinkingLevel = %#v err=%v", result, err)
 	}
+	if result, err := client.GetAvailableThinkingLevels(ctx); err != nil || !reflect.DeepEqual(result, []string{"off", "low", "high"}) {
+		t.Fatalf("GetAvailableThinkingLevels = %#v err=%v", result, err)
+	}
 	if result, err := client.Compact(ctx, "short"); err != nil || result.Summary != "summary" {
 		t.Fatalf("Compact = %#v err=%v", result, err)
 	}
@@ -167,6 +182,18 @@ func TestRPCClientDataMethodsDecodePiResponses(t *testing.T) {
 	if result, err := client.GetForkMessages(ctx); err != nil || len(result) != 1 {
 		t.Fatalf("GetForkMessages = %#v err=%v", result, err)
 	}
+	if result, err := client.GetEntries(ctx, "entry-1"); err != nil ||
+		len(result.Entries) != 1 ||
+		result.LeafID == nil ||
+		*result.LeafID != leafID {
+		t.Fatalf("GetEntries = %#v err=%v", result, err)
+	}
+	if result, err := client.GetTree(ctx); err != nil ||
+		len(result.Tree) != 1 ||
+		result.LeafID == nil ||
+		*result.LeafID != leafID {
+		t.Fatalf("GetTree = %#v err=%v", result, err)
+	}
 	if result, err := client.GetLastAssistantText(ctx); err != nil || result == nil || *result != "done" {
 		t.Fatalf("GetLastAssistantText = %#v err=%v", result, err)
 	}
@@ -178,6 +205,9 @@ func TestRPCClientDataMethodsDecodePiResponses(t *testing.T) {
 	}
 	if result, err := client.Clone(ctx); err != nil || result.Cancelled {
 		t.Fatalf("Clone = %#v err=%v", result, err)
+	}
+	if _, err := client.GetEntries(ctx, "one", "two"); err == nil {
+		t.Fatal("GetEntries accepted more than one since entry ID")
 	}
 }
 

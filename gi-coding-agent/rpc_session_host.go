@@ -14,34 +14,37 @@ import (
 )
 
 const (
-	RPCCommandPrompt               = "prompt"
-	RPCCommandSteer                = "steer"
-	RPCCommandFollowUp             = "follow_up"
-	RPCCommandAbort                = "abort"
-	RPCCommandNewSession           = "new_session"
-	RPCCommandGetState             = "get_state"
-	RPCCommandSetModel             = "set_model"
-	RPCCommandCycleModel           = "cycle_model"
-	RPCCommandSetThinkingLevel     = "set_thinking_level"
-	RPCCommandCycleThinkingLevel   = "cycle_thinking_level"
-	RPCCommandGetAvailableModels   = "get_available_models"
-	RPCCommandSetSteeringMode      = "set_steering_mode"
-	RPCCommandSetFollowUpMode      = "set_follow_up_mode"
-	RPCCommandCompact              = "compact"
-	RPCCommandSetAutoCompaction    = "set_auto_compaction"
-	RPCCommandSetAutoRetry         = "set_auto_retry"
-	RPCCommandAbortRetry           = "abort_retry"
-	RPCCommandBash                 = "bash"
-	RPCCommandAbortBash            = "abort_bash"
-	RPCCommandGetSessionStats      = "get_session_stats"
-	RPCCommandExportHTML           = "export_html"
-	RPCCommandSwitchSession        = "switch_session"
-	RPCCommandFork                 = "fork"
-	RPCCommandGetForkMessages      = "get_fork_messages"
-	RPCCommandGetLastAssistantText = "get_last_assistant_text"
-	RPCCommandSetSessionName       = "set_session_name"
-	RPCCommandGetMessages          = "get_messages"
-	RPCCommandGetCommands          = "get_commands"
+	RPCCommandPrompt                     = "prompt"
+	RPCCommandSteer                      = "steer"
+	RPCCommandFollowUp                   = "follow_up"
+	RPCCommandAbort                      = "abort"
+	RPCCommandNewSession                 = "new_session"
+	RPCCommandGetState                   = "get_state"
+	RPCCommandSetModel                   = "set_model"
+	RPCCommandCycleModel                 = "cycle_model"
+	RPCCommandSetThinkingLevel           = "set_thinking_level"
+	RPCCommandCycleThinkingLevel         = "cycle_thinking_level"
+	RPCCommandGetAvailableThinkingLevels = "get_available_thinking_levels"
+	RPCCommandGetAvailableModels         = "get_available_models"
+	RPCCommandSetSteeringMode            = "set_steering_mode"
+	RPCCommandSetFollowUpMode            = "set_follow_up_mode"
+	RPCCommandCompact                    = "compact"
+	RPCCommandSetAutoCompaction          = "set_auto_compaction"
+	RPCCommandSetAutoRetry               = "set_auto_retry"
+	RPCCommandAbortRetry                 = "abort_retry"
+	RPCCommandBash                       = "bash"
+	RPCCommandAbortBash                  = "abort_bash"
+	RPCCommandGetSessionStats            = "get_session_stats"
+	RPCCommandExportHTML                 = "export_html"
+	RPCCommandSwitchSession              = "switch_session"
+	RPCCommandFork                       = "fork"
+	RPCCommandGetForkMessages            = "get_fork_messages"
+	RPCCommandGetEntries                 = "get_entries"
+	RPCCommandGetTree                    = "get_tree"
+	RPCCommandGetLastAssistantText       = "get_last_assistant_text"
+	RPCCommandSetSessionName             = "set_session_name"
+	RPCCommandGetMessages                = "get_messages"
+	RPCCommandGetCommands                = "get_commands"
 )
 
 var errNothingToExport = errors.New("Nothing to export yet - start a conversation first")
@@ -110,6 +113,10 @@ type RPCCycleModelResult struct {
 	IsScoped      bool      `json:"isScoped"`
 }
 
+type RPCThinkingLevelsResult struct {
+	Levels []string `json:"levels"`
+}
+
 type RPCSessionStats struct {
 	SessionFile       string             `json:"sessionFile,omitempty"`
 	SessionID         string             `json:"sessionId"`
@@ -147,6 +154,9 @@ type RPCForkResult struct {
 type RPCForkMessagesResult struct {
 	Messages []AgentSessionForkMessage `json:"messages"`
 }
+
+type RPCEntriesResult = SessionEntriesSnapshot
+type RPCTreeResult = SessionTreeSnapshot
 
 type RPCMessagesResult struct {
 	Messages []llm.Message `json:"messages"`
@@ -330,6 +340,8 @@ func (h *RPCSessionHost) handleCommand(ctx context.Context, command RPCCommand) 
 			return nil, err
 		}
 		return map[string]string{"level": level}, nil
+	case RPCCommandGetAvailableThinkingLevels:
+		return RPCThinkingLevelsResult{Levels: h.GetAvailableThinkingLevels()}, nil
 	case RPCCommandGetAvailableModels:
 		return RPCAvailableModelsResult{Models: h.getAvailableModels()}, nil
 	case RPCCommandSetSteeringMode:
@@ -372,6 +384,10 @@ func (h *RPCSessionHost) handleCommand(ctx context.Context, command RPCCommand) 
 		return nil, session.SetSessionName(name)
 	case RPCCommandGetForkMessages:
 		return RPCForkMessagesResult{Messages: session.GetUserMessagesForForking()}, nil
+	case RPCCommandGetEntries:
+		return h.GetEntries(command.Since)
+	case RPCCommandGetTree:
+		return h.GetTree()
 	case RPCCommandGetMessages:
 		return RPCMessagesResult{Messages: session.Messages()}, nil
 	case RPCCommandGetCommands:
@@ -445,6 +461,41 @@ func (h *RPCSessionHost) SetThinkingLevel(level string) error {
 		return errors.New("invalid thinking level: " + level)
 	}
 	return h.applyThinkingLevel(level)
+}
+
+func (h *RPCSessionHost) GetAvailableThinkingLevels() []string {
+	session := h.sessionSnapshot()
+	if session == nil || session.Agent == nil {
+		return []string{string(ThinkingOff)}
+	}
+	return llm.GetSupportedThinkingLevels(session.Agent.State.Model)
+}
+
+func (h *RPCSessionHost) GetEntries(since *string) (RPCEntriesResult, error) {
+	session := h.sessionSnapshot()
+	if session == nil || session.SessionManager == nil {
+		return RPCEntriesResult{}, errors.New("RPC session host requires an active session")
+	}
+	snapshot := session.SessionManager.GetEntriesSnapshot()
+	if since == nil {
+		return snapshot, nil
+	}
+	for index := range snapshot.Entries {
+		if snapshot.Entries[index].ID != *since {
+			continue
+		}
+		snapshot.Entries = snapshot.Entries[index+1:]
+		return snapshot, nil
+	}
+	return RPCEntriesResult{}, errors.New("Entry not found: " + *since)
+}
+
+func (h *RPCSessionHost) GetTree() (RPCTreeResult, error) {
+	session := h.sessionSnapshot()
+	if session == nil || session.SessionManager == nil {
+		return RPCTreeResult{}, errors.New("RPC session host requires an active session")
+	}
+	return session.SessionManager.GetTreeSnapshot(), nil
 }
 
 func (h *RPCSessionHost) SetModel(provider, modelID string) (llm.Model, error) {
