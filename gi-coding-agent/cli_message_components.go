@@ -18,24 +18,50 @@ const (
 	cliOSC133ZoneFinal = "\x1b]133;C\x07"
 )
 
+type cliOutputPadComponent interface {
+	SetOutputPad(int)
+}
+
 //go:embed assets/clankolas.png
 var cliEarendilClankolasPNG []byte
 
 type cliUserMessageComponent struct {
-	text string
+	mu        sync.RWMutex
+	text      string
+	outputPad int
+	content   *gitui.Box
 }
 
-func newCLIUserMessageComponent(text string) gitui.Component {
-	return cliUserMessageComponent{text: strings.TrimSpace(text)}
-}
-
-func (c cliUserMessageComponent) Invalidate() {}
-
-func (c cliUserMessageComponent) Render(width int) []string {
-	if strings.TrimSpace(c.text) == "" {
-		return nil
+func newCLIUserMessageComponent(text string, outputPad int) *cliUserMessageComponent {
+	component := &cliUserMessageComponent{
+		text:      strings.TrimSpace(text),
+		outputPad: normalizeOutputPad(outputPad),
 	}
-	box := gitui.NewBox(1, 1, func(text string) string {
+	component.rebuild()
+	return component
+}
+
+func (c *cliUserMessageComponent) SetOutputPad(padding int) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.outputPad = normalizeOutputPad(padding)
+	c.rebuildLocked()
+	c.mu.Unlock()
+}
+
+func (c *cliUserMessageComponent) rebuild() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.rebuildLocked()
+	c.mu.Unlock()
+}
+
+func (c *cliUserMessageComponent) rebuildLocked() {
+	box := gitui.NewBox(c.outputPad, 1, func(text string) string {
 		return tuiThemeBG("userMessageBg", text)
 	})
 	box.AddChild(newCLIMarkdownWithOptions(c.text, gitui.MarkdownOptions{
@@ -43,7 +69,32 @@ func (c cliUserMessageComponent) Render(width int) []string {
 			Color: func(text string) string { return tuiThemeFG("userMessageText", text) },
 		},
 	}))
-	lines := box.Render(width)
+	c.content = box
+}
+
+func (c *cliUserMessageComponent) Invalidate() {
+	if c == nil {
+		return
+	}
+	c.mu.RLock()
+	content := c.content
+	c.mu.RUnlock()
+	if content != nil {
+		content.Invalidate()
+	}
+}
+
+func (c *cliUserMessageComponent) Render(width int) []string {
+	if c == nil || strings.TrimSpace(c.text) == "" {
+		return nil
+	}
+	c.mu.RLock()
+	content := c.content
+	c.mu.RUnlock()
+	if content == nil {
+		return nil
+	}
+	lines := content.Render(width)
 	return cliOSC133WrappedLines(lines)
 }
 
@@ -52,13 +103,15 @@ type cliAssistantMessageComponent struct {
 	message             llm.Message
 	hideThinkingBlock   bool
 	hiddenThinkingLabel string
+	outputPad           int
 }
 
-func newCLIAssistantMessageComponent(message llm.Message, hideThinkingBlock bool, hiddenThinkingLabel string) *cliAssistantMessageComponent {
+func newCLIAssistantMessageComponent(message llm.Message, hideThinkingBlock bool, hiddenThinkingLabel string, outputPad int) *cliAssistantMessageComponent {
 	return &cliAssistantMessageComponent{
 		message:             message,
 		hideThinkingBlock:   hideThinkingBlock,
 		hiddenThinkingLabel: firstNonEmptyString(strings.TrimSpace(hiddenThinkingLabel), "Thinking..."),
+		outputPad:           normalizeOutputPad(outputPad),
 	}
 }
 
@@ -89,6 +142,15 @@ func (c *cliAssistantMessageComponent) SetHiddenThinkingLabel(label string) {
 	c.hiddenThinkingLabel = firstNonEmptyString(strings.TrimSpace(label), "Thinking...")
 }
 
+func (c *cliAssistantMessageComponent) SetOutputPad(padding int) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.outputPad = normalizeOutputPad(padding)
+	c.mu.Unlock()
+}
+
 func (c *cliAssistantMessageComponent) Invalidate() {}
 
 func (c *cliAssistantMessageComponent) Render(width int) []string {
@@ -99,15 +161,17 @@ func (c *cliAssistantMessageComponent) Render(width int) []string {
 	message := c.message
 	hideThinkingBlock := c.hideThinkingBlock
 	hiddenThinkingLabel := c.hiddenThinkingLabel
+	outputPad := c.outputPad
 	c.mu.Unlock()
-	lines := renderCLIAssistantMessage(message, width, hideThinkingBlock, hiddenThinkingLabel)
+	lines := renderCLIAssistantMessage(message, width, hideThinkingBlock, hiddenThinkingLabel, outputPad)
 	if assistantMessageHasToolCalls(message) {
 		return lines
 	}
 	return cliOSC133WrappedLines(lines)
 }
 
-func renderCLIAssistantMessage(message llm.Message, width int, hideThinkingBlock bool, hiddenThinkingLabel string) []string {
+func renderCLIAssistantMessage(message llm.Message, width int, hideThinkingBlock bool, hiddenThinkingLabel string, outputPad int) []string {
+	outputPad = normalizeOutputPad(outputPad)
 	hasVisibleContent := false
 	for _, part := range message.Content {
 		if cliAssistantContentPartVisible(part) {
@@ -125,17 +189,17 @@ func renderCLIAssistantMessage(message llm.Message, width int, hideThinkingBlock
 		switch part.Type {
 		case llm.ContentText:
 			if text := strings.TrimSpace(part.Text); text != "" {
-				lines = append(lines, newCLIMarkdownWithOptions(text, gitui.MarkdownOptions{PaddingX: 1}).Render(width)...)
+				lines = append(lines, newCLIMarkdownWithOptions(text, gitui.MarkdownOptions{PaddingX: outputPad}).Render(width)...)
 			}
 		case llm.ContentThinking:
 			if thinking := strings.TrimSpace(part.Thinking); thinking != "" {
 				hasVisibleAfter := cliAssistantHasVisibleContentAfter(message.Content, index)
 				if hideThinkingBlock {
 					label := firstNonEmptyString(strings.TrimSpace(hiddenThinkingLabel), "Thinking...")
-					lines = append(lines, gitui.NewText(tuiThemeItalic(tuiThemeFG("thinkingText", label)), 1, 0).Render(width)...)
+					lines = append(lines, gitui.NewText(tuiThemeItalic(tuiThemeFG("thinkingText", label)), outputPad, 0).Render(width)...)
 				} else {
 					lines = append(lines, newCLIMarkdownWithOptions(thinking, gitui.MarkdownOptions{
-						PaddingX: 1,
+						PaddingX: outputPad,
 						DefaultTextStyle: &gitui.DefaultTextStyle{
 							Color:  func(text string) string { return tuiThemeFG("thinkingText", text) },
 							Italic: true,
@@ -151,7 +215,7 @@ func renderCLIAssistantMessage(message llm.Message, width int, hideThinkingBlock
 	if !assistantMessageHasToolCalls(message) {
 		if status := assistantMessageStatusText(message); status != "" {
 			lines = append(lines, "")
-			lines = append(lines, gitui.NewText(tuiThemeError(status), 1, 0).Render(width)...)
+			lines = append(lines, gitui.NewText(tuiThemeError(status), outputPad, 0).Render(width)...)
 		}
 	}
 	if len(lines) == 0 {

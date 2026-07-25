@@ -1848,6 +1848,7 @@ func TestCLIInteractiveTUIHostAppliesPiInteractiveSettingsOnStartup(t *testing.T
 	agentDir := filepath.Join(cwd, "agent")
 	settings := NewSettingsManager(cwd, agentDir)
 	settings.SetEditorPaddingX(2)
+	settings.SetOutputPad(0)
 	settings.SetAutocompleteMaxVisible(10)
 	settings.SetShowHardwareCursor(true)
 	settings.SetClearOnShrink(true)
@@ -1881,6 +1882,20 @@ func TestCLIInteractiveTUIHostAppliesPiInteractiveSettingsOnStartup(t *testing.T
 	tool := host.newToolExecutionComponent("read", "tool-startup", map[string]any{"path": "image.png"})
 	if tool.showImages || tool.imageWidthCells != 90 {
 		t.Fatalf("startup tool image settings not applied: show=%v width=%d", tool.showImages, tool.imageWidthCells)
+	}
+	host.addUserMessage(llm.Message{Role: llm.RoleUser, Content: []llm.ContentPart{llm.Text("startup user")}})
+	host.addAssistantMessage(llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("startup assistant")}})
+	children := host.chat.Children()
+	userMessage, userOK := children[len(children)-2].(*cliUserMessageComponent)
+	assistantMessage, assistantOK := children[len(children)-1].(*cliAssistantMessageComponent)
+	if !userOK || !assistantOK {
+		t.Fatalf("startup message components = %T, %T", children[len(children)-2], children[len(children)-1])
+	}
+	if got := strings.TrimRight(StripAnsi(userMessage.Render(40)[1]), " "); got != "startup user" {
+		t.Fatalf("startup user output padding = %q", got)
+	}
+	if got := normalizedAssistantRenderLines(assistantMessage.Render(40)); !reflect.DeepEqual(got, []string{"", "startup assistant"}) {
+		t.Fatalf("startup assistant output padding = %#v", got)
 	}
 }
 
@@ -4673,7 +4688,7 @@ func TestCLIInteractiveTUIHostThinkingTogglePreservesStreamingComponentPiStyle(t
 			llm.Text("streaming final"),
 		},
 	}
-	component := newCLIAssistantMessageComponent(message, false, "Thinking...")
+	component := newCLIAssistantMessageComponent(message, false, "Thinking...", defaultOutputPad)
 	host := &CLIInteractiveTUIHost{
 		runtimeHost:         runtimeHost,
 		chat:                gitui.NewContainer(),
@@ -6166,6 +6181,7 @@ func TestCLIInteractiveTUISettingsListIncludesAndAppliesPiControls(t *testing.T)
 		"auto-resize-images",
 		"block-images",
 		"skill-commands",
+		"output-padding",
 		"transport",
 		"hide-thinking",
 		"cache-miss-notices",
@@ -6184,6 +6200,13 @@ func TestCLIInteractiveTUISettingsListIncludesAndAppliesPiControls(t *testing.T)
 		chat:   gitui.NewContainer(),
 		ui:     gitui.NewTUI(gitui.NewVirtualTerminal(40, 10)),
 	}
+	userMessage := newCLIUserMessageComponent("user output", 1)
+	assistantMessageValue := llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("assistant output")}}
+	assistantMessage := newCLIAssistantMessageComponent(assistantMessageValue, false, "Thinking...", 1)
+	streamingMessage := newCLIAssistantMessageComponent(assistantMessageValue, false, "Thinking...", 1)
+	host.chat.AddChild(userMessage)
+	host.chat.AddChild(assistantMessage)
+	host.liveState.setStreaming(assistantMessageValue, streamingMessage)
 	tool := NewToolExecutionComponent("read", "tool-settings", map[string]any{"path": "image.png"}, ToolDefinition{Name: "read"}, t.TempDir())
 	host.chat.AddChild(tool)
 	host.liveState.storePendingTool("tool-settings", tool)
@@ -6195,6 +6218,7 @@ func TestCLIInteractiveTUISettingsListIncludesAndAppliesPiControls(t *testing.T)
 	host.applySettingsListChange(rpcHost, settings, "skill-commands", "false")
 	host.applySettingsListChange(rpcHost, settings, "show-hardware-cursor", "true")
 	host.applySettingsListChange(rpcHost, settings, "editor-padding", "3")
+	host.applySettingsListChange(rpcHost, settings, "output-padding", "0")
 	host.applySettingsListChange(rpcHost, settings, "autocomplete-max-visible", "20")
 	host.applySettingsListChange(rpcHost, settings, "clear-on-shrink", "true")
 	host.applySettingsListChange(rpcHost, settings, "hide-thinking", "true")
@@ -6214,6 +6238,7 @@ func TestCLIInteractiveTUISettingsListIncludesAndAppliesPiControls(t *testing.T)
 		!settings.GetShowCacheMissNotices() ||
 		settings.GetDoubleEscapeAction() != "fork" ||
 		settings.GetTreeFilterMode() != "labeled-only" ||
+		settings.GetOutputPad() != 0 ||
 		settings.GetWarnings().AnthropicExtraUsage ||
 		!settings.GetShowTerminalProgress() {
 		t.Fatalf("settings not applied")
@@ -6224,6 +6249,17 @@ func TestCLIInteractiveTUISettingsListIncludesAndAppliesPiControls(t *testing.T)
 	}
 	if tool.showImages || tool.imageWidthCells != 120 {
 		t.Fatalf("tool image settings not applied: show=%v width=%d", tool.showImages, tool.imageWidthCells)
+	}
+	if got := strings.TrimRight(StripAnsi(userMessage.Render(40)[1]), " "); got != "user output" {
+		t.Fatalf("user output padding not updated = %q", got)
+	}
+	for name, component := range map[string]*cliAssistantMessageComponent{
+		"history":   assistantMessage,
+		"streaming": streamingMessage,
+	} {
+		if got := normalizedAssistantRenderLines(component.Render(40)); !reflect.DeepEqual(got, []string{"", "assistant output"}) {
+			t.Fatalf("%s assistant output padding = %#v", name, got)
+		}
 	}
 }
 

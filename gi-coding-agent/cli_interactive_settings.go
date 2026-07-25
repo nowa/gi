@@ -188,6 +188,7 @@ func settingsListItems(host *RPCSessionHost, state RPCSessionState, settings *Se
 		{ID: "skill-commands", Label: "Skill commands", Description: "Register skills as /skill:name commands", CurrentValue: fmt.Sprintf("%t", settings.GetEnableSkillCommands()), Values: []string{"true", "false"}},
 		{ID: "show-hardware-cursor", Label: "Show hardware cursor", Description: "Show the terminal cursor while still positioning it for IME support", CurrentValue: fmt.Sprintf("%t", settings.GetShowHardwareCursor()), Values: []string{"true", "false"}},
 		{ID: "editor-padding", Label: "Editor padding", Description: "Horizontal padding for input editor (0-3)", CurrentValue: fmt.Sprintf("%d", settings.GetEditorPaddingX()), Values: []string{"0", "1", "2", "3"}},
+		{ID: "output-padding", Label: "Output padding", Description: "Horizontal padding for user messages, assistant messages, and thinking", CurrentValue: fmt.Sprintf("%d", settings.GetOutputPad()), Values: []string{"0", "1"}},
 		{ID: "autocomplete-max-visible", Label: "Autocomplete max items", Description: "Max visible items in autocomplete dropdown (3-20)", CurrentValue: fmt.Sprintf("%d", settings.GetAutocompleteMaxVisible()), Values: []string{"3", "5", "7", "10", "15", "20"}},
 		{ID: "clear-on-shrink", Label: "Clear on shrink", Description: "Clear empty rows when content shrinks (may cause flicker)", CurrentValue: fmt.Sprintf("%t", settings.GetClearOnShrink()), Values: []string{"true", "false"}},
 		{ID: "terminal-progress", Label: "Terminal progress", Description: "Show OSC 9;4 progress indicators in the terminal tab bar", CurrentValue: fmt.Sprintf("%t", settings.GetShowTerminalProgress()), Values: []string{"true", "false"}},
@@ -424,6 +425,11 @@ func (h *CLIInteractiveTUIHost) applySettingsListChange(host *RPCSessionHost, se
 			if h.editor != nil {
 				h.editor.SetPaddingX(settings.GetEditorPaddingX())
 			}
+		}
+	case "output-padding":
+		if padding, err := strconv.Atoi(newValue); err == nil {
+			settings.SetOutputPad(padding)
+			h.applyOutputPad(settings.GetOutputPad())
 		}
 	case "autocomplete-max-visible":
 		if visible, err := strconv.Atoi(newValue); err == nil {

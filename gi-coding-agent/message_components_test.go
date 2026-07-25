@@ -3,8 +3,10 @@ package gicodingagent
 import (
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
+	llm "github.com/nowa/gi/gi-llm-provider"
 	gitui "github.com/nowa/gi/gi-tui"
 )
 
@@ -144,6 +146,79 @@ func TestUserMessageComponentOSC133Markers(t *testing.T) {
 	if !strings.HasPrefix(lines[2], OSC133ZoneEnd+OSC133ZoneFinal) || !strings.HasSuffix(lines[2], TerminalBGReset) {
 		t.Fatalf("closing line = %q", lines[2])
 	}
+}
+
+func TestMessageComponentsOutputPadUpdatesInPlace(t *testing.T) {
+	message := llm.Message{
+		Role: llm.RoleAssistant,
+		Content: []llm.ContentPart{
+			llm.Thinking("reasoning"),
+			llm.Text("answer"),
+		},
+	}
+	assistant := newCLIAssistantMessageComponent(message, false, "Thinking...", 1)
+	if got := normalizedAssistantRenderLines(assistant.Render(40)); !reflect.DeepEqual(got, []string{"", " reasoning", "", " answer"}) {
+		t.Fatalf("padded assistant lines = %#v", got)
+	}
+	assistant.SetOutputPad(0)
+	if got := normalizedAssistantRenderLines(assistant.Render(40)); !reflect.DeepEqual(got, []string{"", "reasoning", "", "answer"}) {
+		t.Fatalf("unpadded assistant lines = %#v", got)
+	}
+
+	user := newCLIUserMessageComponent("hello", 1)
+	before := user.content
+	if got := strings.TrimRight(StripAnsi(user.Render(20)[1]), " "); got != " hello" {
+		t.Fatalf("padded user content = %q", got)
+	}
+	user.SetOutputPad(0)
+	if user.content == before {
+		t.Fatal("user message did not rebuild after output padding changed")
+	}
+	if got := strings.TrimRight(StripAnsi(user.Render(20)[1]), " "); got != "hello" {
+		t.Fatalf("unpadded user content = %q", got)
+	}
+
+	exportedAssistant := NewAssistantMessageComponent([]AssistantContentBlock{{Type: "text", Text: "answer"}})
+	exportedAssistant.SetOutputPad(0)
+	if got := normalizedAssistantRenderLines(exportedAssistant.Render(40)); !reflect.DeepEqual(got, []string{"", "answer"}) {
+		t.Fatalf("exported assistant lines = %#v", got)
+	}
+	exportedUser := NewUserMessageComponent("hello")
+	exportedUser.SetOutputPad(0)
+	if got := strings.TrimRight(StripAnsi(exportedUser.Render(20)[1]), " "); got != "hello" {
+		t.Fatalf("exported user content = %q", got)
+	}
+}
+
+func TestCLIMessageComponentsOutputPadConcurrentWithRender(t *testing.T) {
+	message := llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentPart{llm.Text("answer")}}
+	assistant := newCLIAssistantMessageComponent(message, false, "Thinking...", 1)
+	user := newCLIUserMessageComponent("hello", 1)
+
+	var wait sync.WaitGroup
+	for _, component := range []struct {
+		set    func(int)
+		render func()
+	}{
+		{set: assistant.SetOutputPad, render: func() { _ = assistant.Render(40) }},
+		{set: user.SetOutputPad, render: func() { _ = user.Render(40) }},
+	} {
+		component := component
+		wait.Add(2)
+		go func() {
+			defer wait.Done()
+			for index := 0; index < 100; index++ {
+				component.set(index % 2)
+			}
+		}()
+		go func() {
+			defer wait.Done()
+			for range 100 {
+				component.render()
+			}
+		}()
+	}
+	wait.Wait()
 }
 
 func TestBorderedLoaderComponentMatchesPiStructureAndCancellation(t *testing.T) {

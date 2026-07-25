@@ -208,5 +208,6 @@ func (h *CLIInteractiveTUIHost) applyReloadedInteractiveSettings() {
 		h.ui.SetShowHardwareCursor(settings.GetShowHardwareCursor())
 		h.ui.SetClearOnShrink(settings.GetClearOnShrink())
 	}
+	h.applyOutputPad(settings.GetOutputPad())
 	h.applyCurrentTUITheme(context.Background())
 }

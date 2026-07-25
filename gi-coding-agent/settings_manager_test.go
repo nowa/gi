@@ -350,6 +350,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 		"doubleEscapeAction":        "fork",
 		"treeFilterMode":            "user-only",
 		"editorPaddingX":            2,
+		"outputPad":                 0,
 		"autocompleteMaxVisible":    10,
 		"showHardwareCursor":        true,
 		"enabledModels":             []any{"openai/gpt-4o-mini", "anthropic/claude-sonnet-4-5:high"},
@@ -371,6 +372,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 		manager.GetDoubleEscapeAction() != "fork" ||
 		manager.GetTreeFilterMode() != "user-only" ||
 		manager.GetEditorPaddingX() != 2 ||
+		manager.GetOutputPad() != 0 ||
 		manager.GetAutocompleteMaxVisible() != 10 ||
 		!manager.GetShowHardwareCursor() ||
 		manager.GetShowImages() ||
@@ -399,6 +401,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 	manager.SetDoubleEscapeAction("none")
 	manager.SetTreeFilterMode("all")
 	manager.SetEditorPaddingX(3)
+	manager.SetOutputPad(1)
 	manager.SetAutocompleteMaxVisible(20)
 	manager.SetShowHardwareCursor(false)
 	manager.SetWarnings(WarningSettings{AnthropicExtraUsage: true})
@@ -418,6 +421,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 		saved["doubleEscapeAction"] != "none" ||
 		saved["treeFilterMode"] != "all" ||
 		saved["editorPaddingX"] != float64(3) ||
+		saved["outputPad"] != float64(1) ||
 		saved["autocompleteMaxVisible"] != float64(20) ||
 		saved["showHardwareCursor"] != false ||
 		terminal["showImages"] != true ||
@@ -442,6 +446,7 @@ func TestSettingsManagerPiInteractiveSettingsDefaultsAndValidation(t *testing.T)
 		"doubleEscapeAction":     "invalid",
 		"treeFilterMode":         "invalid",
 		"editorPaddingX":         -2,
+		"outputPad":              2,
 		"autocompleteMaxVisible": 0,
 		"terminal":               map[string]any{"imageWidthCells": -1},
 	})
@@ -460,6 +465,7 @@ func TestSettingsManagerPiInteractiveSettingsDefaultsAndValidation(t *testing.T)
 		manager.GetDoubleEscapeAction() != "tree" ||
 		manager.GetTreeFilterMode() != "default" ||
 		manager.GetEditorPaddingX() != 0 ||
+		manager.GetOutputPad() != 1 ||
 		manager.GetAutocompleteMaxVisible() != 5 ||
 		manager.GetShowHardwareCursor() ||
 		!manager.GetWarnings().AnthropicExtraUsage {
@@ -471,6 +477,7 @@ func TestSettingsManagerPiInteractiveSettingsDefaultsAndValidation(t *testing.T)
 	manager.SetDoubleEscapeAction("invalid")
 	manager.SetTreeFilterMode("invalid")
 	manager.SetEditorPaddingX(-1)
+	manager.SetOutputPad(0)
 	manager.SetAutocompleteMaxVisible(0)
 	manager.SetImageWidthCells(0)
 	if manager.GetTransport() != "auto" ||
@@ -478,6 +485,7 @@ func TestSettingsManagerPiInteractiveSettingsDefaultsAndValidation(t *testing.T)
 		manager.GetDoubleEscapeAction() != "tree" ||
 		manager.GetTreeFilterMode() != "default" ||
 		manager.GetEditorPaddingX() != 0 ||
+		manager.GetOutputPad() != 0 ||
 		manager.GetAutocompleteMaxVisible() != 5 ||
 		manager.GetImageWidthCells() != 60 {
 		t.Fatalf("setter validation failed")

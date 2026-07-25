@@ -363,7 +363,7 @@ func TestTUIThemeTruecolorOverridesScreenTermLikePi(t *testing.T) {
 
 func TestTUIThemeUserMessageUsesPiDefaultTextForeground(t *testing.T) {
 	setTUIThemeForTest(t, "dark", nil)
-	lines := newCLIUserMessageComponent("hello").Render(40)
+	lines := newCLIUserMessageComponent("hello", defaultOutputPad).Render(40)
 	rendered := strings.Join(lines, "\n")
 	if strings.Contains(rendered, "\x1b[38;2;212;212;212mhello") || !strings.Contains(rendered, tuiResetFG+"hello"+tuiResetFG) {
 		t.Fatalf("user message should use Pi default foreground reset:\n%q", rendered)
@@ -372,7 +372,7 @@ func TestTUIThemeUserMessageUsesPiDefaultTextForeground(t *testing.T) {
 
 func TestTUIThemeUserMessageKeepsPiBackground(t *testing.T) {
 	setTUIThemeForTest(t, "dark", nil)
-	lines := newCLIUserMessageComponent("hello").Render(40)
+	lines := newCLIUserMessageComponent("hello", defaultOutputPad).Render(40)
 	rendered := strings.Join(lines, "\n")
 	if !strings.Contains(rendered, tuiDarkThemeBG["userMessageBg"]) {
 		t.Fatalf("user message should keep Pi user message background:\n%q", rendered)
@@ -384,7 +384,7 @@ func TestTUIThemeThinkingTextUsesPiThinkingColor(t *testing.T) {
 	lines := renderCLIAssistantMessage(llm.Message{
 		Role:    llm.RoleAssistant,
 		Content: []llm.ContentPart{llm.Thinking("secret plan")},
-	}, 40, true, "Thinking...")
+	}, 40, true, "Thinking...", defaultOutputPad)
 	rendered := strings.Join(lines, "\n")
 	if !strings.Contains(rendered, tuiThemeFG("thinkingText", "Thinking...")) {
 		t.Fatalf("hidden thinking label should use Pi thinkingText color:\n%q", rendered)

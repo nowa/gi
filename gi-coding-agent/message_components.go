@@ -24,19 +24,35 @@ type AssistantMessageComponent struct {
 	Content             []AssistantContentBlock
 	HideThinkingBlock   bool
 	HiddenThinkingLabel string
+	outputPad           *int
 }
 
 func NewAssistantMessageComponent(content []AssistantContentBlock) AssistantMessageComponent {
 	return AssistantMessageComponent{Content: content}
 }
 
+func (c *AssistantMessageComponent) SetOutputPad(padding int) {
+	if c == nil {
+		return
+	}
+	padding = normalizeOutputPad(padding)
+	c.outputPad = &padding
+}
+
 func (c AssistantMessageComponent) Render(width int) []string {
 	message := c.message()
-	lines := renderCLIAssistantMessage(message, width, c.HideThinkingBlock, c.HiddenThinkingLabel)
+	lines := renderCLIAssistantMessage(message, width, c.HideThinkingBlock, c.HiddenThinkingLabel, c.resolvedOutputPad())
 	if assistantMessageHasToolCalls(message) || len(lines) == 0 {
 		return lines
 	}
 	return cliOSC133WrappedLines(lines)
+}
+
+func (c AssistantMessageComponent) resolvedOutputPad() int {
+	if c.outputPad == nil {
+		return defaultOutputPad
+	}
+	return normalizeOutputPad(*c.outputPad)
 }
 
 func (c AssistantMessageComponent) message() llm.Message {
@@ -59,13 +75,26 @@ func (c AssistantMessageComponent) message() llm.Message {
 }
 
 type UserMessageComponent struct {
-	Text string
+	Text      string
+	outputPad *int
 }
 
 func NewUserMessageComponent(text string) UserMessageComponent {
 	return UserMessageComponent{Text: text}
 }
 
+func (c *UserMessageComponent) SetOutputPad(padding int) {
+	if c == nil {
+		return
+	}
+	padding = normalizeOutputPad(padding)
+	c.outputPad = &padding
+}
+
 func (c UserMessageComponent) Render(width int) []string {
-	return newCLIUserMessageComponent(c.Text).Render(width)
+	outputPad := defaultOutputPad
+	if c.outputPad != nil {
+		outputPad = normalizeOutputPad(*c.outputPad)
+	}
+	return newCLIUserMessageComponent(c.Text, outputPad).Render(width)
 }

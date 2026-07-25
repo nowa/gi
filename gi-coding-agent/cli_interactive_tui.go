@@ -1920,7 +1920,7 @@ func (h *CLIInteractiveTUIHost) handleLiveMessageStart(event AgentSessionEvent) 
 	message := *event.Message
 	switch message.Role {
 	case llm.RoleAssistant:
-		component := newCLIAssistantMessageComponent(message, h.hideThinkingBlock(), h.hiddenThinkingLabelValue())
+		component := newCLIAssistantMessageComponent(message, h.hideThinkingBlock(), h.hiddenThinkingLabelValue(), h.outputPad())
 		h.liveState.setStreaming(message, component)
 		if h.chat != nil {
 			h.chat.AddChild(component)
@@ -3130,7 +3130,7 @@ func (h *CLIInteractiveTUIHost) addUserMessage(message llm.Message) {
 		return
 	}
 	h.addSpacerBeforeUserMessage()
-	h.chat.AddChild(newCLIUserMessageComponent(text))
+	h.chat.AddChild(newCLIUserMessageComponent(text, h.outputPad()))
 }
 
 func (h *CLIInteractiveTUIHost) addSpacerBeforeUserMessage() {
@@ -3197,7 +3197,7 @@ func (h *CLIInteractiveTUIHost) addSkillInvocationMessage(message llm.Message) b
 		Expanded:  h.toolOutputExpanded,
 	}))
 	if skillBlock.UserMessage != "" {
-		h.chat.AddChild(newCLIUserMessageComponent(skillBlock.UserMessage))
+		h.chat.AddChild(newCLIUserMessageComponent(skillBlock.UserMessage, h.outputPad()))
 	}
 	return true
 }
@@ -3306,7 +3306,7 @@ func (h *CLIInteractiveTUIHost) addFallbackCustomMessage(message llm.Message) {
 }
 
 func (h *CLIInteractiveTUIHost) addAssistantMessage(message llm.Message) {
-	component := newCLIAssistantMessageComponent(message, h.hideThinkingBlock(), h.hiddenThinkingLabelValue())
+	component := newCLIAssistantMessageComponent(message, h.hideThinkingBlock(), h.hiddenThinkingLabelValue(), h.outputPad())
 	if len(component.Render(80)) > 0 {
 		h.chat.AddChild(component)
 	}
@@ -3338,6 +3338,34 @@ func (h *CLIInteractiveTUIHost) hiddenThinkingLabelValue() string {
 		return h.hiddenThinkingLabel
 	}
 	return "Thinking..."
+}
+
+func (h *CLIInteractiveTUIHost) outputPad() int {
+	if h != nil {
+		if settings := h.settingsManager(); settings != nil {
+			return settings.GetOutputPad()
+		}
+	}
+	return defaultOutputPad
+}
+
+func (h *CLIInteractiveTUIHost) applyOutputPad(padding int) {
+	if h == nil {
+		return
+	}
+	padding = normalizeOutputPad(padding)
+	if h.chat != nil {
+		for _, child := range h.chat.Children() {
+			if component, ok := child.(cliOutputPadComponent); ok {
+				component.SetOutputPad(padding)
+			}
+		}
+	}
+	_, streamingComponent := h.liveState.streamingSnapshot()
+	if streamingComponent != nil {
+		streamingComponent.SetOutputPad(padding)
+	}
+	h.requestRender(false)
 }
 
 func (h *CLIInteractiveTUIHost) updateAssistantThinkingPresentation() {

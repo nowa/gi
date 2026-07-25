@@ -47,6 +47,7 @@ type WarningSettings struct {
 const defaultAgentSessionMaxRetries = 3
 const defaultAgentSessionBaseDelayMS = 2_000
 const defaultProviderMaxRetryDelayMS = 60_000
+const defaultOutputPad = 1
 
 type ProviderRetrySettings struct {
 	TimeoutMS       int
@@ -782,6 +783,21 @@ func (s *SettingsManager) SetEditorPaddingX(padding int) {
 		padding = 0
 	}
 	s.setGlobal("editorPaddingX", padding)
+}
+
+func (s *SettingsManager) GetOutputPad() int {
+	return normalizeOutputPad(settingsInt(s.mergedSnapshot(), "outputPad", defaultOutputPad))
+}
+
+func (s *SettingsManager) SetOutputPad(padding int) {
+	s.setGlobal("outputPad", normalizeOutputPad(padding))
+}
+
+func normalizeOutputPad(padding int) int {
+	if padding == 0 {
+		return 0
+	}
+	return defaultOutputPad
 }
 
 func (s *SettingsManager) GetAutocompleteMaxVisible() int {

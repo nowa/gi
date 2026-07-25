@@ -190,6 +190,7 @@ func TestCLIInteractiveTUIHostRendersPersistedAndLiveCustomEntriesInOrder(t *tes
 		},
 		false,
 		"",
+		defaultOutputPad,
 	)
 	liveHost.liveState.setStreaming(
 		llm.Message{Role: llm.RoleAssistant},
