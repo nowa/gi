@@ -73,7 +73,6 @@ No cases.
 
 | Pi test file | Line | Pi case |
 | --- | ---: | --- |
-| `packages/coding-agent/test/changelog.test.ts` | 30 | canonicalizes old repository URLs without changing external links |
 | `packages/coding-agent/test/config-value-migration.test.ts` | 41 | leaves uppercase auth.json API key values unchanged |
 | `packages/coding-agent/test/config-value-migration.test.ts` | 89 | leaves uppercase models.json API key and header values unchanged |
 | `packages/coding-agent/test/git-merge-and-resolve-extension.test.ts` | 87 | re-sends conflicts when in an unfinished merge |

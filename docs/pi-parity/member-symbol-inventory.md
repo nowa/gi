@@ -475,14 +475,6 @@ No missing files or symbols.
 | `package-manager-cli.ts::getCommandAppMode` |
 | `package-manager-cli.ts::reportProjectTrustWarnings` |
 | `package-manager-cli.ts::createCommandSettingsManager` |
-| `utils/changelog.ts::entryVersion` |
-| `utils/changelog.ts::normalizeTag` |
-| `utils/changelog.ts::splitLocalTarget` |
-| `utils/changelog.ts::normalizePathPart` |
-| `utils/changelog.ts::resolveRepositoryPath` |
-| `utils/changelog.ts::isDirectoryTarget` |
-| `utils/changelog.ts::normalizeChangelogLinkTarget` |
-| `utils/changelog.ts::normalizeChangelogLinks` |
 | `utils/child-process.ts::spawnProcess` |
 | `utils/child-process.ts::spawnProcessSync` |
 | `utils/clipboard-native.ts::loadClipboardNative` |
@@ -667,7 +659,7 @@ No missing files or symbols.
 | `package-manager-cli.ts` | `reportSettingsErrors`<br>`getPackageCommandUsage`<br>`printConfigCommandHelp`<br>`printPackageCommandHelp`<br>`parsePackageCommand`<br>`updateTargetIncludesSelf`<br>`updateTargetIncludesExtensions`<br>`refreshModelCatalogs`<br>`printSelfUpdateUnavailable`<br>`printSelfUpdateFallback`<br>`printPnpmSelfUpdateMetadataHint`<br>`printSelfUpdateNote`<br>`getSelfUpdatePlan`<br>`runSelfUpdate`<br>`prepareWindowsNpmSelfUpdate`<br>`getCommandAppMode`<br>`reportProjectTrustWarnings`<br>`createCommandSettingsManager`<br>`handleConfigCommand`<br>`handlePackageCommand` | `printConfigCommandHelp`<br>`refreshModelCatalogs`<br>`printPnpmSelfUpdateMetadataHint`<br>`printSelfUpdateNote`<br>`prepareWindowsNpmSelfUpdate`<br>`getCommandAppMode`<br>`reportProjectTrustWarnings`<br>`createCommandSettingsManager` |
 | `rpc-entry.ts` | _none_ |  |
 | `utils/ansi.ts` | `ansiRegex`<br>`stripAnsi` |  |
-| `utils/changelog.ts` | `entryVersion`<br>`normalizeTag`<br>`splitLocalTarget`<br>`normalizePathPart`<br>`resolveRepositoryPath`<br>`isDirectoryTarget`<br>`normalizeChangelogLinkTarget`<br>`normalizeChangelogLinks`<br>`parseChangelog`<br>`compareVersions`<br>`getNewEntries` | `entryVersion`<br>`normalizeTag`<br>`splitLocalTarget`<br>`normalizePathPart`<br>`resolveRepositoryPath`<br>`isDirectoryTarget`<br>`normalizeChangelogLinkTarget`<br>`normalizeChangelogLinks` |
+| `utils/changelog.ts` | `entryVersion`<br>`normalizeTag`<br>`splitLocalTarget`<br>`normalizePathPart`<br>`resolveRepositoryPath`<br>`isDirectoryTarget`<br>`normalizeChangelogLinkTarget`<br>`normalizeChangelogLinks`<br>`parseChangelog`<br>`compareVersions`<br>`getNewEntries` |  |
 | `utils/child-process.ts` | `spawnProcess`<br>`spawnProcessSync`<br>`waitForChildProcess` | `spawnProcess`<br>`spawnProcessSync` |
 | `utils/clipboard-image.ts` | `isWaylandSession`<br>`baseMimeType`<br>`extensionForImageMimeType`<br>`selectPreferredImageMimeType`<br>`isSupportedImageMimeType`<br>`convertToPng`<br>`runCommand`<br>`readClipboardImageViaWlPaste`<br>`isWSL`<br>`readClipboardImageViaPowerShell`<br>`readClipboardImageViaXclip`<br>`readClipboardImageViaNativeClipboard`<br>`readClipboardImage` |  |
 | `utils/clipboard-native.ts` | `loadClipboardNative` | `loadClipboardNative` |

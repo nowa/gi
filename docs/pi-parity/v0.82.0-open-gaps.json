@@ -161,14 +161,6 @@
         "package-manager-cli.ts::printSelfUpdateNote",
         "package-manager-cli.ts::refreshModelCatalogs",
         "package-manager-cli.ts::reportProjectTrustWarnings",
-        "utils/changelog.ts::entryVersion",
-        "utils/changelog.ts::isDirectoryTarget",
-        "utils/changelog.ts::normalizeChangelogLinkTarget",
-        "utils/changelog.ts::normalizeChangelogLinks",
-        "utils/changelog.ts::normalizePathPart",
-        "utils/changelog.ts::normalizeTag",
-        "utils/changelog.ts::resolveRepositoryPath",
-        "utils/changelog.ts::splitLocalTarget",
         "utils/child-process.ts::spawnProcess",
         "utils/child-process.ts::spawnProcessSync",
         "utils/clipboard-native.ts::loadClipboardNative",
@@ -249,11 +241,6 @@
         "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts"
       ],
       "noCandidateCases": [
-        {
-          "file": "packages/coding-agent/test/changelog.test.ts",
-          "line": 30,
-          "name": "canonicalizes old repository URLs without changing external links"
-        },
         {
           "file": "packages/coding-agent/test/config-value-migration.test.ts",
           "line": 41,

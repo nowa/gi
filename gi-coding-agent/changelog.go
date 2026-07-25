@@ -1,6 +1,10 @@
 package gicodingagent
 
-import "github.com/nowa/gi/gi-coding-agent/internal/changelog"
+import (
+	"slices"
+
+	"github.com/nowa/gi/gi-coding-agent/internal/changelog"
+)
 
 type changelogEntry = changelog.Entry
 
@@ -14,6 +18,16 @@ func newChangelogEntries(entries []changelogEntry, lastVersion string) []changel
 
 func changelogEntriesMarkdown(entries []changelogEntry) string {
 	return changelog.EntriesMarkdown(entries)
+}
+
+func allChangelogEntriesMarkdown(markdown string) string {
+	entries := parseChangelogEntries(markdown)
+	slices.Reverse(entries)
+	return changelogEntriesMarkdown(entries)
+}
+
+func normalizeChangelogLinks(markdown, version string) string {
+	return changelog.NormalizeLinks(markdown, version)
 }
 
 func firstChangelogVersion(markdown string) string {

@@ -151,7 +151,7 @@ func formatHotkeyText(key string, capitalize bool) string {
 }
 
 func (h *CLIInteractiveTUIHost) handleChangelogSlashCommand() error {
-	changelog := h.loadChangelogMarkdown()
+	changelog := allChangelogEntriesMarkdown(h.loadChangelogMarkdown())
 	if strings.TrimSpace(changelog) == "" {
 		changelog = "No changelog entries found."
 	}
