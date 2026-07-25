@@ -12,11 +12,14 @@ import (
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
-// ModelRuntimeOptions supplies the compatibility configuration facade used to
-// compose an instance-scoped provider runtime. Supplying Registry preserves an
-// existing registry and ignores the remaining construction fields.
+// ModelRuntimeOptions supplies the compatibility configuration facade and
+// credential boundary used to compose an instance-scoped provider runtime.
+// Supplying Registry ignores ModelRegistryOptions; an explicit Credentials
+// store still replaces the registry's default AuthStorage for canonical
+// runtime operations.
 type ModelRuntimeOptions struct {
-	Registry *ModelRegistry
+	Registry    *ModelRegistry
+	Credentials llm.CredentialStore
 	ModelRegistryOptions
 }
 
@@ -49,14 +52,16 @@ type modelRuntimeRefreshCall struct {
 type ModelRuntime struct {
 	mu sync.RWMutex
 
-	registry          *ModelRegistry
-	models            *llm.Models
-	builtinProviders  map[string]*llm.Provider
-	builtinsReady     bool
-	nativeProviders   map[string]*llm.Provider
-	nativeOrder       []string
-	compositionErrors map[string]string
-	availabilityError string
+	registry            *ModelRegistry
+	models              *llm.Models
+	credentials         *runtimeCredentialOverlay
+	registryCredentials bool
+	builtinProviders    map[string]*llm.Provider
+	builtinsReady       bool
+	nativeProviders     map[string]*llm.Provider
+	nativeOrder         []string
+	compositionErrors   map[string]string
+	availabilityError   string
 
 	snapshot atomic.Pointer[modelRuntimeSnapshot]
 
@@ -88,11 +93,19 @@ func NewModelRuntime(
 		registry.initialModelNetwork = allowModelNetwork &&
 			registry.modelNetworkEnabled
 	}
+	credentialStore := options.Credentials
+	registryCredentials := credentialStore == nil &&
+		registry.authStorage != nil
+	if credentialStore == nil && registry.authStorage != nil {
+		credentialStore = registry.authStorage
+	}
 	runtime := &ModelRuntime{
-		registry:          registry,
-		builtinProviders:  map[string]*llm.Provider{},
-		nativeProviders:   map[string]*llm.Provider{},
-		compositionErrors: map[string]string{},
+		registry:            registry,
+		credentials:         newRuntimeCredentialOverlay(credentialStore),
+		registryCredentials: registryCredentials,
+		builtinProviders:    map[string]*llm.Provider{},
+		nativeProviders:     map[string]*llm.Provider{},
+		compositionErrors:   map[string]string{},
 	}
 	runtime.mu.Lock()
 	err := runtime.ensureBuiltinProvidersLocked()
@@ -298,16 +311,17 @@ func (r *ModelRuntime) rebuildProvidersLocked() error {
 	if err := r.ensureBuiltinProvidersLocked(); err != nil {
 		return err
 	}
-	var credentials llm.CredentialStore = llm.NewInMemoryCredentialStore()
-	if r.registry.authStorage != nil {
-		credentials = r.registry.authStorage
+	if r.credentials == nil {
+		r.credentials = newRuntimeCredentialOverlay(
+			r.registry.authStorage,
+		)
 	}
 	modelsStore := r.registry.modelsStore
 	if modelsStore == nil {
 		modelsStore = llm.NewInMemoryModelsStore()
 	}
 	collection := llm.NewModels(llm.ModelsOptions{
-		Credentials: credentials,
+		Credentials: r.credentials,
 		ModelsStore: modelsStore,
 	})
 	r.compositionErrors = map[string]string{}
@@ -355,17 +369,12 @@ func (r *ModelRuntime) runAvailabilityRefresh(
 	}
 	r.mu.RLock()
 	models := r.models
-	registry := r.registry
 	all := []llm.Model(nil)
-	native := map[string]struct{}{}
 	if models != nil {
 		all = models.GetModels()
 	}
-	for providerID := range r.nativeProviders {
-		native[providerID] = struct{}{}
-	}
 	r.mu.RUnlock()
-	if models == nil || registry == nil {
+	if models == nil {
 		return errors.New("model runtime is not initialized")
 	}
 
@@ -389,28 +398,11 @@ func (r *ModelRuntime) runAvailabilityRefresh(
 		if ok {
 			configured[model.Provider] = struct{}{}
 			authChecks[model.Provider] = check
-			continue
-		}
-		if _, isNative := native[model.Provider]; isNative {
-			continue
-		}
-		status := registry.GetProviderAuthStatus(model.Provider)
-		if !status.Configured {
-			continue
-		}
-		configured[model.Provider] = struct{}{}
-		credentialType := llm.CredentialTypeAPIKey
-		if registry.IsUsingOAuth(model) {
-			credentialType = llm.CredentialTypeOAuth
-		}
-		authChecks[model.Provider] = llm.AuthCheck{
-			Type:   credentialType,
-			Source: firstNonEmptyString(status.Label, status.Source),
 		}
 	}
 	stored := map[string]struct{}{}
-	if registry.authStorage != nil {
-		credentials, err := registry.authStorage.ListCredentials(ctx)
+	if r.credentials != nil {
+		credentials, err := r.credentials.ListCredentials(ctx)
 		if err != nil {
 			failures = append(failures, err)
 		} else {
@@ -585,31 +577,11 @@ func (r *ModelRuntime) CheckAuth(
 	}
 	r.mu.RLock()
 	models := r.models
-	registry := r.registry
-	_, native := r.nativeProviders[providerID]
 	r.mu.RUnlock()
 	if models == nil {
 		return llm.AuthCheck{}, false, nil
 	}
-	check, configured, err := models.CheckAuth(ctx, providerID)
-	if err != nil || configured || native || registry == nil {
-		return check, configured, err
-	}
-	status := registry.GetProviderAuthStatus(providerID)
-	if !status.Configured {
-		return llm.AuthCheck{}, false, nil
-	}
-	credentialType := llm.CredentialTypeAPIKey
-	for _, model := range r.GetModels(providerID) {
-		if registry.IsUsingOAuth(model) {
-			credentialType = llm.CredentialTypeOAuth
-			break
-		}
-	}
-	return llm.AuthCheck{
-		Type:   credentialType,
-		Source: firstNonEmptyString(status.Label, status.Source),
-	}, true, nil
+	return models.CheckAuth(ctx, providerID)
 }
 
 // GetAvailable returns the last fully published availability snapshot and
@@ -860,11 +832,11 @@ func (r *ModelRuntime) SetRuntimeAPIKey(
 		return errors.New("model runtime is required")
 	}
 	r.mu.Lock()
-	if r.registry.authStorage == nil {
+	if r.credentials == nil {
 		r.mu.Unlock()
 		return errors.New("runtime credential storage is unavailable")
 	}
-	r.registry.authStorage.SetRuntimeAPIKey(providerID, apiKey)
+	r.credentials.SetRuntimeAPIKey(providerID, apiKey)
 	r.mu.Unlock()
 	_, err := r.Refresh(ctx, ModelRegistryRefreshOptions{
 		Timeout: r.registry.modelRefreshTimeout,
@@ -881,11 +853,11 @@ func (r *ModelRuntime) RemoveRuntimeAPIKey(
 		return errors.New("model runtime is required")
 	}
 	r.mu.Lock()
-	if r.registry.authStorage == nil {
+	if r.credentials == nil {
 		r.mu.Unlock()
 		return errors.New("runtime credential storage is unavailable")
 	}
-	r.registry.authStorage.RemoveRuntimeAPIKey(providerID)
+	r.credentials.RemoveRuntimeAPIKey(providerID)
 	r.mu.Unlock()
 	_, err := r.Refresh(ctx, ModelRegistryRefreshOptions{
 		AllowNetwork: r.registry.modelNetworkEnabled,
@@ -903,7 +875,7 @@ func (r *ModelRuntime) ListCredentials(
 		return nil, errors.New("model runtime is required")
 	}
 	r.mu.RLock()
-	storage := r.registry.authStorage
+	storage := r.credentials
 	r.mu.RUnlock()
 	if storage == nil {
 		return nil, nil
@@ -920,23 +892,52 @@ func (r *ModelRuntime) GetProviderAuthStatus(
 		return AuthStatus{}
 	}
 	r.mu.RLock()
-	status := r.registry.GetProviderAuthStatus(providerID)
-	r.mu.RUnlock()
-	if status.Configured {
-		return status
-	}
-	snapshot := r.snapshot.Load()
-	if snapshot == nil {
-		return status
-	}
-	if check, ok := snapshot.auth[providerID]; ok {
+	registry := r.registry
+	if r.credentials != nil &&
+		r.credentials.HasRuntimeAPIKey(providerID) {
+		r.mu.RUnlock()
 		return AuthStatus{
 			Configured: true,
-			Source:     "environment",
-			Label:      check.Source,
+			Source:     "runtime",
 		}
 	}
-	return status
+	if r.registryCredentials &&
+		registry != nil &&
+		registry.authStorage != nil &&
+		registry.authStorage.HasRuntimeAPIKey(providerID) {
+		r.mu.RUnlock()
+		return AuthStatus{
+			Configured: true,
+			Source:     "runtime",
+		}
+	}
+	r.mu.RUnlock()
+	snapshot := r.snapshot.Load()
+	if snapshot != nil {
+		if _, ok := snapshot.storedProviders[providerID]; ok {
+			return AuthStatus{
+				Configured: true,
+				Source:     "stored",
+			}
+		}
+	}
+	if registry != nil {
+		if configured := registry.configuredProviderRequestAuthStatus(
+			providerID,
+		); configured != nil {
+			return *configured
+		}
+	}
+	if snapshot != nil {
+		if check, ok := snapshot.auth[providerID]; ok {
+			return AuthStatus{
+				Configured: true,
+				Source:     "environment",
+				Label:      check.Source,
+			}
+		}
+	}
+	return AuthStatus{}
 }
 
 type preparedModelRuntimeRequest struct {

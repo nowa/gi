@@ -1128,6 +1128,26 @@ func configuredRequestAuthStatus(
 	return &status
 }
 
+func (r *ModelRegistry) configuredProviderRequestAuthStatus(
+	providerID string,
+) *AuthStatus {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	modelsJSON, hasModelsJSON :=
+		r.modelsJSONProviders[providerID]
+	extension, hasExtension :=
+		r.registeredProviders[providerID]
+	r.mu.RUnlock()
+	return configuredRequestAuthStatus(
+		modelsJSON,
+		hasModelsJSON,
+		extension,
+		hasExtension,
+	)
+}
+
 func mapValues(values map[string]string) []string {
 	result := make([]string, 0, len(values))
 	for _, value := range values {

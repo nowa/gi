@@ -404,6 +404,177 @@ func TestModelRuntimeNativeProviderLifecyclePiStyle(
 	}
 }
 
+func TestModelRuntimeAcceptsPiAICredentialStore(
+	t *testing.T,
+) {
+	t.Setenv("OPENAI_API_KEY", "")
+	ctx := context.Background()
+	credentials := llm.NewInMemoryCredentialStore()
+	if _, _, err := credentials.ModifyCredential(
+		ctx,
+		"openai",
+		func(
+			context.Context,
+			llm.Credential,
+			bool,
+		) (llm.Credential, bool, error) {
+			return llm.Credential{
+				Type: llm.CredentialTypeAPIKey,
+				Key:  "stored-key",
+			}, true, nil
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewModelRuntime(
+		ctx,
+		ModelRuntimeOptions{
+			Credentials: credentials,
+			ModelRegistryOptions: ModelRegistryOptions{
+				ModelNetworkEnabled: modelRuntimeBoolPointer(false),
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, ok := runtime.GetModel("openai", "gpt-4o-mini")
+	if !ok {
+		t.Fatal("OpenAI model not found")
+	}
+	resolved, err := runtime.GetAuth(
+		ctx,
+		model,
+		llm.AuthResolutionOverrides{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved == nil || resolved.APIKey != "stored-key" {
+		t.Fatalf("stored auth = %#v", resolved)
+	}
+
+	if err := runtime.SetRuntimeAPIKey(
+		ctx,
+		"openai",
+		"runtime-key",
+	); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err = runtime.GetAuth(
+		ctx,
+		model,
+		llm.AuthResolutionOverrides{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved == nil || resolved.APIKey != "runtime-key" {
+		t.Fatalf("runtime auth = %#v", resolved)
+	}
+	if status := runtime.GetProviderAuthStatus("openai"); !status.Configured ||
+		status.Source != "runtime" {
+		t.Fatalf("runtime auth status = %#v", status)
+	}
+	stored, exists, err := credentials.ReadCredential(ctx, "openai")
+	if err != nil || !exists || stored.Key != "stored-key" {
+		t.Fatalf(
+			"underlying credential = %#v, %v, %v",
+			stored,
+			exists,
+			err,
+		)
+	}
+
+	if err := runtime.RemoveRuntimeAPIKey(ctx, "openai"); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err = runtime.GetAuth(
+		ctx,
+		model,
+		llm.AuthResolutionOverrides{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved == nil || resolved.APIKey != "stored-key" {
+		t.Fatalf("restored auth = %#v", resolved)
+	}
+	listed, err := runtime.ListCredentials(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(listed, []llm.CredentialInfo{{
+		ProviderID: "openai",
+		Type:       llm.CredentialTypeAPIKey,
+	}}) {
+		t.Fatalf("credentials = %#v", listed)
+	}
+}
+
+func TestModelRuntimeDefaultCredentialStoreSurvivesLoginRefresh(
+	t *testing.T,
+) {
+	t.Setenv("OPENAI_API_KEY", "")
+	ctx := context.Background()
+	runtime, err := NewModelRuntime(
+		ctx,
+		ModelRuntimeOptions{
+			ModelRegistryOptions: ModelRegistryOptions{
+				ModelNetworkEnabled: modelRuntimeBoolPointer(false),
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := runtime.Login(
+		ctx,
+		"openai",
+		llm.CredentialTypeAPIKey,
+		staticModelRuntimeAuthInteraction{answer: "login-key"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.Type != llm.CredentialTypeAPIKey ||
+		credential.Key != "login-key" {
+		t.Fatalf("login credential = %#v", credential)
+	}
+	model, ok := runtime.GetModel("openai", "gpt-4o-mini")
+	if !ok {
+		t.Fatal("OpenAI model not found")
+	}
+	resolved, err := runtime.GetAuth(
+		ctx,
+		model,
+		llm.AuthResolutionOverrides{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved == nil || resolved.APIKey != "login-key" {
+		t.Fatalf("auth after login refresh = %#v", resolved)
+	}
+	if _, err := runtime.Refresh(
+		ctx,
+		ModelRegistryRefreshOptions{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err = runtime.GetAuth(
+		ctx,
+		model,
+		llm.AuthResolutionOverrides{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved == nil || resolved.APIKey != "login-key" {
+		t.Fatalf("auth after explicit refresh = %#v", resolved)
+	}
+}
+
 func TestModelRuntimeExplicitEmptyAPIKeyIsRequestScopedPiStyle(
 	t *testing.T,
 ) {

@@ -570,11 +570,6 @@
           "name": "falls back to thinkingXhigh for legacy themes"
         },
         {
-          "file": "packages/coding-agent/test/model-runtime-auth-options.test.ts",
-          "line": 36,
-          "name": "accepts a pi-ai CredentialStore"
-        },
-        {
           "file": "packages/coding-agent/test/status-indicator.test.ts",
           "line": 19,
           "name": "disposes retry countdown updates"
