@@ -28,13 +28,7 @@
     },
     {
       "module": "coding",
-      "missingFiles": [
-        "rpc-entry.ts",
-        "utils/deprecation.ts",
-        "utils/json.ts",
-        "utils/open-browser.ts",
-        "utils/windows-self-update.ts"
-      ],
+      "missingFiles": [],
       "missingSymbols": [
         "cli/startup-ui.ts::loadStartupThemes",
         "cli/startup-ui.ts::showStartupInput",
@@ -84,16 +78,9 @@
         "utils/child-process.ts::spawnProcessSync",
         "utils/clipboard-native.ts::loadClipboardNative",
         "utils/clipboard.ts::readClipboardText",
-        "utils/deprecation.ts::clearDeprecationWarningsForTests",
-        "utils/deprecation.ts::warnDeprecation",
-        "utils/open-browser.ts::openBrowser",
         "utils/paths.ts::markPathIgnoredByCloudSync",
         "utils/shell.ts::getBashShellConfig",
-        "utils/shell.ts::isLegacyWslBashPath",
-        "utils/windows-self-update.ts::cleanupWindowsSelfUpdateQuarantine",
-        "utils/windows-self-update.ts::getLoadedSharedObjectsInPackageDir",
-        "utils/windows-self-update.ts::getQuarantineRoot",
-        "utils/windows-self-update.ts::quarantineWindowsNativeDependencies"
+        "utils/shell.ts::isLegacyWslBashPath"
       ]
     }
   ],

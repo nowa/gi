@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	jsonutil "github.com/nowa/gi/gi-coding-agent/internal/jsonutil"
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
@@ -1714,57 +1715,7 @@ func mergeResolvedProviderEnv(
 }
 
 func stripJSONCommentsAndTrailingCommas(input string) string {
-	var out strings.Builder
-	inString := false
-	escaped := false
-	for i := 0; i < len(input); i++ {
-		ch := input[i]
-		if inString {
-			out.WriteByte(ch)
-			if escaped {
-				escaped = false
-			} else if ch == '\\' {
-				escaped = true
-			} else if ch == '"' {
-				inString = false
-			}
-			continue
-		}
-		if ch == '"' {
-			inString = true
-			out.WriteByte(ch)
-			continue
-		}
-		if ch == '/' && i+1 < len(input) && input[i+1] == '/' {
-			for i < len(input) && input[i] != '\n' {
-				i++
-			}
-			if i < len(input) {
-				out.WriteByte('\n')
-			}
-			continue
-		}
-		out.WriteByte(ch)
-	}
-	return removeTrailingCommas(out.String())
-}
-
-func removeTrailingCommas(input string) string {
-	bytes := []byte(input)
-	out := make([]byte, 0, len(bytes))
-	for i := 0; i < len(bytes); i++ {
-		if bytes[i] == '}' || bytes[i] == ']' {
-			j := len(out) - 1
-			for j >= 0 && (out[j] == ' ' || out[j] == '\t' || out[j] == '\r' || out[j] == '\n') {
-				j--
-			}
-			if j >= 0 && out[j] == ',' {
-				out = append(out[:j], out[j+1:]...)
-			}
-		}
-		out = append(out, bytes[i])
-	}
-	return string(out)
+	return jsonutil.StripCommentsAndTrailingCommas(input)
 }
 
 func cloneStringMap(values map[string]string) map[string]string {

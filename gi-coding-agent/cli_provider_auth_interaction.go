@@ -3,12 +3,11 @@ package gicodingagent
 import (
 	"context"
 	"errors"
-	"os/exec"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 
+	browser "github.com/nowa/gi/gi-coding-agent/internal/browser"
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
@@ -255,20 +254,7 @@ func (i *cliProviderAuthInteraction) openBrowser(rawURL string) {
 }
 
 func defaultOpenOAuthURL(rawURL string) error {
-	rawURL = strings.TrimSpace(rawURL)
-	if rawURL == "" {
-		return nil
-	}
-	var command *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		command = exec.Command("open", rawURL)
-	case "windows":
-		command = exec.Command("cmd", "/c", "start", "", rawURL)
-	default:
-		command = exec.Command("xdg-open", rawURL)
-	}
-	return command.Start()
+	return browser.Open(rawURL)
 }
 
 func formatProviderAuthInfo(event llm.AuthEvent) []string {
