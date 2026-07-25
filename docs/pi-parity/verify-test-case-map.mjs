@@ -269,6 +269,10 @@ const modules = [
 				"gi-coding-agent/image_resize_test.go",
 				"gi-coding-agent/pi_coding_agent_case_names_test.go",
 			],
+			"packages/coding-agent/test/http-dispatcher.test.ts": [
+				"gi-coding-agent/http_runtime_test.go",
+				"gi-llm-provider/http_runtime_test.go",
+			],
 			"packages/coding-agent/test/interactive-mode-status.test.ts": [
 				"gi-coding-agent/extension_discovery_test.go",
 				"gi-coding-agent/cli_interactive_tui_test.go",
@@ -329,6 +333,10 @@ const modules = [
 				"gi-coding-agent/session_manager_tree_test.go",
 				"gi-coding-agent/session_manager_context_suite_test.go",
 				"gi-coding-agent/pi_coding_agent_case_names_test.go",
+			],
+			"packages/coding-agent/test/sdk-stream-options.test.ts": [
+				"gi-coding-agent/http_runtime_test.go",
+				"gi-coding-agent/cli_print_mode_test.go",
 			],
 			"packages/coding-agent/test/skills.test.ts": [
 				"gi-coding-agent/resource_loader_test.go",

@@ -156,45 +156,6 @@ var settingsSubmenuSelectListLayout = gitui.SelectListLayoutOptions{
 	MaxPrimaryColumnWidth: 32,
 }
 
-type httpIdleTimeoutChoice struct {
-	Label     string
-	TimeoutMS int
-}
-
-var httpIdleTimeoutChoices = []httpIdleTimeoutChoice{
-	{Label: "30 sec", TimeoutMS: 30_000},
-	{Label: "1 min", TimeoutMS: 60_000},
-	{Label: "2 min", TimeoutMS: 120_000},
-	{Label: "5 min", TimeoutMS: 300_000},
-	{Label: "disabled", TimeoutMS: 0},
-}
-
-func formatHTTPIdleTimeoutMS(timeoutMS int) string {
-	for _, choice := range httpIdleTimeoutChoices {
-		if choice.TimeoutMS == timeoutMS {
-			return choice.Label
-		}
-	}
-	return strconv.FormatFloat(float64(timeoutMS)/1000, 'f', -1, 64) + " sec"
-}
-
-func httpIdleTimeoutLabels() []string {
-	labels := make([]string, 0, len(httpIdleTimeoutChoices))
-	for _, choice := range httpIdleTimeoutChoices {
-		labels = append(labels, choice.Label)
-	}
-	return labels
-}
-
-func httpIdleTimeoutMSForLabel(label string) (int, bool) {
-	for _, choice := range httpIdleTimeoutChoices {
-		if choice.Label == label {
-			return choice.TimeoutMS, true
-		}
-	}
-	return 0, false
-}
-
 func settingsFollowUpDescription() string {
 	key := formatHotkeyKeys(keybindingValueKeys(DefaultProtocolKeybindings()["app.message.followUp"]), true)
 	if key == "" {
@@ -512,7 +473,9 @@ func (h *CLIInteractiveTUIHost) applySettingsListChange(host *RPCSessionHost, se
 		settings.SetTransport(newValue)
 	case "http-idle-timeout":
 		if timeoutMS, ok := httpIdleTimeoutMSForLabel(newValue); ok {
-			settings.SetHTTPIdleTimeoutMS(timeoutMS)
+			if err := settings.SetHTTPIdleTimeoutMS(timeoutMS); err != nil {
+				h.addStatus("Error: " + err.Error())
+			}
 		}
 	case "hide-thinking":
 		settings.SetHideThinkingBlock(newValue == "true")

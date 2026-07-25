@@ -122,7 +122,7 @@ func (p AnthropicMessagesProvider) stream(
 	}
 	response, err := postSSEWithRetry(
 		ctx,
-		httpClientOrDefault(p.Client),
+		httpClientForRequest(p.Client, options),
 		anthropicMessagesEndpoint(baseURL),
 		headers,
 		payloadAny,

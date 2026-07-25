@@ -5,7 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 )
@@ -41,7 +43,6 @@ type WarningSettings struct {
 	AnthropicExtraUsage bool
 }
 
-const defaultHTTPIdleTimeoutMS = 300_000
 const defaultAgentSessionMaxRetries = 3
 const defaultAgentSessionBaseDelayMS = 2_000
 const defaultProviderMaxRetryDelayMS = 60_000
@@ -376,19 +377,74 @@ func (s *SettingsManager) SetTransport(transport string) {
 	s.setGlobal("transport", normalizeSettingsEnum(transport, "auto", []string{"sse", "websocket", "websocket-cached", "auto"}))
 }
 
-func (s *SettingsManager) GetHTTPIdleTimeoutMS() int {
-	timeout := settingsInt(s.mergedSnapshot(), "httpIdleTimeoutMs", defaultHTTPIdleTimeoutMS)
-	if timeout < 0 {
-		return defaultHTTPIdleTimeoutMS
+// HTTPIdleTimeout returns the validated Go-native timeout value. Zero means
+// disabled. Invalid persisted settings are surfaced instead of silently
+// changing request behavior.
+func (s *SettingsManager) HTTPIdleTimeout() (time.Duration, error) {
+	value := any(nil)
+	if s != nil {
+		value = s.mergedSnapshot()["httpIdleTimeoutMs"]
 	}
-	return timeout
-}
-
-func (s *SettingsManager) SetHTTPIdleTimeoutMS(timeoutMS int) {
-	if timeoutMS < 0 {
+	timeoutMS, configured, err := parseTimeoutSetting(
+		value,
+		"httpIdleTimeoutMs",
+	)
+	if err != nil {
+		return 0, err
+	}
+	if !configured {
 		timeoutMS = defaultHTTPIdleTimeoutMS
 	}
+	return time.Duration(timeoutMS) * time.Millisecond, nil
+}
+
+// WebSocketConnectTimeout returns nil when the setting is absent and a
+// non-nil zero duration when connection timeouts are explicitly disabled.
+func (s *SettingsManager) WebSocketConnectTimeout() (*time.Duration, error) {
+	value := any(nil)
+	if s != nil {
+		value = s.mergedSnapshot()["websocketConnectTimeoutMs"]
+	}
+	timeoutMS, configured, err := parseTimeoutSetting(
+		value,
+		"websocketConnectTimeoutMs",
+	)
+	if err != nil || !configured {
+		return nil, err
+	}
+	timeout := time.Duration(timeoutMS) * time.Millisecond
+	return &timeout, nil
+}
+
+// GetHTTPIdleTimeoutMS is the legacy millisecond accessor. New request paths
+// use HTTPIdleTimeout or providerRequestSettings so malformed configuration is
+// returned to the caller.
+func (s *SettingsManager) GetHTTPIdleTimeoutMS() int {
+	timeout, err := s.HTTPIdleTimeout()
+	if err != nil {
+		return defaultHTTPIdleTimeoutMS
+	}
+	return int(timeout / time.Millisecond)
+}
+
+func (s *SettingsManager) SetHTTPIdleTimeoutMS(timeoutMS int) error {
+	if timeoutMS < 0 {
+		return errors.New("Invalid httpIdleTimeoutMs setting: timeout must be non-negative")
+	}
 	s.setGlobal("httpIdleTimeoutMs", timeoutMS)
+	return nil
+}
+
+// GetHTTPProxy returns only the global proxy setting. Project settings cannot
+// redirect process-wide traffic, matching Pi's trust boundary.
+func (s *SettingsManager) GetHTTPProxy() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	proxy := strings.TrimSpace(settingsString(s.global, "httpProxy"))
+	s.mu.RUnlock()
+	return proxy
 }
 
 func (s *SettingsManager) GetShellCommandPrefix() string {

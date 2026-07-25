@@ -20,6 +20,7 @@ type agentSessionPrintModeHost struct {
 	processSupervisor   *ProtocolExtensionProcessSupervisor
 	sessionRuntimeHost  *AgentSessionRuntimeHost
 	settingsManager     *SettingsManager
+	requestRuntime      providerRequestRuntime
 	extensionFlagValues map[string]any
 	startupWarnings     []string
 }
@@ -271,6 +272,11 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 		return nil, err
 	}
 	startupSettingsManager := NewSettingsManager(startupCwd, agentDir)
+	if err := ApplyHTTPProxySettings(
+		startupSettingsManager.GetHTTPProxy(),
+	); err != nil {
+		return nil, err
+	}
 
 	sessionManager, err := newCLIPrintModeSessionManager(args, startupCwd, agentDir, startupSettingsManager)
 	if err != nil {
@@ -282,6 +288,9 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	}
 	settingsManager, projectTrusted, err := newCLIRuntimeSettingsManager(args, cwd, agentDir, options.ProjectTrustPrompt)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := providerRequestSettings(settingsManager); err != nil {
 		return nil, err
 	}
 	registryOptions := options
@@ -703,6 +712,9 @@ func (h *agentSessionPrintModeHost) PrintModeSession() PrintModeSession {
 }
 
 func (h *agentSessionPrintModeHost) Dispose() error {
+	if h != nil {
+		defer h.requestRuntime.close()
+	}
 	if h != nil && h.processSupervisor != nil {
 		if err := h.processSupervisor.Stop(context.Background()); err != nil {
 			return err
@@ -763,12 +775,15 @@ func (h *agentSessionPrintModeHost) providerResponder(registry *ModelRegistry, a
 		if err != nil {
 			return llm.Message{}, err
 		}
-		options := h.modelRuntimeStreamOptions(
+		options, err := h.modelRuntimeStreamOptions(
 			ctx,
 			model,
 			args,
 			installTelemetryEnabled,
 		)
+		if err != nil {
+			return llm.Message{}, err
+		}
 		return runtime.CompleteSimple(ctx, model, llm.Context{
 			SystemPrompt: session.SystemPrompt,
 			Messages:     messages,
@@ -788,12 +803,15 @@ func (h *agentSessionPrintModeHost) providerStreamResponder(registry *ModelRegis
 		if err != nil {
 			return nil, err
 		}
-		options := h.modelRuntimeStreamOptions(
+		options, err := h.modelRuntimeStreamOptions(
 			ctx,
 			model,
 			args,
 			installTelemetryEnabled,
 		)
+		if err != nil {
+			return nil, err
+		}
 		return runtime.StreamSimple(ctx, model, llm.Context{
 			SystemPrompt: session.SystemPrompt,
 			Messages:     messages,
@@ -822,14 +840,13 @@ func (h *agentSessionPrintModeHost) modelRuntimeStreamOptions(
 	model llm.Model,
 	args Args,
 	installTelemetryEnabled bool,
-) llm.ModelsStreamOptions {
+) (llm.ModelsStreamOptions, error) {
 	session := h.AgentSession()
-	providerRetrySettings := ProviderRetrySettings{
-		MaxRetryDelayMS: defaultProviderMaxRetryDelayMS,
-	}
-	if h.settingsManager != nil {
-		providerRetrySettings =
-			h.settingsManager.GetProviderRetrySettings()
+	requestSnapshot, err := h.requestRuntime.snapshot(
+		h.settingsManager,
+	)
+	if err != nil {
+		return llm.ModelsStreamOptions{}, err
 	}
 	options := llm.ModelsStreamOptions{
 		StreamOptions: llm.StreamOptions{
@@ -838,10 +855,6 @@ func (h *agentSessionPrintModeHost) modelRuntimeStreamOptions(
 				model,
 				printModeSessionThinkingLevel(session),
 			),
-			Transport:       settingsTransport(h.settingsManager),
-			TimeoutMillis:   providerRetrySettings.TimeoutMS,
-			MaxRetries:      providerRetrySettings.MaxRetries,
-			MaxRetryDelayMs: providerRetrySettings.MaxRetryDelayMS,
 			OnPayload: func(
 				payload any,
 				model llm.Model,
@@ -883,11 +896,12 @@ func (h *agentSessionPrintModeHost) modelRuntimeStreamOptions(
 			), nil
 		},
 	}
+	requestSnapshot.apply(&options.StreamOptions)
 	if args.APIKey != "" {
 		apiKey := args.APIKey
 		options.APIKey = &apiKey
 	}
-	return options
+	return options, nil
 }
 
 func printModeSessionThinkingLevel(session *AgentSession) ThinkingLevel {
@@ -895,11 +909,4 @@ func printModeSessionThinkingLevel(session *AgentSession) ThinkingLevel {
 		return ThinkingOff
 	}
 	return ThinkingLevel(session.Agent.State.ThinkingLevel)
-}
-
-func settingsTransport(settings *SettingsManager) string {
-	if settings == nil {
-		return ""
-	}
-	return settings.GetTransport()
 }

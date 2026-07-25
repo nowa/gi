@@ -195,7 +195,7 @@ func (p OpenAICodexResponsesProvider) postWithRetry(
 	headers map[string]string,
 	payload any,
 ) (*http.Response, error) {
-	client := httpClientOrDefault(p.Client)
+	client := httpClientForRequest(p.Client, options)
 	endpoint := ResolveOpenAICodexURL(model.BaseURL)
 	sseRequest, err := prepareOpenAICodexSSERequest(payload, headers)
 	if err != nil {

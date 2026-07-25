@@ -173,7 +173,7 @@ func (p PiMessagesProvider) stream(
 	headers = applyHeaderRemovals(headers, options.HeaderRemovals)
 	response, err := postJSONWithAccept(
 		ctx,
-		httpClientOrDefault(p.Client),
+		httpClientForRequest(p.Client, options),
 		requestURL.String(),
 		headers,
 		payload,

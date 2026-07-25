@@ -31,7 +31,6 @@
       "missingFiles": [
         "cli/startup-ui.ts",
         "core/experimental.ts",
-        "core/http-dispatcher.ts",
         "core/provider-attribution.ts",
         "core/provider-composer.ts",
         "core/remote-catalog-provider.ts",
@@ -87,13 +86,6 @@
         "core/footer-data-provider.ts::isWindowsMountedRepoPath",
         "core/footer-data-provider.ts::isWslEnvironment",
         "core/footer-data-provider.ts::shouldPollGitHead",
-        "core/http-dispatcher.ts::applyHttpProxySettings",
-        "core/http-dispatcher.ts::configureHttpDispatcher",
-        "core/http-dispatcher.ts::createUndiciClient",
-        "core/http-dispatcher.ts::createUndiciOriginDispatcher",
-        "core/http-dispatcher.ts::formatHttpIdleTimeoutMs",
-        "core/http-dispatcher.ts::parseHttpIdleTimeoutMs",
-        "core/http-dispatcher.ts::withUndiciErrorListener",
         "core/model-resolver.ts::resolveModelScopeWithDiagnostics",
         "core/output-guard.ts::getRawStdoutWrite",
         "core/output-guard.ts::waitForRawStdoutBackpressure",
@@ -145,16 +137,12 @@
         "core/resource-loader.ts::DefaultResourceLoader.resolveExtensionLoadPath",
         "core/settings-manager.ts::SettingsManager.getEnableAnalytics",
         "core/settings-manager.ts::SettingsManager.getExternalEditorCommand",
-        "core/settings-manager.ts::SettingsManager.getHttpIdleTimeoutMs",
         "core/settings-manager.ts::SettingsManager.getOutputPad",
         "core/settings-manager.ts::SettingsManager.getThemeSetting",
         "core/settings-manager.ts::SettingsManager.getTrackingId",
-        "core/settings-manager.ts::SettingsManager.getWebSocketConnectTimeoutMs",
         "core/settings-manager.ts::SettingsManager.setEnableAnalytics",
-        "core/settings-manager.ts::SettingsManager.setHttpIdleTimeoutMs",
         "core/settings-manager.ts::SettingsManager.setOutputPad",
         "core/settings-manager.ts::SettingsManager.updateProjectSettings",
-        "core/settings-manager.ts::parseTimeoutSetting",
         "core/timings.ts::printTimingGroup",
         "core/tools/bash.ts::resolveTimeoutMs",
         "core/tools/edit-diff.ts::applyReplacements",
@@ -465,7 +453,6 @@
         "packages/coding-agent/test/external-editor.test.ts",
         "packages/coding-agent/test/first-time-setup-fork.test.ts",
         "packages/coding-agent/test/first-time-setup.test.ts",
-        "packages/coding-agent/test/http-dispatcher.test.ts",
         "packages/coding-agent/test/max-thinking.test.ts",
         "packages/coding-agent/test/suite/regressions/5661-uppercase-header-values.test.ts",
         "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts"
@@ -587,21 +574,6 @@
           "name": "handles empty ours or theirs sections"
         },
         {
-          "file": "packages/coding-agent/test/http-dispatcher.test.ts",
-          "line": 30,
-          "name": "applies httpProxy to HTTP_PROXY and HTTPS_PROXY"
-        },
-        {
-          "file": "packages/coding-agent/test/http-dispatcher.test.ts",
-          "line": 37,
-          "name": "does not override existing proxy env vars"
-        },
-        {
-          "file": "packages/coding-agent/test/http-dispatcher.test.ts",
-          "line": 47,
-          "name": "ignores empty values"
-        },
-        {
           "file": "packages/coding-agent/test/llama-extension.test.ts",
           "line": 56,
           "name": "normalizes management and inference URLs"
@@ -627,14 +599,14 @@
           "name": "falls back to thinkingXhigh for legacy themes"
         },
         {
+          "file": "packages/coding-agent/test/model-runtime-auth-options.test.ts",
+          "line": 36,
+          "name": "accepts a pi-ai CredentialStore"
+        },
+        {
           "file": "packages/coding-agent/test/remote-catalog-provider.test.ts",
           "line": 81,
           "name": "prefers the newer of the generated and remote catalogs"
-        },
-        {
-          "file": "packages/coding-agent/test/sdk-stream-options.test.ts",
-          "line": 148,
-          "name": "forwards websocketConnectTimeoutMs from settings"
         },
         {
           "file": "packages/coding-agent/test/status-indicator.test.ts",

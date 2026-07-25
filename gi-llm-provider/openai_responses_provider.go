@@ -93,7 +93,7 @@ func (p OpenAIResponsesProvider) stream(model Model, llmContext Context, options
 	}
 	response, err := postSSEWithRetry(
 		ctx,
-		httpClientOrDefault(p.Client),
+		httpClientForRequest(p.Client, options),
 		responsesEndpoint(baseURL),
 		headers,
 		payloadAny,

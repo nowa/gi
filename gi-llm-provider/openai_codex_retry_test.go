@@ -50,6 +50,29 @@ func TestPrepareOpenAICodexExecutionOptions(t *testing.T) {
 		t.Fatalf("configured execution options = %#v", configured)
 	}
 
+	disabledTimeout := time.Duration(0)
+	presenceAware, err := prepareOpenAICodexExecutionOptions(
+		SimpleStreamOptions{
+			Timeouts: StreamTimeouts{
+				HTTPIdle:         &disabledTimeout,
+				WebSocketConnect: &disabledTimeout,
+			},
+			TimeoutMillis:                 25,
+			WebSocketConnectTimeoutMillis: 50,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if presenceAware.sseResponseHeaderTimeout != 0 ||
+		presenceAware.webSocketConnectTimeout != 0 ||
+		presenceAware.webSocketIdleTimeout != 0 {
+		t.Fatalf(
+			"presence-aware timeout options = %#v",
+			presenceAware,
+		)
+	}
+
 	unlimited, err := prepareOpenAICodexExecutionOptions(SimpleStreamOptions{
 		MaxRetryDelayMs: -1,
 	})

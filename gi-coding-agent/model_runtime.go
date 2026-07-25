@@ -1522,7 +1522,22 @@ func cloneRuntimeStreamOptions(
 		options.ThinkingBudgets,
 	)
 	options.Metadata = cloneRuntimeAnyMap(options.Metadata)
+	options.Timeouts = cloneRuntimeStreamTimeouts(options.Timeouts)
 	return options
+}
+
+func cloneRuntimeStreamTimeouts(
+	timeouts llm.StreamTimeouts,
+) llm.StreamTimeouts {
+	if timeouts.HTTPIdle != nil {
+		timeout := *timeouts.HTTPIdle
+		timeouts.HTTPIdle = &timeout
+	}
+	if timeouts.WebSocketConnect != nil {
+		timeout := *timeouts.WebSocketConnect
+		timeouts.WebSocketConnect = &timeout
+	}
+	return timeouts
 }
 
 func cloneRuntimeIntMap(values map[string]int) map[string]int {

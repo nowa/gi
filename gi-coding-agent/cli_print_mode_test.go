@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
@@ -980,6 +981,7 @@ func TestAgentSessionPrintModeProviderResponderUsesProviderRetrySettingsPiStyle(
 		t.Fatal(err)
 	}
 	settings := NewInMemorySettingsManager(map[string]any{
+		"websocketConnectTimeoutMs": 0,
 		"retry": map[string]any{
 			"provider": map[string]any{
 				"timeoutMs":       9000,
@@ -995,6 +997,13 @@ func TestAgentSessionPrintModeProviderResponderUsesProviderRetrySettingsPiStyle(
 	}
 	if captured.TimeoutMillis != 9000 || captured.MaxRetries != 4 || captured.MaxRetryDelayMs != 30000 {
 		t.Fatalf("provider retry options = %#v", captured)
+	}
+	if captured.Timeouts.HTTPIdle == nil ||
+		*captured.Timeouts.HTTPIdle != 9*time.Second ||
+		captured.Timeouts.WebSocketConnect == nil ||
+		*captured.Timeouts.WebSocketConnect != 0 ||
+		captured.HTTPClient == nil {
+		t.Fatalf("provider runtime options = %#v", captured)
 	}
 }
 

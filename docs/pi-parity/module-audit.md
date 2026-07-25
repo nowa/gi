@@ -69,7 +69,7 @@ gap.
 | `packages/coding-agent/src` | `cmd/gi/main.go`, `gi-coding-agent/cli.go`, `config.go`, mode dispatch files | split but consistent; Go separates binary entrypoint from reusable package logic. |
 | `packages/coding-agent/src/bun` | `internal/sandboxenv`, `restore_sandbox_env.go` facade; Bun bootstrap/provider files are excluded | Go-native; binary/runtime bootstrap does not apply to Gi, while sandbox environment restoration now lives behind a focused package. |
 | `packages/coding-agent/src/cli` | `gi-coding-agent/internal/cli`, `cli_api.go`, `file_arguments.go`, `list_models.go`, `cli_config.go`, resume/session selector files | consistent; argument parsing and initial-message assembly now have a focused Go subpackage with root-level compatibility wrappers. |
-| `packages/coding-agent/src/core` | `agent_session_*`, `usage_totals.go`, `cache_stats.go`, auth/settings/model/resource/system/footer/session manager files, `internal/authguide`, `internal/authwarning`, `internal/attribution`, `internal/modelresolver`, `internal/planmode`, `internal/sessioncwd`, `internal/telemetry` | consistent but still partly flattened; Go keeps tightly-coupled session/runtime pieces in one package to avoid artificial import cycles, while `session_file_store.go` isolates JSONL I/O policy from mutable session-tree state. Billed usage, active context pressure, model attribution, cache waste, and cache-miss notices are pure projections from one locked session snapshot and flow through the canonical `llm.Usage` and `FileEntry` types. Session discovery uses bounded header reads, explicit opens retain an authoritative streaming fallback, and validated entries plus derived indexes are applied as one locked state transition. Derived notices remain outside the append-only session log. OAuth protocol ownership lives entirely in `gi-llm-provider`. |
+| `packages/coding-agent/src/core` | `agent_session_*`, `usage_totals.go`, `cache_stats.go`, `http_runtime.go`, auth/settings/model/resource/system/footer/session manager files, `internal/authguide`, `internal/authwarning`, `internal/attribution`, `internal/modelresolver`, `internal/planmode`, `internal/sessioncwd`, `internal/telemetry` | consistent but still partly flattened; Go keeps tightly-coupled session/runtime pieces in one package to avoid artificial import cycles, while `session_file_store.go` isolates JSONL I/O policy from mutable session-tree state. Billed usage, active context pressure, model attribution, cache waste, and cache-miss notices are pure projections from one locked session snapshot and flow through the canonical `llm.Usage` and `FileEntry` types. Session discovery uses bounded header reads, explicit opens retain an authoritative streaming fallback, and validated entries plus derived indexes are applied as one locked state transition. Provider requests capture one validated settings snapshot and inject a reusable, independently owned HTTP client plus presence-aware timeouts; transport replacement is synchronized and retires old idle connections. Derived notices remain outside the append-only session log. OAuth and generic HTTP transport mechanics live in `gi-llm-provider`. |
 | `packages/coding-agent/src/core/compaction` | `gi-agent-core/harness` compaction plus `agent_session_compaction*.go` | split but consistent; reusable compaction lives in harness, session-trigger wiring lives in coding-agent. |
 | `packages/coding-agent/src/core/export-html` | `export_html.go` and export tests | partial; ANSI/session-data/custom-tool paths are mapped, while Pi's full static template/vendor asset pipeline remains a documented gap. |
 | `packages/coding-agent/src/core/export-html/vendor` | `ExportHTMLTemplateJS` safe DOM markdown/highlight helpers | partial; Gi intentionally does not embed Pi's `marked.min.js` and `highlight.min.js` assets yet, while keeping their browser-rendering responsibilities documented in the file map. |
@@ -147,10 +147,10 @@ The member-level source inventory currently reports:
 
 | Module | Pi source files | Gi production files | Pi symbols | Missing Pi files | Missing Pi symbols |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 169 | 99 | 632 | 0 | 0 |
+| LLM provider | 169 | 100 | 632 | 0 | 0 |
 | Agent core | 35 | 35 | 327 | 0 | 0 |
 | TUI | 28 | 32 | 449 | 0 | 0 |
-| Coding agent | 177 | 171 | 2115 | 25 | 386 |
+| Coding agent | 177 | 173 | 2115 | 24 | 350 |
 
 `docs/pi-parity/member-symbol-inventory.md` is the generated per-file detail.
 A mentioned symbol means its ownership or gap has been classified; it does not
@@ -174,7 +174,7 @@ The test-case inventory currently reports:
 | LLM provider | 111 | 1186 | 111 | 1186 | 0 | 0 |
 | Agent core | 16 | 212 | 16 | 212 | 0 | 0 |
 | TUI | 27 | 700 | 27 | 700 | 0 | 0 |
-| Coding agent | 181 | 1649 | 173 | 1607 | 8 | 42 |
+| Coding agent | 181 | 1649 | 174 | 1610 | 7 | 39 |
 
 Candidate matching is an audit lead, not proof. Behavioral parity still
 requires the mapped Go tests, implementation review, and the release gate in

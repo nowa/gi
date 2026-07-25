@@ -90,7 +90,7 @@ func (p OpenAICompletionsProvider) stream(model Model, llmContext Context, optio
 	}
 	response, err := postSSEWithRetry(
 		ctx,
-		httpClientOrDefault(p.Client),
+		httpClientForRequest(p.Client, options),
 		chatCompletionsEndpoint(baseURL),
 		headers,
 		payloadAny,

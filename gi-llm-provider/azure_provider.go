@@ -99,7 +99,7 @@ func (p AzureOpenAIResponsesProvider) stream(model Model, llmContext Context, op
 	headers := azureOpenAIResponsesHeaders(model, options, apiKey)
 	response, err := postSSEWithRetry(
 		ctx,
-		httpClientOrDefault(p.Client),
+		httpClientForRequest(p.Client, options),
 		azureOpenAIResponsesEndpoint(config),
 		headers,
 		payload,

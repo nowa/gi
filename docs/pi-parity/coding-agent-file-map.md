@@ -96,12 +96,13 @@ not to the agent runtime.
 | `core/event-bus.ts` | event fanout | `agent_session_runtime_events.go`, `rpc_session_host.go` | split | Go uses typed callbacks/channels and runtime event structs. |
 | `core/cache-stats.ts` | prompt-cache miss detection and cumulative waste | `cache_stats.go`, `usage_totals.go`, `sdk_session.go`, `cli_interactive_session.go`, `cli_interactive_tui.go` | direct | Pure scans derive miss state from one immutable session-entry snapshot; durable entry IDs replace JavaScript object identity, `time.Duration` represents idle time, and model pricing is accessed through a narrow interface satisfied by `ModelRuntime`. Significant misses are injected into the transcript as derived UI state and are never persisted. |
 | `core/footer-data-provider.ts` | cwd/git/model/token footer data | `footer_data_provider.go`, `footer.go`, `usage_totals.go` | direct | Footer state consumes the canonical `llm.Usage` snapshot instead of maintaining a second token/cost structure; width, provider, subscription, cache-hit, and data-provider behavior are tested. |
+| `core/http-dispatcher.ts` | `DEFAULT_HTTP_IDLE_TIMEOUT_MS`, `HTTP_IDLE_TIMEOUT_CHOICES`, `parseHttpIdleTimeoutMs`, `formatHttpIdleTimeoutMs`, `applyHttpProxySettings`, `withUndiciErrorListener`, `createUndiciClient`, `createUndiciOriginDispatcher`, `configureHttpDispatcher` | `http_runtime.go` `defaultHTTPIdleTimeoutMS`, `httpIdleTimeoutChoices`, `parseHTTPIdleTimeoutMS`, `formatHTTPIdleTimeoutMS`, `ApplyHTTPProxySettings`, `providerRequestRuntime`; `gi-llm-provider/http_runtime.go` `HTTPRuntimeConfig`, `NewHTTPClient`, `cloneDefaultHTTPTransport`, `httpIdleTimeoutConn`, `httpClientForRequest` | go-native | A request captures one validated settings snapshot, reuses its independently owned HTTP client, and atomically swaps clients only when transport configuration changes. Go transports report read errors directly, so Undici's EventEmitter error-listener workaround has no separate runtime state. HTTP/2 is disabled to keep per-connection read deadlines isolated; response headers and streaming body reads share the same idle-timeout policy. |
 | `core/messages.ts` | coding-agent session message helpers | `message_components.go`, `gi-agent-core/harness/messages.go`, session manager files | split | UI render and model-context projection are split by ownership. |
 | `core/output-guard.ts` | stdout guard | writer injection plus `stdout_cleanliness_test.go` | go-native | Gi does not monkey-patch global stdout. |
 | `core/package-manager.ts` | package source resolution, resource precedence, install/update/remove | `package_manager.go`, `protocol_package_resolver.go`, `official_packages.go` | protocol | Gi preserves resource/filter semantics but intentionally removes npm source support. |
 | `core/prompt-templates.ts`, `core/resource-loader.ts`, `core/skills.ts`, `core/system-prompt.ts` | resources and prompt assembly | `prompt_templates.go`, `resource_loader.go`, `system_prompt.go`, harness skill helpers | split | `.gi` resource discovery replaces `.pi` paths by design. |
 | `core/sdk.ts` | SDK session, attribution headers, and tool/provider registration | `sdk_session.go`, `internal/attribution`, `sdk_attribution.go` facade, protocol runtime | protocol | Go SDK shape is not a TS API clone; behaviors are covered through host/runtime tests, and attribution header merging now lives in a focused SDK metadata subpackage. |
-| `core/settings-manager.ts` | global/project settings, migrations, reload | `settings_manager.go` | direct | Settings reload and migration cases are covered, including the default-off `showCacheMissNotices` setting. |
+| `core/settings-manager.ts` | global/project settings, migrations, reload; `parseTimeoutSetting`, `SettingsManager.getHttpIdleTimeoutMs`, `SettingsManager.setHttpIdleTimeoutMs`, `SettingsManager.getWebSocketConnectTimeoutMs` | `settings_manager.go` `SettingsManager.HTTPIdleTimeout`, `SettingsManager.SetHTTPIdleTimeoutMS`, `SettingsManager.WebSocketConnectTimeout`; `http_runtime.go` `parseTimeoutSetting`, `providerRequestSettings` | direct | Settings reload and migration cases are covered, including the default-off `showCacheMissNotices` setting. Timeout values accept Pi's number/string/`disabled` forms, surface malformed persisted values, and preserve explicit zero through presence-aware `time.Duration` pointers. |
 | `core/slash-commands.ts` | command metadata | `cli_interactive_tui.go`, `prompt_templates.go`, protocol command registry | split | Built-ins, prompt templates, skills, and extension commands share the Go command registry. |
 | `core/source-info.ts`, `core/diagnostics.ts`, `core/timings.ts`, `core/telemetry.ts` | metadata, diagnostics, timing, telemetry | `resource_loader.go`, `diagnostics` structs, `internal/startuptiming`, `startup_timings.go` facade, `internal/telemetry`, `telemetry.go` facade | split | Gi-specific names are used where the product boundary differs from Pi, with timing and telemetry env parsing behind focused helper packages. |
 | `core/usage-totals.ts` | cumulative billed usage and cost attribution | `usage_totals.go`, `sdk_session.go`, `rpc_session_host.go`, `footer.go` | direct | `llm.Usage` is the single token/cost structure from provider output through persistence, session statistics, RPC projection, and footer rendering. Totals include assistant, tool-result, compaction, and branch-summary usage across the append-only session log. |
@@ -241,6 +242,44 @@ registry and request-dispatch state:
   `ModelRuntime.unregisterProvider` serialize mutations, rebuild the provider
   collection, then publish availability. Existing in-flight calls retain their
   captured provider snapshot.
+
+### Provider HTTP State And Data Flow
+
+```text
+global settings ── httpProxy ──> process proxy environment (set-if-absent)
+       |
+merged global/project settings
+       |
+       +── transport
+       +── httpIdleTimeoutMs
+       +── websocketConnectTimeoutMs
+       +── retry.provider.*
+       |
+       v
+validated ProviderRequestSettings (immutable value)
+       |
+       +── HTTPRuntimeConfig ──> providerRequestRuntime
+       |                              |
+       |                    same config: reuse client
+       |                  changed config: build -> swap -> close old idle conns
+       |
+       +── presence-aware StreamTimeouts
+       +── retry/transport values
+                      |
+                      v
+              ModelRuntime request clone
+                      |
+          +-----------+----------------+
+          |                            |
+   HTTP/SSE provider adapters     Codex WebSocket
+   injected HTTPDoer + idle       connect + read idle
+```
+
+The mutable settings maps never flow into provider code. A request observes one
+validated value snapshot, and `ModelRuntime` clones its pointer-valued timeout
+fields before provider dispatch. Explicit zero therefore remains distinct from
+an absent value. The Go transport owns socket read deadlines and disables HTTP/2
+so one connection's idle policy cannot affect multiplexed requests.
 
 ### Project Trust State And Data Flow
 

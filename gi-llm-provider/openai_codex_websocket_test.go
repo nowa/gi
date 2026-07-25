@@ -973,6 +973,33 @@ func TestArmOpenAICodexContextDeadlineClearsCancellationDeadline(t *testing.T) {
 	}
 }
 
+func TestOpenAICodexWebSocketConnectContextPreservesExplicitZero(
+	t *testing.T,
+) {
+	parent, parentCancel := context.WithCancel(context.Background())
+	defer parentCancel()
+	disabled, cancel := openAICodexWebSocketConnectContext(parent, 0)
+	defer cancel()
+	if disabled != parent {
+		t.Fatal("disabled timeout replaced the caller context")
+	}
+	if _, hasDeadline := disabled.Deadline(); hasDeadline {
+		t.Fatal("explicit zero timeout installed a deadline")
+	}
+
+	timed, timedCancel := openAICodexWebSocketConnectContext(
+		parent,
+		time.Second,
+	)
+	defer timedCancel()
+	deadline, hasDeadline := timed.Deadline()
+	if !hasDeadline ||
+		time.Until(deadline) <= 0 ||
+		time.Until(deadline) > time.Second {
+		t.Fatalf("timed context deadline = %s", deadline)
+	}
+}
+
 func TestOpenAICodexResponsesProviderRejectsInvalidTimeoutsBeforeTransport(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -236,6 +236,18 @@ type Context struct {
 	Tools        []Tool    `json:"tools,omitempty"`
 }
 
+// StreamTimeouts is the canonical, presence-aware timeout configuration for
+// one provider request. A nil field means that the caller did not configure
+// the timeout; a non-nil zero duration explicitly disables it.
+//
+// The legacy millisecond fields on StreamOptions remain for source
+// compatibility. New code should prefer StreamTimeouts so zero is not
+// overloaded as both "unset" and "disabled".
+type StreamTimeouts struct {
+	HTTPIdle         *time.Duration
+	WebSocketConnect *time.Duration
+}
+
 type StreamOptions struct {
 	Context                       context.Context
 	Temperature                   *float64
@@ -253,6 +265,8 @@ type StreamOptions struct {
 	Headers                       map[string]string
 	HeaderRemovals                []string
 	Env                           ProviderEnv
+	HTTPClient                    HTTPDoer
+	Timeouts                      StreamTimeouts
 	TimeoutMillis                 int
 	WebSocketConnectTimeoutMillis int
 	MaxRetries                    int

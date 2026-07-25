@@ -131,7 +131,7 @@ func (p GoogleVertexAPIProvider) stream(
 	}
 	response, err := postSSEWithRetry(
 		ctx,
-		httpClientOrDefault(p.Client),
+		httpClientForRequest(p.Client, options),
 		request.endpoint,
 		request.headers,
 		payload,

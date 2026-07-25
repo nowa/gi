@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -55,14 +56,18 @@ func (gorillaOpenAICodexWebSocketDialer) Dial(
 	headers map[string]string,
 	connectTimeout time.Duration,
 ) (OpenAICodexWebSocket, error) {
-	if connectTimeout <= 0 {
-		connectTimeout = defaultOpenAICodexWebSocketConnectTimeout
-	}
-	connectCtx, cancel := context.WithTimeout(ctx, connectTimeout)
+	connectCtx, cancel := openAICodexWebSocketConnectContext(
+		ctx,
+		connectTimeout,
+	)
 	defer cancel()
 
 	dialer := websocket.Dialer{
-		Proxy:            http.ProxyFromEnvironment,
+		Proxy: func(request *http.Request) (*url.URL, error) {
+			return ResolveHTTPProxyURLForTarget(
+				request.URL.String(),
+			)
+		},
 		HandshakeTimeout: connectTimeout,
 	}
 	requestHeaders := make(http.Header, len(headers))
@@ -87,6 +92,19 @@ func (gorillaOpenAICodexWebSocketDialer) Dial(
 		return nil, fmt.Errorf("open Codex WebSocket: HTTP %d: %s: %w", response.StatusCode, detail, err)
 	}
 	return newGorillaOpenAICodexWebSocket(connection), nil
+}
+
+func openAICodexWebSocketConnectContext(
+	ctx context.Context,
+	connectTimeout time.Duration,
+) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if connectTimeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, connectTimeout)
 }
 
 type gorillaOpenAICodexWebSocket struct {

@@ -160,7 +160,7 @@ func (p MistralProvider) stream(model Model, llmContext Context, options StreamO
 	headers := mistralHeaders(model, options, apiKey)
 	response, err := postSSEWithRetry(
 		ctx,
-		httpClientOrDefault(p.Client),
+		httpClientForRequest(p.Client, options),
 		mistralEndpoint(model.BaseURL),
 		headers,
 		payload,

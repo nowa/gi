@@ -114,7 +114,7 @@ func (p GoogleProvider) stream(model Model, llmContext Context, options StreamOp
 	}
 	response, err := postSSEWithRetry(
 		ctx,
-		httpClientOrDefault(p.Client),
+		httpClientForRequest(p.Client, options),
 		googleStreamEndpoint(model.BaseURL, model.ID, apiKey),
 		googleHeaders(model, options),
 		payload,

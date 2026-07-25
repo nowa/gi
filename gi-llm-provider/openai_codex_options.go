@@ -17,15 +17,29 @@ type openAICodexExecutionOptions struct {
 func prepareOpenAICodexExecutionOptions(
 	options SimpleStreamOptions,
 ) (openAICodexExecutionOptions, error) {
-	responseTimeout, err := openAICodexDurationFromMillis(
-		"timeoutMs",
-		options.TimeoutMillis,
-	)
+	responseTimeout := time.Duration(0)
+	var err error
+	if options.Timeouts.HTTPIdle != nil {
+		responseTimeout, err = openAICodexValidatedDuration(
+			"timeoutMs",
+			*options.Timeouts.HTTPIdle,
+		)
+	} else {
+		responseTimeout, err = openAICodexDurationFromMillis(
+			"timeoutMs",
+			options.TimeoutMillis,
+		)
+	}
 	if err != nil {
 		return openAICodexExecutionOptions{}, err
 	}
 	connectTimeout := defaultOpenAICodexWebSocketConnectTimeout
-	if options.WebSocketConnectTimeoutMillis != 0 {
+	if options.Timeouts.WebSocketConnect != nil {
+		connectTimeout, err = openAICodexValidatedDuration(
+			"websocketConnectTimeoutMs",
+			*options.Timeouts.WebSocketConnect,
+		)
+	} else if options.WebSocketConnectTimeoutMillis != 0 {
 		connectTimeout, err = openAICodexDurationFromMillis(
 			"websocketConnectTimeoutMs",
 			options.WebSocketConnectTimeoutMillis,
@@ -59,6 +73,16 @@ func prepareOpenAICodexExecutionOptions(
 		maxRetries:               max(options.MaxRetries, 0),
 		maxRetryDelay:            maxRetryDelay,
 	}, nil
+}
+
+func openAICodexValidatedDuration(
+	name string,
+	value time.Duration,
+) (time.Duration, error) {
+	if value < 0 {
+		return 0, fmt.Errorf("Invalid %s: %s", name, value)
+	}
+	return value, nil
 }
 
 func openAICodexDurationFromMillis(name string, value int) (time.Duration, error) {

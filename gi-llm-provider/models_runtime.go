@@ -792,7 +792,20 @@ func cloneStreamOptions(options StreamOptions) StreamOptions {
 	options.HeaderRemovals = append([]string(nil), options.HeaderRemovals...)
 	options.Env = cloneProviderEnv(options.Env)
 	options.Metadata = cloneCredentialMetadata(options.Metadata)
+	options.Timeouts = cloneStreamTimeouts(options.Timeouts)
 	return options
+}
+
+func cloneStreamTimeouts(timeouts StreamTimeouts) StreamTimeouts {
+	if timeouts.HTTPIdle != nil {
+		timeout := *timeouts.HTTPIdle
+		timeouts.HTTPIdle = &timeout
+	}
+	if timeouts.WebSocketConnect != nil {
+		timeout := *timeouts.WebSocketConnect
+		timeouts.WebSocketConnect = &timeout
+	}
+	return timeouts
 }
 
 func cloneIntMap(values map[string]int) map[string]int {
