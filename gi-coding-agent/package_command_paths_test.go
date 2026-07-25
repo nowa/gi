@@ -219,6 +219,40 @@ func TestPackageCommandPathsGiProtocolBasics(t *testing.T) {
 		if !called || got.CWD != projectDir || got.AgentDir != agentDir {
 			t.Fatalf("config host called=%v options=%#v", called, got)
 		}
+		if got.WriteScope != ResourceConfigWriteGlobal {
+			t.Fatalf("write scope = %q, want global", got.WriteScope)
+		}
+	})
+
+	t.Run("config local starts in project write scope", func(t *testing.T) {
+		agentDir, projectDir := createPackageCommandPathDirs(t)
+		var got PackageResourceConfigOptions
+		stdout, stderr, code := runPackageCommandCLIWithOptions(t, []string{"config", "--local", "--approve"}, projectDir, agentDir, func(options *CLIOptions) {
+			options.ConfigHostFactory = func(config PackageResourceConfigOptions) (CLIConfigRuntimeHost, error) {
+				got = config
+				return fakeCLIConfigHost{}, nil
+			}
+		})
+		if code != 0 || strings.TrimSpace(stdout) != "" || strings.TrimSpace(stderr) != "" {
+			t.Fatalf("config --local code=%d stdout=%q stderr=%q", code, stdout, stderr)
+		}
+		if got.WriteScope != ResourceConfigWriteProject || got.SettingsManager == nil || !got.SettingsManager.IsProjectTrusted() {
+			t.Fatalf("config options = %#v", got)
+		}
+	})
+
+	t.Run("config local rejects an untrusted project", func(t *testing.T) {
+		agentDir, projectDir := createPackageCommandPathDirs(t)
+		called := false
+		_, stderr, code := runPackageCommandCLIWithOptions(t, []string{"config", "-l", "--no-approve"}, projectDir, agentDir, func(options *CLIOptions) {
+			options.ConfigHostFactory = func(PackageResourceConfigOptions) (CLIConfigRuntimeHost, error) {
+				called = true
+				return fakeCLIConfigHost{}, nil
+			}
+		})
+		if code != 1 || called || !strings.Contains(stderr, "Project is not trusted") {
+			t.Fatalf("code=%d called=%v stderr=%q", code, called, stderr)
+		}
 	})
 
 	t.Run("shows config subcommand help", func(t *testing.T) {
@@ -226,7 +260,9 @@ func TestPackageCommandPathsGiProtocolBasics(t *testing.T) {
 		if code != 0 || strings.TrimSpace(stderr) != "" {
 			t.Fatalf("config help code=%d stderr=%q", code, stderr)
 		}
-		if !strings.Contains(stdout, "gi config") || !strings.Contains(stdout, "resource configuration") {
+		if !strings.Contains(stdout, "gi config [-l]") ||
+			!strings.Contains(stdout, "resource configuration") ||
+			!strings.Contains(stdout, "--local") {
 			t.Fatalf("stdout = %q", stdout)
 		}
 	})

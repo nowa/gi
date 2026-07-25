@@ -15,6 +15,7 @@ type PackageResourceConfigOptions struct {
 	AgentDir        string
 	Terminal        gitui.Terminal
 	SettingsManager *SettingsManager
+	WriteScope      ResourceConfigWriteScope
 }
 
 type packageResourceConfigHost struct {
@@ -22,6 +23,7 @@ type packageResourceConfigHost struct {
 	agentDir        string
 	terminal        gitui.Terminal
 	settingsManager *SettingsManager
+	writeScope      ResourceConfigWriteScope
 }
 
 func newDefaultCLIConfigHost(options PackageResourceConfigOptions) (CLIConfigRuntimeHost, error) {
@@ -30,6 +32,7 @@ func newDefaultCLIConfigHost(options PackageResourceConfigOptions) (CLIConfigRun
 		agentDir:        options.AgentDir,
 		terminal:        options.Terminal,
 		settingsManager: options.SettingsManager,
+		writeScope:      normalizeResourceConfigWriteScope(options.WriteScope),
 	}, nil
 }
 
@@ -46,18 +49,23 @@ func (h *packageResourceConfigHost) Run() error {
 		AgentDir:        h.agentDir,
 		SettingsManager: settings,
 	})
-	resources, err := manager.ListResourceToggles()
+	snapshot, err := manager.LoadResourceConfigSnapshot()
 	if err != nil {
 		return err
+	}
+	projectModeAvailable := settings.IsProjectTrusted()
+	writeScope := h.writeScope
+	if writeScope == ResourceConfigWriteProject && !projectModeAvailable {
+		writeScope = ResourceConfigWriteGlobal
 	}
 	var mu sync.Mutex
 	var runErr error
 	done := make(chan struct{}, 1)
-	component := newPackageResourceConfigComponent(manager, resources, done, func(err error) {
+	component := newPackageResourceConfigComponent(manager, snapshot, done, func(err error) {
 		mu.Lock()
 		defer mu.Unlock()
 		runErr = err
-	})
+	}, writeScope, projectModeAvailable)
 	ui := gitui.NewTUI(h.terminal)
 	ui.AddChild(component)
 	ui.SetFocus(component)
@@ -73,15 +81,19 @@ func (h *packageResourceConfigHost) Run() error {
 }
 
 type packageResourceConfigComponent struct {
-	manager    *DefaultPackageManager
-	resources  []PackageResourceToggleItem
-	entries    []packageResourceConfigEntry
-	filtered   []int
-	selected   int
-	search     *gitui.Input
-	done       chan<- struct{}
-	onError    func(error)
-	maxVisible int
+	manager              *DefaultPackageManager
+	snapshot             ResourceConfigSnapshot
+	resources            []PackageResourceToggleItem
+	entries              []packageResourceConfigEntry
+	filtered             []int
+	selected             int
+	search               *gitui.Input
+	header               *packageResourceConfigHeader
+	done                 chan<- struct{}
+	onError              func(error)
+	maxVisible           int
+	writeScope           ResourceConfigWriteScope
+	projectModeAvailable bool
 }
 
 type packageResourceConfigEntry struct {
@@ -91,20 +103,50 @@ type packageResourceConfigEntry struct {
 	SubgroupKey  string
 	ResourceType string
 	ItemIndex    int
+	Scope        string
 }
 
-func newPackageResourceConfigComponent(manager *DefaultPackageManager, resources []PackageResourceToggleItem, done chan<- struct{}, onError func(error)) *packageResourceConfigComponent {
+type packageResourceConfigItemView struct {
+	item      PackageResourceToggleItem
+	override  ProjectResourceOverrideState
+	inherited bool
+	dimmed    bool
+}
+
+func newPackageResourceConfigComponent(
+	manager *DefaultPackageManager,
+	snapshot ResourceConfigSnapshot,
+	done chan<- struct{},
+	onError func(error),
+	writeScope ResourceConfigWriteScope,
+	projectModeAvailable bool,
+) *packageResourceConfigComponent {
+	writeScope = normalizeResourceConfigWriteScope(writeScope)
+	if writeScope == ResourceConfigWriteProject && !projectModeAvailable {
+		writeScope = ResourceConfigWriteGlobal
+	}
 	c := &packageResourceConfigComponent{
-		manager:    manager,
-		resources:  append([]PackageResourceToggleItem(nil), resources...),
-		search:     gitui.NewInput(),
-		done:       done,
-		onError:    onError,
-		maxVisible: 15,
+		manager:              manager,
+		snapshot:             snapshot,
+		resources:            snapshot.Items(writeScope),
+		search:               gitui.NewInput(),
+		header:               newPackageResourceConfigHeader(writeScope, projectModeAvailable),
+		done:                 done,
+		onError:              onError,
+		maxVisible:           15,
+		writeScope:           writeScope,
+		projectModeAvailable: projectModeAvailable,
 	}
 	c.rebuildEntries()
 	c.resetFilter()
 	return c
+}
+
+func normalizeResourceConfigWriteScope(scope ResourceConfigWriteScope) ResourceConfigWriteScope {
+	if scope == ResourceConfigWriteProject {
+		return ResourceConfigWriteProject
+	}
+	return ResourceConfigWriteGlobal
 }
 
 func (c *packageResourceConfigComponent) Invalidate() {
@@ -122,10 +164,9 @@ func (c *packageResourceConfigComponent) Render(width int) []string {
 		"",
 		tuiThemeBorder(strings.Repeat("─", width)),
 		"",
-		c.renderHeader(width),
-		tuiThemeMuted("Type to filter resources"),
-		"",
 	}
+	lines = append(lines, c.header.Render(width)...)
+	lines = append(lines, "")
 	if c.search != nil {
 		lines = append(lines, c.search.Render(width)...)
 		lines = append(lines, "")
@@ -153,6 +194,8 @@ func (c *packageResourceConfigComponent) HandleInput(data string) {
 		c.finish()
 	case gitui.MatchesKey(data, "ctrl+c"):
 		c.finish()
+	case kb.Matches(data, "tui.input.tab"):
+		c.switchWriteScope()
 	case data == " " || kb.Matches(data, "tui.select.confirm"):
 		c.toggleSelected()
 	default:
@@ -164,11 +207,78 @@ func (c *packageResourceConfigComponent) HandleInput(data string) {
 	}
 }
 
-func (c *packageResourceConfigComponent) renderHeader(width int) string {
-	title := tuiThemeBold("Resource Configuration")
-	hint := tuiThemeMuted("space toggle · esc close")
+type packageResourceConfigHeader struct {
+	writeScope           ResourceConfigWriteScope
+	projectModeAvailable bool
+}
+
+func newPackageResourceConfigHeader(writeScope ResourceConfigWriteScope, projectModeAvailable bool) *packageResourceConfigHeader {
+	return &packageResourceConfigHeader{
+		writeScope:           normalizeResourceConfigWriteScope(writeScope),
+		projectModeAvailable: projectModeAvailable,
+	}
+}
+
+func (h *packageResourceConfigHeader) SetWriteScope(writeScope ResourceConfigWriteScope) {
+	if h != nil {
+		h.writeScope = normalizeResourceConfigWriteScope(writeScope)
+	}
+}
+
+func (h *packageResourceConfigHeader) Render(width int) []string {
+	if h == nil {
+		return nil
+	}
+	titleText := "Global Resources"
+	actionHint := "space toggle"
+	scopeHint := "~/" + ConfigDirName + "/agent/settings.json"
+	if h.writeScope == ResourceConfigWriteProject {
+		titleText = "Project Local Resources"
+		actionHint = "space cycle inherit/+/-"
+		scopeHint = ConfigDirName + "/settings.json · inherited global resources are dimmed"
+	}
+	title := tuiThemeBold(titleText)
+	hints := []string{}
+	if h.projectModeAvailable {
+		hints = append(hints, "tab switch mode")
+	}
+	hints = append(hints, actionHint, "esc close")
+	hint := tuiThemeMuted(strings.Join(hints, " · "))
 	spacing := max(1, width-gitui.VisibleWidth(title)-gitui.VisibleWidth(hint))
-	return gitui.TruncateToWidth(title+strings.Repeat(" ", spacing)+hint, width, "", true)
+	return []string{
+		gitui.TruncateToWidth(title+strings.Repeat(" ", spacing)+hint, width, "", true),
+		gitui.TruncateToWidth(tuiThemeMuted(scopeHint), width, "", true),
+	}
+}
+
+func (c *packageResourceConfigComponent) switchWriteScope() {
+	if c == nil || !c.projectModeAvailable {
+		return
+	}
+	if c.writeScope == ResourceConfigWriteGlobal {
+		c.setWriteScope(ResourceConfigWriteProject)
+	} else {
+		c.setWriteScope(ResourceConfigWriteGlobal)
+	}
+}
+
+func (c *packageResourceConfigComponent) setWriteScope(writeScope ResourceConfigWriteScope) {
+	if c == nil {
+		return
+	}
+	writeScope = normalizeResourceConfigWriteScope(writeScope)
+	if writeScope == ResourceConfigWriteProject && !c.projectModeAvailable {
+		return
+	}
+	c.writeScope = writeScope
+	c.resources = c.snapshot.Items(writeScope)
+	c.header.SetWriteScope(writeScope)
+	c.rebuildEntries()
+	query := ""
+	if c.search != nil {
+		query = c.search.GetValue()
+	}
+	c.applyFilter(query)
 }
 
 func (c *packageResourceConfigComponent) renderResourceList(width int) []string {
@@ -183,27 +293,43 @@ func (c *packageResourceConfigComponent) renderResourceList(width int) []string 
 		selected := row == c.selected
 		switch entry.Kind {
 		case "group":
-			lines = append(lines, gitui.TruncateToWidth("  "+tuiThemeBoldAccent(entry.Label), width, "", true))
+			label := entry.Label
+			inherited := c.writeScope == ResourceConfigWriteProject && entry.Scope == "user"
+			if inherited {
+				label += " · inherited global"
+			}
+			label = tuiThemeBold(label)
+			if inherited {
+				label = tuiThemeDim(label)
+			} else {
+				label = tuiThemeAccent(label)
+			}
+			lines = append(lines, gitui.TruncateToWidth("  "+label, width, "", true))
 		case "subgroup":
-			lines = append(lines, gitui.TruncateToWidth("    "+tuiThemeMuted(entry.Label), width, "", true))
+			label := tuiThemeMuted(entry.Label)
+			if c.writeScope == ResourceConfigWriteProject && entry.Scope == "user" {
+				label = tuiThemeDim(entry.Label)
+			}
+			lines = append(lines, gitui.TruncateToWidth("    "+label, width, "", true))
 		case "item":
 			item := c.resources[entry.ItemIndex]
+			view := c.itemView(item)
 			cursor := "  "
 			if selected {
 				cursor = "> "
 			}
-			checkbox := tuiThemeDim("[ ]")
-			if item.Enabled {
-				checkbox = tuiThemeSuccess("[x]")
-			}
+			checkbox := c.renderCheckbox(view)
 			name := item.DisplayName
 			if name == "" {
 				name = item.Pattern
 			}
-			if selected {
+			if selected && !view.dimmed {
 				name = tuiThemeBold(name)
 			}
-			lines = append(lines, gitui.TruncateToWidth(cursor+"    "+checkbox+" "+name, width, "...", true))
+			if view.dimmed {
+				name = tuiThemeDim(name)
+			}
+			lines = append(lines, gitui.TruncateToWidth(cursor+"    "+checkbox+" "+name+c.itemSuffix(view), width, "...", true))
 		}
 	}
 	if start > 0 || end < len(c.filtered) {
@@ -221,6 +347,7 @@ func (c *packageResourceConfigComponent) rebuildEntries() {
 	type group struct {
 		key       string
 		label     string
+		scope     string
 		subgroups map[string]*subgroup
 		order     []string
 	}
@@ -233,6 +360,7 @@ func (c *packageResourceConfigComponent) rebuildEntries() {
 			g = &group{
 				key:       groupKey,
 				label:     packageResourceConfigGroupLabel(resource),
+				scope:     resourceConfigItemScope(resource),
 				subgroups: map[string]*subgroup{},
 			}
 			groupsByKey[groupKey] = g
@@ -250,13 +378,13 @@ func (c *packageResourceConfigComponent) rebuildEntries() {
 	c.entries = nil
 	for _, groupKey := range groupOrder {
 		g := groupsByKey[groupKey]
-		c.entries = append(c.entries, packageResourceConfigEntry{Kind: "group", Label: g.label, GroupKey: g.key})
+		c.entries = append(c.entries, packageResourceConfigEntry{Kind: "group", Label: g.label, GroupKey: g.key, Scope: g.scope})
 		for _, resourceType := range packageResourceTypeOrder(g.order) {
 			sg := g.subgroups[resourceType]
 			subgroupKey := g.key + "\x1f" + resourceType
-			c.entries = append(c.entries, packageResourceConfigEntry{Kind: "subgroup", Label: sg.label, GroupKey: g.key, SubgroupKey: subgroupKey, ResourceType: resourceType})
+			c.entries = append(c.entries, packageResourceConfigEntry{Kind: "subgroup", Label: sg.label, GroupKey: g.key, SubgroupKey: subgroupKey, ResourceType: resourceType, Scope: g.scope})
 			for _, itemIndex := range sg.items {
-				c.entries = append(c.entries, packageResourceConfigEntry{Kind: "item", GroupKey: g.key, SubgroupKey: subgroupKey, ResourceType: resourceType, ItemIndex: itemIndex})
+				c.entries = append(c.entries, packageResourceConfigEntry{Kind: "item", GroupKey: g.key, SubgroupKey: subgroupKey, ResourceType: resourceType, ItemIndex: itemIndex, Scope: g.scope})
 			}
 		}
 	}
@@ -368,6 +496,14 @@ func (c *packageResourceConfigComponent) toggleSelected() {
 		return
 	}
 	item := c.resources[entry.ItemIndex]
+	if c.writeScope == ResourceConfigWriteProject {
+		c.toggleProjectResource(entry.ItemIndex, item)
+		return
+	}
+	if c.manager == nil {
+		c.reportError(errors.New("resource configuration requires a package manager"))
+		return
+	}
 	enabled := !item.Enabled
 	updated, err := applyResourceToggle(c.manager, packageResourceToggleSelection(item), enabled)
 	if err != nil {
@@ -379,6 +515,81 @@ func (c *packageResourceConfigComponent) toggleSelected() {
 		return
 	}
 	c.resources[entry.ItemIndex].Enabled = enabled
+}
+
+func (c *packageResourceConfigComponent) toggleProjectResource(index int, item PackageResourceToggleItem) {
+	if c.manager == nil {
+		c.reportError(errors.New("resource configuration requires a package manager"))
+		return
+	}
+	target := c.snapshot.Target(item)
+	inheritedEnabled := target.InheritedEnabled()
+	state := c.manager.ProjectResourceOverrideState(item)
+	next := NextProjectResourceOverrideState(state, inheritedEnabled)
+	updated, err := c.manager.SetProjectResourceOverride(target, next)
+	if err != nil {
+		c.reportError(err)
+		return
+	}
+	if !updated {
+		c.reportError(errors.New("resource override was not updated"))
+		return
+	}
+	c.resources[index].Enabled = next == ProjectResourceLoad ||
+		(next == ProjectResourceInherit && inheritedEnabled)
+}
+
+func (c *packageResourceConfigComponent) itemView(item PackageResourceToggleItem) packageResourceConfigItemView {
+	target := c.snapshot.Target(item)
+	override := ProjectResourceInherit
+	if c.writeScope == ResourceConfigWriteProject && c.manager != nil {
+		override = c.manager.ProjectResourceOverrideState(item)
+	}
+	return packageResourceConfigItemView{
+		item:      item,
+		override:  override,
+		inherited: target.IsInherited(),
+		dimmed: c.writeScope == ResourceConfigWriteProject &&
+			target.IsInherited() &&
+			override == ProjectResourceInherit,
+	}
+}
+
+func (c *packageResourceConfigComponent) renderCheckbox(view packageResourceConfigItemView) string {
+	if c.writeScope != ResourceConfigWriteProject {
+		if view.item.Enabled {
+			return tuiThemeSuccess("[x]")
+		}
+		return tuiThemeDim("[ ]")
+	}
+	switch view.override {
+	case ProjectResourceLoad:
+		return tuiThemeSuccess("[+]")
+	case ProjectResourceUnload:
+		return tuiThemeWarning("[-]")
+	default:
+		if view.item.Enabled {
+			return tuiThemeDim("[x]")
+		}
+		return tuiThemeDim("[ ]")
+	}
+}
+
+func (c *packageResourceConfigComponent) itemSuffix(view packageResourceConfigItemView) string {
+	if c.writeScope != ResourceConfigWriteProject {
+		return ""
+	}
+	switch view.override {
+	case ProjectResourceLoad:
+		return tuiThemeMuted("  project load")
+	case ProjectResourceUnload:
+		return tuiThemeMuted("  project unload")
+	default:
+		if view.inherited {
+			return tuiThemeDim("  inherited global")
+		}
+		return ""
+	}
 }
 
 func (c *packageResourceConfigComponent) reportError(err error) {

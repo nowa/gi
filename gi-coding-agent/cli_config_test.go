@@ -24,7 +24,7 @@ func TestPackageResourceConfigHostTogglesPackageResource(t *testing.T) {
 		errCh <- host.Run()
 	}()
 
-	waitForConfigViewport(t, terminal, "Resource Configuration")
+	waitForConfigViewport(t, terminal, "Global Resources")
 	waitForConfigViewport(t, terminal, "Skills")
 	waitForConfigViewport(t, terminal, "skill-a")
 	terminal.SendInput("\r")
@@ -64,7 +64,9 @@ func TestPackageResourceConfigHostTogglesTopLevelResource(t *testing.T) {
 		errCh <- host.Run()
 	}()
 
-	waitForConfigViewport(t, terminal, "Resource Configuration")
+	waitForConfigViewport(t, terminal, "Global Resources")
+	terminal.SendInput("\t")
+	waitForConfigViewport(t, terminal, "Project Local Resources")
 	waitForConfigViewport(t, terminal, "Project (.gi/)")
 	waitForConfigViewport(t, terminal, "Skills")
 	waitForConfigViewport(t, terminal, "skill-a")
@@ -108,10 +110,18 @@ func TestPackageResourceConfigComponentFiltersLikePiSelector(t *testing.T) {
 			Metadata:     ProtocolSourceInfo{Origin: "top-level", Source: "auto", Scope: "project"},
 		},
 	}
-	component := newPackageResourceConfigComponent(nil, resources, make(chan struct{}, 1), nil)
+	snapshot := newResourceConfigSnapshot(resources[:1], resources)
+	component := newPackageResourceConfigComponent(
+		nil,
+		snapshot,
+		make(chan struct{}, 1),
+		nil,
+		ResourceConfigWriteProject,
+		true,
+	)
 
 	rendered := strings.Join(component.Render(100), "\n")
-	for _, want := range []string{"Resource Configuration", "official:guard (user)", "Skills", "review", "Project (.gi/)", "Prompts", "ship.md", "Type to filter resources"} {
+	for _, want := range []string{"Project Local Resources", "official:guard (user)", "Skills", "review", "Project (.gi/)", "Prompts", "ship.md", "cycle inherit/+/-"} {
 		if !strings.Contains(StripAnsi(rendered), want) {
 			t.Fatalf("render missing %q:\n%s", want, StripAnsi(rendered))
 		}
@@ -127,6 +137,81 @@ func TestPackageResourceConfigComponentFiltersLikePiSelector(t *testing.T) {
 	}
 	if strings.Contains(filtered, "official:guard") || strings.Contains(filtered, "review") {
 		t.Fatalf("filter should remove non-matching resources:\n%s", filtered)
+	}
+}
+
+func TestPackageResourceConfigComponentSwitchesScopeAndCyclesProjectOverride(t *testing.T) {
+	agentDir, projectDir := createPackageManagerSettingsDirs(t)
+	userSkill := filepath.Join(agentDir, "skills", "review", "SKILL.md")
+	writeResourceSkill(t, userSkill, "review", "Review", "Review changes.")
+	settings := NewSettingsManager(projectDir, agentDir)
+	manager := NewDefaultPackageManager(PackageManagerOptions{
+		CWD:             projectDir,
+		AgentDir:        agentDir,
+		SettingsManager: settings,
+	})
+	snapshot, err := manager.LoadResourceConfigSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	component := newPackageResourceConfigComponent(
+		manager,
+		snapshot,
+		make(chan struct{}, 1),
+		func(err error) { t.Fatalf("selector error: %v", err) },
+		ResourceConfigWriteGlobal,
+		true,
+	)
+
+	global := StripAnsi(strings.Join(component.Render(100), "\n"))
+	if !strings.Contains(global, "Global Resources") ||
+		!strings.Contains(global, "[x] review") ||
+		strings.Contains(global, "inherited global") {
+		t.Fatalf("global render:\n%s", global)
+	}
+
+	component.HandleInput("\t")
+	project := StripAnsi(strings.Join(component.Render(100), "\n"))
+	if !strings.Contains(project, "Project Local Resources") ||
+		!strings.Contains(project, "inherited global") ||
+		!strings.Contains(project, "[x] review") {
+		t.Fatalf("project render:\n%s", project)
+	}
+
+	component.HandleInput(" ")
+	unloaded := StripAnsi(strings.Join(component.Render(100), "\n"))
+	if !strings.Contains(unloaded, "[-] review  project unload") {
+		t.Fatalf("unloaded render:\n%s", unloaded)
+	}
+	item, ok := resourceConfigTestItem(snapshot.Items(ResourceConfigWriteProject), "skills", userSkill)
+	if !ok {
+		t.Fatalf("project items = %#v", snapshot.Items(ResourceConfigWriteProject))
+	}
+	if state := manager.ProjectResourceOverrideState(item); state != ProjectResourceUnload {
+		t.Fatalf("state after first toggle = %q", state)
+	}
+
+	component.HandleInput(" ")
+	loaded := StripAnsi(strings.Join(component.Render(100), "\n"))
+	if !strings.Contains(loaded, "[+] review  project load") {
+		t.Fatalf("loaded render:\n%s", loaded)
+	}
+	if state := manager.ProjectResourceOverrideState(item); state != ProjectResourceLoad {
+		t.Fatalf("state after second toggle = %q", state)
+	}
+
+	component.HandleInput(" ")
+	inherited := StripAnsi(strings.Join(component.Render(100), "\n"))
+	if !strings.Contains(inherited, "[x] review  inherited global") {
+		t.Fatalf("inherited render:\n%s", inherited)
+	}
+	if state := manager.ProjectResourceOverrideState(item); state != ProjectResourceInherit {
+		t.Fatalf("state after third toggle = %q", state)
+	}
+
+	component.HandleInput("\t")
+	if rendered := StripAnsi(strings.Join(component.Render(100), "\n")); !strings.Contains(rendered, "Global Resources") {
+		t.Fatalf("global render after switch:\n%s", rendered)
 	}
 }
 

@@ -189,7 +189,7 @@ Commands:
   gi uninstall <source> [-l]   Alias for remove
   gi update [source|self|gi]   Update gi and installed packages
   gi list                      List installed packages from settings
-  gi config                    Open TUI to enable/disable package resources
+  gi config [-l]               Open global or project resource configuration
   gi <command> --help          Show help for install/remove/uninstall/update/list
 
 Options:
@@ -574,15 +574,23 @@ func runPackageSubcommand(options CLIOptions) (int, bool) {
 }
 
 func runConfigSubcommand(options CLIOptions) int {
+	local := false
 	for _, arg := range options.Args[1:] {
 		switch arg {
 		case "--help", "-h":
 			writeConfigCommandUsage(nonNilWriter(options.Stdout))
 			return 0
+		case "--local", "-l":
+			local = true
 		default:
 			writer := nonNilWriter(options.Stderr)
-			_, _ = fmt.Fprintf(writer, "Unknown argument %s for %q.\n", arg, "config")
-			_, _ = fmt.Fprintln(writer, `Use "gi --help" or "gi config".`)
+			if strings.HasPrefix(arg, "-") {
+				_, _ = fmt.Fprintf(writer, "Unknown option %s for %q.\n", arg, "config")
+				_, _ = fmt.Fprintln(writer, `Use "gi --help" or "gi config".`)
+			} else {
+				_, _ = fmt.Fprintf(writer, "Unexpected argument %s.\n", arg)
+				writeConfigCommandUsage(writer)
+			}
 			return 1
 		}
 	}
@@ -605,7 +613,20 @@ func runConfigSubcommand(options CLIOptions) int {
 		writeCLIError(options.Stderr, err.Error())
 		return 1
 	}
-	host, err := factory(PackageResourceConfigOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings})
+	if local && !settings.IsProjectTrusted() {
+		writeCLIError(options.Stderr, "Project is not trusted. Use --approve to modify local resource config.")
+		return 1
+	}
+	writeScope := ResourceConfigWriteGlobal
+	if local {
+		writeScope = ResourceConfigWriteProject
+	}
+	host, err := factory(PackageResourceConfigOptions{
+		CWD:             cwd,
+		AgentDir:        agentDir,
+		SettingsManager: settings,
+		WriteScope:      writeScope,
+	})
 	if err != nil {
 		writeCLIError(options.Stderr, err.Error())
 		return 1
@@ -942,9 +963,12 @@ func writeConfigCommandUsage(writer io.Writer) {
 		return
 	}
 	_, _ = fmt.Fprintln(writer, "Usage:")
-	_, _ = fmt.Fprintln(writer, "  gi config")
+	_, _ = fmt.Fprintln(writer, "  gi config [-l]")
 	_, _ = fmt.Fprintln(writer, "")
 	_, _ = fmt.Fprintln(writer, "Open resource configuration.")
+	_, _ = fmt.Fprintln(writer, "")
+	_, _ = fmt.Fprintln(writer, "Options:")
+	_, _ = fmt.Fprintln(writer, "  -l, --local  Start in project-local write mode")
 }
 
 func isZeroInstallEnvironment(env InstallEnvironment) bool {

@@ -27,7 +27,7 @@ All Pi component names in this table are exact files under
 | `bordered-loader.ts` | Loader wrapped by border | `gi-coding-agent/cli_message_components.go` `BorderedLoaderComponent`, `gi-tui` loader | direct | Standalone component mirrors Pi's default-cancellable bordered loader: dynamic top/bottom borders, accent/muted loader styling, cancel key hint, signal/onAbort wiring, input forwarding, and dispose behavior. `/share` uses this component instead of host-owned loader composition. |
 | `branch-summary-message.ts` | Collapsible branch summary | `gi-coding-agent/cli_message_components.go` `newCLICollapsibleMarkdownMessage`, `gi-agent-core/harness/messages.go` | direct | Branch summary role and collapsible render are represented. |
 | `compaction-summary-message.ts` | Collapsible compaction summary | `gi-coding-agent/cli_message_components.go`, `gi-agent-core/harness/messages.go` | direct | Token-before label and collapsed/expanded body are represented. |
-| `config-selector.ts` | Package resource configuration selector | `gi-coding-agent/cli_config.go`, `gi-coding-agent/resource_loader.go`, `gi-coding-agent/package_manager.go` | direct | Gi now mirrors Pi's grouped resource selector shape: source group headers, resource-type subgroups, first-item selection, filter-with-parent-headers behavior, Space/Enter toggles, Esc/Ctrl-C close, and package/top-level filter persistence. |
+| `config-selector.ts` | Package resource configuration selector | `gi-coding-agent/cli_config.go`, `gi-coding-agent/resource_config.go`, `gi-coding-agent/resource_loader.go`, `gi-coding-agent/package_manager.go` | direct | Gi uses immutable global/effective-project projections, Tab write-scope switching, inherited-resource dimming, and project inherit/load/unload cycles. Package and top-level persistence stays behind the package manager. |
 | `countdown-timer.ts` | Timeout countdown display | `gi-coding-agent/status_indicator.go` `CountdownTimer`; dialog-specific timeout runners | direct | Retry status owns the reusable second-granularity timer and synchronously waits for disposal; dialog runners retain their dialog-local expiry actions. |
 | `custom-editor.ts` | Extension-provided editor surface | `gi-coding-agent/inprocess_components.go`, `gi-coding-agent/cli_interactive_editor_host.go`, `gi-coding-agent/cli_interactive_tui.go` custom editor wiring | protocol | Trusted in-process components and out-of-process ViewTree/editor flows replace Pi's TS extension component boundary. |
 | `custom-message.ts` | Extension-rendered custom message | `gi-coding-agent/cli_interactive_tui.go` `addRenderedCustomMessage`, `viewtree.go` | protocol | Message renderers are registered through Gi's extension protocol. |
@@ -144,6 +144,27 @@ The runtime remains the only provider/catalog owner. The selector owns only
 presentation and lifecycle state under one mutex, never holds that mutex across
 runtime or render callbacks, and preserves `ScopedModel.ThinkingLevel` when it
 refreshes each scoped model definition by provider and ID.
+
+Resource configuration follows a separate state/persistence flow:
+
+```text
+global settings ----------> user-only resource projection
+global + project settings -> effective project projection
+             |                         |
+             +---- immutable ResourceConfigSnapshot
+                                      |
+                          scope/search/selection UI state
+                                      |
+                           package-manager mutation API
+                                      |
+                   project inherit / explicit load / unload
+```
+
+The snapshot owns inherited identity and enabled state. The selector derives
+checkboxes, dimming, and suffixes from that snapshot plus the current explicit
+override; it never edits settings maps. The package manager canonicalizes
+cross-scope local sources and paths and persists project package deltas with
+`autoload=false`.
 
 The temporary `Working...`, `Compacting context...`, `Auto-compacting...`,
 `Summarizing branch...`, and `Retrying...` components never become durable
