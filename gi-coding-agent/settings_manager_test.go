@@ -634,6 +634,30 @@ func TestSettingsManagerPreservesExternalProjectEdits(t *testing.T) {
 	}
 }
 
+func TestSettingsManagerProjectUpdatesUseCopyOnWriteSnapshots(t *testing.T) {
+	manager := NewInMemorySettingsManager(map[string]any{"theme": "global"})
+	if err := manager.SetProjectPackages([]any{"local:tools"}); err != nil {
+		t.Fatal(err)
+	}
+	previousProject := manager.project
+	previousMerged := manager.mergedSnapshot()
+
+	if err := manager.SetProjectSkillPaths([]string{"skills/review"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := previousProject["skills"]; exists {
+		t.Fatalf("previous project snapshot was mutated: %#v", previousProject)
+	}
+	if _, exists := previousMerged["skills"]; exists {
+		t.Fatalf("previous merged snapshot was mutated: %#v", previousMerged)
+	}
+	current := manager.GetProjectSettings()
+	if !reflect.DeepEqual(settingsStringSlice(current, "skills"), []string{"skills/review"}) ||
+		!reflect.DeepEqual(settingsSlice(current, "packages"), []any{"local:tools"}) {
+		t.Fatalf("current project settings = %#v", current)
+	}
+}
+
 func TestSettingsManagerProjectTrustPiMatrix(t *testing.T) {
 	agentDir, projectDir := createSettingsTestDirs(t)
 	globalPath := filepath.Join(agentDir, "settings.json")

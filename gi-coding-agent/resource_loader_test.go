@@ -879,6 +879,52 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 	})
 }
 
+func TestDefaultResourceLoaderMapsPackageSkillDirectoriesPiStyle(t *testing.T) {
+	agentDir, cwd := createResourceLoaderDirs(t)
+	skillDir := filepath.Join(t.TempDir(), "package-skill")
+	skillFile := filepath.Join(skillDir, "SKILL.md")
+	writeResourceSkill(t, skillFile, "package-skill", "Package skill", "Package content")
+	loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+
+	resource := ProtocolPackageResource{
+		Path:    skillDir,
+		Enabled: true,
+		Metadata: ProtocolSourceInfo{
+			Path:   skillDir,
+			Source: "local:package",
+			Scope:  "user",
+			Origin: "package",
+		},
+	}
+	mapped := loader.mapSkillPath(resource)
+	if mapped.Path != skillFile || mapped.Metadata.Path != skillFile {
+		t.Fatalf("mapped package skill = %#v", mapped)
+	}
+
+	loader.packageResources.Skills = []ProtocolPackageResource{resource}
+	loaded := loader.loadSkills()
+	skill := resourceFindSkill(loaded.Skills, "package-skill")
+	if skill == nil || skill.FilePath != skillFile {
+		t.Fatalf("loaded package skills = %#v", loaded.Skills)
+	}
+	source, _ := skill.SourceInfo.(ProtocolSourceInfo)
+	if source.Path != skillFile || source.Source != "local:package" || source.Origin != "package" {
+		t.Fatalf("loaded package skill source = %#v", source)
+	}
+
+	explicit := resource
+	explicit.Metadata = ProtocolSourceInfo{Path: skillDir, Source: "extension:explicit", Scope: "temporary", Origin: "top-level"}
+	if got := loader.mapSkillPath(explicit); got.Path != skillDir || got.Metadata.Path != skillDir {
+		t.Fatalf("explicit skill path should remain declared = %#v", got)
+	}
+	missing := resource
+	missing.Path = filepath.Join(t.TempDir(), "missing")
+	missing.Metadata.Path = missing.Path
+	if got := loader.mapSkillPath(missing); got.Path != missing.Path || got.Metadata.Path != missing.Path {
+		t.Fatalf("missing skill path should remain declared = %#v", got)
+	}
+}
+
 func TestDefaultResourceLoaderGatesProjectResourcesByTrust(t *testing.T) {
 	root := t.TempDir()
 	agentDir := filepath.Join(root, "agent")

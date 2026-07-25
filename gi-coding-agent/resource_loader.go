@@ -638,7 +638,8 @@ func (l *DefaultResourceLoader) loadSkills() ResourceSkillsResult {
 			if !resource.Enabled {
 				continue
 			}
-			loaded := loadResourceSkillsWithMetadata(resource.Path, resource.Metadata)
+			skillPath := l.mapSkillPath(resource)
+			loaded := loadResourceSkillsWithMetadata(skillPath.Path, skillPath.Metadata)
 			result.Skills = append(result.Skills, loaded.Skills...)
 			result.Diagnostics = append(result.Diagnostics, loaded.Diagnostics...)
 		}
@@ -696,6 +697,30 @@ func (l *DefaultResourceLoader) loadSkills() ResourceSkillsResult {
 	result.Skills = filterSkills(result.Skills, l.resourceFilters("skills"), l.cwd, l.agentDir)
 	result.Diagnostics = append(result.Diagnostics, skillCollisionDiagnostics(result.Skills)...)
 	result.Skills = dedupeSkillsByName(result.Skills)
+	return result
+}
+
+// mapSkillPath canonicalizes package and auto-discovered skill directories at
+// the resource boundary. Other sources retain their declared path so explicit
+// directory discovery keeps its existing recursive semantics.
+func (l *DefaultResourceLoader) mapSkillPath(resource ProtocolPackageResource) ResourceSkillPath {
+	result := ResourceSkillPath{
+		Path:     resource.Path,
+		Metadata: resource.Metadata,
+	}
+	if resource.Metadata.Source != "auto" && resource.Metadata.Origin != "package" {
+		return result
+	}
+	info, err := os.Stat(resource.Path)
+	if err != nil || !info.IsDir() {
+		return result
+	}
+	skillFile := filepath.Join(resource.Path, "SKILL.md")
+	if _, err := os.Stat(skillFile); err != nil {
+		return result
+	}
+	result.Path = skillFile
+	result.Metadata.Path = skillFile
 	return result
 }
 

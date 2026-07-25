@@ -907,13 +907,27 @@ func (s *SettingsManager) setGlobalNested(key, nestedKey string, value any) {
 }
 
 func (s *SettingsManager) setProject(key string, value any) error {
+	return s.updateProjectSettings(key, func(settings map[string]any) {
+		settings[key] = cloneSettingsValue(value)
+	})
+}
+
+// updateProjectSettings applies one copy-on-write project mutation and
+// publishes the merged snapshot before persisting it. Keeping project writes
+// behind this boundary prevents callers from mutating a map already visible
+// to concurrent settings readers.
+func (s *SettingsManager) updateProjectSettings(key string, update func(map[string]any)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if !s.projectTrusted {
 		return errors.New("Project is not trusted; refusing to write project settings")
 	}
-	s.project[key] = cloneSettingsValue(value)
+	project := cloneSettingsMap(s.project)
+	if update != nil {
+		update(project)
+	}
+	s.project = project
 	s.modifiedProject[key] = struct{}{}
 	s.refreshMerged()
 	return s.saveProject()

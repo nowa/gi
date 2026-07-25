@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 )
@@ -86,6 +87,43 @@ func TestSettingsManagerPublishesConcurrentMergedSnapshots(t *testing.T) {
 
 	if got := settings.GetLastChangelogVersion(); got != fmt.Sprintf("v%d", iterations-1) {
 		t.Fatalf("last changelog version = %q", got)
+	}
+}
+
+func TestSettingsManagerPublishesConcurrentProjectSnapshots(t *testing.T) {
+	settings := NewInMemorySettingsManager(nil)
+
+	const iterations = 128
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for index := range iterations {
+			if err := settings.SetProjectSkillPaths([]string{fmt.Sprintf("skills/%d", index)}); err != nil {
+				t.Errorf("SetProjectSkillPaths(%d): %v", index, err)
+				return
+			}
+			if err := settings.SetProjectPromptTemplatePaths([]string{fmt.Sprintf("prompts/%d.md", index)}); err != nil {
+				t.Errorf("SetProjectPromptTemplatePaths(%d): %v", index, err)
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for range iterations {
+			_ = settings.GetProjectSettings()
+			_ = settings.mergedSnapshot()
+		}
+	}()
+	wg.Wait()
+
+	project := settings.GetProjectSettings()
+	if got := settingsStringSlice(project, "skills"); !reflect.DeepEqual(got, []string{fmt.Sprintf("skills/%d", iterations-1)}) {
+		t.Fatalf("project skills = %#v", got)
+	}
+	if got := settingsStringSlice(project, "prompts"); !reflect.DeepEqual(got, []string{fmt.Sprintf("prompts/%d.md", iterations-1)}) {
+		t.Fatalf("project prompts = %#v", got)
 	}
 }
 
