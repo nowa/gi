@@ -44,6 +44,12 @@ This document tracks source-level parity for Pi `packages/coding-agent/src` in t
   editor/dialog host actions, message replay, tool execution, ViewTree
   tick/resize events, trusted in-process Go components, and official package
   slash-command UI feedback all run in the live TTY host.
+- Latest theme-settings increment: `cli_interactive_theme_settings.go` now
+  carries Pi's full `ThemeSubmenu` flow through one typed transaction value.
+  Single-theme and automatic light/dark choices share the same available-theme
+  projection and terminal appearance snapshot; navigation emits preview-only
+  values, Apply commits one complete setting through `SettingsManager` and the
+  interactive theme controller, and cancel restores the original preview.
 - Latest dynamic-resource increment: Gi now handles `resources_discover`
   results for Go-native extension factories, merges returned skill, prompt, and
   theme paths into the default resource loader during startup/reload, carries

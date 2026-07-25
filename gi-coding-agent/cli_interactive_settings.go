@@ -66,6 +66,7 @@ func (h *CLIInteractiveTUIHost) handleSettingsSelectDialog(host *RPCSessionHost,
 	currentTheme := settingsThemeCurrentValue(settings)
 	list := gitui.NewSettingsList(settingsListItems(host, state, settings, h.availableThemeNames(currentTheme), settingsListItemsOptions{
 		OnThemePreview: h.previewTUITheme,
+		TerminalTheme:  h.settingsTerminalTheme(),
 	}), 10, tuiThemeSettingsList(), gitui.SettingsListOptions{
 		EnableSearch: true,
 		OnChange: func(id, newValue string) {
@@ -150,6 +151,7 @@ func (c cliSettingsListDialog) HandleInput(data string) {
 
 type settingsListItemsOptions struct {
 	OnThemePreview func(string)
+	TerminalTheme  TerminalTheme
 }
 
 var settingsSubmenuSelectListLayout = gitui.SelectListLayoutOptions{
@@ -178,15 +180,7 @@ func settingsListItems(host *RPCSessionHost, state RPCSessionState, settings *Se
 		opts = options[0]
 	}
 	currentTheme := settingsThemeCurrentValue(settings)
-	themeSubmenu := settingsSelectSubmenu("Theme", "Select color theme", settingsThemeOptions(themes, currentTheme))
-	if opts.OnThemePreview != nil {
-		themeSubmenu = settingsSelectSubmenuWithSelectionChange(
-			"Theme",
-			"Select color theme",
-			settingsThemeOptions(themes, currentTheme),
-			opts.OnThemePreview,
-		)
-	}
+	themeSubmenu := settingsThemeSubmenu(themes, opts.TerminalTheme, opts.OnThemePreview)
 	items := []gitui.SettingItem{
 		{ID: "autocompact", Label: "Auto-compact", Description: "Automatically compact context when it gets too large", CurrentValue: fmt.Sprintf("%t", state.AutoCompactionEnabled), Values: []string{"true", "false"}},
 		{ID: "auto-resize-images", Label: "Auto-resize images", Description: "Resize large images to 2000x2000 max for better model compatibility", CurrentValue: fmt.Sprintf("%t", settings.GetImageAutoResize()), Values: []string{"true", "false"}},
@@ -349,14 +343,6 @@ func settingsThinkingOptions(levels []string, _ string) []TUIDialogOption {
 	options := make([]TUIDialogOption, 0, len(levels))
 	for _, level := range levels {
 		options = append(options, TUIDialogOption{ID: level, Label: level, Description: thinkingLevelDescription(level), Value: level})
-	}
-	return options
-}
-
-func settingsThemeOptions(themes []string, _ string) []TUIDialogOption {
-	options := make([]TUIDialogOption, 0, len(themes))
-	for _, themeName := range themes {
-		options = append(options, TUIDialogOption{ID: themeName, Label: themeName, Value: themeName})
 	}
 	return options
 }
@@ -648,6 +634,11 @@ func (h *CLIInteractiveTUIHost) availableThemeNames(current string) []string {
 	for _, theme := range h.AvailableTUIThemes() {
 		add(theme.Name)
 	}
-	add(current)
+	if automatic, ok := ParseAutoThemeSetting(current); ok {
+		add(automatic.LightTheme)
+		add(automatic.DarkTheme)
+	} else if !strings.Contains(current, "/") {
+		add(current)
+	}
 	return names
 }

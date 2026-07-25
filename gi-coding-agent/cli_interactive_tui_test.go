@@ -6423,7 +6423,8 @@ func TestCLIInteractiveTUISettingsListUsesPiStyleSelectSubmenus(t *testing.T) {
 	handler.HandleInput("\x1b[B")
 	rendered := strings.Join(component.Render(80), "\n")
 	if !strings.Contains(rendered, "Theme") ||
-		!strings.Contains(rendered, "Select color theme") ||
+		!strings.Contains(rendered, "Select a theme, or choose Automatic") ||
+		!strings.Contains(rendered, "Use separate themes for light and dark terminal appearance") ||
 		!strings.Contains(rendered, "→ light") ||
 		!strings.Contains(rendered, "Enter to select · Esc to go back") ||
 		strings.Contains(rendered, "Type search") ||

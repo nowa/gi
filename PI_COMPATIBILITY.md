@@ -98,7 +98,10 @@ Interactive theme state follows Pi's fixed and automatic `light/dark` setting
 semantics. A single Go controller owns terminal detection and change reports,
 the active concrete palette, preview/restore, dark fallback, and notification
 lifecycle; serialized revision checks prevent stale terminal queries from
-overwriting newer user selections.
+overwriting newer user selections. The settings submenu now exposes Pi's
+single/automatic mode flow, including independent light and dark choices,
+active-terminal preview, explicit Apply, mode switching, and cancel restoration;
+only the completed selection reaches persistent settings.
 
 With the experimental flag enabled, official default installations without an
 existing settings file now run Pi's first-time theme and analytics flow before
