@@ -1,6 +1,6 @@
 # Pi v0.82.0 Parity Baseline
 
-Gi's current catch-up target is the immutable Pi release:
+Gi's closed catch-up baseline is the immutable Pi release:
 
 - tag: `v0.82.0`
 - commit: `083e61621276bff9f6faefab87ce07fcd98734e2`
@@ -9,26 +9,29 @@ Gi's current catch-up target is the immutable Pi release:
 The machine-readable scope and intentional exclusions are in `baseline.json`.
 The current debt snapshot is in `v0.82.0-open-gaps.json`.
 
-## Why the debt snapshot exists
+## Closed baseline and drift detection
 
 The source, module-boundary, and test-case verifiers predate Pi v0.82.0. The
-baseline opened with 1,545 audit items; the current snapshot contains 33:
+baseline opened with 1,545 audit items. The current snapshot is closed:
 
 | Module | Open items |
 | --- | ---: |
 | LLM provider | 0 |
 | Agent core and harness | 0 |
 | TUI | 0 |
-| Coding agent | 33 |
+| Coding agent | 0 |
 
-These are audit items, not 1,545 proven behavioral bugs. A source file, symbol,
-or test remains open until Gi either implements and verifies the behavior,
-records the Go-native equivalent, or makes an explicit product-scope decision.
-The current coding-agent balance is 21 member-level source symbols and 12
-test-audit items.
-Refreshing the complete v0.82.0 test inventory closes only
-`test-undocumented-file` bookkeeping; it does not by itself claim behavioral
-coverage. Unmatched files/cases and source gaps remain in the snapshot.
+The 1,545 starting items were audit leads, not 1,545 proven behavioral bugs.
+Each is now classified as an audited Gi implementation, a named test mapping,
+a documented Go-native equivalent, or an explicit product-scope decision. In
+particular, Pi's optional TypeScript example extension and Node `signal-exit`
+listener behavior are recorded as scoped exclusions; Gi's protocol extension
+boundary and Go `os/signal`/`sync.Once` lifecycle are the corresponding
+product/runtime decisions.
+
+The closed snapshot proves the audited source/member/module/test-mapping gate
+for this exact commit. It is not a claim that unrelated Pi packages, live
+credentialed providers, or byte-for-byte TypeScript APIs are implemented.
 
 CI compares the live verifier output with the committed snapshot:
 
@@ -58,8 +61,8 @@ node docs/pi-parity/verify-parity-baseline.mjs \
   --pi-root /private/tmp/pi-v0.82.0
 ```
 
-After a parity change resolves mapped debt, regenerate the deterministic
-snapshot and review that it only shrinks:
+After a Pi or Gi parity change, regenerate the deterministic snapshot and
+review any drift:
 
 ```sh
 node docs/pi-parity/snapshot-parity-gaps.mjs \

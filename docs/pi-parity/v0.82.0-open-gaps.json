@@ -29,16 +29,7 @@
     {
       "module": "coding",
       "missingFiles": [],
-      "missingSymbols": [
-        "core/timings.ts::printTimingGroup",
-        "package-manager-cli.ts::createCommandSettingsManager",
-        "package-manager-cli.ts::getCommandAppMode",
-        "package-manager-cli.ts::prepareWindowsNpmSelfUpdate",
-        "package-manager-cli.ts::printPnpmSelfUpdateMetadataHint",
-        "package-manager-cli.ts::printSelfUpdateNote",
-        "package-manager-cli.ts::refreshModelCatalogs",
-        "package-manager-cli.ts::reportProjectTrustWarnings"
-      ]
+      "missingSymbols": []
     }
   ],
   "boundaries": [
@@ -81,66 +72,8 @@
     {
       "module": "coding",
       "undocumentedFiles": [],
-      "noCandidateFiles": [
-        "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts"
-      ],
-      "noCandidateCases": [
-        {
-          "file": "packages/coding-agent/test/git-merge-and-resolve-extension.test.ts",
-          "line": 87,
-          "name": "re-sends conflicts when in an unfinished merge"
-        },
-        {
-          "file": "packages/coding-agent/test/git-merge-and-resolve-extension.test.ts",
-          "line": 143,
-          "name": "sends conflict report as a follow-up"
-        },
-        {
-          "file": "packages/coding-agent/test/git-merge-and-resolve-extension.test.ts",
-          "line": 177,
-          "name": "handles empty ours or theirs sections"
-        },
-        {
-          "file": "packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts",
-          "line": 172,
-          "name": "re-entrant shutdown is a no-op"
-        },
-        {
-          "file": "packages/coding-agent/test/suite/regressions/5433-extension-oauth-prompt-input.test.ts",
-          "line": 40,
-          "name": "keeps previous prompt input stable when a later prompt is active"
-        },
-        {
-          "file": "packages/coding-agent/test/suite/regressions/5433-extension-oauth-prompt-input.test.ts",
-          "line": 99,
-          "name": "keeps previous manual input stable when a later prompt is active"
-        },
-        {
-          "file": "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts",
-          "line": 52,
-          "name": "keeps signal handlers registered while signal-triggered cleanup is pending"
-        },
-        {
-          "file": "packages/coding-agent/test/suite/regressions/5943-session-start-notify.test.ts",
-          "line": 471,
-          "name": "keeps the reload blocker focused until async reload completes"
-        },
-        {
-          "file": "packages/coding-agent/test/suite/regressions/6260-inline-extension-naming.test.ts",
-          "line": 36,
-          "name": "displays bare factories as <inline:N>"
-        },
-        {
-          "file": "packages/coding-agent/test/suite/regressions/6260-inline-extension-naming.test.ts",
-          "line": 56,
-          "name": "displays named wrappers as <inline:name>"
-        },
-        {
-          "file": "packages/coding-agent/test/syntax-highlight.test.ts",
-          "line": 62,
-          "name": "colors diff additions and deletions in fenced diff blocks"
-        }
-      ]
+      "noCandidateFiles": [],
+      "noCandidateCases": []
     }
   ]
 }

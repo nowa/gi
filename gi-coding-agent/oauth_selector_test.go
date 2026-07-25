@@ -333,6 +333,90 @@ func TestLoginDialogComponentPreservesProviderPromptContext(t *testing.T) {
 	}
 }
 
+func TestLoginDialogComponentKeepsSubmittedInputStable(t *testing.T) {
+	t.Run("keeps previous prompt input stable when a later prompt is active", func(t *testing.T) {
+		dialog := NewLoginDialogComponent("Prompt Repro", "")
+		dialog.ShowPrompt("First prompt:", "first-value")
+		dialog.HandleInput("first-value")
+		dialog.HandleInput("\r")
+
+		dialog.ShowPrompt("Second prompt:", "")
+		dialog.HandleInput("second-secret-demo")
+		rendered := strings.Join(dialog.Render(120), "\n")
+		for _, prompt := range []string{
+			"First prompt:",
+			"Second prompt:",
+		} {
+			if !strings.Contains(rendered, prompt) {
+				t.Fatalf("render missing %q:\n%s", prompt, rendered)
+			}
+		}
+		if count := countRenderedLoginDialogValue(
+			rendered,
+			"first-value",
+		); count != 1 {
+			t.Fatalf(
+				"first submitted value count = %d:\n%s",
+				count,
+				rendered,
+			)
+		}
+		if count := countRenderedLoginDialogValue(
+			rendered,
+			"second-secret-demo",
+		); count != 1 {
+			t.Fatalf(
+				"active value count = %d:\n%s",
+				count,
+				rendered,
+			)
+		}
+	})
+
+	t.Run("keeps previous manual input stable when a later prompt is active", func(t *testing.T) {
+		dialog := NewLoginDialogComponent("Prompt Repro", "")
+		dialog.ShowManualInput("Paste callback URL:")
+		dialog.HandleInput("callback-value")
+		dialog.HandleInput("\r")
+
+		dialog.ShowPrompt("Second prompt:", "")
+		dialog.HandleInput("second-secret-demo")
+		rendered := strings.Join(dialog.Render(120), "\n")
+		for _, prompt := range []string{
+			"Paste callback URL:",
+			"Second prompt:",
+		} {
+			if !strings.Contains(rendered, prompt) {
+				t.Fatalf("render missing %q:\n%s", prompt, rendered)
+			}
+		}
+		if count := countRenderedLoginDialogValue(
+			rendered,
+			"callback-value",
+		); count != 1 {
+			t.Fatalf(
+				"manual submitted value count = %d:\n%s",
+				count,
+				rendered,
+			)
+		}
+		if count := countRenderedLoginDialogValue(
+			rendered,
+			"second-secret-demo",
+		); count != 1 {
+			t.Fatalf(
+				"active value count = %d:\n%s",
+				count,
+				rendered,
+			)
+		}
+	})
+}
+
+func countRenderedLoginDialogValue(rendered, value string) int {
+	return strings.Count(rendered, "> "+value)
+}
+
 func renderOAuthSelector(selector OAuthSelector) string {
 	return strings.Join(selector.Render(120), "\n")
 }

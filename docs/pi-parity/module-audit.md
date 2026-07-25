@@ -1,13 +1,14 @@
 # Pi Parity Module Audit
 
-> The detailed mappings below originated from the v0.78.0 audit. Gi is now
-> targeting the immutable Pi v0.82.0 baseline declared in `baseline.json`.
-> `v0.82.0-open-gaps.json` is authoritative for the current unclassified delta;
-> these tables are not a v0.82.0 completion claim.
+> The detailed mappings below originated from the v0.78.0 audit. The
+> machine-verifiable audit is now closed against the immutable Pi v0.82.0
+> baseline declared in `baseline.json`. `v0.82.0-open-gaps.json` remains the
+> authoritative drift snapshot.
 
 This document is the working audit for aligning Gi with Pi `v0.82.0` at commit
-`083e61621276bff9f6faefab87ce07fcd98734e2`. It intentionally records current
-evidence and open gaps; it is not a completion claim.
+`083e61621276bff9f6faefab87ce07fcd98734e2`. It records direct mappings,
+Go-native equivalents, protocol replacements, and explicit product-scope
+decisions; zero tracked gaps do not extend beyond that declared scope.
 
 ## Module Map
 

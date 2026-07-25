@@ -240,6 +240,12 @@ const modules = [
 		label: "Coding agent",
 		piTests: ["packages/coding-agent/test"],
 		giTests: ["gi-coding-agent", "cmd/gi"],
+		excludedTests: {
+			"packages/coding-agent/test/git-merge-and-resolve-extension.test.ts":
+				"Exercises Pi's optional TypeScript git-merge-and-resolve example under packages/coding-agent/examples. Examples are outside the audited production-source scope; Gi loads equivalent optional behavior through protocol extension packages instead of embedding this example.",
+			"packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts":
+				"Exercises Node proper-lockfile and signal-exit listener re-send behavior. Go os/signal does not re-send a signal when listeners disappear; Gi owns one watcher for the run and makes Stop idempotent with sync.Once.",
+		},
 		aliases: {
 			"packages/coding-agent/test/ansi-utils.test.ts": ["gi-coding-agent/pi_coding_agent_case_names_test.go"],
 			"packages/coding-agent/test/args.test.ts": ["gi-coding-agent/pi_coding_agent_case_names_test.go"],
@@ -410,6 +416,24 @@ const modules = [
 			"packages/coding-agent/test/runtime-credentials.test.ts": {
 				"enumeration merges overrides without exposing keys": ["gi-coding-agent/auth_storage_test.go"],
 				"delete clears both the override and persisted credential": ["gi-coding-agent/auth_storage_test.go"],
+			},
+			"packages/coding-agent/test/suite/regressions/5433-extension-oauth-prompt-input.test.ts": {
+				"keeps previous prompt input stable when a later prompt is active": [
+					"gi-coding-agent/oauth_selector_test.go",
+				],
+				"keeps previous manual input stable when a later prompt is active": [
+					"gi-coding-agent/oauth_selector_test.go",
+				],
+			},
+			"packages/coding-agent/test/suite/regressions/extension-factory-cache.test.ts": {
+				"clears the cache on resource loader reload": [
+					"gi-coding-agent/resource_loader_test.go",
+				],
+			},
+			"packages/coding-agent/test/suite/regressions/5943-session-start-notify.test.ts": {
+				"keeps the reload blocker focused until async reload completes": [
+					"gi-coding-agent/cli_interactive_tui_test.go",
+				],
 			},
 		},
 	},
@@ -902,9 +926,9 @@ function renderMarkdown(report) {
 		);
 	}
 	lines.push("");
-	lines.push("## Explicitly Excluded Cross-Package Tests");
+	lines.push("## Explicitly Excluded Tests");
 	lines.push("");
-	lines.push("These tests live under an in-scope package's test tree but exercise a package excluded by `baseline.json`. They remain visible here so scope decisions cannot silently hide test coverage.");
+	lines.push("These tests live under an in-scope package's test tree but exercise an optional package, example, or runtime-specific surface outside `baseline.json` scope. They remain visible here so scope decisions cannot silently hide test coverage.");
 	for (const result of report.results) {
 		if (result.excludedFiles.length === 0) {
 			continue;

@@ -1,8 +1,8 @@
 # Pi Test-Case Parity Tracker
 
-> The counts below are historical v0.78.0-era evidence. The active Pi v0.82.0
-> test delta is pinned and tracked by `baseline.json` and
-> `v0.82.0-open-gaps.json`; this document is not a v0.82.0 completion claim.
+> These counts are generated against Pi v0.82.0 at
+> `083e61621276bff9f6faefab87ce07fcd98734e2`. `baseline.json` declares scope
+> and `v0.82.0-open-gaps.json` is the authoritative zero-gap drift snapshot.
 
 This document tracks test-case-level parity between the local Pi checkout at
 `~/Projects/agents/pi` and Gi. It is intentionally stricter than file-level
@@ -24,10 +24,10 @@ The generated file-level inventory is in
 
 | Area | Pi `test`/`it` cases | Gi top-level Go tests | Case-name candidates | Current status |
 | --- | ---: | ---: | ---: | --- |
-| `packages/ai` / `gi-llm-provider` | 788 | 195 | 788/788 | Provider/model/source surface has named case coverage for every extracted Pi AI case; all 67 Pi test files have explicit Gi candidates. The former lazy-module-loading weak spot is represented by a Go-native provider dependency/dispatch guard. |
-| `packages/agent` / `gi-agent-core` + harness | 150 | 97 | 150/150 | Core loop, proxy, session, compaction, and harness behavior have named case coverage for every extracted Pi agent-core case; all 16 Pi test files have explicit Gi candidate files. |
-| `packages/tui` / `gi-tui` | 592 | 462 | 592/592 | Component/editor/terminal parity has named case candidates for every extracted Pi TUI case; all 22 Pi test files have explicit Gi candidate files, with fixture-level Markdown/xterm checks still validated by focused TUI tests. |
-| `packages/coding-agent` / `gi-coding-agent` | 1225 | 947 | 1225/1225 | Interactive, print/RPC, packages, extensions, tools, session, OAuth, and utility edge cases now have named case coverage for every extracted Pi coding-agent case; all 121 Pi test files have explicit Gi candidates. |
+| `packages/ai` / `gi-llm-provider` | 1186 | 427 | 1186/1186 | Provider/model/source surface has named case coverage for all 111 in-scope Pi AI test files; one TypeScript generator file with 3 cases is explicitly excluded. |
+| `packages/agent` / `gi-agent-core` + harness | 212 | 144 | 212/212 | Core loop, proxy, session, compaction, and harness behavior have named case coverage for all 16 in-scope Pi agent-core test files; 2 optional SQLite-adapter files with 12 cases are explicitly excluded. |
+| `packages/tui` / `gi-tui` | 700 | 501 | 700/700 | Component/editor/terminal parity has named case candidates for all 27 Pi TUI test files, with fixture-level Markdown/xterm checks validated by focused TUI tests. |
+| `packages/coding-agent` / `gi-coding-agent` | 1639 | 1276 | 1639/1639 | Interactive, print/RPC, packages, extensions, tools, session, OAuth, and utility edge cases have named case coverage for all 179 in-scope Pi coding-agent test files; 2 product/runtime-specific files with 10 cases are explicitly excluded. |
 
 These counts are not expected to match one-for-one because Pi uses nested
 Vitest cases while Gi uses Go top-level tests with table-driven subtests. The
@@ -115,19 +115,26 @@ test names alone.
 | TUI v0.82 multi-row Kitty images reserve and pre-clear their physical rows, expand differential ranges, delete stale placements, and use a full redraw when pre-clear would scroll | `TestParseKittyImageHeaderAndRows`, `TestTUIGetKittyImageReservedRows`, `TestTUIDiffRenderPreclearsKittyReservedRows`, `TestTUIFallsBackToFullRedrawWhenKittyPreclearWouldScroll` | covered |
 | TUI v0.82 excludes CJK graphemes crossing overlay boundaries and expands visible tabs without changing tabs embedded in terminal control strings | `TestExtractSegmentsExcludesWideGraphemeCrossingOverlayBoundary`, `TestCompositeLineExcludesWideGraphemeAtOverlayBoundary`, `TestTabWidthAccountingMatchesSlicesAndOverlaySegments`, `TestTUITabContainingOverlayStaysOnOnePhysicalRow` | covered |
 | Coding-agent request header transforms see the fully assembled auth/provider/model/explicit header set exactly once and are not forwarded downstream | `gi-llm-provider/models_runtime_test.go` `adds model headers only for model auth and transforms assembled headers once` | covered through the shared Go model runtime |
+| Inline extension factories receive stable `<inline:N>` / `<inline:name>` identities and preserve hidden presentation state | `TestInlineExtensionNamingPiRegression` | covered through canonical `ProtocolExtensionFactory` to `ProtocolExtensionSource` normalization |
+| Resource-loader reload clears descriptor cache before rebuilding the extension runtime | `TestDefaultResourceLoaderPiBasics/clears_the_cache_on_resource_loader_reload` | covered |
+| OAuth prompt/manual submissions remain immutable when the next prompt becomes active | `TestLoginDialogComponentKeepsSubmittedInputStable` exact subtests | covered through append-only dialog presentation state |
+| Re-entrant interactive shutdown is a no-op and runtime disposal executes once | `TestCLIInteractiveSignalShutdownExtensionCleanupPiRegression/re-entrant_shutdown_is_a_no-op` | covered through `sync.Once` stop state and one `RunContext` cleanup owner |
+| Async reload keeps the blocker focused until completion | `TestCLIInteractiveTUIHostShowsReloadBoxWhileReloadingPiStyle` | covered |
+| Fenced diff blocks and Pi default highlight scopes use the shared CLI theme | `TestSyntaxHighlightRenderer` diff and default-scope subtests | covered |
 | `packages/coding-agent/test/sdk-openrouter-attribution.test.ts` OpenRouter, NVIDIA NIM, Cloudflare, and OpenCode session attribution with telemetry and override precedence | `TestSDKAttribution*` in `sdk_attribution_test.go`, `TestAgentSessionPrintModeProviderHeadersIncludeSessionState` | covered with Gi product-specific attribution values |
 | `packages/coding-agent/test/http-dispatcher.test.ts` applies `httpProxy` to both uppercase proxy variables, preserves existing variables, and ignores blank settings | `TestApplyHTTPProxySettingsPiContract` exact subcases in `gi-coding-agent/http_runtime_test.go` | covered; environment projection is limited to CLI/application composition while provider transports remain explicitly owned |
 | `packages/coding-agent/test/sdk-stream-options.test.ts` forwards `httpIdleTimeoutMs` and presence-aware `websocketConnectTimeoutMs`, including explicit zero | `TestSDKStreamOptionsForwardsWebSocketConnectTimeoutFromSettings`, `TestProviderRequestSettingsSnapshotAndPrecedence`, `TestAgentSessionPrintModeProviderResponderUsesProviderRetrySettingsPiStyle` | covered through the immutable provider-request snapshot |
 | Experimental startup gating, first-time theme/analytics setup, stable tracking IDs, terminal theme detection, automatic setting resolution, interactive theme ownership, transactional single/automatic theme configuration, reserved custom names, and max-thinking parsing/settings/model/theme flow | `TestAreExperimentalFeaturesEnabledPiCases`, `TestShouldRunFirstTimeSetupPiCases`, `TestSettingsManagerAnalyticsPiCases`, `TestFirstTimeSetupComponentOwnsOneStateProjection`, `TestShowFirstTimeSetupPersistsSubmittedState`, `TestParseAutoThemeSettingMatchesPi`, `TestResolveThemeSettingMatchesPi`, `TestDetectTerminalBackgroundFromEnvPiCases`, `TestDetectTerminalBackgroundThemePiCases`, `TestDetectTerminalThemeForAutoUsesColorSchemeFirst`, `TestTerminalThemeLuminanceHelpersMatchPi`, `TestSettingsManagerSeparatesRawAndFixedThemeSettings`, `TestInteractiveThemeControllerAutomaticStateFlow`, `TestInteractiveThemeControllerFallsBackAndReportsErrors`, `TestInteractiveThemeControllerPersistsHighConfidenceDetection`, `TestInteractiveThemeControllerPreviewKeepsCommittedState`, `TestInteractiveThemeControllerInMemoryThemeDisablesAutomaticSync`, `TestInteractiveThemeControllerSupersedesInFlightDetection`, `TestInteractiveThemeControllerDisposeStopsTerminalUpdates`, `TestSettingsThemeSelectionMatchesPiStateRules`, `TestCLIThemeSubmenuAppliesFixedTheme`, `TestCLIThemeSubmenuConfiguresAndAppliesAutomaticPair`, `TestCLIThemeSubmenuSwitchesToActiveAutomaticThemeAndCancels`, `TestSettingsThemeChangeFlowsThroughController`, `TestMaxThinkingLevelIsAcceptedByCLIAndSettings`, `TestMaxThinkingLevelFallsBackToThinkingXHighForLegacyThemes`, `TestTUIThemeMaxThinkingColorMatchesPiAndFallsBackForLegacyThemes`, `TestTUIThemeRejectsSlashNamesReservedForAutomaticSettings`, `TestResolvedThemeCSSColorsFallsBackFromThinkingMaxToXhigh`, `TestThemeExportRejectsSlashNameReservedForAutomaticSettings`, `TestTUIThemeUsesTerminalCapabilities` | covered through a canonical typed thinking enum, provider capability clamping, immutable eligibility/settings projections, transactional selector state, one interactive theme owner, shared theme validation/fallback helpers, and revisioned serialized palette transitions |
 | `packages/coding-agent/test/external-editor.test.ts` private workspace, failed-edit retention, empty edits, plus configured/environment/platform command precedence | `TestEditInExternalEditorPiCases`, `TestSettingsManagerExternalEditorPiCases`, `TestCLIInteractiveTUIHostCtrlGUsesExternalEditorPiStyle`, `TestCLIInteractiveTUIHostCtrlGReportsExternalEditorFailurePiStyle`, `TestCLIEditorDialogUsesEffectiveExternalEditorKeybindingPiStyle` | covered through one process boundary shared by the main and extension editors |
 
-## Remaining Work
+## Ongoing Maintenance
 
-- Expand this tracker from file-level candidates to case-level assertions for
-  each extracted Pi case using the generated inventory as the work queue.
-- Keep product-scope exclusions explicit, especially Pi npm package source
-  tests and in-process TypeScript extension APIs that Gi intentionally replaces
-  with protocol packages / ViewTree / process RPC.
-- Continue fixture-level checks for Markdown and virtual terminal behavior,
-  where public API parity is already mapped but renderer/emulator semantics can
-  drift.
+- Keep the generated inventory and zero-gap snapshot synchronized whenever Pi
+  or Gi changes.
+- Keep product-scope exclusions explicit. The v0.82.0 coding-agent exclusions
+  are Pi's optional TypeScript git-merge example and Node
+  `proper-lockfile`/`signal-exit` listener re-send behavior; Gi uses protocol
+  packages and Go `os/signal` plus `sync.Once`.
+- Continue fixture-level checks for Markdown, virtual terminal, and live
+  provider behavior, where textual case mapping is evidence but not a
+  substitute for runtime validation.
