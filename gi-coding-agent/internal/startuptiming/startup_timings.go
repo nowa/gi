@@ -46,12 +46,30 @@ func (t *Timings) Print(writer io.Writer) {
 	if t == nil || !t.enabled || len(t.entries) == 0 || writer == nil {
 		return
 	}
+	printTimingGroup(writer, "Startup Timings", t.entries)
+}
+
+func printTimingGroup(writer io.Writer, title string, entries []Entry) {
+	if writer == nil {
+		return
+	}
+	printable := make([]Entry, 0, len(entries))
 	var total int64
-	_, _ = fmt.Fprintln(writer, "\n--- Startup Timings ---")
-	for _, entry := range t.entries {
+	for _, entry := range entries {
+		if entry.MS < 0 {
+			continue
+		}
+		printable = append(printable, entry)
 		total += entry.MS
+	}
+	if len(printable) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(writer, "\n--- %s ---\n", title)
+	for _, entry := range printable {
 		_, _ = fmt.Fprintf(writer, "  %s: %dms\n", entry.Label, entry.MS)
 	}
 	_, _ = fmt.Fprintf(writer, "  TOTAL: %dms\n", total)
-	_, _ = fmt.Fprintln(writer, "------------------------")
+	_, _ = fmt.Fprintln(writer, strings.Repeat("-", len(title)+8))
+	_, _ = fmt.Fprintln(writer)
 }
