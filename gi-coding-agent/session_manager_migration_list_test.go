@@ -68,15 +68,21 @@ func TestSessionManagerMigrationAndCustomSessionIDsMatchPi(t *testing.T) {
 	if !uuidV7Pattern.MatchString(session.GetSessionID()) {
 		t.Fatalf("initial session id = %q, want uuidv7", session.GetSessionID())
 	}
-	session.NewSession(NewSessionOptions{ID: "my-custom-id"})
+	if _, err := session.NewSession(NewSessionOptions{ID: "my-custom-id"}); err != nil {
+		t.Fatal(err)
+	}
 	if session.GetSessionID() != "my-custom-id" || session.GetHeader().ID != "my-custom-id" {
 		t.Fatalf("custom session id not preserved: id=%q header=%#v", session.GetSessionID(), session.GetHeader())
 	}
-	session.NewSession()
+	if _, err := session.NewSession(); err != nil {
+		t.Fatal(err)
+	}
 	if !uuidV7Pattern.MatchString(session.GetSessionID()) {
 		t.Fatalf("new session id = %q, want uuidv7", session.GetSessionID())
 	}
-	session.NewSession(NewSessionOptions{ParentSession: "parent.jsonl"})
+	if _, err := session.NewSession(NewSessionOptions{ParentSession: "parent.jsonl"}); err != nil {
+		t.Fatal(err)
+	}
 	if !uuidV7Pattern.MatchString(session.GetSessionID()) || session.GetHeader().ParentSession != "parent.jsonl" {
 		t.Fatalf("generated session header = %#v", session.GetHeader())
 	}
@@ -209,12 +215,12 @@ func TestSessionManagerListAndForkFromMatchPi(t *testing.T) {
 	newer := filepath.Join(dir, "newer.jsonl")
 	invalid := filepath.Join(dir, "invalid.jsonl")
 	writeJSONL(t, older,
-		map[string]any{"type": "session", "version": CurrentSessionVersion, "id": "older", "timestamp": "2025-01-01T00:00:00Z", "cwd": "/older"},
+		map[string]any{"type": "session", "version": CurrentSessionVersion, "id": "older", "timestamp": "2025-01-01T00:00:00Z", "cwd": dir},
 		map[string]any{"type": "session_info", "id": "older-name", "parentId": nil, "timestamp": "2025-01-01T00:00:01Z", "name": " Old name "},
 		map[string]any{"type": "message", "id": "older-1", "parentId": "older-name", "timestamp": "2025-01-01T00:00:02Z", "message": map[string]any{"role": "user", "content": "old question", "timestamp": float64(1000)}},
 	)
 	writeJSONL(t, newer,
-		map[string]any{"type": "session", "version": CurrentSessionVersion, "id": "newer", "timestamp": "2025-01-02T00:00:00Z", "cwd": "/newer", "parentSession": "parent.jsonl"},
+		map[string]any{"type": "session", "version": CurrentSessionVersion, "id": "newer", "timestamp": "2025-01-02T00:00:00Z", "cwd": dir, "parentSession": "parent.jsonl"},
 		map[string]any{"type": "message", "id": "newer-1", "parentId": nil, "timestamp": "2025-01-02T00:00:01Z", "message": map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "text", "text": "new answer"}}, "provider": "anthropic", "model": "claude", "timestamp": float64(5000)}},
 		map[string]any{"type": "message", "id": "newer-2", "parentId": "newer-1", "timestamp": "2025-01-02T00:00:02Z", "message": map[string]any{"role": "user", "content": "new question", "timestamp": float64(6000)}},
 	)
@@ -223,7 +229,7 @@ func TestSessionManagerListAndForkFromMatchPi(t *testing.T) {
 	}
 
 	var progress [][2]int
-	sessions := ListSessions("/ignored", dir, SessionListProgress(func(loaded, total int) {
+	sessions := ListSessions(dir, dir, SessionListProgress(func(loaded, total int) {
 		progress = append(progress, [2]int{loaded, total})
 	}))
 	if len(sessions) != 2 {

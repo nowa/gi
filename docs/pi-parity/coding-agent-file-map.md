@@ -113,8 +113,40 @@ not to the agent runtime.
 | `core/usage-totals.ts` | `createUsageTotals`, `addUsageToTotals`, `getUsageCostBreakdown` | `usage_totals.go` `aggregateAgentSessionStats`, `addUsage`, `usageCostBreakdown` | direct | Go reuses `llm.Usage` rather than introducing a structurally identical totals type. Cost attribution uses `responseModel` when an OpenAI-compatible router reports a concrete model and sorts ties deterministically. |
 | `core/cache-stats.ts` | `asPreviousRequest`, `detectMiss`, `computeCacheWaste`, `collectCacheMisses`, `detectCacheMiss` | `cache_stats.go` `asPreviousCacheRequest`, `detectCacheMissFromPrevious`, `computeCacheWaste`, `collectCacheMisses`, `detectCacheMiss` | direct | The scan resets after compaction/branch summaries, preserves sticky cache-capability evidence, applies the 1,024-token noise floor, and derives re-billed cost from actual usage with catalog fallback pricing. |
 | `core/session-manager.ts` | `buildContextEntries`, `sessionEntryToContextMessages`, `SessionManager.buildContextEntries` | `session_manager.go` `BuildContextEntries`, `SessionEntryToContextMessages`, `SessionManager.BuildContextEntries` | direct | One immutable `FileEntry` projection retains durable IDs for derived presentation state, while explicit conversion produces canonical `llm.Message` values for rendering. Null or missing message content is normalized to a non-nil empty slice at load and extension replacement boundaries. |
+| `core/session-manager.ts` | `assertValidSessionId`, `buildEntryIndex`, `buildSessionPath`, `getSessionContextSettings`, `getDefaultSessionDirPath`, `SessionHeaderScanLimitError`, `parseSessionEntryLine`, `parseSessionHeaderCandidate`, `readSessionHeader`, `readSessionHeaderForDiscovery`, `getSessionHeaderCwd`, `sessionCwdMatches`, `getMessageActivityTime`, `SessionHeaderScanLimitError.constructor`, `SessionManager._setSessionFile`, `SessionManager.usesDefaultSessionDir` | `session_manager.go` `ValidateSessionID`, `buildEntryIndex`, `buildSessionPath`, `getSessionContextSettings`, `GetDefaultSessionDirPath`, `getMessageActivityTime`, `SessionManager.setSessionFileLocked`, and `SessionManager.UsesDefaultSessionDir`; `session_file_store.go` `SessionHeaderScanLimitError` plus JSONL parsing, bounded discovery, authoritative loading, and write helpers | direct | Go separates bounded best-effort discovery from authoritative streaming loads. Explicit opens fall back after the header scan limit; validated or migrated entries become one locked manager state only after file work succeeds. Shared flat directories are scoped by resolved CWD, while path lookup remains side-effect free. |
 | `core/settings-manager.ts` | `SettingsManager.getShowCacheMissNotices`, `SettingsManager.setShowCacheMissNotices` | `settings_manager.go` `SettingsManager.GetShowCacheMissNotices`, `SettingsManager.SetShowCacheMissNotices` | direct | The global default is false; the settings list owns mutation and a toggle triggers a transcript rebuild without changing session history. |
 | `modes/interactive/interactive-mode.ts` | `InteractiveMode.renderSessionItems`, `InteractiveMode.renderSessionEntries`, `InteractiveMode.maybeShowCacheMissNotice`, `InteractiveMode.addCacheMissNotice` | `cli_interactive_tui.go` `CLIInteractiveTUIHost.renderSessionItems`, `CLIInteractiveTUIHost.renderSessionEntries`, `CLIInteractiveTUIHost.maybeShowCacheMissNotice`, `CLIInteractiveTUIHost.addCacheMissNotice` | direct | Live detection accounts for Gi's persist-before-`message_end` ordering. Rebuilds derive misses from all entries, associate them by entry ID, and inject only significant warning components after successful assistant turns. |
+
+### Session Persistence State And Data Flow
+
+```text
+directory discovery
+      |
+      +--> bounded header scan (1 MiB)
+      |          |
+      |          +--> header + resolved CWD filter
+      |          +--> corrupt/oversized file skipped
+      |
+explicit open
+      |
+      +--> bounded header scan
+                 |
+                 +--> scan-limit fallback: authoritative streaming load
+                 |
+                 v
+          validated FileEntry slice
+                 |
+                 +--> optional migration + durable rewrite
+                 |
+                 v
+        one locked SessionManager state
+        (session ID, file, entries, indexes, leaf, flushed)
+```
+
+Discovery never allocates for an unbounded prefix. An explicit user-selected
+file remains authoritative and may stream past that discovery limit. A
+non-empty invalid file is rejected without changing either the file or the
+manager; an empty file is initialized at its exact requested path.
 
 ### Cache-Miss Notice State And Data Flow
 
@@ -268,7 +300,7 @@ login dialog and selector components.
 | `core/provider-display-names.ts` | `BUILT_IN_PROVIDER_DISPLAY_NAMES` | `model_registry.go` `builtInProviderDisplayNames`, `GetProviderDisplayName` | direct | Built-in and configured provider display names are represented. |
 | `core/resolve-config-value.ts` | shell/env/literal config resolution, header resolution, cache reset | `config_value.go`, `model_registry.go` | direct | `ResolveConfigValue`, `ResolveConfigValueWithEnv`, uncached resolution, strict/non-strict header resolution, environment-reference inspection, escapes, and concurrent command-result caching are represented. Gi additionally preserves its legacy bare-environment-name resolution. |
 | `core/session-cwd.ts` | missing stored cwd detection, prompt formatting, typed error | `internal/sessioncwd`, `session_cwd.go` facade, `cli_missing_cwd.go`, `interactive_mode.go`, `cli_print_mode.go` | direct | Missing session cwd detection, prompt text, fallback cwd override, and typed error handling are represented behind a focused session-cwd package. |
-| `core/session-manager.ts` | coding-agent JSONL session manager, labels, context, tree metadata, import/export helpers | `session_manager.go`, `session_selector.go`, `tree_selector.go`, `user_message_selector.go` | direct | Coding-agent-specific session files remain separate from reusable `gi-agent-core/harness` sessions. `BuildContextEntries` is the single locked, compaction-aware entry projection used to rebuild model and transcript views. |
+| `core/session-manager.ts` | coding-agent JSONL session manager, labels, context, tree metadata, import/export helpers | `session_manager.go`, `session_file_store.go`, `session_selector.go`, `tree_selector.go`, `user_message_selector.go` | direct | Coding-agent-specific session files remain separate from reusable `gi-agent-core/harness` sessions. `BuildContextEntries` is the single locked, compaction-aware entry projection used to rebuild model and transcript views; bounded header discovery and atomic state application keep resume/list operations on the same durable data path. |
 
 ### Core Package Manager Function Map
 

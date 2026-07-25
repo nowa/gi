@@ -311,10 +311,12 @@ const modules = [
 				"gi-coding-agent/tree_selector_test.go",
 			],
 			"packages/coding-agent/test/session-manager/custom-session-id.test.ts": [
+				"gi-coding-agent/session_manager_file_operations_test.go",
 				"gi-coding-agent/session_manager_migration_list_test.go",
 				"gi-coding-agent/pi_coding_agent_case_names_test.go",
 			],
 			"packages/coding-agent/test/session-manager/file-operations.test.ts": [
+				"gi-coding-agent/session_manager_file_operations_test.go",
 				"gi-coding-agent/session_manager_test.go",
 				"gi-coding-agent/pi_coding_agent_case_names_test.go",
 			],

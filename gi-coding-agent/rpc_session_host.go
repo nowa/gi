@@ -311,7 +311,9 @@ func (h *RPCSessionHost) handleCommand(ctx context.Context, command RPCCommand) 
 	case RPCCommandAbort:
 		return nil, session.Abort()
 	case RPCCommandNewSession:
-		session.SessionManager.NewSession(NewSessionOptions{ParentSession: command.ParentSession})
+		if _, err := session.SessionManager.NewSession(NewSessionOptions{ParentSession: command.ParentSession}); err != nil {
+			return nil, err
+		}
 		session.queues.clearPrompts()
 		return RPCCloneResult{Cancelled: false}, nil
 	case RPCCommandGetState:

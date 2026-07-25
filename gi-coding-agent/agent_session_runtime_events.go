@@ -144,7 +144,9 @@ func (h *AgentSessionRuntimeHost) NewSession(options ...ProtocolNewSessionOption
 		return AgentSessionRuntimeSwitchResult{}, err
 	}
 	if option.ParentSession != "" {
-		newManager.NewSession(NewSessionOptions{ParentSession: option.ParentSession})
+		if _, err := newManager.NewSession(NewSessionOptions{ParentSession: option.ParentSession}); err != nil {
+			return AgentSessionRuntimeSwitchResult{}, err
+		}
 	}
 	if err := h.replaceSession(newSession, "new", newManager.GetSessionFile(), oldManager.GetSessionFile(), option.WithSession); err != nil {
 		return AgentSessionRuntimeSwitchResult{}, err

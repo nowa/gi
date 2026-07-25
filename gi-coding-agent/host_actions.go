@@ -1226,7 +1226,9 @@ func (h *RPCSessionHost) runChildAgentHostAction(params hostAgentRunParams, pers
 		}
 		if manager.IsPersisted() {
 			parentSession := firstNonEmptyString(params.ParentSession, h.Session.SessionManager.GetSessionFile())
-			manager.NewSession(NewSessionOptions{ParentSession: parentSession})
+			if _, err := manager.NewSession(NewSessionOptions{ParentSession: parentSession}); err != nil {
+				return nil, err
+			}
 		}
 	} else {
 		manager, err = InMemorySessionManager(cwd)
@@ -1501,7 +1503,9 @@ func (h *RPCSessionHost) sessionActionHostAction(params hostSessionActionParams)
 	}
 	switch strings.TrimSpace(params.Action) {
 	case "new", "clear":
-		h.Session.SessionManager.NewSession(NewSessionOptions{ParentSession: params.ParentSession})
+		if _, err := h.Session.SessionManager.NewSession(NewSessionOptions{ParentSession: params.ParentSession}); err != nil {
+			return nil, err
+		}
 		h.Session.queues.clearPrompts()
 		return map[string]any{"action": params.Action, "cancelled": false, "sessionFile": h.Session.SessionManager.GetSessionFile()}, nil
 	case "fork":

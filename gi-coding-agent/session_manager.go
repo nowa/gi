@@ -1,15 +1,14 @@
 package gicodingagent
 
 import (
-	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -19,7 +18,20 @@ import (
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
-const CurrentSessionVersion = 3
+const (
+	CurrentSessionVersion      = 3
+	sessionIDValidationMessage = "Session id must be non-empty, contain only alphanumeric characters, '-', '_', and '.', and start and end with an alphanumeric character"
+)
+
+var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
+
+// ValidateSessionID applies the portable filename contract used by Pi.
+func ValidateSessionID(id string) error {
+	if !sessionIDPattern.MatchString(id) {
+		return errors.New(sessionIDValidationMessage)
+	}
+	return nil
+}
 
 type SessionHeader struct {
 	Type          string `json:"type"`
@@ -31,6 +43,7 @@ type SessionHeader struct {
 }
 
 type NewSessionOptions struct {
+	// ID is optional. The zero value requests a generated UUIDv7.
 	ID            string
 	ParentSession string
 }
@@ -217,31 +230,6 @@ func (e FileEntry) rawValue(key string) any {
 	return e.raw[key]
 }
 
-func LoadEntriesFromFile(filePath string) []FileEntry {
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil
-	}
-	var entries []FileEntry
-	for _, line := range strings.Split(strings.TrimSpace(string(content)), "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		var entry FileEntry
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			continue
-		}
-		entries = append(entries, entry)
-	}
-	if len(entries) == 0 {
-		return entries
-	}
-	if entries[0].Type != "session" || entries[0].ID == "" {
-		return nil
-	}
-	return entries
-}
-
 func MigrateSessionEntries(entries []FileEntry) bool {
 	if len(entries) == 0 {
 		return false
@@ -341,10 +329,39 @@ func MigrateSessionEntries(entries []FileEntry) bool {
 	return changed
 }
 
-func FindMostRecentSession(sessionDir string) string {
+func getSessionHeaderCWD(header *SessionHeader) string {
+	if header == nil {
+		return ""
+	}
+	return header.CWD
+}
+
+func resolveSessionPath(path string) (string, error) {
+	return filepath.Abs(ExpandPath(path))
+}
+
+func sessionCWDMatches(storedCWD, resolvedCWD string) bool {
+	if storedCWD == "" || resolvedCWD == "" {
+		return false
+	}
+	resolvedStoredCWD, err := resolveSessionPath(storedCWD)
+	if err != nil {
+		return false
+	}
+	return resolvedStoredCWD == resolvedCWD
+}
+
+func FindMostRecentSession(sessionDir string, cwd ...string) string {
 	dirEntries, err := os.ReadDir(sessionDir)
 	if err != nil {
 		return ""
+	}
+	resolvedCWD := ""
+	if len(cwd) > 0 && cwd[0] != "" {
+		resolvedCWD, err = resolveSessionPath(cwd[0])
+		if err != nil {
+			return ""
+		}
 	}
 	type candidate struct {
 		path  string
@@ -356,7 +373,11 @@ func FindMostRecentSession(sessionDir string) string {
 			continue
 		}
 		path := filepath.Join(sessionDir, entry.Name())
-		if !isValidSessionFile(path) {
+		header := readSessionHeaderForDiscovery(path)
+		if header == nil {
+			continue
+		}
+		if resolvedCWD != "" && !sessionCWDMatches(getSessionHeaderCWD(header), resolvedCWD) {
 			continue
 		}
 		info, err := entry.Info()
@@ -421,11 +442,13 @@ func BuildSessionInfo(filePath string) (*SessionInfo, error) {
 
 func ListSessions(cwd string, args ...any) []SessionInfo {
 	sessionDir := ""
+	explicitSessionDir := false
 	var onProgress SessionListProgress
 	for _, arg := range args {
 		switch value := arg.(type) {
 		case string:
 			sessionDir = value
+			explicitSessionDir = true
 		case SessionListProgress:
 			onProgress = value
 		}
@@ -438,6 +461,19 @@ func ListSessions(cwd string, args ...any) []SessionInfo {
 		}
 	}
 	sessions := listSessionsFromDir(sessionDir, onProgress, 0, 0)
+	if explicitSessionDir && !sessionDirMatchesDefault(sessionDir, cwd) {
+		resolvedCWD, err := resolveSessionPath(cwd)
+		if err != nil {
+			return nil
+		}
+		filtered := sessions[:0]
+		for _, session := range sessions {
+			if sessionCWDMatches(session.CWD, resolvedCWD) {
+				filtered = append(filtered, session)
+			}
+		}
+		sessions = filtered
+	}
 	sort.SliceStable(sessions, func(i, j int) bool {
 		return sessions[i].Modified.After(sessions[j].Modified)
 	})
@@ -485,14 +521,11 @@ func ListAllSessions(args ...any) []SessionInfo {
 }
 
 func defaultSessionRoot() string {
-	if env := firstNonEmptyString(os.Getenv("GI_CODING_AGENT_DIR"), os.Getenv("PI_CODING_AGENT_DIR")); env != "" {
-		return filepath.Join(ExpandPath(env), "sessions")
-	}
-	home, err := os.UserHomeDir()
+	agentDir, err := defaultSessionAgentDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ConfigDirName, "agent", "sessions")
+	return filepath.Join(agentDir, "sessions")
 }
 
 func listSessionsFromDir(dir string, onProgress SessionListProgress, progressOffset, progressTotal int) []SessionInfo {
@@ -527,27 +560,7 @@ func buildSessionInfos(files []string, onProgress SessionListProgress, progressO
 }
 
 func isValidSessionFile(filePath string) bool {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return false
-	}
-	defer file.Close()
-	line, err := bufio.NewReader(file).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return false
-	}
-	if len(line) == 0 {
-		return false
-	}
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return false
-	}
-	var entry FileEntry
-	if err := json.Unmarshal([]byte(line), &entry); err != nil {
-		return false
-	}
-	return entry.Type == "session" && entry.ID != ""
+	return readSessionHeaderForDiscovery(filePath) != nil
 }
 
 type SessionManager struct {
@@ -607,14 +620,40 @@ func OpenSessionManager(path string, args ...string) (*SessionManager, error) {
 	if len(args) > 1 {
 		cwdOverride = args[1]
 	}
-	absPath, err := filepath.Abs(path)
+	absPath, err := resolveSessionPath(path)
 	if err != nil {
 		return nil, err
 	}
-	entries := LoadEntriesFromFile(absPath)
+	var preloadedEntries *[]FileEntry
 	cwd := cwdOverride
-	if cwd == "" && len(entries) > 0 && entries[0].CWD != "" {
-		cwd = entries[0].CWD
+	if cwd == "" {
+		if _, statErr := os.Stat(absPath); statErr == nil {
+			header, headerErr := readSessionHeader(absPath)
+			if headerErr != nil {
+				var limitErr *SessionHeaderScanLimitError
+				if !errors.As(headerErr, &limitErr) {
+					return nil, headerErr
+				}
+				entries, loadErr := loadEntriesFromFile(absPath)
+				if loadErr != nil {
+					return nil, loadErr
+				}
+				preloadedEntries = &entries
+				if len(entries) > 0 && entries[0].Type == "session" {
+					header = &SessionHeader{
+						Type:          entries[0].Type,
+						Version:       entries[0].Version,
+						ID:            entries[0].ID,
+						Timestamp:     entries[0].Timestamp,
+						CWD:           entries[0].CWD,
+						ParentSession: entries[0].ParentSession,
+					}
+				}
+			}
+			cwd = getSessionHeaderCWD(header)
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, statErr
+		}
 	}
 	if cwd == "" {
 		cwd, err = os.Getwd()
@@ -625,27 +664,52 @@ func OpenSessionManager(path string, args ...string) (*SessionManager, error) {
 	if sessionDir == "" {
 		sessionDir = filepath.Dir(absPath)
 	}
-	return newSessionManager(cwd, sessionDir, absPath, true)
+	return newSessionManagerWithEntries(cwd, sessionDir, absPath, true, preloadedEntries)
 }
 
 func CreateSessionManager(cwd string, sessionDir ...string) (*SessionManager, error) {
-	dir := ""
-	if len(sessionDir) > 0 {
-		dir = sessionDir[0]
-	} else {
-		var err error
-		dir, err = GetDefaultSessionDir(cwd)
-		if err != nil {
-			return nil, err
-		}
+	dir, err := resolveNewSessionDir(cwd, sessionDir...)
+	if err != nil {
+		return nil, err
 	}
 	return newSessionManager(cwd, dir, "", true)
 }
 
+// CreateSessionManagerWithOptions creates a persisted session with explicit
+// identity or parent metadata.
+func CreateSessionManagerWithOptions(
+	cwd, sessionDir string,
+	options NewSessionOptions,
+) (*SessionManager, error) {
+	if options.ID != "" {
+		if err := ValidateSessionID(options.ID); err != nil {
+			return nil, err
+		}
+	}
+	dir := sessionDir
+	var err error
+	if dir == "" {
+		dir, err = GetDefaultSessionDir(cwd)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return newSessionManagerWithInitialOptions(cwd, dir, true, options)
+}
+
+func resolveNewSessionDir(cwd string, sessionDir ...string) (string, error) {
+	if len(sessionDir) > 0 {
+		return sessionDir[0], nil
+	}
+	return GetDefaultSessionDir(cwd)
+}
+
 func ContinueRecentSession(cwd string, sessionDir ...string) (*SessionManager, error) {
 	dir := ""
+	filterCWD := false
 	if len(sessionDir) > 0 {
 		dir = sessionDir[0]
+		filterCWD = !sessionDirMatchesDefault(dir, cwd)
 	} else {
 		var err error
 		dir, err = GetDefaultSessionDir(cwd)
@@ -653,26 +717,78 @@ func ContinueRecentSession(cwd string, sessionDir ...string) (*SessionManager, e
 			return nil, err
 		}
 	}
-	if recent := FindMostRecentSession(dir); recent != "" {
+	recent := ""
+	if filterCWD {
+		recent = FindMostRecentSession(dir, cwd)
+	} else {
+		recent = FindMostRecentSession(dir)
+	}
+	if recent != "" {
 		return OpenSessionManager(recent, dir)
 	}
 	return newSessionManager(cwd, dir, "", true)
 }
 
 func ForkSessionFrom(sourcePath, targetCwd string, sessionDir ...string) (*SessionManager, error) {
-	sourceEntries := LoadEntriesFromFile(sourcePath)
+	options := NewSessionOptions{}
+	return forkSessionFrom(sourcePath, targetCwd, options, sessionDir...)
+}
+
+// ForkSessionFromWithOptions copies a session into a new exclusively-created
+// file and optionally assigns a portable custom ID.
+func ForkSessionFromWithOptions(
+	sourcePath, targetCwd string,
+	options NewSessionOptions,
+	sessionDir ...string,
+) (*SessionManager, error) {
+	return forkSessionFrom(sourcePath, targetCwd, options, sessionDir...)
+}
+
+func forkSessionFrom(
+	sourcePath, targetCwd string,
+	options NewSessionOptions,
+	sessionDir ...string,
+) (*SessionManager, error) {
+	return forkSessionFromAt(sourcePath, targetCwd, options, time.Now(), sessionDir...)
+}
+
+func forkSessionFromAt(
+	sourcePath, targetCwd string,
+	options NewSessionOptions,
+	now time.Time,
+	sessionDir ...string,
+) (*SessionManager, error) {
+	if options.ID != "" {
+		if err := ValidateSessionID(options.ID); err != nil {
+			return nil, err
+		}
+	}
+	resolvedSourcePath, err := resolveSessionPath(sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	resolvedTargetCWD, err := resolveSessionPath(targetCwd)
+	if err != nil {
+		return nil, err
+	}
+	sourceEntries, err := loadEntriesFromFile(resolvedSourcePath)
+	if err != nil {
+		return nil, err
+	}
 	if len(sourceEntries) == 0 {
-		return nil, errors.New("Cannot fork: source session file is empty or invalid: " + sourcePath)
+		return nil, errors.New("Cannot fork: source session file is empty or invalid: " + resolvedSourcePath)
 	}
 	if sourceEntries[0].Type != "session" {
-		return nil, errors.New("Cannot fork: source session has no header: " + sourcePath)
+		return nil, errors.New("Cannot fork: source session has no header: " + resolvedSourcePath)
 	}
 	dir := ""
 	if len(sessionDir) > 0 {
-		dir = sessionDir[0]
+		dir, err = resolveSessionPath(sessionDir[0])
+		if err != nil {
+			return nil, err
+		}
 	} else {
-		var err error
-		dir, err = GetDefaultSessionDir(targetCwd)
+		dir, err = GetDefaultSessionDir(resolvedTargetCWD)
 		if err != nil {
 			return nil, err
 		}
@@ -680,8 +796,11 @@ func ForkSessionFrom(sourcePath, targetCwd string, sessionDir ...string) (*Sessi
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	newSessionID := agentharness.UUIDv7()
-	timestamp := sessionTimestamp(time.Now())
+	newSessionID := options.ID
+	if newSessionID == "" {
+		newSessionID = agentharness.UUIDv7()
+	}
+	timestamp := sessionTimestamp(now)
 	fileTimestamp := strings.NewReplacer(":", "-", ".", "-").Replace(timestamp)
 	newSessionFile := filepath.Join(dir, fileTimestamp+"_"+newSessionID+".jsonl")
 	header := FileEntry{
@@ -689,8 +808,8 @@ func ForkSessionFrom(sourcePath, targetCwd string, sessionDir ...string) (*Sessi
 		Version:       CurrentSessionVersion,
 		ID:            newSessionID,
 		Timestamp:     timestamp,
-		CWD:           targetCwd,
-		ParentSession: sourcePath,
+		CWD:           resolvedTargetCWD,
+		ParentSession: resolvedSourcePath,
 	}
 	entries := []FileEntry{header}
 	for _, entry := range sourceEntries {
@@ -698,19 +817,14 @@ func ForkSessionFrom(sourcePath, targetCwd string, sessionDir ...string) (*Sessi
 			entries = append(entries, entry)
 		}
 	}
-	var builder strings.Builder
-	for _, entry := range entries {
-		line, err := json.Marshal(entry)
-		if err != nil {
-			return nil, err
-		}
-		builder.Write(line)
-		builder.WriteByte('\n')
-	}
-	if err := os.WriteFile(newSessionFile, []byte(builder.String()), 0o644); err != nil {
+	if err := writeSessionEntries(
+		newSessionFile,
+		entries,
+		os.O_CREATE|os.O_WRONLY|os.O_EXCL,
+	); err != nil {
 		return nil, err
 	}
-	return newSessionManager(targetCwd, dir, newSessionFile, true)
+	return newSessionManager(resolvedTargetCWD, dir, newSessionFile, true)
 }
 
 func InMemorySessionManager(cwd ...string) (*SessionManager, error) {
@@ -727,40 +841,149 @@ func InMemorySessionManager(cwd ...string) (*SessionManager, error) {
 	return newSessionManager(workingDir, "", "", false)
 }
 
-func GetDefaultSessionDir(cwd string) (string, error) {
-	home, err := os.UserHomeDir()
+// InMemorySessionManagerWithOptions creates a non-persisted session with
+// explicit identity or parent metadata.
+func InMemorySessionManagerWithOptions(
+	cwd string,
+	options NewSessionOptions,
+) (*SessionManager, error) {
+	if options.ID != "" {
+		if err := ValidateSessionID(options.ID); err != nil {
+			return nil, err
+		}
+	}
+	return newSessionManagerWithInitialOptions(cwd, "", false, options)
+}
+
+func defaultSessionAgentDir() (string, error) {
+	return resolveSessionPath(GetAgentDir())
+}
+
+func getDefaultSessionDirPath(cwd, agentDir string) (string, error) {
+	resolvedCWD, err := resolveSessionPath(cwd)
 	if err != nil {
 		return "", err
 	}
-	safePath := strings.TrimLeft(cwd, `/\`)
+	resolvedAgentDir, err := resolveSessionPath(agentDir)
+	if err != nil {
+		return "", err
+	}
+	safePath := strings.TrimLeft(resolvedCWD, `/\`)
 	replacer := strings.NewReplacer("/", "-", `\`, "-", ":", "-")
-	dir := filepath.Join(home, ConfigDirName, "agent", "sessions", "--"+replacer.Replace(safePath)+"--")
+	return filepath.Join(resolvedAgentDir, "sessions", "--"+replacer.Replace(safePath)+"--"), nil
+}
+
+// GetDefaultSessionDirPath computes the session directory without creating it.
+func GetDefaultSessionDirPath(cwd string) (string, error) {
+	agentDir, err := defaultSessionAgentDir()
+	if err != nil {
+		return "", err
+	}
+	return getDefaultSessionDirPath(cwd, agentDir)
+}
+
+func GetDefaultSessionDir(cwd string) (string, error) {
+	dir, err := GetDefaultSessionDirPath(cwd)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
 	return dir, nil
 }
 
+func sessionDirMatchesDefault(sessionDir, cwd string) bool {
+	defaultDir, err := GetDefaultSessionDirPath(cwd)
+	if err != nil {
+		return false
+	}
+	resolvedDir, err := resolveSessionPath(sessionDir)
+	if err != nil {
+		return false
+	}
+	return resolvedDir == defaultDir
+}
+
 func newSessionManager(cwd, sessionDir, sessionFile string, persist bool) (*SessionManager, error) {
+	return newSessionManagerWithState(cwd, sessionDir, sessionFile, persist, nil, nil)
+}
+
+func newSessionManagerWithEntries(
+	cwd, sessionDir, sessionFile string,
+	persist bool,
+	preloadedEntries *[]FileEntry,
+) (*SessionManager, error) {
+	return newSessionManagerWithState(
+		cwd,
+		sessionDir,
+		sessionFile,
+		persist,
+		preloadedEntries,
+		nil,
+	)
+}
+
+func newSessionManagerWithInitialOptions(
+	cwd, sessionDir string,
+	persist bool,
+	options NewSessionOptions,
+) (*SessionManager, error) {
+	return newSessionManagerWithState(
+		cwd,
+		sessionDir,
+		"",
+		persist,
+		nil,
+		&options,
+	)
+}
+
+func newSessionManagerWithState(
+	cwd, sessionDir, sessionFile string,
+	persist bool,
+	preloadedEntries *[]FileEntry,
+	initialOptions *NewSessionOptions,
+) (*SessionManager, error) {
+	resolvedCWD, err := resolveSessionPath(cwd)
+	if err != nil {
+		return nil, err
+	}
+	resolvedSessionDir := ""
+	if sessionDir != "" {
+		resolvedSessionDir, err = resolveSessionPath(sessionDir)
+		if err != nil {
+			return nil, err
+		}
+	}
 	sm := &SessionManager{
-		cwd:                 cwd,
-		sessionDir:          sessionDir,
+		cwd:                 resolvedCWD,
+		sessionDir:          resolvedSessionDir,
 		persist:             persist,
 		byID:                map[string]FileEntry{},
 		labelsByID:          map[string]string{},
 		labelTimestampsByID: map[string]string{},
 	}
-	if persist && sessionDir != "" {
-		if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+	if persist && resolvedSessionDir != "" {
+		if err := os.MkdirAll(resolvedSessionDir, 0o755); err != nil {
 			return nil, err
 		}
 	}
 	if sessionFile != "" {
-		if err := sm.SetSessionFile(sessionFile); err != nil {
+		sm.mu.Lock()
+		err = sm.setSessionFileLocked(sessionFile, preloadedEntries)
+		sm.mu.Unlock()
+		if err != nil {
 			return nil, err
 		}
 	} else {
-		sm.newSession("")
+		options := NewSessionOptions{}
+		if initialOptions != nil {
+			options = *initialOptions
+		}
+		if _, err := sm.newSession(options); err != nil {
+			return nil, err
+		}
 	}
 	return sm, nil
 }
@@ -768,46 +991,67 @@ func newSessionManager(cwd, sessionDir, sessionFile string, persist bool) (*Sess
 func (s *SessionManager) SetSessionFile(sessionFile string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	absPath, err := filepath.Abs(sessionFile)
+	return s.setSessionFileLocked(sessionFile, nil)
+}
+
+func (s *SessionManager) setSessionFileLocked(
+	sessionFile string,
+	preloadedEntries *[]FileEntry,
+) error {
+	absPath, err := resolveSessionPath(sessionFile)
 	if err != nil {
 		return err
 	}
-	s.sessionFile = absPath
-	if _, err := os.Stat(absPath); err == nil {
-		s.fileEntries = LoadEntriesFromFile(absPath)
-		if len(s.fileEntries) == 0 {
-			explicitPath := s.sessionFile
-			s.newSessionLocked("")
-			s.sessionFile = explicitPath
-			if err := s.rewriteFileLocked(); err != nil {
+	info, statErr := os.Stat(absPath)
+	if statErr == nil {
+		var entries []FileEntry
+		if preloadedEntries != nil {
+			entries = cloneFileEntries(*preloadedEntries)
+		} else {
+			entries, err = loadEntriesFromFile(absPath)
+			if err != nil {
 				return err
 			}
-			s.flushed = true
+		}
+		if len(entries) == 0 {
+			if info.Size() > 0 {
+				return fmt.Errorf("Session file is not a valid pi session: %s", absPath)
+			}
+			sessionID, _, newEntries, newErr := s.newSessionStateLocked(NewSessionOptions{})
+			if newErr != nil {
+				return newErr
+			}
+			if s.persist {
+				if err := writeSessionEntries(absPath, newEntries, os.O_CREATE|os.O_WRONLY|os.O_TRUNC); err != nil {
+					return err
+				}
+			}
+			s.applySessionStateLocked(sessionID, absPath, newEntries, true)
 			return nil
 		}
-		header := s.fileEntries[0]
-		s.sessionID = header.ID
-		if s.sessionID == "" {
-			s.sessionID = agentharness.UUIDv7()
-		}
-		if MigrateSessionEntries(s.fileEntries) {
-			if err := s.rewriteFileLocked(); err != nil {
+		header := entries[0]
+		if MigrateSessionEntries(entries) && s.persist {
+			if err := writeSessionEntries(absPath, entries, os.O_CREATE|os.O_WRONLY|os.O_TRUNC); err != nil {
 				return err
 			}
 		}
-		s.buildIndexLocked()
-		s.flushed = true
+		s.applySessionStateLocked(header.ID, absPath, entries, true)
 		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
+	}
+	if !errors.Is(statErr, os.ErrNotExist) {
+		return statErr
+	}
+	sessionID, _, entries, err := s.newSessionStateLocked(NewSessionOptions{})
+	if err != nil {
 		return err
 	}
-	explicitPath := s.sessionFile
-	s.newSessionLocked("")
-	s.sessionFile = explicitPath
+	s.applySessionStateLocked(sessionID, absPath, entries, false)
 	return nil
 }
 
-func (s *SessionManager) NewSession(options ...NewSessionOptions) string {
+// NewSession replaces the active in-memory state after validating all supplied
+// identity metadata. Persisted content is created lazily on the first response.
+func (s *SessionManager) NewSession(options ...NewSessionOptions) (string, error) {
 	opts := NewSessionOptions{}
 	if len(options) > 0 {
 		opts = options[0]
@@ -815,13 +1059,13 @@ func (s *SessionManager) NewSession(options ...NewSessionOptions) string {
 	return s.newSession(opts)
 }
 
-func (s *SessionManager) newSession(options any) string {
+func (s *SessionManager) newSession(options any) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.newSessionLocked(options)
 }
 
-func (s *SessionManager) newSessionLocked(options any) string {
+func (s *SessionManager) newSessionLocked(options any) (string, error) {
 	opts := NewSessionOptions{}
 	switch value := options.(type) {
 	case string:
@@ -829,26 +1073,52 @@ func (s *SessionManager) newSessionLocked(options any) string {
 	case NewSessionOptions:
 		opts = value
 	}
-	s.sessionID = opts.ID
-	if s.sessionID == "" {
-		s.sessionID = agentharness.UUIDv7()
+	sessionID, sessionFile, entries, err := s.newSessionStateLocked(opts)
+	if err != nil {
+		return "", err
+	}
+	s.applySessionStateLocked(sessionID, sessionFile, entries, false)
+	return sessionFile, nil
+}
+
+func (s *SessionManager) newSessionStateLocked(
+	options NewSessionOptions,
+) (sessionID, sessionFile string, entries []FileEntry, err error) {
+	if options.ID != "" {
+		if err := ValidateSessionID(options.ID); err != nil {
+			return "", "", nil, err
+		}
+	}
+	sessionID = options.ID
+	if sessionID == "" {
+		sessionID = agentharness.UUIDv7()
 	}
 	timestamp := sessionTimestamp(time.Now())
-	s.fileEntries = []FileEntry{{
+	entries = []FileEntry{{
 		Type:          "session",
 		Version:       CurrentSessionVersion,
-		ID:            s.sessionID,
+		ID:            sessionID,
 		Timestamp:     timestamp,
 		CWD:           s.cwd,
-		ParentSession: opts.ParentSession,
+		ParentSession: options.ParentSession,
 	}}
-	s.buildIndexLocked()
-	s.flushed = false
 	if s.persist {
 		fileTimestamp := strings.NewReplacer(":", "-", ".", "-").Replace(timestamp)
-		s.sessionFile = filepath.Join(s.sessionDir, fileTimestamp+"_"+s.sessionID+".jsonl")
+		sessionFile = filepath.Join(s.sessionDir, fileTimestamp+"_"+sessionID+".jsonl")
 	}
-	return s.sessionFile
+	return sessionID, sessionFile, entries, nil
+}
+
+func (s *SessionManager) applySessionStateLocked(
+	sessionID, sessionFile string,
+	entries []FileEntry,
+	flushed bool,
+) {
+	s.sessionID = sessionID
+	s.sessionFile = sessionFile
+	s.fileEntries = entries
+	s.flushed = flushed
+	s.buildIndexLocked()
 }
 
 func (s *SessionManager) rewriteFile() error {
@@ -864,16 +1134,11 @@ func (s *SessionManager) rewriteFileLocked() error {
 	if err := os.MkdirAll(filepath.Dir(s.sessionFile), 0o755); err != nil {
 		return err
 	}
-	var builder strings.Builder
-	for _, entry := range s.fileEntries {
-		line, err := json.Marshal(entry)
-		if err != nil {
-			return err
-		}
-		builder.Write(line)
-		builder.WriteByte('\n')
-	}
-	return os.WriteFile(s.sessionFile, []byte(builder.String()), 0o644)
+	return writeSessionEntries(
+		s.sessionFile,
+		s.fileEntries,
+		os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
+	)
 }
 
 func (s *SessionManager) appendEntry(entry FileEntry) {
@@ -1009,6 +1274,19 @@ func (s *SessionManager) GetSessionDir() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.sessionDir
+}
+
+// UsesDefaultSessionDir reports whether this manager owns the canonical
+// per-working-directory store. It is pure and does not create directories.
+func (s *SessionManager) UsesDefaultSessionDir() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	sessionDir := s.sessionDir
+	cwd := s.cwd
+	s.mu.RUnlock()
+	return sessionDirMatchesDefault(sessionDir, cwd)
 }
 
 func (s *SessionManager) GetCWD() string {
@@ -1342,14 +1620,7 @@ func buildSessionPath(
 	if len(entries) == 0 {
 		return nil
 	}
-	if byID == nil {
-		byID = make(map[string]FileEntry, len(entries))
-		for _, entry := range entries {
-			if entry.ID != "" {
-				byID[entry.ID] = entry
-			}
-		}
-	}
+	byID = buildEntryIndex(entries, byID)
 
 	var leaf FileEntry
 	var ok bool
@@ -1377,6 +1648,22 @@ func buildSessionPath(
 		path[left], path[right] = path[right], path[left]
 	}
 	return path
+}
+
+func buildEntryIndex(
+	entries []FileEntry,
+	existing map[string]FileEntry,
+) map[string]FileEntry {
+	if existing != nil {
+		return existing
+	}
+	index := make(map[string]FileEntry, len(entries))
+	for _, entry := range entries {
+		if entry.ID != "" {
+			index[entry.ID] = entry
+		}
+	}
+	return index
 }
 
 func buildContextEntriesFromPath(
@@ -1468,23 +1755,10 @@ func BuildSessionContextWithOptions(
 		return context
 	}
 
-	for _, entry := range path {
-		if _, excluded := options.ExcludeEntryIDs[entry.ID]; excluded {
-			continue
-		}
-		switch entry.Type {
-		case "thinking_level_change":
-			context.ThinkingLevel = entry.ThinkingLevel
-		case "model_change":
-			context.Model = &SessionModel{Provider: entry.Provider, ModelID: entry.ModelID}
-		case "message":
-			if message, converted := sessionMessageToLLM(entry.Message); converted && message.Role == llm.RoleAssistant {
-				if message.Provider != "" || message.Model != "" {
-					context.Model = &SessionModel{Provider: message.Provider, ModelID: message.Model}
-				}
-			}
-		}
-	}
+	context.ThinkingLevel, context.Model = getSessionContextSettings(
+		path,
+		options.ExcludeEntryIDs,
+	)
 
 	appendEntryMessage := func(entry FileEntry) {
 		if _, excluded := options.ExcludeEntryIDs[entry.ID]; excluded {
@@ -1525,6 +1799,31 @@ func BuildSessionContextWithOptions(
 		appendEntryMessage(entry)
 	}
 	return context
+}
+
+func getSessionContextSettings(
+	path []FileEntry,
+	excludedEntryIDs map[string]struct{},
+) (thinkingLevel string, model *SessionModel) {
+	thinkingLevel = "off"
+	for _, entry := range path {
+		if _, excluded := excludedEntryIDs[entry.ID]; excluded {
+			continue
+		}
+		switch entry.Type {
+		case "thinking_level_change":
+			thinkingLevel = entry.ThinkingLevel
+		case "model_change":
+			model = &SessionModel{Provider: entry.Provider, ModelID: entry.ModelID}
+		case "message":
+			message, converted := sessionMessageToLLM(entry.Message)
+			if converted && message.Role == llm.RoleAssistant &&
+				(message.Provider != "" || message.Model != "") {
+				model = &SessionModel{Provider: message.Provider, ModelID: message.Model}
+			}
+		}
+	}
+	return thinkingLevel, model
 }
 
 func customMessageIncludedInContext(entry FileEntry) bool {
@@ -2030,25 +2329,40 @@ func sessionEntryTimestampMillis(timestamp string) int64 {
 	return 0
 }
 
+func getMessageActivityTime(entry FileEntry) (int64, bool) {
+	if entry.Type != "message" {
+		return 0, false
+	}
+	message, ok := entry.Message.(map[string]any)
+	if !ok {
+		return 0, false
+	}
+	role, _ := message["role"].(string)
+	if role != "user" && role != "assistant" {
+		return 0, false
+	}
+	if _, hasContent := message["content"]; !hasContent {
+		return 0, false
+	}
+	switch timestamp := message["timestamp"].(type) {
+	case float64:
+		return int64(timestamp), true
+	case int:
+		return int64(timestamp), true
+	case int64:
+		return timestamp, true
+	}
+	if parsed, ok := parseSessionTimeOK(entry.Timestamp); ok {
+		return parsed.UnixMilli(), true
+	}
+	return 0, false
+}
+
 func getSessionModifiedDate(entries []FileEntry, header FileEntry, statsMtime time.Time) time.Time {
 	var lastActivity int64
 	for _, entry := range entries {
-		if entry.Type != "message" {
-			continue
-		}
-		role := messageRole(entry.Message)
-		if role != "user" && role != "assistant" {
-			continue
-		}
-		if timestamp, ok := messageTimestampMillis(entry.Message); ok && timestamp > lastActivity {
+		if timestamp, ok := getMessageActivityTime(entry); ok && timestamp > lastActivity {
 			lastActivity = timestamp
-			continue
-		}
-		if parsed, ok := parseSessionTimeOK(entry.Timestamp); ok {
-			ms := parsed.UnixMilli()
-			if ms > lastActivity {
-				lastActivity = ms
-			}
 		}
 	}
 	if lastActivity > 0 {

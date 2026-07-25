@@ -437,7 +437,9 @@ func TestCodingAgentPiRuntimeAndPackageExactCaseNames(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		session.NewSession(NewSessionOptions{ID: "custom-id"})
+		if _, err := session.NewSession(NewSessionOptions{ID: "custom-id"}); err != nil {
+			t.Fatal(err)
+		}
 		if session.GetSessionID() != "custom-id" {
 			t.Fatalf("session id = %q", session.GetSessionID())
 		}
@@ -447,7 +449,9 @@ func TestCodingAgentPiRuntimeAndPackageExactCaseNames(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		session.NewSession()
+		if _, err := session.NewSession(); err != nil {
+			t.Fatal(err)
+		}
 		if !uuidV7Pattern.MatchString(session.GetSessionID()) {
 			t.Fatalf("session id = %q", session.GetSessionID())
 		}

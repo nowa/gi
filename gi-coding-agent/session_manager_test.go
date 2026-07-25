@@ -114,62 +114,78 @@ func TestFindMostRecentSessionMatchesPiValidJsonlSelection(t *testing.T) {
 	}
 }
 
-func TestSessionManagerOpenRecoversCorruptedFilesLikePi(t *testing.T) {
+func TestSessionManagerOpenInitializesOnlyEmptyFilesLikePi(t *testing.T) {
 	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.jsonl")
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
+	sm, err := OpenSessionManager(path, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sm.GetSessionID() == "" {
+		t.Fatal("session id is empty")
+	}
+	header := sm.GetHeader()
+	if header == nil || header.Type != "session" {
+		t.Fatalf("header = %#v", header)
+	}
+	if sm.GetSessionFile() != path {
+		t.Fatalf("session file = %q, want explicit path %q", sm.GetSessionFile(), path)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := nonEmptyLines(string(content))
+	if len(lines) != 1 {
+		t.Fatalf("initialized file lines = %#v", lines)
+	}
+	var initialized SessionHeader
+	if err := json.Unmarshal([]byte(lines[0]), &initialized); err != nil {
+		t.Fatal(err)
+	}
+	if initialized.Type != "session" || initialized.ID != sm.GetSessionID() {
+		t.Fatalf("initialized header = %#v, session id = %q", initialized, sm.GetSessionID())
+	}
+
+	again, err := OpenSessionManager(path, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.GetSessionID() != sm.GetSessionID() {
+		t.Fatalf("reopened session id = %q, want %q", again.GetSessionID(), sm.GetSessionID())
+	}
+}
+
+func TestSessionManagerOpenRejectsAndPreservesNonEmptyInvalidFilesLikePi(t *testing.T) {
+	dir := t.TempDir()
 	cases := []struct {
 		name    string
 		content string
 	}{
-		{name: "empty", content: ""},
 		{name: "no-header", content: `{"type":"message","id":"abc","parentId":"orphaned","timestamp":"2025-01-01T00:00:00Z","message":{"role":"assistant","content":"test"}}` + "\n"},
 		{name: "garbage", content: "garbage content\n"},
 	}
-
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(dir, tc.name+".jsonl")
 			if err := os.WriteFile(path, []byte(tc.content), 0o644); err != nil {
 				t.Fatal(err)
 			}
-
-			sm, err := OpenSessionManager(path, dir)
-			if err != nil {
-				t.Fatal(err)
+			if _, err := OpenSessionManager(path, dir); err == nil ||
+				err.Error() != "Session file is not a valid pi session: "+path {
+				t.Fatalf("OpenSessionManager() error = %v", err)
 			}
-			if sm.GetSessionID() == "" {
-				t.Fatal("session id is empty")
-			}
-			header := sm.GetHeader()
-			if header == nil || header.Type != "session" {
-				t.Fatalf("header = %#v", header)
-			}
-			if sm.GetSessionFile() != path {
-				t.Fatalf("session file = %q, want explicit path %q", sm.GetSessionFile(), path)
-			}
-
 			content, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
 			}
-			lines := nonEmptyLines(string(content))
-			if len(lines) != 1 {
-				t.Fatalf("recovered file lines = %#v", lines)
-			}
-			var recovered SessionHeader
-			if err := json.Unmarshal([]byte(lines[0]), &recovered); err != nil {
-				t.Fatal(err)
-			}
-			if recovered.Type != "session" || recovered.ID != sm.GetSessionID() {
-				t.Fatalf("recovered header = %#v, session id = %q", recovered, sm.GetSessionID())
-			}
-
-			again, err := OpenSessionManager(path, dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if again.GetSessionID() != sm.GetSessionID() {
-				t.Fatalf("reopened session id = %q, want %q", again.GetSessionID(), sm.GetSessionID())
+			if string(content) != tc.content {
+				t.Fatalf("invalid file was modified: got %q, want %q", content, tc.content)
 			}
 		})
 	}
@@ -206,7 +222,7 @@ func TestSessionManagerCreateContinueAndDefaultDirMatchPiPaths(t *testing.T) {
 	}
 
 	recentFile := filepath.Join(sessionDir, "recent.jsonl")
-	if err := os.WriteFile(recentFile, []byte(`{"type":"session","id":"recent","timestamp":"2025-01-01T00:00:00Z","cwd":"/from-file"}`+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(recentFile, []byte(`{"type":"session","id":"recent","timestamp":"2025-01-01T00:00:00Z","cwd":"`+cwd+`"}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	continued, err := ContinueRecentSession(cwd, sessionDir)
