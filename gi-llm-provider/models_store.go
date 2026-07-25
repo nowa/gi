@@ -8,7 +8,7 @@ import (
 // ModelsStoreEntry is one provider's persisted dynamic model catalog.
 type ModelsStoreEntry struct {
 	Models       []Model `json:"models"`
-	LastModified int64   `json:"lastModified,omitempty"`
+	LastModified *int64  `json:"lastModified,omitempty"`
 	CheckedAt    int64   `json:"checkedAt,omitempty"`
 }
 
@@ -103,6 +103,10 @@ func (s scopedModelsStore) DeleteModels(ctx context.Context) error {
 
 func cloneModelsStoreEntry(entry ModelsStoreEntry) ModelsStoreEntry {
 	entry.Models = cloneModels(entry.Models)
+	if entry.LastModified != nil {
+		lastModified := *entry.LastModified
+		entry.LastModified = &lastModified
+	}
 	return entry
 }
 

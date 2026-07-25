@@ -868,7 +868,7 @@ func TestInMemoryModelsStoreClonesEntries(t *testing.T) {
 	store := NewInMemoryModelsStore()
 	entry := ModelsStoreEntry{
 		Models:       []Model{runtimeTestModel("provider", "model")},
-		LastModified: 10,
+		LastModified: ptrInt64(10),
 		CheckedAt:    20,
 	}
 	entry.Models[0].Headers = map[string]string{"X-Test": "original"}
@@ -886,6 +886,14 @@ func TestInMemoryModelsStoreClonesEntries(t *testing.T) {
 	if again.Models[0].Headers["X-Test"] != "original" {
 		t.Fatalf("read shared mutable state: %#v", again)
 	}
+	if read.LastModified == entry.LastModified ||
+		read.LastModified == again.LastModified {
+		t.Fatal("last-modified pointer shared mutable state")
+	}
+}
+
+func ptrInt64(value int64) *int64 {
+	return &value
 }
 
 type runtimeProviderOptions struct {
