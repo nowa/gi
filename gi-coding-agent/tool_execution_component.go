@@ -600,17 +600,7 @@ func highlightWriteLine(line, lang string) string {
 }
 
 func writeHighlightTheme() HighlightTheme {
-	return HighlightTheme{
-		"comment":     func(text string) string { return tuiThemeFG("syntaxComment", text) },
-		"keyword":     func(text string) string { return tuiThemeFG("syntaxKeyword", text) },
-		"function":    func(text string) string { return tuiThemeFG("syntaxFunction", text) },
-		"variable":    func(text string) string { return tuiThemeFG("syntaxVariable", text) },
-		"string":      func(text string) string { return tuiThemeFG("syntaxString", text) },
-		"number":      func(text string) string { return tuiThemeFG("syntaxNumber", text) },
-		"type":        func(text string) string { return tuiThemeFG("syntaxType", text) },
-		"operator":    func(text string) string { return tuiThemeFG("syntaxOperator", text) },
-		"punctuation": func(text string) string { return tuiThemeFG("syntaxPunctuation", text) },
-	}
+	return buildCLIHighlightTheme()
 }
 
 func writeHighlightLanguage(path string) string {

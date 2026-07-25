@@ -659,5 +659,6 @@ func tuiThemeMarkdown() gitui.MarkdownTheme {
 		Italic:          tuiThemeItalic,
 		Underline:       func(text string) string { return "\x1b[4m" + text + "\x1b[24m" },
 		Strikethrough:   func(text string) string { return "\x1b[9m" + text + "\x1b[29m" },
+		HighlightCode:   highlightCode,
 	}
 }

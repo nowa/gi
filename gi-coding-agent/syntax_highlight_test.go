@@ -58,4 +58,43 @@ func TestSyntaxHighlightRenderer(t *testing.T) {
 			t.Fatalf("rendered = %q", rendered)
 		}
 	})
+
+	t.Run("colors diff additions and deletions in fenced diff blocks", func(t *testing.T) {
+		lines := highlightCode("-old\n+new\n", "diff")
+		if len(lines) != 3 {
+			t.Fatalf("lines = %#v", lines)
+		}
+		if want := tuiThemeFG("toolDiffRemoved", "-old"); lines[0] != want {
+			t.Fatalf("deletion = %q, want %q", lines[0], want)
+		}
+		if want := tuiThemeFG("toolDiffAdded", "+new"); lines[1] != want {
+			t.Fatalf("addition = %q, want %q", lines[1], want)
+		}
+	})
+
+	t.Run("keeps cli-highlight default styled scopes mapped to theme styles", func(t *testing.T) {
+		javascript := highlightCode(
+			"const re = /foo+/gi;",
+			"javascript",
+		)[0]
+		if want := tuiThemeFG(
+			"syntaxString",
+			"/foo+/gi",
+		); !strings.Contains(javascript, want) {
+			t.Fatalf("javascript = %q, want %q", javascript, want)
+		}
+
+		python := highlightCode("@decorator", "python")[0]
+		if want := tuiThemeFG("muted", "@decorator"); python != want {
+			t.Fatalf("python = %q, want %q", python, want)
+		}
+
+		html := highlightCode("<div></div>", "html")[0]
+		if want := tuiThemeFG(
+			"syntaxKeyword",
+			"div",
+		); !strings.Contains(html, want) {
+			t.Fatalf("html = %q, want %q", html, want)
+		}
+	})
 }
