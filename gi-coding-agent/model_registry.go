@@ -41,6 +41,7 @@ type ModelCostOverride struct {
 	Output     *float64
 	CacheRead  *float64
 	CacheWrite *float64
+	Tiers      *[]llm.ModelCostTier
 }
 
 type ModelOverride struct {
@@ -61,9 +62,10 @@ type ProviderConfigInput struct {
 	APIKey         string
 	API            string
 	Headers        map[string]string
-	AuthHeader     bool
+	AuthHeader     *bool
 	OAuth          *OAuthProvider                                                                                  `json:"-"`
 	StreamSimple   func(llm.Model, llm.Context, llm.SimpleStreamOptions) (*llm.AssistantMessageEventStream, error) `json:"-"`
+	RefreshModels  func(context.Context, llm.RefreshModelsContext) ([]ProviderModelDefinition, error)              `json:"-"`
 	Compat         llm.ModelCompat
 	Models         []ProviderModelDefinition
 	ModelOverrides map[string]ModelOverride
@@ -98,6 +100,7 @@ type modelRegistryConfig struct {
 
 type customModelsResult struct {
 	models          []llm.Model
+	providers       map[string]modelsJSONProviderConfig
 	overrides       map[string]ProviderConfigInput
 	modelOverrides  map[string]map[string]ModelOverride
 	radiusProviders []radiusRegistryProvider
@@ -111,6 +114,10 @@ type ModelRegistryOptions struct {
 	ModelsJSONPath      string
 	ModelsStore         llm.ModelsStore
 	RadiusClient        llm.HTTPDoer
+	CatalogBaseURL      string
+	CatalogClient       llm.HTTPDoer
+	CatalogUserAgent    string
+	ModelNetworkEnabled *bool
 	AllowModelNetwork   bool
 	ModelRefreshTimeout time.Duration
 }
@@ -144,12 +151,18 @@ type ModelRegistry struct {
 	modelsJSONPath           string
 	modelsStore              llm.ModelsStore
 	radiusClient             llm.HTTPDoer
+	catalogBaseURL           string
+	catalogClient            llm.HTTPDoer
+	catalogUserAgent         string
+	initialModelNetwork      bool
+	modelNetworkEnabled      bool
+	modelRefreshTimeout      time.Duration
 	dynamicModels            *llm.Models
 	baseModels               []llm.Model
 	models                   []llm.Model
+	modelsJSONProviders      map[string]modelsJSONProviderConfig
 	configuredModelOverrides map[string]map[string]ModelOverride
 	providerRequestConfigs   map[string]ProviderRequestConfig
-	modelRequestHeaders      map[string]map[string]string
 	registeredProviders      map[string]ProviderConfigInput
 	registeredOrder          []string
 	apiProviderRestores      map[string]apiProviderRestore
@@ -217,25 +230,37 @@ func NewModelRegistryWithOptions(
 			))
 		}
 	}
+	modelNetworkEnabled := !packageManagerOffline()
+	if options.ModelNetworkEnabled != nil {
+		modelNetworkEnabled = *options.ModelNetworkEnabled
+	}
+	allowInitialModelNetwork := options.AllowModelNetwork &&
+		modelNetworkEnabled
 	registry := &ModelRegistry{
 		authStorage:            options.AuthStorage,
 		modelsJSONPath:         options.ModelsJSONPath,
 		modelsStore:            modelsStore,
 		radiusClient:           options.RadiusClient,
+		catalogBaseURL:         options.CatalogBaseURL,
+		catalogClient:          options.CatalogClient,
+		catalogUserAgent:       options.CatalogUserAgent,
+		initialModelNetwork:    allowInitialModelNetwork,
+		modelNetworkEnabled:    modelNetworkEnabled,
+		modelRefreshTimeout:    options.ModelRefreshTimeout,
+		modelsJSONProviders:    map[string]modelsJSONProviderConfig{},
 		providerRequestConfigs: map[string]ProviderRequestConfig{},
-		modelRequestHeaders:    map[string]map[string]string{},
 		registeredProviders:    map[string]ProviderConfigInput{},
 		apiProviderRestores:    map[string]apiProviderRestore{},
 		oauthProviderRestores:  map[string]oauthProviderRestore{},
 	}
 	refreshCtx, cancel := modelRegistryRefreshContext(
 		ctx,
-		options.AllowModelNetwork,
+		allowInitialModelNetwork,
 		options.ModelRefreshTimeout,
 	)
 	defer cancel()
 	registry.loadModels(refreshCtx, llm.ModelsRefreshOptions{
-		Offline: !options.AllowModelNetwork,
+		Offline: !allowInitialModelNetwork,
 	})
 	return registry
 }
@@ -252,6 +277,23 @@ func (r *ModelRegistry) Refresh() {
 	if r == nil {
 		return
 	}
+	r.mu.RLock()
+	modelRuntime := r.modelRuntime
+	r.mu.RUnlock()
+	if modelRuntime != nil {
+		_, _ = modelRuntime.Refresh(
+			context.Background(),
+			ModelRegistryRefreshOptions{},
+		)
+		return
+	}
+	r.refreshLocal()
+}
+
+func (r *ModelRegistry) refreshLocal() {
+	if r == nil {
+		return
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.refreshLocked()
@@ -259,13 +301,13 @@ func (r *ModelRegistry) Refresh() {
 
 func (r *ModelRegistry) refreshLocked() {
 	r.providerRequestConfigs = map[string]ProviderRequestConfig{}
-	r.modelRequestHeaders = map[string]map[string]string{}
 	r.loadError = ""
 	r.loadModels(context.Background(), llm.ModelsRefreshOptions{Offline: true})
+	legacyGlobals := r.modelRuntime == nil
 	for _, providerName := range r.registeredOrder {
 		config, ok := r.registeredProviders[providerName]
 		if ok {
-			r.applyProviderConfig(providerName, config)
+			r.applyProviderConfig(providerName, config, legacyGlobals)
 		}
 	}
 	r.applyConfiguredModelOverrides()
@@ -280,6 +322,19 @@ func (r *ModelRegistry) RefreshModels(
 ) llm.ModelsRefreshResult {
 	if r == nil {
 		return llm.ModelsRefreshResult{Errors: map[string]error{}}
+	}
+	r.mu.RLock()
+	modelRuntime := r.modelRuntime
+	r.mu.RUnlock()
+	if modelRuntime != nil {
+		result, err := modelRuntime.Refresh(ctx, options)
+		if err != nil {
+			if result.Errors == nil {
+				result.Errors = map[string]error{}
+			}
+			result.Errors["model-runtime"] = err
+		}
+		return result
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -300,9 +355,10 @@ func (r *ModelRegistry) RefreshModels(
 		},
 	)
 	r.syncDynamicModels()
+	legacyGlobals := r.modelRuntime == nil
 	for _, providerName := range r.registeredOrder {
 		if config, ok := r.registeredProviders[providerName]; ok {
-			r.applyProviderConfig(providerName, config)
+			r.applyProviderConfig(providerName, config, legacyGlobals)
 		}
 	}
 	r.applyConfiguredModelOverrides()
@@ -345,6 +401,15 @@ func (r *ModelRegistry) GetAll() []llm.Model {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return append([]llm.Model{}, r.models...)
+}
+
+func (r *ModelRegistry) publishRuntimeModels(models []llm.Model) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.models = cloneRuntimeModels(models)
+	r.mu.Unlock()
 }
 
 func (r *ModelRegistry) GetAvailable() []llm.Model {
@@ -488,10 +553,8 @@ func (r *ModelRegistry) GetAPIKeyAndHeadersWithOverrides(
 	r.mu.RLock()
 	config := r.providerRequestConfigs[model.Provider]
 	config.Headers = cloneStringMap(config.Headers)
-	modelHeaderConfig := cloneStringMap(r.modelRequestHeaders[r.modelRequestKey(
-		model.Provider,
-		model.ID,
-	)])
+	modelsJSON, hasModelsJSON := r.modelsJSONProviders[model.Provider]
+	extension, hasExtension := r.registeredProviders[model.Provider]
 	authStorage := r.authStorage
 	dynamicModels := r.dynamicModels
 	r.mu.RUnlock()
@@ -617,9 +680,12 @@ func (r *ModelRegistry) GetAPIKeyAndHeadersWithOverrides(
 	if err != nil {
 		return ResolvedRequestAuth{OK: false, Error: err.Error()}
 	}
-	modelHeaders, err := resolveHeadersOrError(
-		modelHeaderConfig,
-		fmt.Sprintf(`model "%s/%s"`, model.Provider, model.ID),
+	modelHeaders, err := resolveConfiguredModelHeaders(
+		model,
+		modelsJSON,
+		hasModelsJSON,
+		extension,
+		hasExtension,
 		requestEnv,
 	)
 	if err != nil {
@@ -668,7 +734,8 @@ func (r *ModelRegistry) GetProviderAuthStatus(provider string) AuthStatus {
 	}
 	r.mu.RLock()
 	authStorage := r.authStorage
-	config, hasConfig := r.providerRequestConfigs[provider]
+	modelsJSON, hasModelsJSON := r.modelsJSONProviders[provider]
+	extension, hasExtension := r.registeredProviders[provider]
 	dynamicModels := r.dynamicModels
 	r.mu.RUnlock()
 	storageStatus := AuthStatus{}
@@ -679,8 +746,13 @@ func (r *ModelRegistry) GetProviderAuthStatus(provider string) AuthStatus {
 			return storageStatus
 		}
 	}
-	if hasConfig && config.APIKey != "" {
-		return configuredAPIKeyAuthStatus(config.APIKey)
+	if configured := configuredRequestAuthStatus(
+		modelsJSON,
+		hasModelsJSON,
+		extension,
+		hasExtension,
+	); configured != nil {
+		return *configured
 	}
 	if dynamicModels != nil {
 		if _, ok := dynamicModels.GetProvider(provider); ok {
@@ -754,17 +826,24 @@ func (r *ModelRegistry) GetProviderDisplayName(provider string) string {
 		return provider
 	}
 	r.mu.RLock()
+	modelRuntime := r.modelRuntime
 	config, hasConfig := r.registeredProviders[provider]
 	config = cloneRuntimeProviderConfig(config)
+	modelsJSON, hasModelsJSON := r.modelsJSONProviders[provider]
 	dynamicModels := r.dynamicModels
 	r.mu.RUnlock()
+	if modelRuntime != nil {
+		if runtimeProvider, ok := modelRuntime.GetProvider(provider); ok {
+			return runtimeProvider.Name
+		}
+	}
 	if hasConfig {
 		if config.Name != "" {
 			return config.Name
 		}
-		if config.OAuth != nil && config.OAuth.Name != "" {
-			return config.OAuth.Name
-		}
+	}
+	if hasModelsJSON && modelsJSON.Name != "" {
+		return modelsJSON.Name
 	}
 	if dynamicModels != nil {
 		if dynamic, ok := dynamicModels.GetProvider(provider); ok &&
@@ -772,13 +851,16 @@ func (r *ModelRegistry) GetProviderDisplayName(provider string) string {
 			return dynamic.Name
 		}
 	}
+	if name := builtInProviderDisplayNames[provider]; name != "" {
+		return name
+	}
+	if hasConfig && config.OAuth != nil && config.OAuth.Name != "" {
+		return config.OAuth.Name
+	}
 	for _, oauthProvider := range GetOAuthProviders() {
 		if oauthProvider.ID == provider && oauthProvider.Name != "" {
 			return oauthProvider.Name
 		}
-	}
-	if name := builtInProviderDisplayNames[provider]; name != "" {
-		return name
 	}
 	return provider
 }
@@ -845,18 +927,56 @@ func (r *ModelRegistry) IsUsingOAuth(model llm.Model) bool {
 }
 
 func (r *ModelRegistry) RegisterProvider(providerName string, config ProviderConfigInput) error {
+	if r == nil {
+		return errors.New("model registry is required")
+	}
+	r.mu.RLock()
+	modelRuntime := r.modelRuntime
+	r.mu.RUnlock()
+	if modelRuntime != nil {
+		return modelRuntime.RegisterProvider(providerName, config)
+	}
+	return r.registerProviderLocal(providerName, config)
+}
+
+func (r *ModelRegistry) registerProviderLocal(
+	providerName string,
+	config ProviderConfigInput,
+) error {
 	if err := r.validateProviderConfig(providerName, config); err != nil {
 		return err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.applyProviderConfig(providerName, config)
-	r.applyConfiguredModelOverrides()
 	r.upsertRegisteredProvider(providerName, config)
+	effective := r.registeredProviders[providerName]
+	r.resetProviderRequestConfig(providerName)
+	r.applyProviderConfig(
+		providerName,
+		effective,
+		r.modelRuntime == nil,
+	)
+	r.applyConfiguredModelOverrides()
 	return nil
 }
 
 func (r *ModelRegistry) UnregisterProvider(providerName string) {
+	if r == nil {
+		return
+	}
+	r.mu.RLock()
+	modelRuntime := r.modelRuntime
+	r.mu.RUnlock()
+	if modelRuntime != nil {
+		modelRuntime.UnregisterProvider(providerName)
+		return
+	}
+	r.unregisterProviderLocal(providerName)
+}
+
+func (r *ModelRegistry) unregisterProviderLocal(
+	providerName string,
+) {
 	if r == nil {
 		return
 	}
@@ -881,6 +1001,9 @@ func (r *ModelRegistry) loadModels(
 		r.loadError = result.errorMessage
 	}
 	r.configuredModelOverrides = result.modelOverrides
+	r.modelsJSONProviders = cloneModelsJSONProviderConfigs(
+		result.providers,
+	)
 	builtIns := r.loadBuiltInModels(result.overrides)
 	r.baseModels = mergeCustomModels(builtIns, result.models)
 	if err := r.configureDynamicModels(result.radiusProviders); err != nil {
@@ -895,6 +1018,7 @@ func (r *ModelRegistry) loadModels(
 
 func (r *ModelRegistry) loadCustomModels() customModelsResult {
 	result := customModelsResult{
+		providers:       map[string]modelsJSONProviderConfig{},
 		overrides:       map[string]ProviderConfigInput{},
 		modelOverrides:  map[string]map[string]ModelOverride{},
 		radiusProviders: []radiusRegistryProvider{},
@@ -923,6 +1047,7 @@ func (r *ModelRegistry) loadCustomModels() customModelsResult {
 		result.errorMessage = fmt.Sprintf("Failed to load models.json: %s\n\nFile: %s", err, r.modelsJSONPath)
 		return result
 	}
+	result.providers = cloneModelsJSONProviderConfigs(config.Providers)
 
 	for _, providerName := range sortedModelsJSONProviderNames(
 		config.Providers,
@@ -942,16 +1067,12 @@ func (r *ModelRegistry) loadCustomModels() customModelsResult {
 			result.overrides[providerName] = ProviderConfigInput{BaseURL: providerConfig.BaseURL, Compat: providerConfig.Compat}
 		}
 		r.storeProviderRequestConfig(providerName, ProviderConfigInput{
-			APIKey:  providerConfig.APIKey,
-			Headers: providerConfig.Headers,
-			AuthHeader: providerConfig.AuthHeader != nil &&
-				*providerConfig.AuthHeader,
+			APIKey:     providerConfig.APIKey,
+			Headers:    providerConfig.Headers,
+			AuthHeader: providerConfig.AuthHeader,
 		})
 		if len(providerConfig.ModelOverrides) > 0 {
 			result.modelOverrides[providerName] = providerConfig.ModelOverrides
-			for modelID, override := range providerConfig.ModelOverrides {
-				r.storeModelHeaders(providerName, modelID, override.Headers)
-			}
 		}
 	}
 	result.models = r.parseModels(config)
@@ -1075,7 +1196,6 @@ func (r *ModelRegistry) parseModels(config modelRegistryConfig) []llm.Model {
 			if api == "" || baseURL == "" {
 				continue
 			}
-			r.storeModelHeaders(providerName, definition.ID, definition.Headers)
 			models = append(models, buildModelFromDefinition(providerName, api, baseURL, providerConfig.Compat, definition))
 		}
 	}
@@ -1127,37 +1247,51 @@ func (r *ModelRegistry) validateProviderConfig(providerName string, config Provi
 	if config.StreamSimple != nil && config.API == "" {
 		return fmt.Errorf(`Provider %s: "api" is required when registering streamSimple.`, providerName)
 	}
-	if len(config.Models) == 0 {
+	if config.Models == nil {
 		return nil
 	}
-	if config.BaseURL == "" {
-		return fmt.Errorf(`Provider %s: "baseUrl" is required when defining models.`, providerName)
-	}
-	if config.APIKey == "" && config.OAuth == nil {
-		return fmt.Errorf(`Provider %s: "apiKey" or "oauth" is required when defining models.`, providerName)
-	}
-	for _, model := range config.Models {
-		if model.API == "" && config.API == "" {
-			return fmt.Errorf(`Provider %s, model %s: no "api" specified.`, providerName, model.ID)
+	var base *llm.Provider
+	if r != nil {
+		r.mu.RLock()
+		dynamicModels := r.dynamicModels
+		r.mu.RUnlock()
+		if dynamicModels != nil {
+			base, _ = dynamicModels.GetProvider(providerName)
 		}
 	}
-	return nil
+	if base == nil {
+		base, _ = llm.NewBuiltinProvider(providerName)
+	}
+	modelsJSON, hasModelsJSON, _, _ :=
+		r.providerCompositionSnapshot(providerName)
+	input := modelProviderComposition{
+		providerID:    providerName,
+		base:          base,
+		modelsJSON:    modelsJSON,
+		hasModelsJSON: hasModelsJSON,
+		extension:     config,
+		hasExtension:  true,
+	}
+	return validateExtensionProvider(input)
 }
 
-func (r *ModelRegistry) applyProviderConfig(providerName string, config ProviderConfigInput) {
-	if config.OAuth != nil {
+func (r *ModelRegistry) applyProviderConfig(
+	providerName string,
+	config ProviderConfigInput,
+	legacyGlobals bool,
+) {
+	if legacyGlobals && config.OAuth != nil {
 		r.registerOAuthOverride(providerName, *config.OAuth)
 	}
-	if config.StreamSimple != nil {
+	if legacyGlobals && config.StreamSimple != nil {
 		r.registerAPIOverride(providerName, config.API, config.StreamSimple)
 	}
 	r.storeProviderRequestConfig(providerName, config)
-	if len(config.Models) > 0 {
+	if config.Models != nil {
 		r.models = removeModelsForProvider(r.models, providerName)
 		for _, definition := range config.Models {
 			api := firstNonEmptyString(definition.API, config.API)
 			baseURL := firstNonEmptyString(definition.BaseURL, config.BaseURL)
-			r.storeModelHeaders(providerName, definition.ID, definition.Headers)
 			r.models = append(r.models, buildModelFromDefinition(providerName, api, baseURL, config.Compat, definition))
 		}
 		return
@@ -1176,6 +1310,7 @@ func (r *ModelRegistry) applyProviderConfig(providerName string, config Provider
 }
 
 func (r *ModelRegistry) upsertRegisteredProvider(providerName string, config ProviderConfigInput) {
+	config = cloneRuntimeProviderConfig(config)
 	existing, ok := r.registeredProviders[providerName]
 	if !ok {
 		r.registeredProviders[providerName] = config
@@ -1227,28 +1362,43 @@ func (r *ModelRegistry) restoreOAuthProvider(providerName string) {
 	delete(r.oauthProviderRestores, providerName)
 }
 
+func (r *ModelRegistry) releaseLegacyProviderOverrides() {
+	for index := len(r.registeredOrder) - 1; index >= 0; index-- {
+		providerName := r.registeredOrder[index]
+		r.restoreAPIProvider(providerName)
+		r.restoreOAuthProvider(providerName)
+	}
+}
+
 func (r *ModelRegistry) storeProviderRequestConfig(providerName string, config ProviderConfigInput) {
-	if config.APIKey == "" && len(config.Headers) == 0 && !config.AuthHeader {
+	if config.APIKey == "" && len(config.Headers) == 0 && config.AuthHeader == nil {
 		return
 	}
-	r.providerRequestConfigs[providerName] = ProviderRequestConfig{
+	stored := r.providerRequestConfigs[providerName]
+	if config.APIKey != "" {
+		stored.APIKey = config.APIKey
+	}
+	stored.Headers = mergeHeadersCaseInsensitive(
+		stored.Headers,
+		config.Headers,
+	)
+	if config.AuthHeader != nil {
+		stored.AuthHeader = *config.AuthHeader
+	}
+	r.providerRequestConfigs[providerName] = stored
+}
+
+func (r *ModelRegistry) resetProviderRequestConfig(providerName string) {
+	delete(r.providerRequestConfigs, providerName)
+	config, ok := r.modelsJSONProviders[providerName]
+	if !ok {
+		return
+	}
+	r.storeProviderRequestConfig(providerName, ProviderConfigInput{
 		APIKey:     config.APIKey,
-		Headers:    cloneStringMap(config.Headers),
+		Headers:    cloneOptionalStringMap(config.Headers),
 		AuthHeader: config.AuthHeader,
-	}
-}
-
-func (r *ModelRegistry) storeModelHeaders(providerName, modelID string, headers map[string]string) {
-	key := r.modelRequestKey(providerName, modelID)
-	if len(headers) == 0 {
-		delete(r.modelRequestHeaders, key)
-		return
-	}
-	r.modelRequestHeaders[key] = cloneStringMap(headers)
-}
-
-func (r *ModelRegistry) modelRequestKey(providerName, modelID string) string {
-	return providerName + ":" + modelID
+	})
 }
 
 func buildModelFromDefinition(providerName, api, baseURL string, providerCompat llm.ModelCompat, definition ProviderModelDefinition) llm.Model {
@@ -1316,6 +1466,12 @@ func applyModelOverride(model llm.Model, override ModelOverride) llm.Model {
 		if override.Cost.CacheWrite != nil {
 			model.Cost.CacheWrite = *override.Cost.CacheWrite
 		}
+		if override.Cost.Tiers != nil {
+			model.Cost.Tiers = append(
+				[]llm.ModelCostTier(nil),
+				(*override.Cost.Tiers)...,
+			)
+		}
 	}
 	model.Compat = mergeCompat(model.Compat, override.Compat)
 	return model
@@ -1340,6 +1496,8 @@ func mergeCustomModels(builtIns, customModels []llm.Model) []llm.Model {
 }
 
 func mergeProviderConfig(existing, incoming ProviderConfigInput) ProviderConfigInput {
+	existing = cloneRuntimeProviderConfig(existing)
+	incoming = cloneRuntimeProviderConfig(incoming)
 	if incoming.Name != "" {
 		existing.Name = incoming.Name
 	}
@@ -1353,22 +1511,27 @@ func mergeProviderConfig(existing, incoming ProviderConfigInput) ProviderConfigI
 		existing.API = incoming.API
 	}
 	if incoming.Headers != nil {
-		existing.Headers = incoming.Headers
+		existing.Headers = cloneOptionalStringMap(incoming.Headers)
 	}
-	if incoming.AuthHeader {
-		existing.AuthHeader = true
+	if incoming.AuthHeader != nil {
+		authHeader := *incoming.AuthHeader
+		existing.AuthHeader = &authHeader
 	}
 	if incoming.OAuth != nil {
-		existing.OAuth = incoming.OAuth
+		oauth := *incoming.OAuth
+		existing.OAuth = &oauth
 	}
 	if incoming.StreamSimple != nil {
 		existing.StreamSimple = incoming.StreamSimple
 	}
+	if incoming.RefreshModels != nil {
+		existing.RefreshModels = incoming.RefreshModels
+	}
 	if hasCompat(incoming.Compat) {
 		existing.Compat = mergeCompat(existing.Compat, incoming.Compat)
 	}
-	if len(incoming.Models) > 0 {
-		existing.Models = incoming.Models
+	if incoming.Models != nil {
+		existing.Models = cloneProviderModelDefinitions(incoming.Models)
 	}
 	if len(incoming.ModelOverrides) > 0 {
 		if existing.ModelOverrides == nil {
@@ -1606,6 +1769,17 @@ func removeTrailingCommas(input string) string {
 
 func cloneStringMap(values map[string]string) map[string]string {
 	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneOptionalStringMap(values map[string]string) map[string]string {
+	if values == nil {
 		return nil
 	}
 	cloned := make(map[string]string, len(values))

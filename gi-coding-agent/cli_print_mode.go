@@ -300,6 +300,12 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	if err != nil {
 		return nil, err
 	}
+	if args.Offline {
+		modelRegistry.mu.Lock()
+		modelRegistry.modelNetworkEnabled = false
+		modelRegistry.initialModelNetwork = false
+		modelRegistry.mu.Unlock()
+	}
 	modelRuntime, err := NewModelRuntimeFromRegistry(modelRegistry)
 	if err != nil {
 		return nil, err
@@ -458,15 +464,13 @@ func cliModelRuntimePreflight(
 			return err
 		}
 		if auth == nil {
+			if providerNeedsExplicitAPIKey(model.Provider) {
+				return errors.New(
+					formatNoAPIKeyFoundMessage(model.Provider),
+				)
+			}
 			return errors.New(
 				"Provider is not configured: " + model.Provider,
-			)
-		}
-		if args.APIKey == "" &&
-			auth.APIKey == "" &&
-			providerNeedsExplicitAPIKey(model.Provider) {
-			return errors.New(
-				formatNoAPIKeyFoundMessage(model.Provider),
 			)
 		}
 		return nil

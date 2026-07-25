@@ -183,7 +183,7 @@ func (p *RPCLineProcessor) handleRegisterProvider(request HostActionRequest) Hos
 		APIKey     string                    `json:"apiKey"`
 		API        string                    `json:"api"`
 		Headers    map[string]string         `json:"headers"`
-		AuthHeader bool                      `json:"authHeader"`
+		AuthHeader *bool                     `json:"authHeader"`
 		Compat     llm.ModelCompat           `json:"compat"`
 		Models     []ProviderModelDefinition `json:"models"`
 	}
@@ -207,14 +207,15 @@ func (p *RPCLineProcessor) handleRegisterProvider(request HostActionRequest) Hos
 	if override.API == "" {
 		override.API = params.API
 	}
-	if len(override.Headers) == 0 {
-		override.Headers = cloneStringMap(params.Headers)
+	if override.Headers == nil && params.Headers != nil {
+		override.Headers = cloneOptionalStringMap(params.Headers)
 	}
-	if !override.AuthHeader {
-		override.AuthHeader = params.AuthHeader
+	if override.AuthHeader == nil && params.AuthHeader != nil {
+		authHeader := *params.AuthHeader
+		override.AuthHeader = &authHeader
 	}
-	if len(override.Models) == 0 {
-		override.Models = append([]ProviderModelDefinition(nil), params.Models...)
+	if override.Models == nil && params.Models != nil {
+		override.Models = cloneProviderModelDefinitions(params.Models)
 	}
 	if !reflect.ValueOf(params.Compat).IsZero() && reflect.ValueOf(override.Compat).IsZero() {
 		override.Compat = params.Compat

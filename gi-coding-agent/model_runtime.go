@@ -52,6 +52,7 @@ type ModelRuntime struct {
 	registry          *ModelRegistry
 	models            *llm.Models
 	builtinProviders  map[string]*llm.Provider
+	builtinsReady     bool
 	nativeProviders   map[string]*llm.Provider
 	nativeOrder       []string
 	compositionErrors map[string]string
@@ -77,10 +78,15 @@ func NewModelRuntime(
 	}
 	registry := options.Registry
 	if registry == nil {
+		registryOptions := options.ModelRegistryOptions
+		allowModelNetwork := registryOptions.AllowModelNetwork
+		registryOptions.AllowModelNetwork = false
 		registry = NewModelRegistryWithOptions(
 			ctx,
-			options.ModelRegistryOptions,
+			registryOptions,
 		)
+		registry.initialModelNetwork = allowModelNetwork &&
+			registry.modelNetworkEnabled
 	}
 	runtime := &ModelRuntime{
 		registry:          registry,
@@ -88,13 +94,51 @@ func NewModelRuntime(
 		nativeProviders:   map[string]*llm.Provider{},
 		compositionErrors: map[string]string{},
 	}
-	registry.modelRuntime = runtime
 	runtime.mu.Lock()
-	err := runtime.rebuildProvidersLocked()
+	err := runtime.ensureBuiltinProvidersLocked()
 	runtime.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
+	registry.mu.Lock()
+	if registry.modelRuntime != nil {
+		registry.mu.Unlock()
+		return nil, errors.New(
+			"model registry is already bound to a model runtime",
+		)
+	}
+	registry.releaseLegacyProviderOverrides()
+	registry.modelRuntime = runtime
+	registry.mu.Unlock()
+	runtime.mu.Lock()
+	err = runtime.rebuildProvidersLocked()
+	runtime.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	refreshCtx, cancel := modelRegistryRefreshContext(
+		ctx,
+		registry.initialModelNetwork,
+		registry.modelRefreshTimeout,
+	)
+	runtime.mu.RLock()
+	models := runtime.models
+	runtime.mu.RUnlock()
+	if models != nil {
+		_ = models.Refresh(
+			refreshCtx,
+			llm.ModelsRefreshOptions{
+				Offline: !registry.initialModelNetwork,
+			},
+		)
+		runtime.mu.Lock()
+		if runtime.models == models {
+			runtime.updateModelSnapshotLocked()
+		}
+		runtime.mu.Unlock()
+		registry.publishRuntimeModels(models.GetModels())
+	}
+	cancel()
 	// Availability failures are status, not construction failures. The model
 	// catalog remains useful for explicit model selection and diagnostics.
 	_ = runtime.RefreshAvailability(ctx)
@@ -148,10 +192,7 @@ func (r *ModelRuntime) providerIDsLocked() []string {
 		appendID(providerID)
 	}
 	if r.registry != nil {
-		for _, model := range r.registry.models {
-			appendID(model.Provider)
-		}
-		for _, id := range r.registry.registeredOrder {
+		for _, id := range r.registry.compositionProviderIDs() {
 			appendID(id)
 		}
 	}
@@ -175,106 +216,87 @@ func (r *ModelRuntime) baseProviderLocked(
 	return r.builtinProviders[providerID]
 }
 
-func (r *ModelRuntime) providerModelsLocked(
-	providerID string,
-	base *llm.Provider,
-) ([]llm.Model, error) {
-	if native := r.nativeProviders[providerID]; native != nil {
-		models, err := native.GetModels()
-		if err != nil {
-			return nil, err
-		}
-		if config, ok := r.registry.registeredProviders[providerID]; ok {
-			if len(config.Models) > 0 {
-				models = modelsForProvider(
-					r.registry.models,
-					providerID,
-				)
-			} else {
-				models = applyRuntimeProviderConfig(models, config)
-			}
-		}
-		models = applyRuntimeModelOverrides(
-			models,
-			r.registry.configuredModelOverrides[providerID],
-		)
-		return cloneRuntimeModels(models), nil
-	}
-	models := modelsForProvider(r.registry.models, providerID)
-	if len(models) == 0 && base != nil {
-		var err error
-		models, err = base.GetModels()
-		if err != nil {
-			return nil, err
-		}
-	}
-	return cloneRuntimeModels(models), nil
-}
-
 func (r *ModelRuntime) recomposeProviderLocked(
 	collection *llm.Models,
 	providerID string,
 ) error {
 	base := r.baseProviderLocked(providerID)
-	models, err := r.providerModelsLocked(providerID, base)
+	modelsJSON, hasModelsJSON, extension, hasExtension :=
+		r.registry.providerCompositionSnapshot(providerID)
+	if base == nil && !hasModelsJSON && !hasExtension {
+		return nil
+	}
+	provider, err := composeModelProvider(
+		modelProviderComposition{
+			providerID:    providerID,
+			base:          base,
+			modelsJSON:    modelsJSON,
+			hasModelsJSON: hasModelsJSON,
+			extension:     extension,
+			hasExtension:  hasExtension,
+		},
+	)
+	if err != nil {
+		if base == nil {
+			return err
+		}
+		if setErr := collection.SetProvider(base); setErr != nil {
+			return errors.Join(err, setErr)
+		}
+		return err
+	}
+	return collection.SetProvider(provider)
+}
+
+func (r *ModelRuntime) ensureBuiltinProvidersLocked() error {
+	if r.builtinsReady {
+		return nil
+	}
+	builtins, err := llm.BuiltinProviders()
 	if err != nil {
 		return err
 	}
-	config, hasConfig := r.registry.registeredProviders[providerID]
-	if base == nil && len(models) == 0 && !hasConfig {
-		return nil
+	providers := make(
+		map[string]*llm.Provider,
+		len(builtins),
+	)
+	userAgent := strings.TrimSpace(r.registry.catalogUserAgent)
+	if userAgent == "" {
+		userAgent = GetGiUserAgent(DefaultCodingAgentVersion)
 	}
-
-	provider := &llm.Provider{
-		ID: providerID,
-		ModelSource: func() ([]llm.Model, error) {
-			return cloneRuntimeModels(models), nil
-		},
-	}
-	if base != nil {
-		provider.Name = base.Name
-		provider.BaseURL = base.BaseURL
-		provider.Headers = cloneStringMap(base.Headers)
-		provider.Auth = base.Auth
-		provider.RefreshModelsFunc = base.RefreshModelsFunc
-		provider.FilterModelsFunc = base.FilterModelsFunc
-		provider.StreamFunc = base.Stream
-		provider.StreamSimpleFunc = base.StreamSimple
-	}
-	if provider.Name == "" {
-		provider.Name = r.registry.GetProviderDisplayName(providerID)
-	}
-	if hasConfig {
-		if config.Name != "" {
-			provider.Name = config.Name
-		}
-		if config.BaseURL != "" {
-			provider.BaseURL = config.BaseURL
-		}
-		if config.StreamSimple != nil {
-			provider.StreamSimpleFunc = config.StreamSimple
-			provider.StreamFunc = func(
-				model llm.Model,
-				llmContext llm.Context,
-				options llm.StreamOptions,
-			) (*llm.AssistantMessageEventStream, error) {
-				return config.StreamSimple(model, llmContext, options)
+	for _, provider := range builtins {
+		providerID := provider.ID
+		if provider.ID != RadiusProviderID {
+			provider, err = llm.WithRemoteCatalog(
+				provider,
+				llm.RemoteCatalogOptions{
+					BaseURL:          r.registry.catalogBaseURL,
+					Client:           r.registry.catalogClient,
+					UserAgent:        userAgent,
+					LocalGeneratedAt: llm.GetBuiltinModelDataGeneratedAt(),
+				},
+			)
+			if err != nil {
+				return fmt.Errorf(
+					"configure remote catalog for %s: %w",
+					providerID,
+					err,
+				)
 			}
 		}
+		providers[provider.ID] = provider
 	}
-	if provider.Auth.APIKey == nil && provider.Auth.OAuth == nil {
-		provider.Auth = modelRuntimeCompatibilityAuth(providerID)
-	}
-	if provider.StreamFunc == nil && provider.StreamSimpleFunc == nil {
-		provider.StreamFunc, provider.StreamSimpleFunc =
-			modelRuntimeAPIDispatch(models)
-	}
-	return collection.SetProvider(provider)
+	r.builtinProviders = providers
+	r.builtinsReady = true
+	return nil
 }
 
 func (r *ModelRuntime) rebuildProvidersLocked() error {
 	if r == nil || r.registry == nil {
 		return errors.New("model runtime requires a registry")
+	}
+	if err := r.ensureBuiltinProvidersLocked(); err != nil {
+		return err
 	}
 	var credentials llm.CredentialStore = llm.NewInMemoryCredentialStore()
 	if r.registry.authStorage != nil {
@@ -289,17 +311,6 @@ func (r *ModelRuntime) rebuildProvidersLocked() error {
 		ModelsStore: modelsStore,
 	})
 	r.compositionErrors = map[string]string{}
-	builtins, err := llm.BuiltinProviders()
-	if err != nil {
-		return err
-	}
-	r.builtinProviders = make(
-		map[string]*llm.Provider,
-		len(builtins),
-	)
-	for _, provider := range builtins {
-		r.builtinProviders[provider.ID] = provider
-	}
 	for _, providerID := range r.providerIDsLocked() {
 		if err := r.recomposeProviderLocked(collection, providerID); err != nil {
 			r.compositionErrors[providerID] = err.Error()
@@ -705,8 +716,8 @@ func (r *ModelRuntime) GetRegisteredNativeProvider(
 	return provider, ok
 }
 
-// GetCompatibilityRequestConfig exposes only the legacy request overlay. The
-// returned maps are detached from runtime state.
+// GetCompatibilityRequestConfig returns a detached legacy request projection
+// assembled from the same declarative provider layers as canonical auth.
 func (r *ModelRuntime) GetCompatibilityRequestConfig(
 	model llm.Model,
 ) ProviderRequestConfig {
@@ -714,10 +725,27 @@ func (r *ModelRuntime) GetCompatibilityRequestConfig(
 		return ProviderRequestConfig{}
 	}
 	r.mu.RLock()
-	config := r.registry.providerRequestConfigs[model.Provider]
+	registry := r.registry
 	r.mu.RUnlock()
+	if registry == nil {
+		return ProviderRequestConfig{}
+	}
+	registry.mu.RLock()
+	config := registry.providerRequestConfigs[model.Provider]
 	config.Headers = cloneStringMap(config.Headers)
-	return config
+	modelsJSON, hasModelsJSON :=
+		registry.modelsJSONProviders[model.Provider]
+	extension, hasExtension :=
+		registry.registeredProviders[model.Provider]
+	registry.mu.RUnlock()
+	return resolveCompatibilityRequestConfig(
+		model,
+		config,
+		cloneModelsJSONProviderConfig(modelsJSON),
+		hasModelsJSON,
+		cloneRuntimeProviderConfig(extension),
+		hasExtension,
+	)
 }
 
 // IsUsingOAuth reads the published auth snapshot.
@@ -761,12 +789,6 @@ func (r *ModelRuntime) GetAuth(
 	r.mu.RLock()
 	models := r.models
 	registry := r.registry
-	_, native := r.nativeProviders[model.Provider]
-	_, builtin := r.builtinProviders[model.Provider]
-	dynamic := false
-	if registry != nil && registry.dynamicModels != nil {
-		_, dynamic = registry.dynamicModels.GetProvider(model.Provider)
-	}
 	if models == nil {
 		r.mu.RUnlock()
 		return nil, errors.New("model runtime is not initialized")
@@ -778,59 +800,53 @@ func (r *ModelRuntime) GetAuth(
 			Msg:  fmt.Sprintf("Unknown provider: %s", model.Provider),
 		}
 	}
-	if !native && !builtin && !dynamic {
-		resolved := registry.GetAPIKeyAndHeadersWithOverrides(
-			ctx,
-			model,
-			overrides,
-		)
-		r.mu.RUnlock()
-		if !resolved.OK {
-			return nil, errors.New(resolved.Error)
-		}
-		return &resolved, nil
-	}
-	resolution, err := models.GetModelAuth(ctx, model, overrides)
-	compatibility := registry.GetAPIKeyAndHeadersWithOverrides(
-		ctx,
-		model,
-		overrides,
+	var (
+		modelsJSON    modelsJSONProviderConfig
+		hasModelsJSON bool
+		extension     ProviderConfigInput
+		hasExtension  bool
 	)
+	if registry != nil {
+		registry.mu.RLock()
+		modelsJSON, hasModelsJSON =
+			registry.modelsJSONProviders[model.Provider]
+		extension, hasExtension =
+			registry.registeredProviders[model.Provider]
+		modelsJSON = cloneModelsJSONProviderConfig(modelsJSON)
+		extension = cloneRuntimeProviderConfig(extension)
+		registry.mu.RUnlock()
+	}
 	r.mu.RUnlock()
+	resolution, err := models.GetModelAuth(ctx, model, overrides)
 	if err != nil {
 		return nil, err
 	}
-	if !compatibility.OK {
-		return nil, errors.New(compatibility.Error)
-	}
 	if resolution == nil {
-		return &compatibility, nil
+		return nil, nil
 	}
-	apiKey := resolution.Auth.APIKey
-	if overrides.APIKey != nil ||
-		runtimeHasConfiguredAPIKey(registry, model.Provider) ||
-		apiKey == "" {
-		apiKey = compatibility.APIKey
+	requestEnv := mergeResolvedProviderEnv(
+		resolution.Env,
+		overrides.Env,
+	)
+	modelHeaders, err := resolveConfiguredModelHeaders(
+		model,
+		modelsJSON,
+		hasModelsJSON,
+		extension,
+		hasExtension,
+		requestEnv,
+	)
+	if err != nil {
+		return nil, err
 	}
 	return &ResolvedRequestAuth{
 		OK:             true,
-		APIKey:         apiKey,
-		Headers:        mergeHeadersCaseInsensitive(resolution.Auth.Headers, compatibility.Headers),
-		HeaderRemovals: clearResolvedHeaderRemovals(appendRuntimeHeaderRemovals(resolution.Auth.HeaderRemovals, compatibility.HeaderRemovals), compatibility.Headers),
-		BaseURL:        firstNonEmptyString(resolution.Auth.BaseURL, compatibility.BaseURL),
-		Env:            mergeResolvedProviderEnv(resolution.Env, compatibility.Env),
+		APIKey:         resolution.Auth.APIKey,
+		Headers:        mergeHeadersCaseInsensitive(resolution.Auth.Headers, modelHeaders),
+		HeaderRemovals: clearResolvedHeaderRemovals(resolution.Auth.HeaderRemovals, modelHeaders),
+		BaseURL:        resolution.Auth.BaseURL,
+		Env:            requestEnv,
 	}, nil
-}
-
-func runtimeHasConfiguredAPIKey(
-	registry *ModelRegistry,
-	providerID string,
-) bool {
-	if registry == nil {
-		return false
-	}
-	config, ok := registry.providerRequestConfigs[providerID]
-	return ok && config.APIKey != ""
 }
 
 // SetRuntimeAPIKey installs a process-local key and publishes the resulting
@@ -850,7 +866,10 @@ func (r *ModelRuntime) SetRuntimeAPIKey(
 	}
 	r.registry.authStorage.SetRuntimeAPIKey(providerID, apiKey)
 	r.mu.Unlock()
-	return r.ForceRefreshAvailability(ctx)
+	_, err := r.Refresh(ctx, ModelRegistryRefreshOptions{
+		Timeout: r.registry.modelRefreshTimeout,
+	})
+	return err
 }
 
 // RemoveRuntimeAPIKey removes only the process-local key.
@@ -868,7 +887,11 @@ func (r *ModelRuntime) RemoveRuntimeAPIKey(
 	}
 	r.registry.authStorage.RemoveRuntimeAPIKey(providerID)
 	r.mu.Unlock()
-	return r.ForceRefreshAvailability(ctx)
+	_, err := r.Refresh(ctx, ModelRegistryRefreshOptions{
+		AllowNetwork: r.registry.modelNetworkEnabled,
+		Timeout:      r.registry.modelRefreshTimeout,
+	})
+	return err
 }
 
 // ListCredentials returns metadata only; request secrets remain inside the
@@ -947,13 +970,6 @@ func (r *ModelRuntime) prepareRequest(
 			Code: llm.ModelsErrorAuth,
 			Msg:  fmt.Sprintf("Provider is not configured: %s", model.Provider),
 		}
-	}
-	if apiKeyOverride == nil &&
-		resolution.APIKey == "" &&
-		providerNeedsExplicitAPIKey(model.Provider) {
-		return preparedModelRuntimeRequest{}, errors.New(
-			formatNoAPIKeyFoundMessage(model.Provider),
-		)
 	}
 
 	r.mu.RLock()
@@ -1096,14 +1112,13 @@ func (r *ModelRuntime) Login(
 	if err != nil {
 		return llm.Credential{}, err
 	}
-	r.mu.Lock()
-	r.registry.Refresh()
-	err = r.rebuildProvidersLocked()
-	r.mu.Unlock()
+	_, err = r.Refresh(ctx, ModelRegistryRefreshOptions{
+		AllowNetwork: r.registry.modelNetworkEnabled,
+		Timeout:      r.registry.modelRefreshTimeout,
+	})
 	if err != nil {
 		return llm.Credential{}, err
 	}
-	_ = r.ForceRefreshAvailability(ctx)
 	return credential, nil
 }
 
@@ -1125,14 +1140,11 @@ func (r *ModelRuntime) Logout(
 	if err := models.Logout(ctx, providerID); err != nil {
 		return err
 	}
-	r.mu.Lock()
-	r.registry.Refresh()
-	err := r.rebuildProvidersLocked()
-	r.mu.Unlock()
-	if err != nil {
-		return err
-	}
-	return r.ForceRefreshAvailability(ctx)
+	_, err := r.Refresh(ctx, ModelRegistryRefreshOptions{
+		AllowNetwork: r.registry.modelNetworkEnabled,
+		Timeout:      r.registry.modelRefreshTimeout,
+	})
+	return err
 }
 
 // Refresh reparses configuration, refreshes dynamic catalogs according to the
@@ -1164,10 +1176,35 @@ func (r *ModelRuntime) Refresh(
 	r.refreshMu.Unlock()
 
 	r.mu.Lock()
-	r.registry.Refresh()
-	call.result = r.registry.RefreshModels(ctx, options)
+	r.registry.refreshLocal()
 	call.err = r.rebuildProvidersLocked()
+	models := r.models
 	r.mu.Unlock()
+	if call.err == nil && models != nil {
+		refreshCtx, cancel := modelRegistryRefreshContext(
+			ctx,
+			options.AllowNetwork,
+			options.Timeout,
+		)
+		call.result = models.Refresh(
+			refreshCtx,
+			llm.ModelsRefreshOptions{
+				Offline: !options.AllowNetwork,
+				Force:   options.Force,
+			},
+		)
+		cancel()
+		publish := false
+		r.mu.Lock()
+		if r.models == models {
+			r.updateModelSnapshotLocked()
+			publish = true
+		}
+		r.mu.Unlock()
+		if publish {
+			r.registry.publishRuntimeModels(models.GetModels())
+		}
+	}
 	// Availability failures are recorded by ForceRefreshAvailability and do
 	// not roll back or hide a successfully refreshed model catalog.
 	_ = r.ForceRefreshAvailability(ctx)
@@ -1193,17 +1230,23 @@ func (r *ModelRuntime) RegisterNativeProvider(
 		return errors.New("provider ID is required")
 	}
 	r.mu.Lock()
-	if _, exists := r.registry.registeredProviders[provider.ID]; exists {
-		r.registry.UnregisterProvider(provider.ID)
+	if _, exists := r.registry.GetRegisteredProviderConfig(
+		provider.ID,
+	); exists {
+		r.registry.unregisterProviderLocal(provider.ID)
 	}
 	if _, exists := r.nativeProviders[provider.ID]; !exists {
 		r.nativeOrder = append(r.nativeOrder, provider.ID)
 	}
 	r.nativeProviders[provider.ID] = provider
 	err := r.rebuildProvidersLocked()
+	models := r.models
 	r.mu.Unlock()
 	if err != nil {
 		return err
+	}
+	if models != nil {
+		r.registry.publishRuntimeModels(models.GetModels())
 	}
 	_ = r.ForceRefreshAvailability(context.Background())
 	return nil
@@ -1218,16 +1261,20 @@ func (r *ModelRuntime) RegisterProvider(
 		return errors.New("model runtime is required")
 	}
 	r.mu.Lock()
-	if err := r.registry.RegisterProvider(providerID, config); err != nil {
+	if err := r.registry.registerProviderLocal(providerID, config); err != nil {
 		r.mu.Unlock()
 		return err
 	}
 	delete(r.nativeProviders, providerID)
 	r.nativeOrder = removeString(r.nativeOrder, providerID)
 	err := r.rebuildProvidersLocked()
+	models := r.models
 	r.mu.Unlock()
 	if err != nil {
 		return err
+	}
+	if models != nil {
+		r.registry.publishRuntimeModels(models.GetModels())
 	}
 	_ = r.ForceRefreshAvailability(context.Background())
 	return nil
@@ -1240,45 +1287,16 @@ func (r *ModelRuntime) UnregisterProvider(providerID string) {
 		return
 	}
 	r.mu.Lock()
-	r.registry.UnregisterProvider(providerID)
+	r.registry.unregisterProviderLocal(providerID)
 	delete(r.nativeProviders, providerID)
 	r.nativeOrder = removeString(r.nativeOrder, providerID)
 	_ = r.rebuildProvidersLocked()
+	models := r.models
 	r.mu.Unlock()
+	if models != nil {
+		r.registry.publishRuntimeModels(models.GetModels())
+	}
 	_ = r.ForceRefreshAvailability(context.Background())
-}
-
-func modelsForProvider(
-	models []llm.Model,
-	providerID string,
-) []llm.Model {
-	result := make([]llm.Model, 0)
-	for _, model := range models {
-		if model.Provider == providerID {
-			result = append(result, cloneRuntimeModel(model))
-		}
-	}
-	return result
-}
-
-func applyRuntimeProviderConfig(
-	models []llm.Model,
-	config ProviderConfigInput,
-) []llm.Model {
-	result := cloneRuntimeModels(models)
-	for index := range result {
-		if config.BaseURL != "" {
-			result[index].BaseURL = config.BaseURL
-		}
-		result[index].Compat = mergeCompat(
-			result[index].Compat,
-			config.Compat,
-		)
-		if override, ok := config.ModelOverrides[result[index].ID]; ok {
-			result[index] = applyModelOverride(result[index], override)
-		}
-	}
-	return result
 }
 
 func applyRuntimeModelOverrides(
@@ -1292,115 +1310,6 @@ func applyRuntimeModelOverrides(
 		}
 	}
 	return result
-}
-
-func modelRuntimeCompatibilityAuth(
-	providerID string,
-) llm.ProviderAuth {
-	return llm.ProviderAuth{
-		APIKey: &llm.APIKeyAuth{
-			Name: "API key",
-			Login: func(
-				ctx context.Context,
-				interaction llm.AuthInteraction,
-			) (llm.Credential, error) {
-				if interaction == nil {
-					return llm.Credential{}, errors.New(
-						"auth interaction is required",
-					)
-				}
-				key, err := interaction.Prompt(ctx, llm.AuthPrompt{
-					Type:    llm.AuthPromptSecret,
-					Message: providerID + " API key",
-				})
-				if err != nil {
-					return llm.Credential{}, err
-				}
-				return llm.Credential{
-					Type: llm.CredentialTypeAPIKey,
-					Key:  key,
-				}, nil
-			},
-			Check: func(
-				_ context.Context,
-				input llm.APIKeyCheckInput,
-			) (*llm.AuthCheck, error) {
-				if input.Credential == nil ||
-					input.Credential.Type != llm.CredentialTypeAPIKey ||
-					input.Credential.Key == "" {
-					return nil, nil
-				}
-				return &llm.AuthCheck{
-					Type:   llm.CredentialTypeAPIKey,
-					Source: "stored API key",
-				}, nil
-			},
-			Resolve: func(
-				_ context.Context,
-				input llm.APIKeyResolveInput,
-			) (*llm.AuthResult, error) {
-				if input.Credential == nil ||
-					input.Credential.Type != llm.CredentialTypeAPIKey {
-					return nil, nil
-				}
-				return &llm.AuthResult{
-					Auth: llm.ModelAuth{
-						APIKey: input.Credential.Key,
-					},
-					Env:    cloneResolvedProviderEnv(input.Credential.Env),
-					Source: "stored API key",
-				}, nil
-			},
-		},
-	}
-}
-
-func modelRuntimeAPIDispatch(
-	models []llm.Model,
-) (
-	func(llm.Model, llm.Context, llm.StreamOptions) (*llm.AssistantMessageEventStream, error),
-	func(llm.Model, llm.Context, llm.SimpleStreamOptions) (*llm.AssistantMessageEventStream, error),
-) {
-	providers := map[string]llm.APIProvider{}
-	for _, model := range models {
-		if _, ok := providers[model.API]; ok {
-			continue
-		}
-		providers[model.API] = llm.GetAPIProvider(model.API)
-	}
-	resolve := func(model llm.Model) (llm.APIProvider, error) {
-		provider := providers[model.API]
-		if provider == nil {
-			return nil, fmt.Errorf(
-				"no API provider registered for api: %s",
-				model.API,
-			)
-		}
-		return provider, nil
-	}
-	stream := func(
-		model llm.Model,
-		llmContext llm.Context,
-		options llm.StreamOptions,
-	) (*llm.AssistantMessageEventStream, error) {
-		provider, err := resolve(model)
-		if err != nil {
-			return nil, err
-		}
-		return provider.Stream(model, llmContext, options)
-	}
-	streamSimple := func(
-		model llm.Model,
-		llmContext llm.Context,
-		options llm.SimpleStreamOptions,
-	) (*llm.AssistantMessageEventStream, error) {
-		provider, err := resolve(model)
-		if err != nil {
-			return nil, err
-		}
-		return provider.StreamSimple(model, llmContext, options)
-	}
-	return stream, streamSimple
 }
 
 func completeRuntimeStream(
@@ -1486,22 +1395,15 @@ func cloneRuntimeAnyMap(values map[string]any) map[string]any {
 func cloneRuntimeProviderConfig(
 	config ProviderConfigInput,
 ) ProviderConfigInput {
-	config.Headers = cloneStringMap(config.Headers)
-	config.Models = append(
-		[]ProviderModelDefinition(nil),
-		config.Models...,
-	)
-	for index := range config.Models {
-		config.Models[index].Headers = cloneStringMap(
-			config.Models[index].Headers,
-		)
-		config.Models[index].Input = append(
-			[]string(nil),
-			config.Models[index].Input...,
-		)
-		config.Models[index].ThinkingLevelMap = cloneThinkingLevelMap(
-			config.Models[index].ThinkingLevelMap,
-		)
+	config.Headers = cloneOptionalStringMap(config.Headers)
+	config.Models = cloneProviderModelDefinitions(config.Models)
+	if config.AuthHeader != nil {
+		authHeader := *config.AuthHeader
+		config.AuthHeader = &authHeader
+	}
+	if config.OAuth != nil {
+		oauth := *config.OAuth
+		config.OAuth = &oauth
 	}
 	config.ModelOverrides = cloneModelOverrideMap(
 		config.ModelOverrides,

@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"context"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func TestModelRuntimeOwnsProviderRequestAssemblyPiStyle(
 			APIKey:     "generated-key",
 			API:        "runtime-provider-api",
 			Headers:    map[string]string{"X-Provider": "provider"},
-			AuthHeader: true,
+			AuthHeader: modelRuntimeBoolPointer(true),
 			StreamSimple: func(
 				model llm.Model,
 				_ llm.Context,
@@ -190,8 +191,19 @@ func TestModelRuntimeUsesProviderOwnedAuthProjectionPiStyle(
 			},
 		},
 	)
+	registry := NewInMemoryModelRegistry(authStorage)
+	if err := registry.RegisterProvider(
+		"cloudflare-ai-gateway",
+		ProviderConfigInput{
+			Headers: map[string]string{
+				"authorization": "Explicit token",
+			},
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
 	runtime, err := NewModelRuntimeFromRegistry(
-		NewInMemoryModelRegistry(authStorage),
+		registry,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -224,6 +236,20 @@ func TestModelRuntimeUsesProviderOwnedAuthProjectionPiStyle(
 			"resolved headers = %#v",
 			capturedOptions.Headers,
 		)
+	}
+	if capturedOptions.Headers["authorization"] != "Explicit token" {
+		t.Fatalf(
+			"configured authorization = %#v",
+			capturedOptions.Headers,
+		)
+	}
+	for _, removal := range capturedOptions.HeaderRemovals {
+		if strings.EqualFold(removal, "authorization") {
+			t.Fatalf(
+				"configured authorization remained removed: %#v",
+				capturedOptions.HeaderRemovals,
+			)
+		}
 	}
 	if capturedOptions.Env["CLOUDFLARE_ACCOUNT_ID"] !=
 		"test-account" {

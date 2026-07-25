@@ -276,7 +276,16 @@ func TestModelRegistryModelOverridesAndRefresh(t *testing.T) {
 						"name":    "Custom Sonnet Name",
 						"headers": map[string]string{"X-Custom-Model-Header": "value"},
 						"compat":  map[string]any{"openRouterRouting": map[string]any{"only": []string{"amazon-bedrock"}}},
-						"cost":    map[string]float64{"input": 99},
+						"cost": map[string]any{
+							"input": 99,
+							"tiers": []map[string]any{{
+								"inputTokensAbove": 123,
+								"input":            100,
+								"output":           200,
+								"cacheRead":        10,
+								"cacheWrite":       20,
+							}},
+						},
 					},
 					"deepseek/deepseek-r1": map[string]any{
 						"compat": map[string]any{"openRouterRouting": map[string]any{"only": []string{"anthropic"}}},
@@ -288,6 +297,13 @@ func TestModelRegistryModelOverridesAndRefresh(t *testing.T) {
 	registry = NewModelRegistry(auth, modelsPath)
 	sonnet := registryMustFind(t, registry, "openrouter", "anthropic/claude-sonnet-4")
 	if sonnet.Name != "Custom Sonnet Name" || sonnet.Cost.Input != 99 ||
+		!reflect.DeepEqual(sonnet.Cost.Tiers, []llm.ModelCostTier{{
+			InputTokensAbove: 123,
+			Input:            100,
+			Output:           200,
+			CacheRead:        10,
+			CacheWrite:       20,
+		}}) ||
 		!reflect.DeepEqual(sonnet.Compat.OpenRouterRouting, map[string]any{"only": []any{"amazon-bedrock"}}) {
 		t.Fatalf("sonnet override = %#v", sonnet)
 	}

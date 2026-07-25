@@ -134,7 +134,7 @@ type ProtocolProviderOverride struct {
 	APIKey         string
 	API            string
 	Headers        map[string]string
-	AuthHeader     bool
+	AuthHeader     *bool
 	Compat         llm.ModelCompat
 	Models         []ProviderModelDefinition
 	ModelOverrides map[string]ModelOverride
@@ -1446,7 +1446,11 @@ func (r *ProtocolExtensionRuntime) registerProvider(source ProtocolSourceInfo, p
 	if provider == "" {
 		return nil
 	}
-	registration := protocolProviderRegistration{source: source, name: provider, config: override}
+	registration := protocolProviderRegistration{
+		source: source,
+		name:   provider,
+		config: cloneProtocolProviderOverride(override),
+	}
 	r.providerRegistrations = append(r.providerRegistrations, registration)
 	r.rebuildProviderMaps()
 	if r.modelRuntime == nil && r.modelRegistry == nil {
@@ -1553,7 +1557,8 @@ func (r *ProtocolExtensionRuntime) rebuildProviderMaps() {
 }
 
 func mergeProtocolProviderOverride(existing, incoming ProtocolProviderOverride) ProtocolProviderOverride {
-	merged := existing
+	merged := cloneProtocolProviderOverride(existing)
+	incoming = cloneProtocolProviderOverride(incoming)
 	if incoming.BaseURL != "" {
 		merged.BaseURL = incoming.BaseURL
 	}
@@ -1563,17 +1568,18 @@ func mergeProtocolProviderOverride(existing, incoming ProtocolProviderOverride) 
 	if incoming.API != "" {
 		merged.API = incoming.API
 	}
-	if len(incoming.Headers) > 0 {
-		merged.Headers = cloneStringMap(incoming.Headers)
+	if incoming.Headers != nil {
+		merged.Headers = cloneOptionalStringMap(incoming.Headers)
 	}
-	if incoming.AuthHeader {
-		merged.AuthHeader = incoming.AuthHeader
+	if incoming.AuthHeader != nil {
+		authHeader := *incoming.AuthHeader
+		merged.AuthHeader = &authHeader
 	}
 	if hasCompat(incoming.Compat) {
 		merged.Compat = mergeCompat(merged.Compat, incoming.Compat)
 	}
-	if len(incoming.Models) > 0 {
-		merged.Models = append([]ProviderModelDefinition(nil), incoming.Models...)
+	if incoming.Models != nil {
+		merged.Models = cloneProviderModelDefinitions(incoming.Models)
 	}
 	if len(incoming.ModelOverrides) > 0 {
 		merged.ModelOverrides = cloneModelOverrideMap(incoming.ModelOverrides)
@@ -1582,6 +1588,24 @@ func mergeProtocolProviderOverride(existing, incoming ProtocolProviderOverride) 
 		merged.StreamSimple = incoming.StreamSimple
 	}
 	return merged
+}
+
+func cloneProtocolProviderOverride(
+	override ProtocolProviderOverride,
+) ProtocolProviderOverride {
+	override.Headers = cloneOptionalStringMap(override.Headers)
+	if override.AuthHeader != nil {
+		authHeader := *override.AuthHeader
+		override.AuthHeader = &authHeader
+	}
+	override.Models = cloneProviderModelDefinitions(override.Models)
+	override.ModelOverrides = cloneModelOverrideMap(
+		override.ModelOverrides,
+	)
+	override.Compat = cloneRuntimeModel(llm.Model{
+		Compat: override.Compat,
+	}).Compat
+	return override
 }
 
 func (r *ProtocolExtensionRuntime) applyProviderRegistration(registration protocolProviderRegistration) error {
@@ -1605,14 +1629,21 @@ func (r *ProtocolExtensionRuntime) applyProviderRegistration(registration protoc
 }
 
 func (o ProtocolProviderOverride) toProviderConfigInput() ProviderConfigInput {
+	var authHeader *bool
+	if o.AuthHeader != nil {
+		value := *o.AuthHeader
+		authHeader = &value
+	}
 	return ProviderConfigInput{
-		BaseURL:        o.BaseURL,
-		APIKey:         o.APIKey,
-		API:            o.API,
-		Headers:        cloneStringMap(o.Headers),
-		AuthHeader:     o.AuthHeader,
-		Compat:         o.Compat,
-		Models:         append([]ProviderModelDefinition(nil), o.Models...),
+		BaseURL:    o.BaseURL,
+		APIKey:     o.APIKey,
+		API:        o.API,
+		Headers:    cloneOptionalStringMap(o.Headers),
+		AuthHeader: authHeader,
+		Compat: cloneRuntimeModel(llm.Model{
+			Compat: o.Compat,
+		}).Compat,
+		Models:         cloneProviderModelDefinitions(o.Models),
 		ModelOverrides: cloneModelOverrideMap(o.ModelOverrides),
 		StreamSimple:   o.StreamSimple,
 	}
@@ -1631,10 +1662,19 @@ func cloneModelOverrideMap(values map[string]ModelOverride) map[string]ModelOver
 		}
 		if value.Cost != nil {
 			cost := *value.Cost
+			if value.Cost.Tiers != nil {
+				tiers := append(
+					[]llm.ModelCostTier(nil),
+					(*value.Cost.Tiers)...,
+				)
+				cost.Tiers = &tiers
+			}
 			copy.Cost = &cost
 		}
 		copy.ThinkingLevelMap = cloneThinkingLevelMap(value.ThinkingLevelMap)
-		copy.Input = append([]string(nil), value.Input...)
+		if value.Input != nil {
+			copy.Input = append([]string{}, value.Input...)
+		}
 		copy.Headers = cloneStringMap(value.Headers)
 		result[key] = copy
 	}
@@ -1649,7 +1689,7 @@ func (r *ProtocolExtensionRuntime) PendingProviderRegistrations() []ProtocolProv
 	for _, registration := range r.pendingProviders {
 		result = append(result, ProtocolProviderRegistration{
 			Name:       registration.name,
-			Config:     registration.config,
+			Config:     cloneProtocolProviderOverride(registration.config),
 			SourceInfo: registration.source,
 		})
 	}

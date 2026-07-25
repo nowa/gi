@@ -626,8 +626,10 @@ func cloneAuthStorageData(data AuthStorageData) AuthStorageData {
 type OAuthProvider struct {
 	ID           string
 	Name         string
+	Login        func(context.Context, llm.AuthInteraction) (AuthCredential, error)
 	RefreshToken func(AuthCredential) (AuthCredential, error)
 	GetAPIKey    func(AuthCredential) string
+	ModifyModels func([]llm.Model, AuthCredential) []llm.Model
 }
 
 func (p OAuthProvider) APIKey(credential AuthCredential) string {
@@ -672,8 +674,9 @@ func providerOwnedOAuthCompatibility(
 	}
 	oauth := provider.Auth.OAuth
 	return OAuthProvider{
-		ID:   provider.ID,
-		Name: firstNonEmptyString(provider.Name, oauth.Name, provider.ID),
+		ID:    provider.ID,
+		Name:  firstNonEmptyString(provider.Name, oauth.Name, provider.ID),
+		Login: oauth.Login,
 		RefreshToken: func(
 			credential AuthCredential,
 		) (AuthCredential, error) {

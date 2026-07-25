@@ -853,7 +853,7 @@ func TestProtocolExtensionRunnerRegistryProtocolContracts(t *testing.T) {
 		if _, ok := registry.Find("broken-provider", "broken-model"); ok {
 			t.Fatal("invalid queued provider should not be registered")
 		}
-		if len(got) != 1 || got[0].ExtensionPath != "broken-provider.gi.json" || got[0].Event != "register_provider" || !strings.Contains(got[0].Error, "baseUrl") {
+		if len(got) != 1 || got[0].ExtensionPath != "broken-provider.gi.json" || got[0].Event != "register_provider" || !strings.Contains(got[0].Error, `no "api" specified`) {
 			t.Fatalf("errors = %#v", got)
 		}
 	})
@@ -1157,6 +1157,41 @@ func protocolProviderConfig(modelID string) ProtocolProviderOverride {
 			ContextWindow: 128000,
 			MaxTokens:     4096,
 		}},
+	}
+}
+
+func TestProtocolProviderOverridePreservesExplicitEmptyState(
+	t *testing.T,
+) {
+	enabled := true
+	disabled := false
+	merged := mergeProtocolProviderOverride(
+		ProtocolProviderOverride{
+			Headers:    map[string]string{"X-Old": "stale"},
+			AuthHeader: &enabled,
+			Models: []ProviderModelDefinition{{
+				ID: "old-model",
+			}},
+		},
+		ProtocolProviderOverride{
+			Headers:    map[string]string{},
+			AuthHeader: &disabled,
+			Models:     []ProviderModelDefinition{},
+		},
+	)
+	if merged.Headers == nil || len(merged.Headers) != 0 {
+		t.Fatalf("headers = %#v, want explicit empty", merged.Headers)
+	}
+	if merged.AuthHeader == nil || *merged.AuthHeader {
+		t.Fatalf("authHeader = %#v, want explicit false", merged.AuthHeader)
+	}
+	if merged.Models == nil || len(merged.Models) != 0 {
+		t.Fatalf("models = %#v, want explicit empty", merged.Models)
+	}
+
+	config := merged.toProviderConfigInput()
+	if config.Models == nil || len(config.Models) != 0 {
+		t.Fatalf("provider models = %#v, want explicit empty", config.Models)
 	}
 }
 
