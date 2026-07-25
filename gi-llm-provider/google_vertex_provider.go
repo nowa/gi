@@ -55,7 +55,7 @@ func NewGoogleVertexAPIProvider(
 	tokenProvider GoogleVertexTokenProvider,
 ) GoogleVertexAPIProvider {
 	if tokenProvider == nil {
-		tokenProvider = defaultGoogleVertexTokenProvider{}
+		tokenProvider = newDefaultGoogleVertexTokenProvider()
 	}
 	return GoogleVertexAPIProvider{
 		Client:        httpClientOrDefault(client),
@@ -176,7 +176,7 @@ func (p GoogleVertexAPIProvider) resolveRequest(
 	} else if !hasHeaderCaseInsensitive(headers, "Authorization") {
 		tokenProvider := p.TokenProvider
 		if tokenProvider == nil {
-			tokenProvider = defaultGoogleVertexTokenProvider{}
+			tokenProvider = newDefaultGoogleVertexTokenProvider()
 		}
 		accessToken, err := tokenProvider.AccessToken(ctx, GoogleVertexTokenRequest{
 			Project:     config.Project,
@@ -194,17 +194,6 @@ func (p GoogleVertexAPIProvider) resolveRequest(
 	}
 	headers = applyHeaderRemovals(headers, options.HeaderRemovals)
 	return googleVertexRequest{endpoint: endpoint, headers: headers}, nil
-}
-
-type defaultGoogleVertexTokenProvider struct{}
-
-func (defaultGoogleVertexTokenProvider) AccessToken(
-	context.Context,
-	GoogleVertexTokenRequest,
-) (string, error) {
-	return "", errors.New(
-		"Google Vertex ADC requires a GoogleVertexTokenProvider; provide one with NewGoogleVertexAPIProvider or use GOOGLE_CLOUD_API_KEY",
-	)
 }
 
 var _ APIProvider = GoogleVertexAPIProvider{}

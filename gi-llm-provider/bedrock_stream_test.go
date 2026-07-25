@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/aws/smithy-go"
 )
 
 func TestProcessBedrockConverseStreamEventsPiStyle(t *testing.T) {
@@ -108,7 +110,7 @@ func TestBedrockConverseStreamProviderBuildsRequestAndStreams(t *testing.T) {
 	if len(message.Content) != 1 || message.Content[0].Text != "OK" {
 		t.Fatalf("message = %#v", message)
 	}
-	if captured.ClientConfig.Region != "us-west-2" || captured.ClientConfig.Profile != "dev" || captured.ClientConfig.Endpoint != "" {
+	if captured.ClientConfig.Region != "us-east-1" || captured.ClientConfig.Profile != "dev" || captured.ClientConfig.Endpoint != "" {
 		t.Fatalf("client config = %#v", captured.ClientConfig)
 	}
 	if captured.MaxTokens != 2048 || captured.Temperature == nil || *captured.Temperature != 0.2 {
@@ -212,6 +214,53 @@ func TestBedrockConverseStreamProviderUsesScopedEnvironment(t *testing.T) {
 	}
 }
 
+func TestBedrockConverseStreamProviderUsesClaudeDefaultsAndDirectToolChoice(t *testing.T) {
+	model := Model{
+		ID:        "anthropic.claude-sonnet-5",
+		Name:      "Claude Sonnet 5",
+		Provider:  "amazon-bedrock",
+		API:       "bedrock-converse-stream",
+		MaxTokens: 64_000,
+	}
+	var captured BedrockConverseStreamRequest
+	provider := NewBedrockConverseStreamProvider(func(
+		_ context.Context,
+		request BedrockConverseStreamRequest,
+	) (<-chan BedrockConverseStreamEvent, error) {
+		captured = request
+		events := make(chan BedrockConverseStreamEvent)
+		close(events)
+		return events, nil
+	})
+	stream, err := provider.Stream(model, Context{
+		Messages: []Message{UserMessageText("hello")},
+		Tools:    []Tool{{Name: "lookup", Parameters: Object(map[string]Schema{})}},
+	}, StreamOptions{
+		ToolChoice: "any",
+		Env: ProviderEnv{
+			"AWS_BEDROCK_FORCE_CACHE": "1",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Result(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if captured.MaxTokens != model.MaxTokens ||
+		captured.Payload.ToolConfig == nil ||
+		!reflect.DeepEqual(
+			captured.Payload.ToolConfig.ToolChoice,
+			map[string]any{"any": map[string]any{}},
+		) {
+		t.Fatalf("request = %#v", captured)
+	}
+	lastContent := captured.Payload.Messages[0].Content
+	if lastContent[len(lastContent)-1].CachePoint == nil {
+		t.Fatalf("forced cache point missing: %#v", captured.Payload.Messages)
+	}
+}
+
 func TestBedrockConverseStreamProviderMissingTransportReturnsAssistantError(t *testing.T) {
 	model := Model{ID: "bedrock-test", Provider: "amazon-bedrock", API: "bedrock-converse-stream"}
 	stream, err := NewBedrockConverseStreamProvider(nil).StreamSimple(model, Context{}, SimpleStreamOptions{})
@@ -224,6 +273,51 @@ func TestBedrockConverseStreamProviderMissingTransportReturnsAssistantError(t *t
 	}
 	if message.StopReason != StopReasonError || !strings.Contains(message.ErrorMessage, "transport is not configured") {
 		t.Fatalf("message = %#v", message)
+	}
+}
+
+func TestBedrockConverseStreamProviderReturnsErrorForUnknownStopReason(t *testing.T) {
+	model := Model{
+		ID:       "bedrock-test",
+		Provider: "amazon-bedrock",
+		API:      "bedrock-converse-stream",
+	}
+	provider := NewBedrockConverseStreamProvider(func(
+		context.Context,
+		BedrockConverseStreamRequest,
+	) (<-chan BedrockConverseStreamEvent, error) {
+		events := make(chan BedrockConverseStreamEvent, 1)
+		events <- BedrockConverseStreamEvent{
+			MessageStop: &BedrockMessageStopEvent{
+				StopReason: "content_filtered",
+			},
+		}
+		close(events)
+		return events, nil
+	})
+	stream, err := provider.Stream(model, Context{}, StreamOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := stream.Result(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.StopReason != StopReasonError ||
+		message.ErrorMessage != "content_filtered" {
+		t.Fatalf("message = %#v", message)
+	}
+}
+
+func TestFormatBedrockStreamErrorUsesStablePrefixesAndRetentionHint(t *testing.T) {
+	err := &smithy.GenericAPIError{
+		Code:    "ThrottlingException",
+		Message: "data retention mode 'default' is not available",
+	}
+	formatted := formatBedrockStreamError(err)
+	if !strings.HasPrefix(formatted, "Throttling error: ") ||
+		!strings.Contains(formatted, "data-retention.html") {
+		t.Fatalf("formatted error = %q", formatted)
 	}
 }
 

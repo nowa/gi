@@ -2,6 +2,7 @@ package gillmprovider
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -206,5 +207,141 @@ func TestBuildBedrockPayloadConvertsToolConfigPiStyle(t *testing.T) {
 				t.Fatalf("tool choice = %#v, want %#v", payload.ToolConfig.ToolChoice, tc.wantChoice)
 			}
 		})
+	}
+}
+
+func TestBuildBedrockPayloadUsesRequiredEmptyTextPlaceholders(t *testing.T) {
+	model := Model{
+		ID:       "anthropic.claude-sonnet-4-5",
+		Provider: "amazon-bedrock",
+		API:      "bedrock-converse-stream",
+	}
+	for _, test := range []struct {
+		name string
+		text string
+	}{
+		{name: "replaces blank user string content with a placeholder", text: " \t "},
+		{
+			name: "replaces user content emptied by surrogate sanitization with a placeholder",
+			text: string([]byte{0xed, 0xa0, 0xbd}),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			payload := BuildBedrockPayload(
+				model,
+				Context{Messages: []Message{UserMessageText(test.text)}},
+				BedrockPayloadOptions{},
+			)
+			if len(payload.Messages) != 1 ||
+				len(payload.Messages[0].Content) < 1 ||
+				payload.Messages[0].Content[0].Text != bedrockEmptyTextPlaceholder {
+				t.Fatalf("user message = %#v", payload.Messages)
+			}
+		})
+	}
+
+	payload := BuildBedrockPayload(model, Context{Messages: []Message{{
+		Role:       RoleToolResult,
+		ToolCallID: "tool-1",
+		Content:    []ContentPart{{Type: ContentText, Text: "\n"}},
+	}}}, BedrockPayloadOptions{})
+	toolResult := payload.Messages[0].Content[0].ToolResult
+	if toolResult == nil ||
+		len(toolResult.Content) != 1 ||
+		toolResult.Content[0].Text != bedrockEmptyTextPlaceholder {
+		t.Fatalf("tool result = %#v", toolResult)
+	}
+}
+
+func TestBuildBedrockPayloadCheckedValidatesStrictTools(t *testing.T) {
+	model := Model{
+		ID:       "anthropic.claude-sonnet-5",
+		Provider: "amazon-bedrock",
+		API:      "bedrock-converse-stream",
+		Compat:   ModelCompat{SupportsStrictMode: ptrBool(false)},
+	}
+	tool := Tool{
+		Name:       "lookup",
+		Parameters: Object(map[string]Schema{}),
+		ConstrainedSampling: &ConstrainedSamplingConfig{
+			Type:   ConstrainedSamplingJSONSchema,
+			Strict: ConstrainedSamplingRequire,
+		},
+	}
+	_, err := BuildBedrockPayloadChecked(
+		model,
+		Context{Tools: []Tool{tool}},
+		BedrockPayloadOptions{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "strict tools are unsupported") {
+		t.Fatalf("error = %v", err)
+	}
+
+	model.Compat.SupportsStrictMode = ptrBool(true)
+	payload, err := BuildBedrockPayloadChecked(
+		model,
+		Context{Tools: []Tool{tool}},
+		BedrockPayloadOptions{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.ToolConfig == nil ||
+		payload.ToolConfig.Tools[0].ToolSpec.Strict == nil ||
+		!*payload.ToolConfig.Tools[0].ToolSpec.Strict {
+		t.Fatalf("tool config = %#v", payload.ToolConfig)
+	}
+}
+
+func TestBedrockThinkingSupportsPiV082Models(t *testing.T) {
+	for _, name := range []string{
+		"Claude Opus 4.8",
+		"Claude Sonnet 5",
+		"Claude Fable 5",
+	} {
+		t.Run(name, func(t *testing.T) {
+			model := Model{
+				ID:        "application-profile",
+				Name:      name,
+				Provider:  "amazon-bedrock",
+				API:       "bedrock-converse-stream",
+				Reasoning: true,
+			}
+			if !SupportsBedrockAdaptiveThinking(model) {
+				t.Fatalf("%q should support adaptive thinking", name)
+			}
+			if got := MapBedrockThinkingEffort(model, "xhigh"); got != "xhigh" {
+				t.Fatalf("xhigh effort = %q", got)
+			}
+		})
+	}
+}
+
+func TestBuildBedrockPayloadSnapshotsToolArguments(t *testing.T) {
+	arguments := map[string]any{
+		"path": "README.md",
+		"nested": map[string]any{
+			"line": 1,
+		},
+	}
+	payload := BuildBedrockPayload(
+		Model{ID: "model", API: "bedrock-converse-stream"},
+		Context{Messages: []Message{{
+			Role: RoleAssistant,
+			Content: []ContentPart{ToolCall(
+				"tool-1",
+				"read_file",
+				arguments,
+			)},
+		}}},
+		BedrockPayloadOptions{},
+	)
+	arguments["path"] = "changed"
+	arguments["nested"].(map[string]any)["line"] = 2
+
+	input := payload.Messages[0].Content[0].ToolUse.Input
+	if input["path"] != "README.md" ||
+		input["nested"].(map[string]any)["line"] != 1 {
+		t.Fatalf("payload input changed with caller state: %#v", input)
 	}
 }

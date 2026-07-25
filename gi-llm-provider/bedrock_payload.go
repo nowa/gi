@@ -2,6 +2,8 @@ package gillmprovider
 
 import "strings"
 
+const bedrockEmptyTextPlaceholder = "<empty>"
+
 type BedrockPayloadOptions struct {
 	Reasoning           string
 	Region              string
@@ -74,6 +76,7 @@ type BedrockToolSpec struct {
 	Name        string
 	Description string
 	InputSchema BedrockToolInputSchema
+	Strict      *bool
 }
 
 type BedrockToolInputSchema struct {
@@ -86,13 +89,44 @@ type BedrockNamedToolChoice struct {
 }
 
 func BuildBedrockPayload(model Model, context Context, options BedrockPayloadOptions) BedrockPayload {
+	payload, _ := buildBedrockPayload(model, context, options, false)
+	return payload
+}
+
+// BuildBedrockPayloadChecked validates constrained-sampling requirements while
+// converting the provider-neutral context into the canonical Bedrock payload.
+func BuildBedrockPayloadChecked(
+	model Model,
+	context Context,
+	options BedrockPayloadOptions,
+) (BedrockPayload, error) {
+	return buildBedrockPayload(model, context, options, true)
+}
+
+func buildBedrockPayload(
+	model Model,
+	context Context,
+	options BedrockPayloadOptions,
+	validateStrict bool,
+) (BedrockPayload, error) {
 	cacheRetention := resolveCacheRetention(options.CacheRetention)
+	supportsStrictMode := model.Compat.SupportsStrictMode != nil &&
+		*model.Compat.SupportsStrictMode
+	toolConfig, err := convertBedrockToolConfig(
+		context.Tools,
+		options.ToolChoice,
+		supportsStrictMode,
+		validateStrict,
+	)
+	if err != nil {
+		return BedrockPayload{}, err
+	}
 	return BedrockPayload{
 		System:                       buildBedrockSystemPrompt(context.SystemPrompt, model, cacheRetention, options.ForcePromptCache),
 		Messages:                     ConvertBedrockMessages(model, context, cacheRetention, options.ForcePromptCache),
-		ToolConfig:                   ConvertBedrockToolConfig(context.Tools, options.ToolChoice),
+		ToolConfig:                   toolConfig,
 		AdditionalModelRequestFields: BuildBedrockAdditionalModelRequestFields(model, options),
-	}
+	}, nil
 }
 
 func BuildBedrockAdditionalModelRequestFields(model Model, options BedrockPayloadOptions) map[string]any {
@@ -182,23 +216,41 @@ func ConvertBedrockMessages(model Model, context Context, cacheRetention string,
 }
 
 func ConvertBedrockToolConfig(tools []Tool, toolChoice any) *BedrockToolConfig {
+	config, _ := convertBedrockToolConfig(tools, toolChoice, false, false)
+	return config
+}
+
+func convertBedrockToolConfig(
+	tools []Tool,
+	toolChoice any,
+	supportsStrictMode bool,
+	validateStrict bool,
+) (*BedrockToolConfig, error) {
 	if len(tools) == 0 || isBedrockNoToolChoice(toolChoice) {
-		return nil
+		return nil, nil
 	}
 	bedrockTools := make([]BedrockTool, 0, len(tools))
 	for _, tool := range tools {
+		strict, err := ResolveJSONSchemaStrictSampling(tool, supportsStrictMode)
+		if err != nil {
+			if validateStrict {
+				return nil, err
+			}
+			strict = nil
+		}
 		bedrockTools = append(bedrockTools, BedrockTool{
 			ToolSpec: BedrockToolSpec{
 				Name:        tool.Name,
 				Description: tool.Description,
 				InputSchema: BedrockToolInputSchema{JSON: SchemaToMap(tool.Parameters)},
+				Strict:      strict,
 			},
 		})
 	}
 	return &BedrockToolConfig{
 		Tools:      bedrockTools,
 		ToolChoice: convertBedrockToolChoice(toolChoice),
-	}
+	}, nil
 }
 
 func isBedrockNoToolChoice(toolChoice any) bool {
@@ -254,7 +306,12 @@ func IsAnthropicClaudeBedrockModel(model Model) bool {
 
 func SupportsBedrockAdaptiveThinking(model Model) bool {
 	for _, candidate := range bedrockModelCandidates(model) {
-		if strings.Contains(candidate, "opus-4-6") || strings.Contains(candidate, "opus-4-7") || strings.Contains(candidate, "sonnet-4-6") {
+		if strings.Contains(candidate, "opus-4-6") ||
+			strings.Contains(candidate, "opus-4-7") ||
+			strings.Contains(candidate, "opus-4-8") ||
+			strings.Contains(candidate, "sonnet-4-6") ||
+			strings.Contains(candidate, "sonnet-5") ||
+			strings.Contains(candidate, "fable-5") {
 			return true
 		}
 	}
@@ -274,7 +331,9 @@ func SupportsBedrockPromptCaching(model Model, force bool) bool {
 		return force
 	}
 	for _, candidate := range candidates {
-		if strings.Contains(candidate, "-4-") ||
+		if strings.Contains(candidate, "sonnet-5") ||
+			strings.Contains(candidate, "fable-5") ||
+			strings.Contains(candidate, "-4-") ||
 			strings.Contains(candidate, "claude-3-7-sonnet") ||
 			strings.Contains(candidate, "claude-3-5-haiku") {
 			return true
@@ -293,7 +352,10 @@ func IsGovCloudBedrockTarget(model Model, options BedrockPayloadOptions) bool {
 func MapBedrockThinkingEffort(model Model, level string) string {
 	if level == "xhigh" {
 		for _, candidate := range bedrockModelCandidates(model) {
-			if strings.Contains(candidate, "opus-4-7") {
+			if strings.Contains(candidate, "opus-4-7") ||
+				strings.Contains(candidate, "opus-4-8") ||
+				strings.Contains(candidate, "sonnet-5") ||
+				strings.Contains(candidate, "fable-5") {
 				return "xhigh"
 			}
 		}
@@ -327,10 +389,15 @@ func convertBedrockUserContent(content []ContentPart) []BedrockContentBlock {
 	for _, part := range content {
 		switch part.Type {
 		case ContentText:
-			blocks = append(blocks, BedrockContentBlock{Text: SanitizeSurrogates(part.Text)})
+			if text := nonBlankBedrockText(part.Text); text != "" {
+				blocks = append(blocks, BedrockContentBlock{Text: text})
+			}
 		case ContentImage:
 			blocks = append(blocks, BedrockContentBlock{Image: &BedrockImageBlock{Format: bedrockImageFormat(part.MIMEType), Data: part.Data}})
 		}
+	}
+	if len(blocks) == 0 {
+		blocks = append(blocks, BedrockContentBlock{Text: bedrockEmptyTextPlaceholder})
 	}
 	return blocks
 }
@@ -344,7 +411,11 @@ func convertBedrockAssistantContent(model Model, message Message) []BedrockConte
 				blocks = append(blocks, BedrockContentBlock{Text: SanitizeSurrogates(part.Text)})
 			}
 		case ContentToolCall:
-			blocks = append(blocks, BedrockContentBlock{ToolUse: &BedrockToolUseBlock{ToolUseID: part.ID, Name: part.Name, Input: part.Arguments}})
+			blocks = append(blocks, BedrockContentBlock{ToolUse: &BedrockToolUseBlock{
+				ToolUseID: part.ID,
+				Name:      part.Name,
+				Input:     cloneCredentialMetadata(part.Arguments),
+			}})
 		case ContentThinking:
 			if strings.TrimSpace(part.Thinking) == "" {
 				continue
@@ -364,16 +435,29 @@ func convertBedrockToolResult(message Message) BedrockContentBlock {
 	for _, part := range message.Content {
 		switch part.Type {
 		case ContentText:
-			content = append(content, BedrockContentBlock{Text: SanitizeSurrogates(part.Text)})
+			if text := nonBlankBedrockText(part.Text); text != "" {
+				content = append(content, BedrockContentBlock{Text: text})
+			}
 		case ContentImage:
 			content = append(content, BedrockContentBlock{Image: &BedrockImageBlock{Format: bedrockImageFormat(part.MIMEType), Data: part.Data}})
 		}
+	}
+	if len(content) == 0 {
+		content = append(content, BedrockContentBlock{Text: bedrockEmptyTextPlaceholder})
 	}
 	status := "success"
 	if message.IsError {
 		status = "error"
 	}
 	return BedrockContentBlock{ToolResult: &BedrockToolResultBlock{ToolUseID: message.ToolCallID, Content: content, Status: status}}
+}
+
+func nonBlankBedrockText(text string) string {
+	sanitized := SanitizeSurrogates(text)
+	if strings.TrimSpace(sanitized) == "" {
+		return ""
+	}
+	return sanitized
 }
 
 func bedrockModelCandidates(model Model) []string {

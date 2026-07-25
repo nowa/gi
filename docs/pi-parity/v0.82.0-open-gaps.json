@@ -14,18 +14,10 @@
     {
       "module": "llm",
       "missingFiles": [
-        "api/bedrock-converse-stream.lazy.ts",
-        "api/bedrock-converse-stream.ts",
         "auth/oauth/anthropic.ts",
         "auth/oauth/openai-codex.ts"
       ],
       "missingSymbols": [
-        "api/bedrock-converse-stream.ts::addCustomHeadersMiddleware",
-        "api/bedrock-converse-stream.ts::convertToolResultContent",
-        "api/bedrock-converse-stream.ts::createNonBlankTextBlock",
-        "api/bedrock-converse-stream.ts::createRequiredTextBlock",
-        "api/bedrock-converse-stream.ts::getConfiguredBedrockCredentials",
-        "api/bedrock-converse-stream.ts::isReservedHeader",
         "auth/oauth/openai-codex.ts::exchangeAuthorizationCodeForCredentials",
         "auth/oauth/openai-codex.ts::fetchWithLoginCancellation",
         "auth/oauth/openai-codex.ts::loginOpenAICodexDeviceCode",

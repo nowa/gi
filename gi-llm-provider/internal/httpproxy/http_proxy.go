@@ -20,7 +20,20 @@ var defaultProxyPorts = map[string]int{
 }
 
 func ResolveHTTPProxyURLForTarget(targetURL string) (*url.URL, error) {
-	proxy := proxyForURL(targetURL)
+	return ResolveHTTPProxyURLForTargetWithLookup(targetURL, proxyEnv)
+}
+
+// ResolveHTTPProxyURLForTargetWithLookup resolves proxy variables through a
+// caller-owned lookup. This keeps request-scoped provider configuration out of
+// the process environment.
+func ResolveHTTPProxyURLForTargetWithLookup(
+	targetURL string,
+	lookup func(string) string,
+) (*url.URL, error) {
+	if lookup == nil {
+		lookup = proxyEnv
+	}
+	proxy := proxyForURL(targetURL, lookup)
 	if proxy == "" {
 		return nil, nil
 	}
@@ -34,7 +47,7 @@ func ResolveHTTPProxyURLForTarget(targetURL string) (*url.URL, error) {
 	return proxyURL, nil
 }
 
-func proxyForURL(targetURL string) string {
+func proxyForURL(targetURL string, lookup func(string) string) string {
 	parsed, err := url.Parse(targetURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return ""
@@ -48,12 +61,12 @@ func proxyForURL(targetURL string) string {
 			portNumber = parsedPort
 		}
 	}
-	if !shouldProxyHost(host, portNumber) {
+	if !shouldProxyHost(host, portNumber, lookup) {
 		return ""
 	}
-	proxy := proxyEnv(protocol + "_proxy")
+	proxy := lookupProxyEnv(protocol+"_proxy", lookup)
 	if proxy == "" {
-		proxy = proxyEnv("all_proxy")
+		proxy = lookupProxyEnv("all_proxy", lookup)
 	}
 	if proxy != "" && !strings.Contains(proxy, "://") {
 		proxy = protocol + "://" + proxy
@@ -61,8 +74,8 @@ func proxyForURL(targetURL string) string {
 	return proxy
 }
 
-func shouldProxyHost(host string, port int) bool {
-	noProxy := strings.ToLower(proxyEnv("no_proxy"))
+func shouldProxyHost(host string, port int, lookup func(string) string) bool {
+	noProxy := strings.ToLower(lookupProxyEnv("no_proxy", lookup))
 	if noProxy == "" {
 		return true
 	}
@@ -111,4 +124,11 @@ func proxyEnv(key string) string {
 		return value
 	}
 	return os.Getenv(strings.ToUpper(key))
+}
+
+func lookupProxyEnv(key string, lookup func(string) string) string {
+	if value := lookup(strings.ToLower(key)); value != "" {
+		return value
+	}
+	return lookup(strings.ToUpper(key))
 }

@@ -220,13 +220,13 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/google-shared-image-tool-result-routing.test.ts` | `gi-llm-provider/google_convert_test.go` |
 | `packages/ai/test/google-thinking-disable.test.ts` | `gi-llm-provider/google_convert_test.go` |
 | `packages/ai/test/google-thinking-signature.test.ts` | `gi-llm-provider/google_convert_test.go` |
-| `packages/ai/test/google-vertex-api-key-resolution.test.ts` | `gi-llm-provider/config_test.go`, `gi-llm-provider/google_vertex_provider_test.go` for registered Express/ADC request routing without live network access |
+| `packages/ai/test/google-vertex-api-key-resolution.test.ts` | `gi-llm-provider/config_test.go`, `gi-llm-provider/google_vertex_provider_test.go` for registered Express/ADC request routing, official ADC token caching/refresh coalescing, and deterministic failure handling without live network access |
 | `packages/ai/test/github-copilot-anthropic.test.ts` | `gi-llm-provider/github_copilot_headers_test.go` |
 | `packages/ai/test/github-copilot-oauth.test.ts` | `gi-llm-provider/github_copilot_oauth_test.go`, `gi-llm-provider/oauth_device_code_test.go`, `gi-llm-provider/builtin_providers_test.go` |
 | `packages/ai/test/image-tool-result.test.ts` | `gi-llm-provider/anthropic_payload_test.go`, `gi-llm-provider/google_convert_test.go`, `gi-llm-provider/openai_completions_convert_test.go`, `gi-llm-provider/openai_responses_convert_test.go` |
 | `packages/ai/test/interleaved-thinking.test.ts` | `gi-llm-provider/anthropic_payload_test.go`, `gi-llm-provider/bedrock_payload_test.go` |
 | `packages/ai/test/bedrock-thinking-payload.test.ts` | `gi-llm-provider/bedrock_payload_test.go` |
-| Bedrock Converse stream cases in `packages/ai/test/stream.test.ts` | `gi-llm-provider/bedrock_stream_test.go` for injected stream event processing; live AWS credential tests remain out of default scope |
+| Bedrock Converse stream cases in `packages/ai/test/stream.test.ts` | `gi-llm-provider/bedrock_stream_test.go`, `gi-llm-provider/bedrock_aws_transport_test.go` for injected SDK request/response/event conversion, strict tools, header policy, stream errors, and provider event processing; credentialed live AWS probes remain out of default scope |
 | `packages/ai/test/mistral-reasoning-mode.test.ts` | `gi-llm-provider/mistral_payload_test.go`, `gi-llm-provider/mistral_provider_test.go` for reasoning controls, session prompt-cache keys/affinity, and cached-token usage aliases |
 | `packages/ai/test/mistral-tool-schema.test.ts` | `gi-llm-provider/mistral_payload_test.go` |
 | `packages/ai/test/node-http-proxy.test.ts` | `gi-llm-provider/config_test.go` |

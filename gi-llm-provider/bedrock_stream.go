@@ -2,7 +2,11 @@ package gillmprovider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/aws/smithy-go"
 )
 
 type BedrockConverseStreamTransport func(context.Context, BedrockConverseStreamRequest) (<-chan BedrockConverseStreamEvent, error)
@@ -19,6 +23,8 @@ type BedrockConverseStreamRequest struct {
 	Temperature     *float64
 	CacheRetention  string
 	RequestMetadata map[string]string
+	Headers         map[string]string
+	OnResponse      func(status int, headers map[string]string) error
 }
 
 type BedrockConverseStreamEvent struct {
@@ -74,7 +80,10 @@ type bedrockStreamBlock struct {
 }
 
 func init() {
-	RegisterBuiltInAPIProvider("bedrock-converse-stream", NewBedrockConverseStreamProvider(nil))
+	RegisterBuiltInAPIProvider(
+		"bedrock-converse-stream",
+		NewBedrockConverseStreamProvider(NewAWSBedrockConverseStreamTransport()),
+	)
 }
 
 func NewBedrockConverseStreamProvider(transport BedrockConverseStreamTransport) BedrockConverseStreamProvider {
@@ -137,26 +146,66 @@ func (p BedrockConverseStreamProvider) stream(
 		metadataString(options.Metadata, "cache_retention"),
 	)
 	cacheRetention = resolveCacheRetentionWithEnv(cacheRetention, options.Env)
+	toolChoice := options.ToolChoice
+	if toolChoice == nil {
+		toolChoice = metadataValue(options.Metadata, "tool_choice")
+	}
+	var interleavedThinking *bool
+	if configured, ok := metadataValue(
+		options.Metadata,
+		"interleaved_thinking",
+	).(bool); ok {
+		interleavedThinking = &configured
+	}
 	payloadOptions := BedrockPayloadOptions{
-		Reasoning:       reasoning,
-		Region:          metadataString(options.Metadata, "region"),
-		ThinkingBudgets: options.ThinkingBudgets,
-		ThinkingDisplay: metadataString(options.Metadata, "thinking_display"),
-		CacheRetention:  cacheRetention,
-		ToolChoice:      metadataValue(options.Metadata, "tool_choice"),
+		Reasoning:           reasoning,
+		Region:              metadataString(options.Metadata, "region"),
+		ThinkingBudgets:     options.ThinkingBudgets,
+		ThinkingDisplay:     metadataString(options.Metadata, "thinking_display"),
+		InterleavedThinking: interleavedThinking,
+		CacheRetention:      cacheRetention,
+		ForcePromptCache: GetProviderEnvValue(
+			"AWS_BEDROCK_FORCE_CACHE",
+			options.Env,
+		) == "1",
+		ToolChoice: toolChoice,
+	}
+	payload, err := BuildBedrockPayloadChecked(model, llmContext, payloadOptions)
+	if err != nil {
+		return streamError(model, "%s", err.Error()), nil
+	}
+	maxTokens := options.MaxTokens
+	if maxTokens == 0 && IsAnthropicClaudeBedrockModel(model) {
+		maxTokens = model.MaxTokens
+	}
+	clientOptions := BedrockClientOptions{
+		Region:      payloadOptions.Region,
+		Profile:     metadataString(options.Metadata, "profile"),
+		APIKey:      options.APIKey,
+		BearerToken: metadataString(options.Metadata, "bearer_token"),
+		Env:         options.Env,
+	}
+	clientConfig, err := ResolveBedrockClientConfigChecked(model, clientOptions)
+	if err != nil {
+		return streamError(model, "%s", err.Error()), nil
 	}
 	request := BedrockConverseStreamRequest{
-		Model:   model,
-		Payload: BuildBedrockPayload(model, llmContext, payloadOptions),
-		ClientConfig: ResolveBedrockClientConfig(model, BedrockClientOptions{
-			Region:  payloadOptions.Region,
-			Profile: metadataString(options.Metadata, "profile"),
-			Env:     options.Env,
-		}),
-		MaxTokens:       options.MaxTokens,
+		Model:           model,
+		Payload:         payload,
+		ClientConfig:    clientConfig,
+		MaxTokens:       maxTokens,
 		Temperature:     options.Temperature,
 		CacheRetention:  payloadOptions.CacheRetention,
 		RequestMetadata: metadataStringMap(options.Metadata, "request_metadata"),
+		Headers: applyHeaderRemovals(
+			mergeHeadersCaseInsensitive(model.Headers, options.Headers),
+			options.HeaderRemovals,
+		),
+	}
+	if options.OnResponseStatus != nil {
+		request.OnResponse = func(status int, headers map[string]string) error {
+			return options.OnResponseStatus(status, headers, model)
+		}
 	}
 	if options.OnPayload != nil {
 		next, replace, err := options.OnPayload(request.Payload, model)
@@ -171,12 +220,17 @@ func (p BedrockConverseStreamProvider) stream(
 			request.Payload = payload
 		}
 	}
-	events, err := transport(ctx, request)
+	streamContext, cancelStream := context.WithCancel(ctx)
+	events, err := transport(streamContext, request)
 	if err != nil {
+		cancelStream()
 		return streamError(model, "%s", formatBedrockStreamError(err)), nil
 	}
 	stream := NewAssistantMessageEventStream()
-	go streamBedrockConverseEvents(ctx, model, events, stream)
+	go func() {
+		defer cancelStream()
+		streamBedrockConverseEvents(streamContext, model, events, stream)
+	}()
 	return stream, nil
 }
 
@@ -192,7 +246,23 @@ func streamBedrockConverseEvents(ctx context.Context, model Model, events <-chan
 		case event, ok := <-events:
 			if !ok {
 				if !terminal {
-					stream.Push(AssistantMessageEvent{Type: "done", Reason: output.StopReason, Message: output})
+					if output.StopReason == StopReasonError ||
+						output.StopReason == StopReasonAborted {
+						if output.ErrorMessage == "" {
+							output.ErrorMessage = "Bedrock stream ended with an unknown error"
+						}
+						stream.Push(AssistantMessageEvent{
+							Type:   "error",
+							Reason: output.StopReason,
+							Error:  output,
+						})
+					} else {
+						stream.Push(AssistantMessageEvent{
+							Type:    "done",
+							Reason:  output.StopReason,
+							Message: output,
+						})
+					}
 				}
 				return
 			}
@@ -254,6 +324,9 @@ func (p *BedrockConverseStreamProcessor) Process(event BedrockConverseStreamEven
 	}
 	if event.MessageStop != nil {
 		p.output.StopReason = mapBedrockStopReason(event.MessageStop.StopReason)
+		if p.output.StopReason == StopReasonError {
+			p.output.ErrorMessage = event.MessageStop.StopReason
+		}
 		return nil
 	}
 	if event.Metadata != nil {
@@ -402,7 +475,38 @@ func formatBedrockStreamError(err error) string {
 	if err == nil {
 		return ""
 	}
-	return err.Error()
+	normalized := NormalizeProviderError(err)
+	core := normalized.Message
+	if !normalized.MessageCarriesBody &&
+		normalized.StatusCode != 0 &&
+		normalized.Body != "" {
+		core = fmt.Sprintf("%d: %s", normalized.StatusCode, normalized.Body)
+	}
+
+	code := ""
+	var apiError smithy.APIError
+	if errors.As(err, &apiError) {
+		code = apiError.ErrorCode()
+		if message := strings.TrimSpace(apiError.ErrorMessage()); message != "" {
+			core = message
+		}
+	}
+	prefixes := map[string]string{
+		"InternalServerException":     "Internal server error",
+		"ModelStreamErrorException":   "Model stream error",
+		"ValidationException":         "Validation error",
+		"ThrottlingException":         "Throttling error",
+		"ServiceUnavailableException": "Service unavailable",
+	}
+	if prefix := prefixes[code]; prefix != "" {
+		core = prefix + ": " + core
+	} else if code != "" {
+		core = code + ": " + core
+	}
+	if strings.Contains(strings.ToLower(core), "data retention mode") {
+		core += " See https://docs.aws.amazon.com/bedrock/latest/userguide/data-retention.html for supported data retention modes."
+	}
+	return core
 }
 
 func metadataStringMap(metadata map[string]any, key string) map[string]string {

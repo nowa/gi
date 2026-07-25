@@ -1,6 +1,9 @@
 package gillmprovider
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNormalizeAzureOpenAIBaseURL(t *testing.T) {
 	tests := []struct {
@@ -337,6 +340,71 @@ func TestResolveHTTPProxyURLForTarget(t *testing.T) {
 	t.Setenv("HTTPS_PROXY", "socks5://proxy.example:1080")
 	if _, err = ResolveHTTPProxyURLForTarget("https://bedrock-runtime.us-east-1.amazonaws.com"); err == nil {
 		t.Fatal("expected unsupported proxy protocol error")
+	}
+}
+
+func TestResolveBedrockClientAuthenticationAndScopedProxy(t *testing.T) {
+	clearProxyEnv(t)
+	t.Setenv("https_proxy", "http://ambient-proxy.example:8080")
+	for _, key := range []string{
+		"AWS_ACCESS_KEY_ID",
+		"AWS_SECRET_ACCESS_KEY",
+		"AWS_SESSION_TOKEN",
+		"AWS_BEARER_TOKEN_BEDROCK",
+		"AWS_BEDROCK_SKIP_AUTH",
+		"AWS_BEDROCK_FORCE_HTTP1",
+	} {
+		t.Setenv(key, "")
+	}
+	model := Model{
+		ID:       "anthropic.claude-sonnet-5",
+		Provider: "amazon-bedrock",
+		API:      "bedrock-converse-stream",
+		BaseURL:  "https://bedrock.example.com",
+	}
+	config, err := ResolveBedrockClientConfigChecked(model, BedrockClientOptions{
+		APIKey: "explicit-bearer",
+		Env: ProviderEnv{
+			"AWS_ACCESS_KEY_ID":     "scoped-key",
+			"AWS_SECRET_ACCESS_KEY": "scoped-secret",
+			"AWS_SESSION_TOKEN":     "scoped-session",
+			"HTTPS_PROXY":           "http://scoped-proxy.example:8080",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.BearerToken != "explicit-bearer" ||
+		config.Credentials == nil ||
+		config.Credentials.AccessKeyID != "scoped-key" ||
+		config.Credentials.SecretAccessKey != "scoped-secret" ||
+		config.Credentials.SessionToken != "scoped-session" ||
+		config.ProxyURL != "http://scoped-proxy.example:8080" ||
+		!config.ForceHTTP1 {
+		t.Fatalf("config = %#v", config)
+	}
+
+	config, err = ResolveBedrockClientConfigChecked(model, BedrockClientOptions{
+		APIKey: "ignored-bearer",
+		Env: ProviderEnv{
+			"AWS_BEDROCK_SKIP_AUTH": "1",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !config.SkipAuth ||
+		config.BearerToken != "" ||
+		config.Credentials == nil ||
+		config.Credentials.AccessKeyID != "dummy-access-key" {
+		t.Fatalf("skip-auth config = %#v", config)
+	}
+
+	_, err = ResolveBedrockClientConfigChecked(model, BedrockClientOptions{
+		Env: ProviderEnv{"HTTPS_PROXY": "socks5://proxy.example:1080"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "SOCKS") {
+		t.Fatalf("proxy error = %v", err)
 	}
 }
 

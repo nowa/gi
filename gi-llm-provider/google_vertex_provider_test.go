@@ -8,7 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"golang.org/x/oauth2"
 )
 
 func TestGoogleVertexProviderStreamsWithExpressAPIKey(t *testing.T) {
@@ -230,14 +234,21 @@ func TestGoogleVertexProviderReportsTokenFailureBeforeHTTP(t *testing.T) {
 	}
 }
 
-func TestGoogleVertexBuiltInADCFailureIsExplicit(t *testing.T) {
+func TestGoogleVertexDefaultADCFailureIsExplicit(t *testing.T) {
 	httpCalls := 0
+	tokenProvider := newDefaultGoogleVertexTokenProvider()
+	tokenProvider.load = func(
+		context.Context,
+		GoogleVertexTokenRequest,
+	) (*oauth2.Token, error) {
+		return nil, errors.New("ADC unavailable")
+	}
 	provider := NewGoogleVertexAPIProvider(
 		simpleOptionsHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
 			httpCalls++
 			return nil, errors.New("unexpected HTTP request")
 		}),
-		nil,
+		tokenProvider,
 	)
 	model := MustGetModel("google-vertex", "gemini-3-flash-preview")
 	stream, err := provider.Stream(model, Context{}, StreamOptions{
@@ -255,8 +266,98 @@ func TestGoogleVertexBuiltInADCFailureIsExplicit(t *testing.T) {
 		t.Fatalf("HTTP calls = %d", httpCalls)
 	}
 	if result.StopReason != StopReasonError ||
-		!strings.Contains(result.ErrorMessage, "GoogleVertexTokenProvider") {
+		!strings.Contains(result.ErrorMessage, "ADC unavailable") {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestGoogleVertexDefaultTokenProviderCachesAndRefreshesTokens(t *testing.T) {
+	now := time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC)
+	loadCalls := 0
+	provider := newDefaultGoogleVertexTokenProvider()
+	provider.now = func() time.Time { return now }
+	provider.load = func(
+		context.Context,
+		GoogleVertexTokenRequest,
+	) (*oauth2.Token, error) {
+		loadCalls++
+		return &oauth2.Token{
+			AccessToken: "token-" + string(rune('0'+loadCalls)),
+			Expiry:      now.Add(2 * time.Minute),
+		}, nil
+	}
+	request := GoogleVertexTokenRequest{
+		Project:  "project",
+		Location: "us-central1",
+		AuthOptions: &GoogleAuthOptions{
+			KeyFilename: "/credentials/request.json",
+		},
+	}
+
+	first, err := provider.AccessToken(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := provider.AccessToken(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(90 * time.Second)
+	third, err := provider.AccessToken(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if first != "token-1" || second != "token-1" || third != "token-2" {
+		t.Fatalf("tokens = %q, %q, %q", first, second, third)
+	}
+	if loadCalls != 2 {
+		t.Fatalf("load calls = %d, want 2", loadCalls)
+	}
+}
+
+func TestGoogleVertexDefaultTokenProviderCoalescesConcurrentRefresh(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{})
+	provider := newDefaultGoogleVertexTokenProvider()
+	provider.load = func(
+		context.Context,
+		GoogleVertexTokenRequest,
+	) (*oauth2.Token, error) {
+		close(started)
+		<-release
+		return &oauth2.Token{AccessToken: "shared"}, nil
+	}
+	request := GoogleVertexTokenRequest{Project: "project", Location: "us-central1"}
+
+	const callers = 8
+	results := make(chan string, callers)
+	errors := make(chan error, callers)
+	var wait sync.WaitGroup
+	wait.Add(callers)
+	for range callers {
+		go func() {
+			defer wait.Done()
+			token, err := provider.AccessToken(context.Background(), request)
+			results <- token
+			errors <- err
+		}()
+	}
+	<-started
+	close(release)
+	wait.Wait()
+	close(results)
+	close(errors)
+
+	for err := range errors {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for token := range results {
+		if token != "shared" {
+			t.Fatalf("token = %q", token)
+		}
 	}
 }
 

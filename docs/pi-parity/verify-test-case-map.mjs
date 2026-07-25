@@ -95,6 +95,14 @@ const modules = [
 			"packages/ai/test/zen.test.ts": ["gi-llm-provider/model_catalog_test.go"],
 		},
 		caseAliases: {
+			"packages/ai/test/bedrock-convert-messages.test.ts": {
+				"replaces blank user string content with a placeholder": [
+					"gi-llm-provider/bedrock_payload_test.go",
+				],
+				"replaces user content emptied by surrogate sanitization with a placeholder": [
+					"gi-llm-provider/bedrock_payload_test.go",
+				],
+			},
 			"packages/ai/test/github-copilot-oauth.test.ts": {
 				"filters models to the authenticated account picker catalog": [
 					"gi-llm-provider/builtin_providers_test.go",
