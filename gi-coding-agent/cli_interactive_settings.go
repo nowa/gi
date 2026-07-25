@@ -1,6 +1,7 @@
 package gicodingagent
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -224,7 +225,7 @@ func settingsThemeCurrentValue(settings *SettingsManager) string {
 	if settings == nil {
 		return "dark"
 	}
-	if theme := strings.TrimSpace(settings.GetTheme()); theme != "" {
+	if theme, present := settings.GetThemeSetting(); present && strings.TrimSpace(theme) != "" {
 		return theme
 	}
 	return "dark"
@@ -458,8 +459,8 @@ func (h *CLIInteractiveTUIHost) applySettingsListChange(host *RPCSessionHost, se
 		}
 		h.updateEditorBorderColor()
 	case "theme":
-		h.clearTUIThemePreview()
 		settings.SetTheme(newValue)
+		h.applyCurrentTUITheme(context.Background())
 		h.requestRender(true)
 	case "steering-mode":
 		if err := host.SetSteeringMode(newValue); err != nil {

@@ -338,8 +338,21 @@ func (s *SettingsManager) SetDefaultProjectTrust(defaultProjectTrust DefaultProj
 	s.setGlobal("defaultProjectTrust", string(normalizeDefaultProjectTrust(defaultProjectTrust)))
 }
 
+// GetThemeSetting returns the raw theme setting. The boolean distinguishes an
+// absent setting from an explicitly stored empty value.
+func (s *SettingsManager) GetThemeSetting() (string, bool) {
+	value, ok := s.mergedSnapshot()["theme"].(string)
+	return value, ok
+}
+
+// GetTheme returns only a fixed theme name. Automatic light/dark pairs are
+// resolved by the interactive theme controller against terminal state.
 func (s *SettingsManager) GetTheme() string {
-	return settingsString(s.mergedSnapshot(), "theme")
+	theme, ok := s.GetThemeSetting()
+	if !ok || strings.Contains(theme, "/") {
+		return ""
+	}
+	return theme
 }
 
 func (s *SettingsManager) SetTheme(theme string) {

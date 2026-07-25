@@ -94,6 +94,12 @@ The default live TTY host also exposes `/theme`: `/theme <name>` applies a
 theme directly, and `/theme` opens a searchable selector over built-in and
 loaded custom themes.
 
+Interactive theme state follows Pi's fixed and automatic `light/dark` setting
+semantics. A single Go controller owns terminal detection and change reports,
+the active concrete palette, preview/restore, dark fallback, and notification
+lifecycle; serialized revision checks prevent stale terminal queries from
+overwriting newer user selections.
+
 With the experimental flag enabled, official default installations without an
 existing settings file now run Pi's first-time theme and analytics flow before
 constructing the interactive runtime. Gi models eligibility as an immutable

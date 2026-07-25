@@ -26,6 +26,14 @@ type TerminalThemeDetection struct {
 	Confidence string
 }
 
+// AutoThemeSetting is the parsed light/dark pair from an automatic theme
+// setting. The value is immutable after parsing and can be resolved against a
+// terminal appearance without consulting mutable settings again.
+type AutoThemeSetting struct {
+	LightTheme string
+	DarkTheme  string
+}
+
 type TerminalBackgroundThemeDetector interface {
 	QueryTerminalBackgroundColor(context.Context) (gitui.RGBColor, bool, error)
 }
@@ -33,6 +41,40 @@ type TerminalBackgroundThemeDetector interface {
 type TerminalAutoThemeDetector interface {
 	TerminalBackgroundThemeDetector
 	QueryTerminalColorScheme(context.Context) (gitui.TerminalColorScheme, bool, error)
+}
+
+// ParseAutoThemeSetting parses the exact "light-theme/dark-theme" grammar used
+// by Pi. A setting is automatic only when it contains one slash and both names
+// are non-empty after trimming.
+func ParseAutoThemeSetting(themeSetting string) (AutoThemeSetting, bool) {
+	slashIndex := strings.IndexByte(themeSetting, '/')
+	if slashIndex < 0 || strings.IndexByte(themeSetting[slashIndex+1:], '/') >= 0 {
+		return AutoThemeSetting{}, false
+	}
+	automatic := AutoThemeSetting{
+		LightTheme: strings.TrimSpace(themeSetting[:slashIndex]),
+		DarkTheme:  strings.TrimSpace(themeSetting[slashIndex+1:]),
+	}
+	if automatic.LightTheme == "" || automatic.DarkTheme == "" {
+		return AutoThemeSetting{}, false
+	}
+	return automatic, true
+}
+
+// ResolveThemeSetting projects a fixed or automatic setting to the concrete
+// theme name for the current terminal appearance. Malformed automatic values
+// are rejected instead of being treated as file names.
+func ResolveThemeSetting(themeSetting string, terminalTheme TerminalTheme) (string, bool) {
+	if automatic, ok := ParseAutoThemeSetting(themeSetting); ok {
+		if terminalTheme == TerminalThemeLight {
+			return automatic.LightTheme, true
+		}
+		return automatic.DarkTheme, true
+	}
+	if strings.Contains(themeSetting, "/") {
+		return "", false
+	}
+	return themeSetting, true
 }
 
 // DetectTerminalBackgroundFromEnv derives the theme from the last valid

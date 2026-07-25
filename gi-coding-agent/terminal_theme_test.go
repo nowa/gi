@@ -27,6 +27,72 @@ func (d terminalThemeDetectorStub) QueryTerminalBackgroundColor(context.Context)
 	return d.color, d.colorOK, d.colorErr
 }
 
+func TestParseAutoThemeSettingMatchesPi(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  AutoThemeSetting
+		ok    bool
+	}{
+		{
+			name:  "parses and trims one light dark pair",
+			value: " solarized-light / solarized-dark ",
+			want:  AutoThemeSetting{LightTheme: "solarized-light", DarkTheme: "solarized-dark"},
+			ok:    true,
+		},
+		{name: "rejects a fixed theme", value: "dark"},
+		{name: "rejects an empty light theme", value: "/dark"},
+		{name: "rejects an empty dark theme", value: "light/ "},
+		{name: "rejects multiple slashes", value: "light/dark/other"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := ParseAutoThemeSetting(test.value)
+			if ok != test.ok || got != test.want {
+				t.Fatalf("ParseAutoThemeSetting(%q) = (%#v, %t), want (%#v, %t)", test.value, got, ok, test.want, test.ok)
+			}
+		})
+	}
+}
+
+func TestResolveThemeSettingMatchesPi(t *testing.T) {
+	tests := []struct {
+		name     string
+		setting  string
+		terminal TerminalTheme
+		want     string
+		ok       bool
+	}{
+		{name: "keeps a fixed theme", setting: "focus", terminal: TerminalThemeLight, want: "focus", ok: true},
+		{name: "selects the light branch", setting: "paper/night", terminal: TerminalThemeLight, want: "paper", ok: true},
+		{name: "selects the dark branch", setting: "paper/night", terminal: TerminalThemeDark, want: "night", ok: true},
+		{name: "rejects a malformed automatic setting", setting: "paper/night/other", terminal: TerminalThemeDark},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := ResolveThemeSetting(test.setting, test.terminal)
+			if got != test.want || ok != test.ok {
+				t.Fatalf("ResolveThemeSetting(%q, %q) = (%q, %t), want (%q, %t)", test.setting, test.terminal, got, ok, test.want, test.ok)
+			}
+		})
+	}
+}
+
+func TestTerminalThemeDetectionRespectsTerminalCapabilities(t *testing.T) {
+	if terminalSupportsThemeDetection(nil) {
+		t.Fatal("nil terminal unexpectedly supports theme detection")
+	}
+	if terminalSupportsThemeDetection(gitui.NewVirtualTerminal(80, 24)) {
+		t.Fatal("headless terminal unexpectedly supports theme detection")
+	}
+
+	var output strings.Builder
+	processTerminal := gitui.NewProcessTerminalWithIO(strings.NewReader(""), &output, 80, 24)
+	if !terminalSupportsThemeDetection(processTerminal) {
+		t.Fatal("process terminal unexpectedly skipped theme detection")
+	}
+}
+
 func TestDetectTerminalBackgroundFromEnvPiCases(t *testing.T) {
 	t.Run("uses the COLORFGBG background color index", func(t *testing.T) {
 		light := DetectTerminalBackgroundFromEnv(map[string]string{"COLORFGBG": "0;15"})

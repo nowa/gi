@@ -259,6 +259,12 @@ This document tracks source-level parity for Pi `packages/coding-agent/src` in t
   theme preview/restore semantics: moving or filtering to a candidate previews
   it without persisting settings, Enter commits it, and Escape restores the
   original theme. The `/settings` Theme submenu uses the same preview boundary.
+- Latest theme-state increment: the interactive host now delegates fixed and
+  automatic `light/dark` settings, terminal detection and change reports,
+  preview/restore, dark fallback, and notification disposal to one Go-native
+  controller. Presence-aware raw settings and an immutable parsed pair feed a
+  revisioned serialized palette transition, so a delayed terminal query cannot
+  overwrite a newer explicit selection.
 - Latest tool-image increment: `ToolExecutionComponent` now consumes Pi-style
   terminal image settings. Tool results with image blocks render inline through
   `gi-tui` image protocols when supported, fall back to deterministic image

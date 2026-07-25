@@ -215,6 +215,12 @@ func (v *VirtualTerminal) KittyProtocolActive() bool {
 	return v.kitty
 }
 
+// IsHeadless reports that this terminal has no external process capable of
+// answering terminal capability queries.
+func (v *VirtualTerminal) IsHeadless() bool {
+	return true
+}
+
 func (v *VirtualTerminal) MoveBy(lines int) error {
 	if lines > 0 {
 		return v.Write("\x1b[" + strconv.Itoa(lines) + "B")

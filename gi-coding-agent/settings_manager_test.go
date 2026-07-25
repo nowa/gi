@@ -9,6 +9,26 @@ import (
 	"testing"
 )
 
+func TestSettingsManagerSeparatesRawAndFixedThemeSettings(t *testing.T) {
+	manager := NewInMemorySettingsManager(nil)
+	if setting, present := manager.GetThemeSetting(); present || setting != "" {
+		t.Fatalf("unset theme setting = (%q, %t)", setting, present)
+	}
+
+	manager.SetTheme("paper/night")
+	if setting, present := manager.GetThemeSetting(); !present || setting != "paper/night" {
+		t.Fatalf("automatic theme setting = (%q, %t)", setting, present)
+	}
+	if fixed := manager.GetTheme(); fixed != "" {
+		t.Fatalf("fixed theme for automatic setting = %q, want empty", fixed)
+	}
+
+	manager.SetTheme("light")
+	if setting, present := manager.GetThemeSetting(); !present || setting != "light" || manager.GetTheme() != "light" {
+		t.Fatalf("fixed setting = (%q, %t), fixed theme = %q", setting, present, manager.GetTheme())
+	}
+}
+
 func TestSettingsManagerPreservesExternalGlobalEdits(t *testing.T) {
 	agentDir, projectDir := createSettingsTestDirs(t)
 	settingsPath := filepath.Join(agentDir, "settings.json")

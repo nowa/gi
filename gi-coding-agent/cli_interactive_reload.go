@@ -208,7 +208,5 @@ func (h *CLIInteractiveTUIHost) applyReloadedInteractiveSettings() {
 		h.ui.SetShowHardwareCursor(settings.GetShowHardwareCursor())
 		h.ui.SetClearOnShrink(settings.GetClearOnShrink())
 	}
-	if err := h.applyCurrentTUITheme(); err == nil {
-		h.updateEditorBorderColor()
-	}
+	h.applyCurrentTUITheme(context.Background())
 }

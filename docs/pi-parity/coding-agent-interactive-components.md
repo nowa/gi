@@ -48,11 +48,11 @@ All Pi component names in this table are exact files under
 | `scoped-models-selector.ts` | Scoped model picker | `gi-coding-agent/model_selector_component.go`, `gi-coding-agent/model_search.go`, `gi-coding-agent/cli_interactive_model.go`, `model_registry.go` | direct | Scoped model order, interactive enable/disable flow, canonical provider/ID/name search, and thinking-level preservation are covered by Gi model tests. |
 | `session-selector-search.ts` | Search query renderer for sessions | `gi-coding-agent/session_selector_search.go` | direct | Session search tokenization and display are represented. |
 | `session-selector.ts` | Session picker | `gi-coding-agent/session_selector.go` | direct | Session list, branch metadata, and key hints are represented. |
-| `settings-selector.ts` | Settings menu | `gi-coding-agent/cli_interactive_settings.go`, `settings_manager.go` | consolidated | Settings are built into a focused interactive settings host rather than a standalone package. Item order, image-control gating, select submenus, theme preview/cancel, and callback side effects are represented; transport settings flow into provider stream options, while cache-miss notice changes rebuild the transcript from session entries without persisting presentation state. |
+| `settings-selector.ts` | Settings menu | `gi-coding-agent/cli_interactive_settings.go`, `settings_manager.go`, `interactive_theme_controller.go` | consolidated | Settings are built into a focused interactive settings host rather than a standalone package. Item order, image-control gating, select submenus, controller-owned theme preview/cancel, and callback side effects are represented; transport settings flow into provider stream options, while cache-miss notice changes rebuild the transcript from session entries without persisting presentation state. |
 | `show-images-selector.ts` | Image-display setting selector | `gi-coding-agent/cli_interactive_tui.go`, `tool_execution_component.go` `SetShowImages` | consolidated | User-facing setting exists; standalone selector structure is folded into settings. |
 | `skill-invocation-message.ts` | Collapsible skill invocation | `gi-coding-agent/cli_interactive_tui.go` `addSkillInvocationMessage`, `export_html_skill_block.go` | direct | Skill block parsing and collapsible display are represented. |
 | `status-indicator.ts` | Working, retry, compaction, branch-summary, and idle status components | `gi-coding-agent/status_indicator.go`, `cli_interactive_status.go` | direct | Typed status kinds share one host-owned slot. Replacement and typed clearing dispose the previous loader/countdown outside the host lock; clear-on-shrink installs a fixed-height idle component. |
-| `theme-selector.ts` | Theme picker | `gi-coding-agent/cli_interactive_settings.go` settings theme submenu, `theme_export.go`, theme tests | consolidated | Pi's standalone component is exported but not mounted directly by interactive mode; the mounted SettingsSelector theme submenu behavior is represented, including current selection, preview on selection change, restore on cancel, and Enter/Esc key flow. |
+| `theme-selector.ts` | Theme picker | `gi-coding-agent/cli_interactive_settings.go` settings theme submenu, `interactive_theme_controller.go`, `theme_export.go`, theme tests | consolidated | Pi's standalone component is exported but not mounted directly by interactive mode; the mounted SettingsSelector theme submenu delegates preview and restore to the same state owner used by terminal auto-sync, including current selection, preview on selection change, restore on cancel, and Enter/Esc key flow. |
 | `thinking-selector.ts` | Thinking level picker | `gi-coding-agent/model_selector_component.go`, `cli_interactive_model.go`, `model_registry.go` | consolidated | Thinking level selection is integrated with model/scoped-model flows and footer state. |
 | `tool-execution.ts` | Tool call/result UI | `gi-coding-agent/tool_execution_component.go` | direct | Tool arguments, result, expansion, images, and errors are represented. |
 | `tree-selector.ts` | Tree/session branch selector | `gi-coding-agent/tree_selector.go` | direct | Tree navigation and selection behavior are represented. |
@@ -128,6 +128,35 @@ event cannot accidentally clear a newer status owner.
 Thinking-level UI updates now match Pi's event path: `thinking_level_changed`
 refreshes the footer and immediately reapplies the editor border color for the
 current reasoning level instead of waiting for a later full render/build.
+
+Theme data now follows one directional path:
+
+```text
+raw SettingsManager value
+        |
+        v
+fixed name or immutable AutoThemeSetting
+        |
+        +---- terminal query/report ----+
+        |                               |
+        v                               v
+ revisioned interactiveThemeController state
+        |
+        v
+ serialized global palette transition
+        |
+        v
+ invalidate -> editor border refresh -> render
+```
+
+Terminal queries never run while controller or palette-transition locks are
+held. A newer selection advances the revision, so a delayed OSC response cannot
+overwrite it. Preview changes only the palette; the committed name remains the
+restore point. Shutdown cancels in-flight detection, unsubscribes the listener,
+and disables terminal notifications. Terminal implementations explicitly
+report whether they are headless: virtual terminals resolve from the immutable
+environment snapshot and skip OSC queries, while process terminals retain
+Pi-compatible active detection.
 
 Edit diff rendering now matches Pi's `diff.ts` surface: Gi parses `+/-/ `
 line-numbered diff rows, applies `toolDiffAdded` / `toolDiffRemoved` /

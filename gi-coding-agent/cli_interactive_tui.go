@@ -180,8 +180,7 @@ type CLIInteractiveTUIHost struct {
 	anthropicWarningShown   bool
 	activePromptMu          sync.Mutex
 	activePromptCount       int
-	themePreviewActive      bool
-	themePreviewName        string
+	themeController         *interactiveThemeController
 	deadTerminal            atomic.Bool
 }
 
@@ -631,6 +630,14 @@ func (h *CLIInteractiveTUIHost) RunContext(ctx context.Context) (runErr error) {
 	} else {
 		h.ui.Start()
 	}
+	if settings := h.settingsManager(); settings != nil {
+		if _, present := settings.GetThemeSetting(); present {
+			h.applyCurrentTUITheme(ctx)
+		} else if controller := h.interactiveThemeController(); controller != nil &&
+			terminalSupportsThemeDetection(h.terminal) {
+			go controller.ApplyFromSettings(ctx)
+		}
+	}
 	h.updateTerminalTitle()
 	h.maybeShowTmuxKeyboardWarning(ctx)
 	if err := h.startProtocolExtensionProcesses(ctx, "startup"); err != nil {
@@ -882,15 +889,19 @@ func (h *CLIInteractiveTUIHost) CurrentTUITheme() string {
 		return ""
 	}
 	h.mu.Lock()
-	if h.themePreviewActive {
-		name := h.themePreviewName
-		h.mu.Unlock()
-		return name
-	}
+	controller := h.themeController
 	h.mu.Unlock()
+	if controller != nil {
+		return controller.ActiveThemeName()
+	}
 	if settings := h.settingsManager(); settings != nil {
-		if name := settings.GetTheme(); name != "" {
-			return name
+		if setting, present := settings.GetThemeSetting(); present {
+			if name, ok := ResolveThemeSetting(
+				setting,
+				DetectTerminalBackgroundFromEnv(nil).Theme,
+			); ok && name != "" {
+				return name
+			}
 		}
 	}
 	return tuiActiveThemeSnapshot().name
@@ -937,8 +948,13 @@ func (h *CLIInteractiveTUIHost) SetTUITheme(name string) error {
 	if name == "" {
 		return errors.New("theme name is required")
 	}
-	h.clearTUIThemePreview()
-	if err := h.applyTUIThemeName(name); err != nil {
+	controller := h.interactiveThemeController()
+	if controller != nil {
+		result := controller.SetThemeName(name, false)
+		if !result.Success {
+			return result.Err
+		}
+	} else if err := tuiSetActiveTheme(name, h.AvailableTUIThemes()); err != nil {
 		return err
 	}
 	settings.SetTheme(name)
@@ -957,40 +973,51 @@ func (h *CLIInteractiveTUIHost) previewTUITheme(name string) {
 	if name == "" {
 		return
 	}
-	if err := h.applyTUIThemeName(name); err != nil {
+	controller := h.interactiveThemeController()
+	if controller == nil {
+		if err := tuiSetActiveTheme(name, h.AvailableTUIThemes()); err == nil {
+			h.requestRender(true)
+		}
 		return
 	}
-	h.mu.Lock()
-	h.themePreviewActive = true
-	h.themePreviewName = name
-	h.mu.Unlock()
-	h.requestRender(true)
+	controller.Preview(name)
 }
 
 func (h *CLIInteractiveTUIHost) clearTUIThemePreview() {
 	if h == nil {
 		return
 	}
-	h.mu.Lock()
-	h.themePreviewActive = false
-	h.themePreviewName = ""
-	h.mu.Unlock()
-	_ = h.applyCurrentTUITheme()
+	h.applyCurrentTUITheme(context.Background())
 }
 
-func (h *CLIInteractiveTUIHost) applyCurrentTUITheme() error {
-	name := ""
-	if settings := h.settingsManager(); settings != nil {
-		name = settings.GetTheme()
-	}
-	return h.applyTUIThemeName(name)
-}
-
-func (h *CLIInteractiveTUIHost) applyTUIThemeName(name string) error {
+func (h *CLIInteractiveTUIHost) applyCurrentTUITheme(ctx context.Context) {
 	if h == nil {
-		return errors.New("interactive TUI theme host is not ready")
+		return
 	}
-	return tuiSetActiveTheme(name, h.AvailableTUIThemes())
+	if controller := h.interactiveThemeController(); controller != nil {
+		controller.ApplyFromSettings(ctx)
+		return
+	}
+	name := tuiDefaultThemeName()
+	if settings := h.settingsManager(); settings != nil {
+		if setting, present := settings.GetThemeSetting(); present {
+			if resolved, ok := ResolveThemeSetting(setting, DetectTerminalBackgroundFromEnv(nil).Theme); ok {
+				name = resolved
+			}
+		}
+	}
+	if err := tuiSetActiveTheme(name, h.AvailableTUIThemes()); err != nil {
+		_ = tuiSetActiveTheme("dark", nil)
+	}
+}
+
+func (h *CLIInteractiveTUIHost) interactiveThemeController() *interactiveThemeController {
+	if h == nil {
+		return nil
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.themeController
 }
 
 func (h *CLIInteractiveTUIHost) showStartupNoticesIfNeeded() {
@@ -1327,8 +1354,13 @@ func (h *CLIInteractiveTUIHost) startViewTreeTickLoop(ctx context.Context) {
 
 func (h *CLIInteractiveTUIHost) buildUI() {
 	settings := h.settingsManager()
-	if err := h.applyCurrentTUITheme(); err != nil {
-		_ = tuiSetActiveTheme("dark", nil)
+	if previous := h.interactiveThemeController(); previous != nil {
+		previous.Dispose()
+		h.mu.Lock()
+		if h.themeController == previous {
+			h.themeController = nil
+		}
+		h.mu.Unlock()
 	}
 	showHardwareCursor := false
 	editorPaddingX := 0
@@ -1345,6 +1377,48 @@ func (h *CLIInteractiveTUIHost) buildUI() {
 	h.ui.SetTerminalErrorHandler(func(err error) {
 		h.handleTerminalError(err)
 	})
+	if settings != nil {
+		controllerOptions := interactiveThemeControllerOptions{
+			UI:              h.ui,
+			Settings:        settings,
+			AvailableThemes: h.AvailableTUIThemes,
+			ShowError: func(message string) {
+				h.addStatus("Error: " + message)
+			},
+			OnChanged: func() {
+				h.updateEditorBorderColor()
+				h.requestRender(false)
+			},
+		}
+		if !terminalSupportsThemeDetection(h.terminal) {
+			controllerOptions.DetectBackground = func(
+				_ context.Context,
+				_ TerminalBackgroundThemeDetector,
+				_ time.Duration,
+				environment map[string]string,
+			) TerminalThemeDetection {
+				return DetectTerminalBackgroundFromEnv(environment)
+			}
+			controllerOptions.DetectAuto = func(
+				_ context.Context,
+				_ TerminalAutoThemeDetector,
+				_ time.Duration,
+				environment map[string]string,
+			) TerminalTheme {
+				return DetectTerminalBackgroundFromEnv(environment).Theme
+			}
+		}
+		controller, err := newInteractiveThemeController(controllerOptions)
+		if err == nil {
+			h.mu.Lock()
+			h.themeController = controller
+			h.mu.Unlock()
+		} else {
+			_ = tuiSetActiveTheme("dark", nil)
+		}
+	} else {
+		_ = tuiSetActiveTheme(tuiDefaultThemeName(), nil)
+	}
 	h.chat = gitui.NewContainer()
 	h.pendingMessages = gitui.NewContainer()
 	h.statusContainer = gitui.NewContainer()
@@ -1429,6 +1503,14 @@ func (h *CLIInteractiveTUIHost) buildUI() {
 	h.layout = &cliInteractiveLayout{host: h}
 	h.ui.AddChild(h.layout)
 	h.ui.SetFocus(h.editor)
+}
+
+func terminalSupportsThemeDetection(terminal gitui.Terminal) bool {
+	if terminal == nil {
+		return false
+	}
+	headless, ok := terminal.(interface{ IsHeadless() bool })
+	return !ok || !headless.IsHeadless()
 }
 
 func (h *CLIInteractiveTUIHost) emitPackageTerminalInput(data string) {
@@ -3948,6 +4030,14 @@ func (h *CLIInteractiveTUIHost) stopUI() {
 		return
 	}
 	h.clearStatusIndicator()
+	if controller := h.interactiveThemeController(); controller != nil {
+		controller.Dispose()
+		h.mu.Lock()
+		if h.themeController == controller {
+			h.themeController = nil
+		}
+		h.mu.Unlock()
+	}
 	if h.unwatch != nil {
 		h.unwatch()
 		h.unwatch = nil
