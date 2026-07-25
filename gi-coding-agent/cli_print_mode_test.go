@@ -96,6 +96,7 @@ func TestRunCLIHelpUsesPiStyleReferenceShapeWithoutNPM(t *testing.T) {
 		"Usage:\n  gi [options] [@files...] [messages...]",
 		"--provider <name>",
 		"--model <pattern>",
+		"--session-id <id>",
 		"--thinking <level>",
 		"--list-models [search]",
 		"Environment Variables:",
@@ -109,6 +110,86 @@ func TestRunCLIHelpUsesPiStyleReferenceShapeWithoutNPM(t *testing.T) {
 	}
 	if strings.Contains(output, "npm:") {
 		t.Fatalf("help should not advertise npm package sources:\n%s", output)
+	}
+}
+
+func TestRunCLIValidatesSessionIDForReadOnlyMetadataCommands(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	tempDir := t.TempDir()
+
+	code := RunCLI(CLIOptions{
+		Args:     []string{"--session-id", "-bad", "--help"},
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		CWD:      tempDir,
+		AgentDir: filepath.Join(tempDir, ".agent"),
+	})
+	if code != 1 {
+		t.Fatalf("exit code = %d", code)
+	}
+	if !strings.Contains(stderr.String(), "Error: "+sessionIDValidationMessage) {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("invalid session id printed help: %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = RunCLI(CLIOptions{
+		Args:     []string{"--no-session", "--session-id", "ephemeral-id", "--help"},
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		CWD:      tempDir,
+		AgentDir: filepath.Join(tempDir, ".agent"),
+	})
+	if code != 0 || !strings.Contains(stdout.String(), "Usage:") || stderr.Len() != 0 {
+		t.Fatalf("valid metadata command = code %d stdout %q stderr %q", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCLIReportsSessionAndModelScopeStartupWarnings(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	tempDir := t.TempDir()
+	sessionDir := filepath.Join(tempDir, "sessions")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := RunCLI(CLIOptions{
+		Args: []string{
+			"--offline",
+			"--session-dir", sessionDir,
+			"--session-id", "planned-session",
+			"--model", "openai/gpt-4o-mini",
+			"--models", "missing-*",
+			"-p", "hello",
+		},
+		Stdin:         strings.NewReader(""),
+		Stdout:        &stdout,
+		Stderr:        &stderr,
+		CWD:           tempDir,
+		AgentDir:      filepath.Join(tempDir, ".agent"),
+		ModelRegistry: newTestOpenAIModelRegistry(),
+		Responder:     DefaultAgentSessionResponder,
+	})
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %q", code, stderr.String())
+	}
+	if stdout.String() != "Response to: hello" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	for _, warning := range []string{
+		"Warning: No project session found with id 'planned-session'; creating a new session with that id.",
+		`Warning: No models match pattern "missing-*"`,
+	} {
+		if !strings.Contains(stderr.String(), warning) {
+			t.Fatalf("stderr = %q, want %q", stderr.String(), warning)
+		}
+	}
+	sessions := ListSessions(tempDir, sessionDir)
+	if session, ok := findSessionInfoByExactID(sessions, "planned-session"); !ok || session.Path == "" {
+		t.Fatalf("persisted sessions = %#v", sessions)
 	}
 }
 

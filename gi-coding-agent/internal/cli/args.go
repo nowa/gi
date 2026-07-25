@@ -40,6 +40,8 @@ type Args struct {
 	Mode                 Mode
 	NoSession            bool
 	Session              string
+	SessionID            string
+	SessionIDSet         bool
 	SessionCwdOverride   string
 	Fork                 string
 	SessionDir           string
@@ -127,6 +129,10 @@ func ParseArgs(argv []string) Args {
 		case arg == "--session" && i+1 < len(argv):
 			i++
 			result.Session = argv[i]
+		case arg == "--session-id" && i+1 < len(argv):
+			i++
+			result.SessionID = argv[i]
+			result.SessionIDSet = true
 		case arg == "--fork" && i+1 < len(argv):
 			i++
 			result.Fork = argv[i]

@@ -81,6 +81,7 @@ func TestParseArgsPiFlagMatrix(t *testing.T) {
 			"--append-system-prompt", "Context B",
 			"--mode", "rpc",
 			"--session", "/path/to/session.jsonl",
+			"--session-id", "orchestrated-session",
 			"--fork", "1234abcd",
 			"--session-dir", "/tmp/sessions",
 			"--export", "session.html",
@@ -93,7 +94,12 @@ func TestParseArgsPiFlagMatrix(t *testing.T) {
 		if got.SystemPrompt != "You are helpful" || !reflect.DeepEqual(got.AppendSystemPrompt, []string{"Context A", "Context B"}) {
 			t.Fatalf("system prompt flags = %#v", got)
 		}
-		if got.Mode != ModeRPC || got.Session != "/path/to/session.jsonl" || got.Fork != "1234abcd" || got.SessionDir != "/tmp/sessions" {
+		if got.Mode != ModeRPC ||
+			got.Session != "/path/to/session.jsonl" ||
+			got.SessionID != "orchestrated-session" ||
+			!got.SessionIDSet ||
+			got.Fork != "1234abcd" ||
+			got.SessionDir != "/tmp/sessions" {
 			t.Fatalf("mode/session flags = %#v", got)
 		}
 		if got.Export != "session.html" || got.Thinking != ThinkingHigh {

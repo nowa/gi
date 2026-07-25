@@ -66,6 +66,11 @@ func TestCodingAgentPiArgsExactCaseNames(t *testing.T) {
 			t.Fatalf("args = %#v", got)
 		}
 	})
+	t.Run("parses --session-id", func(t *testing.T) {
+		if got := ParseArgs([]string{"--session-id", "orchestrated-session"}); got.SessionID != "orchestrated-session" || !got.SessionIDSet {
+			t.Fatalf("args = %#v", got)
+		}
+	})
 	t.Run("parses --fork", func(t *testing.T) {
 		if got := ParseArgs([]string{"--fork", "entry-1"}); got.Fork != "entry-1" {
 			t.Fatalf("args = %#v", got)

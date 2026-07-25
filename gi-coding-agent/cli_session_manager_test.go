@@ -92,6 +92,234 @@ func TestCLIPrintModeSessionFlagsMatchPiSessionManagerSemantics(t *testing.T) {
 	})
 }
 
+func TestCLIPrintModeSessionIDUsesOneValidatedSelectionFlow(t *testing.T) {
+	t.Run("creates a missing exact id with a startup warning", func(t *testing.T) {
+		cwd := t.TempDir()
+		sessionDir := filepath.Join(cwd, "sessions")
+		result, err := newCLIPrintModeSessionManager(
+			Args{SessionID: "planned-session", SessionDir: sessionDir},
+			cwd,
+			filepath.Join(cwd, ".agent"),
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.SessionManager.GetSessionID() != "planned-session" {
+			t.Fatalf("session id = %q", result.SessionManager.GetSessionID())
+		}
+		wantWarning := "No project session found with id 'planned-session'; creating a new session with that id."
+		if len(result.StartupWarnings) != 1 || result.StartupWarnings[0] != wantWarning {
+			t.Fatalf("startup warnings = %#v", result.StartupWarnings)
+		}
+	})
+
+	t.Run("opens an existing exact id without warning", func(t *testing.T) {
+		cwd := t.TempDir()
+		sessionDir := filepath.Join(cwd, "sessions")
+		sessionFile := writeCLITestSessionFile(
+			t,
+			filepath.Join(sessionDir, "existing.jsonl"),
+			"existing-session",
+			cwd,
+			nil,
+		)
+		result, err := newCLIPrintModeSessionManager(
+			Args{SessionID: "existing-session", SessionDir: sessionDir},
+			cwd,
+			filepath.Join(cwd, ".agent"),
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.SessionManager.GetSessionFile() != sessionFile ||
+			result.SessionManager.GetSessionID() != "existing-session" {
+			t.Fatalf(
+				"opened session = %q/%q",
+				result.SessionManager.GetSessionID(),
+				result.SessionManager.GetSessionFile(),
+			)
+		}
+		if len(result.StartupWarnings) != 0 {
+			t.Fatalf("startup warnings = %#v", result.StartupWarnings)
+		}
+	})
+
+	t.Run("assigns the exact id to ephemeral and forked sessions", func(t *testing.T) {
+		cwd := t.TempDir()
+		sessionDir := filepath.Join(cwd, "sessions")
+		ephemeral, err := newCLIPrintModeSessionManager(
+			Args{
+				NoSession:    true,
+				SessionID:    "ephemeral-session",
+				SessionIDSet: true,
+				SessionDir:   sessionDir,
+			},
+			cwd,
+			filepath.Join(cwd, ".agent"),
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ephemeral.SessionManager.GetSessionID() != "ephemeral-session" ||
+			ephemeral.SessionManager.IsPersisted() {
+			t.Fatalf(
+				"ephemeral session = id %q persisted %v",
+				ephemeral.SessionManager.GetSessionID(),
+				ephemeral.SessionManager.IsPersisted(),
+			)
+		}
+
+		source := writeCLITestSessionFile(
+			t,
+			filepath.Join(sessionDir, "source.jsonl"),
+			"source-session",
+			cwd,
+			nil,
+		)
+		forked, err := newCLIPrintModeSessionManager(
+			Args{
+				Fork:       "source-session",
+				SessionID:  "forked-session",
+				SessionDir: sessionDir,
+			},
+			cwd,
+			filepath.Join(cwd, ".agent"),
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if forked.SessionManager.GetSessionID() != "forked-session" {
+			t.Fatalf("forked session id = %q", forked.SessionManager.GetSessionID())
+		}
+		header := forked.SessionManager.GetHeader()
+		if header == nil || header.ParentSession != source {
+			t.Fatalf("forked header = %#v", header)
+		}
+	})
+
+	t.Run("rejects a fork target id that already exists locally", func(t *testing.T) {
+		cwd := t.TempDir()
+		sessionDir := filepath.Join(cwd, "sessions")
+		writeCLITestSessionFile(
+			t,
+			filepath.Join(sessionDir, "source.jsonl"),
+			"source-session",
+			cwd,
+			nil,
+		)
+		writeCLITestSessionFile(
+			t,
+			filepath.Join(sessionDir, "target.jsonl"),
+			"target-session",
+			cwd,
+			nil,
+		)
+		_, err := newCLIPrintModeSessionManager(
+			Args{
+				Fork:       "source-session",
+				SessionID:  "target-session",
+				SessionDir: sessionDir,
+			},
+			cwd,
+			filepath.Join(cwd, ".agent"),
+			nil,
+		)
+		if err == nil || err.Error() != "Session already exists with id 'target-session'" {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}
+
+func TestCLISessionIDValidationMatchesPiFlagContract(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    Args
+		wantErr string
+	}{
+		{
+			name:    "session conflict",
+			args:    Args{SessionID: "custom", Session: "existing"},
+			wantErr: "--session-id cannot be combined with --session",
+		},
+		{
+			name:    "continue conflict",
+			args:    Args{SessionID: "custom", Continue: true},
+			wantErr: "--session-id cannot be combined with --continue",
+		},
+		{
+			name:    "resume conflict",
+			args:    Args{SessionID: "custom", Resume: true},
+			wantErr: "--session-id cannot be combined with --resume",
+		},
+		{
+			name:    "invalid id",
+			args:    Args{SessionID: "-bad"},
+			wantErr: sessionIDValidationMessage,
+		},
+		{
+			name:    "explicit empty id",
+			args:    Args{SessionIDSet: true},
+			wantErr: sessionIDValidationMessage,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateCLISessionFlags(tc.args)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err = %v, want %q", err, tc.wantErr)
+			}
+		})
+	}
+
+	if err := validateCLISessionFlags(Args{
+		NoSession: true,
+		SessionID: "ephemeral",
+	}); err != nil {
+		t.Fatalf("--no-session with --session-id = %v", err)
+	}
+	if err := validateCLISessionFlags(Args{
+		Fork:      "source",
+		SessionID: "target",
+	}); err != nil {
+		t.Fatalf("--fork with --session-id = %v", err)
+	}
+}
+
+func TestResolveCLISessionPathPrefersExactIDBeforeNewerPrefix(t *testing.T) {
+	cwd := t.TempDir()
+	sessionDir := filepath.Join(cwd, "sessions")
+	exact := writeCLITestSessionFile(
+		t,
+		filepath.Join(sessionDir, "exact.jsonl"),
+		"abc",
+		cwd,
+		nil,
+	)
+	prefix := writeCLITestSessionFile(
+		t,
+		filepath.Join(sessionDir, "prefix.jsonl"),
+		"abcdef",
+		cwd,
+		nil,
+	)
+	base := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(exact, base, base); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(prefix, base.Add(time.Second), base.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	resolved := resolveCLISessionPath("abc", cwd, sessionDir)
+	if resolved.Type != cliResolvedSessionLocal || resolved.Path != exact {
+		t.Fatalf("resolved = %#v, want exact path %q", resolved, exact)
+	}
+}
+
 func TestCLIPrintModeForkRejectsPiConflictingFlags(t *testing.T) {
 	_, err := newDefaultCLIPrintModeHost(Args{
 		Offline:   true,

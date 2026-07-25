@@ -1,6 +1,7 @@
 package modelresolver
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -131,6 +132,21 @@ type ScopedModel struct {
 	ThinkingLevel ThinkingLevel
 }
 
+type ModelScopeDiagnosticType string
+
+const ModelScopeDiagnosticWarning ModelScopeDiagnosticType = "warning"
+
+type ModelScopeDiagnostic struct {
+	Type    ModelScopeDiagnosticType
+	Message string
+	Pattern string
+}
+
+type ResolveModelScopeResult struct {
+	ScopedModels []ScopedModel
+	Diagnostics  []ModelScopeDiagnostic
+}
+
 type FindInitialModelOptions struct {
 	CLIProvider              string
 	CLIModel                 string
@@ -199,11 +215,16 @@ func ParseModelPattern(pattern string, availableModels []llm.Model, options ...M
 }
 
 func ResolveModelScope(patterns []string, registry CodingModelRegistry) []ScopedModel {
+	return ResolveModelScopeWithDiagnostics(patterns, registry).ScopedModels
+}
+
+func ResolveModelScopeWithDiagnostics(patterns []string, registry CodingModelRegistry) ResolveModelScopeResult {
 	if registry == nil || len(patterns) == 0 {
-		return nil
+		return ResolveModelScopeResult{}
 	}
 	availableModels := registry.GetAvailable()
 	scopedModels := make([]ScopedModel, 0, len(patterns))
+	diagnostics := make([]ModelScopeDiagnostic, 0)
 	for _, rawPattern := range patterns {
 		pattern := strings.TrimSpace(rawPattern)
 		if pattern == "" {
@@ -211,21 +232,59 @@ func ResolveModelScope(patterns []string, registry CodingModelRegistry) []Scoped
 		}
 		if containsModelGlob(pattern) {
 			globPattern, thinkingLevel := splitModelScopePattern(pattern)
+			if exactMatch := FindExactModelReferenceMatch(globPattern, availableModels); exactMatch != nil {
+				if !scopedModelExists(scopedModels, *exactMatch) {
+					scopedModels = append(scopedModels, ScopedModel{
+						Model:         *exactMatch,
+						ThinkingLevel: thinkingLevel,
+					})
+				}
+				continue
+			}
+			matched := false
 			for _, model := range availableModels {
-				if !modelScopeGlobMatches(globPattern, model) || scopedModelExists(scopedModels, model) {
+				if !modelScopeGlobMatches(globPattern, model) {
 					continue
 				}
-				scopedModels = append(scopedModels, ScopedModel{Model: model, ThinkingLevel: thinkingLevel})
+				matched = true
+				if !scopedModelExists(scopedModels, model) {
+					scopedModels = append(scopedModels, ScopedModel{Model: model, ThinkingLevel: thinkingLevel})
+				}
+			}
+			if !matched {
+				diagnostics = append(diagnostics, noModelScopeMatchDiagnostic(rawPattern))
 			}
 			continue
 		}
 		parsed := ParseModelPattern(pattern, availableModels)
-		if parsed.Model == nil || scopedModelExists(scopedModels, *parsed.Model) {
+		if parsed.Warning != "" {
+			diagnostics = append(diagnostics, ModelScopeDiagnostic{
+				Type:    ModelScopeDiagnosticWarning,
+				Message: parsed.Warning,
+				Pattern: rawPattern,
+			})
+		}
+		if parsed.Model == nil {
+			diagnostics = append(diagnostics, noModelScopeMatchDiagnostic(rawPattern))
+			continue
+		}
+		if scopedModelExists(scopedModels, *parsed.Model) {
 			continue
 		}
 		scopedModels = append(scopedModels, ScopedModel{Model: *parsed.Model, ThinkingLevel: parsed.ThinkingLevel})
 	}
-	return scopedModels
+	return ResolveModelScopeResult{
+		ScopedModels: scopedModels,
+		Diagnostics:  diagnostics,
+	}
+}
+
+func noModelScopeMatchDiagnostic(pattern string) ModelScopeDiagnostic {
+	return ModelScopeDiagnostic{
+		Type:    ModelScopeDiagnosticWarning,
+		Message: fmt.Sprintf("No models match pattern %q", pattern),
+		Pattern: pattern,
+	}
 }
 
 func containsModelGlob(pattern string) bool {

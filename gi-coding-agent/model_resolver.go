@@ -16,8 +16,13 @@ type ModelPatternOptions = modelresolver.ModelPatternOptions
 type ResolveCLIModelOptions = modelresolver.ResolveCLIModelOptions
 type ResolveCLIModelResult = modelresolver.ResolveCLIModelResult
 type ScopedModel = modelresolver.ScopedModel
+type ModelScopeDiagnosticType = modelresolver.ModelScopeDiagnosticType
+type ModelScopeDiagnostic = modelresolver.ModelScopeDiagnostic
+type ResolveModelScopeResult = modelresolver.ResolveModelScopeResult
 type FindInitialModelOptions = modelresolver.FindInitialModelOptions
 type InitialModelResult = modelresolver.InitialModelResult
+
+const ModelScopeDiagnosticWarning ModelScopeDiagnosticType = modelresolver.ModelScopeDiagnosticWarning
 
 func IsAliasModelID(id string) bool {
 	return modelresolver.IsAliasModelID(id)
@@ -33,6 +38,10 @@ func ParseModelPattern(pattern string, availableModels []llm.Model, options ...M
 
 func ResolveModelScope(patterns []string, registry CodingModelRegistry) []ScopedModel {
 	return modelresolver.ResolveModelScope(patterns, registry)
+}
+
+func ResolveModelScopeWithDiagnostics(patterns []string, registry CodingModelRegistry) ResolveModelScopeResult {
+	return modelresolver.ResolveModelScopeWithDiagnostics(patterns, registry)
 }
 
 func ResolveCLIModel(options ResolveCLIModelOptions) ResolveCLIModelResult {

@@ -25,10 +25,11 @@ func resolveCLIInteractiveMissingSessionCWDWithTerminal(args Args, options CLIOp
 		return args, nil, err
 	}
 	settingsManager := NewSettingsManager(startupCwd, agentDir)
-	sessionManager, err := newCLIPrintModeSessionManager(args, startupCwd, agentDir, settingsManager)
+	sessionResult, err := newCLIPrintModeSessionManager(args, startupCwd, agentDir, settingsManager)
 	if err != nil {
 		return args, nil, err
 	}
+	sessionManager := sessionResult.SessionManager
 	issue := GetMissingSessionCwdIssue(sessionManager, startupCwd)
 	if issue == nil {
 		return args, nil, nil

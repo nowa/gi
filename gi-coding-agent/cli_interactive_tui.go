@@ -555,10 +555,10 @@ func NewCLIInteractiveTUIHost(options CLIInteractiveTUIHostOptions) (*CLIInterac
 	if viewTreeHost == nil {
 		viewTreeHost = NewViewTreeHost()
 	}
-	startupWarnings := append([]string(nil), options.StartupWarnings...)
-	if len(startupWarnings) == 0 {
-		startupWarnings = startupWarningsFromRuntimeHost(options.RuntimeHost)
-	}
+	startupWarnings := collectStartupWarnings(
+		options.StartupWarnings,
+		startupWarningsFromRuntimeHost(options.RuntimeHost),
+	)
 	return &CLIInteractiveTUIHost{
 		runtimeHost:         options.RuntimeHost,
 		initialMessage:      options.InitialMessage,

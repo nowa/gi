@@ -67,11 +67,6 @@ func RunCLI(options CLIOptions) int {
 	}
 	timings.Mark("startup migrations")
 	options.StartupWarnings = append(options.StartupWarnings, migrationResult.StartupWarnings...)
-	if args.Help {
-		timings.Mark("dispatch help")
-		WriteCLIUsage(cliHelpWriter(args, options), cliHelpExtensionFlags(args, options)...)
-		return 0
-	}
 	if args.Version {
 		timings.Mark("dispatch version")
 		_, _ = fmt.Fprintln(nonNilWriter(options.Stdout), firstNonEmptyString(options.Version, DefaultCodingAgentVersion))
@@ -80,6 +75,15 @@ func RunCLI(options CLIOptions) int {
 	if args.Export != "" {
 		timings.Mark("dispatch export")
 		return runCLIExport(args, options)
+	}
+	if err := validateCLISessionFlags(args); err != nil {
+		writeCLIError(options.Stderr, "Error: "+err.Error())
+		return 1
+	}
+	if args.Help {
+		timings.Mark("dispatch help")
+		WriteCLIUsage(cliHelpWriter(args, options), cliHelpExtensionFlags(args, options)...)
+		return 0
 	}
 	if args.ListModels != nil {
 		timings.Mark("dispatch list-models")
@@ -205,6 +209,7 @@ Options:
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume
   --session <path|id>            Use specific session file or partial UUID
+  --session-id <id>              Use exact project session ID, creating it if missing
   --fork <path|id>               Fork specific session file or partial UUID into a new session
   --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
@@ -404,6 +409,15 @@ func writeCLIError(writer io.Writer, message string) {
 	_, _ = fmt.Fprintln(writer, message)
 }
 
+func reportCLIStartupWarnings(writer io.Writer, warnings []string) {
+	for _, warning := range collectStartupWarnings(warnings) {
+		if !strings.HasPrefix(warning, "Warning:") {
+			warning = "Warning: " + warning
+		}
+		writeCLIError(writer, warning)
+	}
+}
+
 func reportCLIArgDiagnostics(diagnostics []Diagnostic, writer io.Writer) bool {
 	hasError := false
 	for _, diagnostic := range diagnostics {
@@ -464,6 +478,13 @@ func runCLIRPCMode(args Args, options CLIOptions) int {
 		writeCLIError(options.Stderr, err.Error())
 		return 1
 	}
+	reportCLIStartupWarnings(
+		options.Stderr,
+		collectStartupWarnings(
+			options.StartupWarnings,
+			startupWarningsFromRuntimeHost(runtimeHost),
+		),
+	)
 	output := outputguard.New(
 		nonNilWriter(options.Stdout),
 		outputguard.Options{},

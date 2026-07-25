@@ -227,6 +227,13 @@ func runCLIPrintMode(args Args, options CLIOptions) int {
 		writeCLIError(options.Stderr, "print mode host is required")
 		return 1
 	}
+	reportCLIStartupWarnings(
+		options.Stderr,
+		collectStartupWarnings(
+			options.StartupWarnings,
+			startupWarningsFromRuntimeHost(host),
+		),
+	)
 
 	mode := string(args.Mode)
 	if mode == "" {
@@ -287,10 +294,11 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 		return nil, err
 	}
 
-	sessionManager, err := newCLIPrintModeSessionManager(args, startupCwd, agentDir, startupSettingsManager)
+	sessionResult, err := newCLIPrintModeSessionManager(args, startupCwd, agentDir, startupSettingsManager)
 	if err != nil {
 		return nil, err
 	}
+	sessionManager := sessionResult.SessionManager
 	cwd, err := resolveCLIPrintModeRuntimeCWD(sessionManager, startupCwd)
 	if err != nil {
 		return nil, err
@@ -395,7 +403,14 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 			err.Error()
 	}
 
-	resolvedModel, err := resolveCLIPrintModeModelForSession(args, modelRuntime, settingsManager, sessionManager)
+	modelScope := resolveCLIPrintModeModelScope(args, modelRuntime, settingsManager)
+	resolvedModel, err := resolveCLIPrintModeModelForSession(
+		args,
+		modelRuntime,
+		settingsManager,
+		sessionManager,
+		modelScope,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +419,7 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	if model == nil {
 		return nil, errors.New(formatNoModelsAvailableMessage())
 	}
-	scopedModels := resolveCLIPrintModeModelScope(args, modelRuntime, settingsManager)
+	scopedModels := modelScope.ScopedModels
 	if args.APIKey != "" {
 		if err := modelRuntime.SetRuntimeAPIKey(
 			context.Background(),
@@ -460,8 +475,12 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	host.settingsManager = settingsManager
 	host.extensionFlagValues = cloneMapAny(args.UnknownFlags)
 	host.processExtensions = extensions.ProcessExtensions
-	host.startupWarnings = startupWarningLines(resolvedModel.Warning)
-	host.startupWarnings = append(host.startupWarnings, projectTrustWarnings...)
+	host.startupWarnings = collectStartupWarnings(
+		sessionResult.StartupWarnings,
+		startupWarningLines(resolvedModel.Warning),
+		modelScopeDiagnosticMessages(modelScope.Diagnostics),
+		projectTrustWarnings,
+	)
 	if llamaRefreshWarning != "" {
 		host.startupWarnings = append(
 			host.startupWarnings,
@@ -471,6 +490,7 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	if warning := projectTrustStartupWarning(cwd, projectTrusted); warning != "" {
 		host.startupWarnings = append(host.startupWarnings, warning)
 	}
+	host.startupWarnings = collectStartupWarnings(host.startupWarnings)
 	if extensions.Runtime != nil {
 		runtimeHost, err := NewAgentSessionRuntimeHost(session, extensions.Runtime)
 		if err != nil {
@@ -575,7 +595,13 @@ func resolveCLIPrintModeModel(args Args, registry CodingModelRegistry, settingsM
 	return resolved.Model, resolved.ThinkingLevel, nil
 }
 
-func resolveCLIPrintModeModelForSession(args Args, registry CodingModelRegistry, settingsManager *SettingsManager, sessionManager *SessionManager) (cliResolvedModelSelection, error) {
+func resolveCLIPrintModeModelForSession(
+	args Args,
+	registry CodingModelRegistry,
+	settingsManager *SettingsManager,
+	sessionManager *SessionManager,
+	resolvedScopes ...ResolveModelScopeResult,
+) (cliResolvedModelSelection, error) {
 	if registry == nil {
 		return cliResolvedModelSelection{ThinkingLevel: DefaultThinkingLevel}, errors.New("model registry is required")
 	}
@@ -610,7 +636,13 @@ func resolveCLIPrintModeModelForSession(args Args, registry CodingModelRegistry,
 		restoreWarning = restored.Warning
 	}
 
-	scopedModels := resolveCLIPrintModeModelScope(args, registry, settingsManager)
+	var modelScope ResolveModelScopeResult
+	if len(resolvedScopes) > 0 {
+		modelScope = resolvedScopes[0]
+	} else {
+		modelScope = resolveCLIPrintModeModelScope(args, registry, settingsManager)
+	}
+	scopedModels := modelScope.ScopedModels
 	if len(scopedModels) > 0 && !args.Continue && !args.Resume {
 		model, level := selectCLIStartupScopedModel(scopedModels, registry, settingsManager, defaultThinkingLevel)
 		level = clampCLIThinkingLevel(model, level)
@@ -752,12 +784,45 @@ func startupWarningLines(warning string) []string {
 	return lines
 }
 
-func resolveCLIPrintModeModelScope(args Args, registry CodingModelRegistry, settingsManager *SettingsManager) []ScopedModel {
+func collectStartupWarnings(groups ...[]string) []string {
+	var warnings []string
+	seen := make(map[string]struct{})
+	for _, group := range groups {
+		for _, warning := range group {
+			for _, line := range startupWarningLines(warning) {
+				if _, ok := seen[line]; ok {
+					continue
+				}
+				seen[line] = struct{}{}
+				warnings = append(warnings, line)
+			}
+		}
+	}
+	return warnings
+}
+
+func resolveCLIPrintModeModelScope(args Args, registry CodingModelRegistry, settingsManager *SettingsManager) ResolveModelScopeResult {
 	patterns := args.Models
 	if len(patterns) == 0 && settingsManager != nil {
 		patterns = settingsManager.GetEnabledModels()
 	}
-	return ResolveModelScope(patterns, registry)
+	return ResolveModelScopeWithDiagnostics(patterns, registry)
+}
+
+func modelScopeDiagnosticMessages(diagnostics []ModelScopeDiagnostic) []string {
+	if len(diagnostics) == 0 {
+		return nil
+	}
+	messages := make([]string, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Type != ModelScopeDiagnosticWarning {
+			continue
+		}
+		if message := strings.TrimSpace(diagnostic.Message); message != "" {
+			messages = append(messages, message)
+		}
+	}
+	return messages
 }
 
 func settingsThinkingLevel(settingsManager *SettingsManager) ThinkingLevel {

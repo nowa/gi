@@ -233,6 +233,61 @@ func TestResolveModelScopePatterns(t *testing.T) {
 	assertScopedModel(t, scoped[0], "anthropic", "claude-sonnet-4-5", "")
 }
 
+func TestResolveModelScopeWithDiagnosticsPreservesPiDataFlow(t *testing.T) {
+	literalGlobModel := resolverMockModels[0]
+	literalGlobModel.Provider = "custom"
+	literalGlobModel.ID = "bracketed-model[1m]"
+	literalGlobModel.Name = "Bracketed Model"
+
+	registry := &countingResolverRegistry{
+		resolverTestRegistry: resolverTestRegistry{
+			all:       append(append([]llm.Model{}, resolverAllModels...), literalGlobModel),
+			available: append(append([]llm.Model{}, resolverAllModels...), literalGlobModel),
+		},
+	}
+	result := ResolveModelScopeWithDiagnostics([]string{
+		"sonnet:high",
+		"gpt-4o:invalid",
+		"missing-*",
+		"custom/bracketed-model[1m]:low",
+		"anthropic/claude-sonnet-4-5",
+	}, registry)
+
+	if registry.availableCalls != 1 {
+		t.Fatalf("GetAvailable calls = %d, want one immutable catalog snapshot", registry.availableCalls)
+	}
+	if len(result.ScopedModels) != 3 {
+		t.Fatalf("scoped models = %#v, want 3", result.ScopedModels)
+	}
+	assertScopedModel(t, result.ScopedModels[0], "anthropic", "claude-sonnet-4-5", ThinkingHigh)
+	assertScopedModel(t, result.ScopedModels[1], "openai", "gpt-4o", "")
+	assertScopedModel(t, result.ScopedModels[2], "custom", "bracketed-model[1m]", ThinkingLow)
+
+	if len(result.Diagnostics) != 2 {
+		t.Fatalf("diagnostics = %#v, want invalid-level and no-match warnings", result.Diagnostics)
+	}
+	if diagnostic := result.Diagnostics[0]; diagnostic.Type != ModelScopeDiagnosticWarning ||
+		diagnostic.Pattern != "gpt-4o:invalid" ||
+		!strings.Contains(diagnostic.Message, `Invalid thinking level "invalid"`) {
+		t.Fatalf("invalid-level diagnostic = %#v", diagnostic)
+	}
+	if diagnostic := result.Diagnostics[1]; diagnostic.Type != ModelScopeDiagnosticWarning ||
+		diagnostic.Pattern != "missing-*" ||
+		diagnostic.Message != `No models match pattern "missing-*"` {
+		t.Fatalf("no-match diagnostic = %#v", diagnostic)
+	}
+}
+
+type countingResolverRegistry struct {
+	resolverTestRegistry
+	availableCalls int
+}
+
+func (r *countingResolverRegistry) GetAvailable() []llm.Model {
+	r.availableCalls++
+	return r.resolverTestRegistry.GetAvailable()
+}
+
 func TestResolveCLIModelCompatibilityCases(t *testing.T) {
 	registry := resolverTestRegistry{all: resolverAllModels}
 

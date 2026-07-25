@@ -29,49 +29,102 @@ type cliResolvedSession struct {
 	Arg  string
 }
 
-func newCLIPrintModeSessionManager(args Args, cwd, agentDir string, settingsManager *SettingsManager) (*SessionManager, error) {
+type cliSessionManagerResult struct {
+	SessionManager  *SessionManager
+	StartupWarnings []string
+}
+
+func newCLIPrintModeSessionManager(args Args, cwd, agentDir string, settingsManager *SettingsManager) (cliSessionManagerResult, error) {
 	if err := validateCLISessionFlags(args); err != nil {
-		return nil, err
+		return cliSessionManagerResult{}, err
 	}
 	sessionDir := resolveCLISessionDir(args, cwd, agentDir, settingsManager)
+	sessionOptions := NewSessionOptions{ID: args.SessionID}
 	if args.NoSession {
-		return InMemorySessionManager(cwd)
+		manager, err := InMemorySessionManagerWithOptions(cwd, sessionOptions)
+		return cliSessionManagerResult{SessionManager: manager}, err
 	}
 	if args.Fork != "" {
+		if args.SessionID != "" {
+			if _, ok := findLocalSessionByExactID(args.SessionID, cwd, sessionDir); ok {
+				return cliSessionManagerResult{}, fmt.Errorf(
+					"Session already exists with id '%s'",
+					args.SessionID,
+				)
+			}
+		}
 		resolved := resolveCLISessionPath(args.Fork, cwd, sessionDir)
 		switch resolved.Type {
 		case cliResolvedSessionPath, cliResolvedSessionLocal, cliResolvedSessionGlobal:
-			return ForkSessionFrom(resolved.Path, cwd, sessionDir)
+			manager, err := ForkSessionFromWithOptions(
+				resolved.Path,
+				cwd,
+				sessionOptions,
+				sessionDir,
+			)
+			return cliSessionManagerResult{SessionManager: manager}, err
 		case cliResolvedSessionNotFound:
-			return nil, fmt.Errorf("No session found matching %q", resolved.Arg)
+			return cliSessionManagerResult{}, fmt.Errorf("No session found matching %q", resolved.Arg)
 		}
 	}
 	if args.Session != "" {
 		resolved := resolveCLISessionPath(args.Session, cwd, sessionDir)
 		switch resolved.Type {
 		case cliResolvedSessionPath, cliResolvedSessionLocal:
-			return OpenSessionManager(resolved.Path, sessionDir, args.SessionCwdOverride)
+			manager, err := OpenSessionManager(resolved.Path, sessionDir, args.SessionCwdOverride)
+			return cliSessionManagerResult{SessionManager: manager}, err
 		case cliResolvedSessionGlobal:
-			return nil, fmt.Errorf("Session found in different project: %s. Use --fork %s to fork it into the current directory", resolved.CWD, args.Session)
+			return cliSessionManagerResult{}, fmt.Errorf("Session found in different project: %s. Use --fork %s to fork it into the current directory", resolved.CWD, args.Session)
 		case cliResolvedSessionNotFound:
-			return nil, fmt.Errorf("No session found matching %q", resolved.Arg)
+			return cliSessionManagerResult{}, fmt.Errorf("No session found matching %q", resolved.Arg)
 		}
 	}
 	if args.Resume {
-		return nil, errors.New("--resume is only supported by interactive mode; use --session or --continue in print/RPC mode")
+		return cliSessionManagerResult{}, errors.New("--resume is only supported by interactive mode; use --session or --continue in print/RPC mode")
 	}
 	if args.Continue {
+		var manager *SessionManager
+		var err error
 		if args.SessionCwdOverride != "" {
 			if recent := FindMostRecentSession(sessionDir); recent != "" {
-				return OpenSessionManager(recent, sessionDir, args.SessionCwdOverride)
+				manager, err = OpenSessionManager(recent, sessionDir, args.SessionCwdOverride)
+				return cliSessionManagerResult{SessionManager: manager}, err
 			}
 		}
-		return ContinueRecentSession(cwd, sessionDir)
+		manager, err = ContinueRecentSession(cwd, sessionDir)
+		return cliSessionManagerResult{SessionManager: manager}, err
 	}
-	return CreateSessionManager(cwd, sessionDir)
+	if args.SessionID != "" {
+		if existing, ok := findLocalSessionByExactID(args.SessionID, cwd, sessionDir); ok {
+			manager, err := OpenSessionManager(
+				existing.Path,
+				sessionDir,
+				args.SessionCwdOverride,
+			)
+			return cliSessionManagerResult{SessionManager: manager}, err
+		}
+	}
+	manager, err := CreateSessionManagerWithOptions(cwd, sessionDir, sessionOptions)
+	result := cliSessionManagerResult{SessionManager: manager}
+	if err == nil && args.SessionID != "" {
+		result.StartupWarnings = []string{
+			fmt.Sprintf(
+				"No project session found with id '%s'; creating a new session with that id.",
+				args.SessionID,
+			),
+		}
+	}
+	return result, err
 }
 
 func validateCLISessionFlags(args Args) error {
+	if err := validateCLIForkFlags(args); err != nil {
+		return err
+	}
+	return validateCLISessionIDFlags(args)
+}
+
+func validateCLIForkFlags(args Args) error {
 	if args.Fork == "" {
 		return nil
 	}
@@ -94,6 +147,30 @@ func validateCLISessionFlags(args Args) error {
 	return errors.New("--fork cannot be combined with " + strings.Join(conflicts, ", "))
 }
 
+func validateCLISessionIDFlags(args Args) error {
+	if !hasCLISessionID(args) {
+		return nil
+	}
+	var conflicts []string
+	if args.Session != "" {
+		conflicts = append(conflicts, "--session")
+	}
+	if args.Continue {
+		conflicts = append(conflicts, "--continue")
+	}
+	if args.Resume {
+		conflicts = append(conflicts, "--resume")
+	}
+	if len(conflicts) > 0 {
+		return errors.New("--session-id cannot be combined with " + strings.Join(conflicts, ", "))
+	}
+	return ValidateSessionID(args.SessionID)
+}
+
+func hasCLISessionID(args Args) bool {
+	return args.SessionIDSet || args.SessionID != ""
+}
+
 func resolveCLISessionDir(args Args, cwd, agentDir string, settingsManager *SettingsManager) string {
 	if args.SessionDir != "" {
 		return ExpandPath(args.SessionDir)
@@ -113,17 +190,47 @@ func resolveCLISessionPath(sessionArg, cwd, sessionDir string) cliResolvedSessio
 	if looksLikeSessionPath(sessionArg) {
 		return cliResolvedSession{Type: cliResolvedSessionPath, Path: resolveCLIPath(cwd, sessionArg), Arg: sessionArg}
 	}
-	for _, session := range ListSessions(cwd, sessionDir) {
+	localSessions := ListSessions(cwd, sessionDir)
+	if session, ok := findSessionInfoByExactID(localSessions, sessionArg); ok {
+		return cliResolvedSession{Type: cliResolvedSessionLocal, Path: session.Path, CWD: session.CWD, Arg: sessionArg}
+	}
+	for _, session := range localSessions {
 		if strings.HasPrefix(session.ID, sessionArg) {
 			return cliResolvedSession{Type: cliResolvedSessionLocal, Path: session.Path, CWD: session.CWD, Arg: sessionArg}
 		}
 	}
-	for _, session := range ListAllSessions(filepath.Dir(sessionDir)) {
+	allSessions := ListAllSessions(filepath.Dir(sessionDir))
+	if session, ok := findSessionInfoByExactID(allSessions, sessionArg); ok {
+		return cliResolvedSession{Type: cliResolvedSessionGlobal, Path: session.Path, CWD: session.CWD, Arg: sessionArg}
+	}
+	for _, session := range allSessions {
 		if strings.HasPrefix(session.ID, sessionArg) {
 			return cliResolvedSession{Type: cliResolvedSessionGlobal, Path: session.Path, CWD: session.CWD, Arg: sessionArg}
 		}
 	}
 	return cliResolvedSession{Type: cliResolvedSessionNotFound, Arg: sessionArg}
+}
+
+func findLocalSessionByExactID(sessionID, cwd, sessionDir string) (cliResolvedSession, bool) {
+	session, ok := findSessionInfoByExactID(ListSessions(cwd, sessionDir), sessionID)
+	if !ok {
+		return cliResolvedSession{}, false
+	}
+	return cliResolvedSession{
+		Type: cliResolvedSessionLocal,
+		Path: session.Path,
+		CWD:  session.CWD,
+		Arg:  sessionID,
+	}, true
+}
+
+func findSessionInfoByExactID(sessions []SessionInfo, sessionID string) (SessionInfo, bool) {
+	for _, session := range sessions {
+		if session.ID == sessionID {
+			return session, true
+		}
+	}
+	return SessionInfo{}, false
 }
 
 func looksLikeSessionPath(value string) bool {
