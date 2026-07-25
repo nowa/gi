@@ -12,6 +12,7 @@ type ProtocolExtensionSource struct {
 	Path     string
 	BaseDir  string
 	Metadata ProtocolSourceInfo
+	Hidden   bool
 }
 
 type ProtocolExtensionDiscoveryError struct {

@@ -224,6 +224,9 @@ func interactivePromptsFromPromptTemplates(prompts []PromptTemplate) []Interacti
 func interactiveExtensionsFromProtocolSources(extensions []ProtocolExtensionSource) []InteractiveExtensionResource {
 	result := make([]InteractiveExtensionResource, 0, len(extensions))
 	for _, extension := range extensions {
+		if extension.Hidden {
+			continue
+		}
 		result = append(result, InteractiveExtensionResource{
 			Path:       extension.Path,
 			SourceInfo: interactiveSourceInfoFromProtocol(extension.Metadata, extension.BaseDir),

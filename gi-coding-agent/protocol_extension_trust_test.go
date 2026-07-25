@@ -277,8 +277,10 @@ func TestDefaultResourceLoaderTrustTransactionReusesRuntimeAndFinalOrder(
 			if settings.IsProjectTrusted() {
 				t.Fatal("pre-trust settings unexpectedly trusted")
 			}
-			if len(input.ExtensionsResult.Extensions) != 1 ||
-				input.ExtensionsResult.Extensions[0].Path != userExtension {
+			if len(input.ExtensionsResult.Extensions) != 2 ||
+				input.ExtensionsResult.Extensions[0].Path != userExtension ||
+				input.ExtensionsResult.Extensions[1].Path != "inline-trust.go" ||
+				input.ExtensionsResult.Extensions[1].Metadata.Source != "inline" {
 				t.Fatalf(
 					"pre-trust extensions = %#v",
 					input.ExtensionsResult.Extensions,
@@ -317,9 +319,10 @@ func TestDefaultResourceLoaderTrustTransactionReusesRuntimeAndFinalOrder(
 			preTrustRuntime,
 		)
 	}
-	if len(extensions.Extensions) != 2 ||
+	if len(extensions.Extensions) != 3 ||
 		extensions.Extensions[0].Path != projectExtension ||
-		extensions.Extensions[1].Path != userExtension {
+		extensions.Extensions[1].Path != userExtension ||
+		extensions.Extensions[2].Path != "inline-trust.go" {
 		t.Fatalf("final extensions = %#v", extensions.Extensions)
 	}
 	tool := findDynamicSDKTool(

@@ -2,6 +2,7 @@ package gicodingagent
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -148,7 +149,6 @@ func (i *protocolExtensionConflictIndex) diagnostics(
 
 type protocolLoadedExtension struct {
 	source     ProtocolExtensionSource
-	sourceInfo ProtocolSourceInfo
 	descriptor protocolExtensionDescriptor
 	resources  ResourceExtension
 }
@@ -165,7 +165,7 @@ type protocolExtensionLoadState struct {
 	failedPaths     map[string]struct{}
 	errors          []ProtocolExtensionDiscoveryError
 	factoriesLoaded bool
-	factorySources  []ProtocolSourceInfo
+	factorySources  []ProtocolExtensionSource
 }
 
 func newProtocolExtensionLoadState(
@@ -246,9 +246,10 @@ func (s *protocolExtensionLoadState) loadExtensionsInternal(
 			source,
 			descriptor.Gi.ID,
 		)
+		source.Metadata = sourceInfo
 		context := &ProtocolExtensionContext{
 			runtime: s.runtime,
-			source:  sourceInfo,
+			source:  source.Metadata,
 		}
 		applyErrors := applyProtocolExtensionDescriptor(
 			context,
@@ -261,7 +262,6 @@ func (s *protocolExtensionLoadState) loadExtensionsInternal(
 		)
 		record := protocolLoadedExtension{
 			source:     source,
-			sourceInfo: sourceInfo,
 			descriptor: descriptor,
 			resources:  resources,
 		}
@@ -282,22 +282,56 @@ func (s *protocolExtensionLoadState) loadFactories(
 		return
 	}
 	s.factoriesLoaded = true
-	for _, factory := range factories {
+	for index, input := range factories {
+		factory := normalizeProtocolExtensionFactory(input, index)
 		if factory.Factory == nil {
 			continue
 		}
-		source := ProtocolSourceInfo{Path: factory.Path}
+		sourceInfo := protocolInlineFactorySourceInfo(factory)
 		if err := s.runtime.LoadFactories(
 			[]ProtocolExtensionFactory{factory},
 		); err != nil {
-			s.runtime.RemoveSource(source)
+			s.runtime.RemoveSource(sourceInfo)
 			s.errors = append(s.errors, ProtocolExtensionDiscoveryError{
 				Path:  factory.Path,
 				Error: err.Error(),
 			})
 			continue
 		}
-		s.factorySources = append(s.factorySources, source)
+		s.factorySources = append(
+			s.factorySources,
+			ProtocolExtensionSource{
+				Path:     factory.Path,
+				Metadata: sourceInfo,
+				Hidden:   factory.Hidden,
+			},
+		)
+	}
+}
+
+func normalizeProtocolExtensionFactory(
+	factory ProtocolExtensionFactory,
+	index int,
+) ProtocolExtensionFactory {
+	if strings.TrimSpace(factory.Path) != "" {
+		return factory
+	}
+	name := strings.TrimSpace(factory.Name)
+	if name == "" {
+		name = strconv.Itoa(index + 1)
+	}
+	factory.Path = "<inline:" + name + ">"
+	return factory
+}
+
+func protocolInlineFactorySourceInfo(
+	factory ProtocolExtensionFactory,
+) ProtocolSourceInfo {
+	return ProtocolSourceInfo{
+		Path:   factory.Path,
+		Source: "inline",
+		Scope:  "temporary",
+		Origin: "top-level",
 	}
 }
 
@@ -321,7 +355,7 @@ func (s *protocolExtensionLoadState) retainSources(
 			continue
 		}
 		if _, keep := retained[path]; !keep {
-			s.runtime.RemoveSource(record.sourceInfo)
+			s.runtime.RemoveSource(record.source.Metadata)
 			delete(s.loadedByPath, path)
 			continue
 		}
@@ -363,7 +397,11 @@ func (s *protocolExtensionLoadState) orderedSources(
 	if s == nil {
 		return nil
 	}
-	ordered := make([]ProtocolExtensionSource, 0, len(sources))
+	ordered := make(
+		[]ProtocolExtensionSource,
+		0,
+		len(sources)+len(s.factorySources),
+	)
 	for _, source := range sources {
 		path := resolveProtocolExtensionLoadPath(source.Path, cwd)
 		record, ok := s.loadedByPath[path]
@@ -372,6 +410,7 @@ func (s *protocolExtensionLoadState) orderedSources(
 		}
 		ordered = append(ordered, record.source)
 	}
+	ordered = append(ordered, s.factorySources...)
 	return ordered
 }
 
@@ -413,10 +452,12 @@ func (s *protocolExtensionLoadState) orderedSourceInfo(
 		path := resolveProtocolExtensionLoadPath(source.Path, cwd)
 		record, ok := s.loadedByPath[path]
 		if ok {
-			ordered = append(ordered, record.sourceInfo)
+			ordered = append(ordered, record.source.Metadata)
 		}
 	}
-	ordered = append(ordered, s.factorySources...)
+	for _, source := range s.factorySources {
+		ordered = append(ordered, source.Metadata)
+	}
 	return ordered
 }
 

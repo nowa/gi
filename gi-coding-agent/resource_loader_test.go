@@ -22,6 +22,43 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("clears the cache on resource loader reload", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		extensionPath := filepath.Join(
+			agentDir,
+			"extensions",
+			"cached.gi.json",
+		)
+		writeCachedExtension := func(id string) {
+			writeJSON(t, extensionPath, map[string]any{
+				"gi": map[string]any{
+					"extensionProtocol": "descriptor.v1",
+					"id":                id,
+				},
+			})
+		}
+		writeCachedExtension("first")
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+			CWD:      cwd,
+			AgentDir: agentDir,
+		})
+		loader.Reload()
+		first := loader.GetExtensions()
+		if len(first.Extensions) != 1 ||
+			first.Extensions[0].Metadata.Source != "extension:first" {
+			t.Fatalf("first extensions = %#v", first.Extensions)
+		}
+
+		writeCachedExtension("second")
+		loader.Reload()
+		second := loader.GetExtensions()
+		if len(second.Extensions) != 1 ||
+			second.Extensions[0].Metadata.Source != "extension:second" {
+			t.Fatalf("second extensions = %#v", second.Extensions)
+		}
+	})
+
 	t.Run("discovers skills and ignores extra markdown in skill dirs", func(t *testing.T) {
 		agentDir, cwd := createResourceLoaderDirs(t)
 		writeResourceSkill(t, filepath.Join(agentDir, "skills", "test-skill.md"), "test-skill", "A test skill", "Skill content")

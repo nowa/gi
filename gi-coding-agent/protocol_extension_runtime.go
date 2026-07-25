@@ -106,6 +106,8 @@ type protocolMessageRendererWatcher struct {
 
 type ProtocolExtensionFactory struct {
 	Path    string
+	Name    string
+	Hidden  bool
 	Factory func(*ProtocolExtensionContext) error
 }
 
@@ -1270,13 +1272,14 @@ func (r *ProtocolExtensionRuntime) GetActiveTools() []string {
 }
 
 func (r *ProtocolExtensionRuntime) LoadFactories(factories []ProtocolExtensionFactory) error {
-	for _, factory := range factories {
+	for index, input := range factories {
+		factory := normalizeProtocolExtensionFactory(input, index)
 		if factory.Factory == nil {
 			continue
 		}
 		context := &ProtocolExtensionContext{
 			runtime: r,
-			source:  ProtocolSourceInfo{Path: factory.Path},
+			source:  protocolInlineFactorySourceInfo(factory),
 		}
 		if err := factory.Factory(context); err != nil {
 			return err
