@@ -150,7 +150,7 @@ The member-level source inventory currently reports:
 | LLM provider | 169 | 101 | 632 | 0 | 0 |
 | Agent core | 35 | 35 | 327 | 0 | 0 |
 | TUI | 28 | 32 | 449 | 0 | 0 |
-| Coding agent | 177 | 180 | 2115 | 17 | 303 |
+| Coding agent | 177 | 181 | 2115 | 16 | 287 |
 
 `docs/pi-parity/member-symbol-inventory.md` is the generated per-file detail.
 A mentioned symbol means its ownership or gap has been classified; it does not
@@ -174,7 +174,7 @@ The test-case inventory currently reports:
 | LLM provider | 111 | 1186 | 111 | 1186 | 0 | 0 |
 | Agent core | 16 | 212 | 16 | 212 | 0 | 0 |
 | TUI | 27 | 700 | 27 | 700 | 0 | 0 |
-| Coding agent | 181 | 1649 | 178 | 1631 | 3 | 18 |
+| Coding agent | 181 | 1649 | 178 | 1632 | 3 | 17 |
 
 Candidate matching is an audit lead, not proof. Behavioral parity still
 requires the mapped Go tests, implementation review, and the release gate in

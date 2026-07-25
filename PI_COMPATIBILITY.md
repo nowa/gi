@@ -44,6 +44,12 @@ flow: current-leaf selection is a no-op, users can pick no summary, default
 summary, or custom summary instructions, `branchSummary.skipPrompt` defaults to
 no summary, and Escape aborts in-flight branch summarization.
 
+The live TTY now routes working, auto-retry, compaction, branch-summary, and
+summarization-retry events through one typed transient status owner. Status
+replacement and kind-filtered clearing update the shared container atomically,
+then dispose loader/countdown resources outside the host lock; shutdown also
+drains that owner.
+
 Live TTY replay now renders branch summaries, compaction summaries, and skill
 invocation wrappers as collapsible Pi-style message components tied to Ctrl+O
 tool-output expansion, instead of exposing raw internal message roles.

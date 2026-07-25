@@ -72,6 +72,8 @@ test names alone.
 | Live user message renders above working status, with `Working...` outside chat transcript | `TestCLIInteractiveTUIHostKeepsLiveUserPromptAboveWorkingStatusPiStyle`, `TestCLIInteractiveTUIHostAgentStartShowsWorkingLoaderPiStyle` | covered |
 | Manual/auto compaction status is temporary status UI, not durable transcript content | `TestCLIInteractiveTUIHostCancelsCompactionPiStyle`, `TestCLIInteractiveTUIHostQueuesInputDuringCompactionPiStyle` | covered |
 | Auto-retry status is temporary status UI and clears on success/cancel | `TestCLIInteractiveTUIHostShowsAndCancelsAutoRetryPiStyle`, `TestCLIInteractiveTUIHostAutoRetrySuccessClearsStatusPiStyle` | covered |
+| `status-indicator.test.ts` keeps idle height stable, reserves the bottom status region, and stops retry updates after disposal | `TestStatusIndicatorsPiCases` exact subtests, `TestCLIInteractiveLayoutReservesBottomRegionForTransientStatusPiStyle` | covered |
+| Summarization retry swaps retry, branch-summary, and compaction status without stale-owner clears | `TestCLIInteractiveTUIHostSummarizationRetryStatusFlowPiStyle` | covered |
 | Assistant response followed by next user message has Pi-style blank spacer | `TestCLIInteractiveTUIHostSeparatesAssistantAndNextUserMessagePiStyle` | covered |
 | `thinking_level_changed` refreshes footer and editor border color immediately | `TestCLIInteractiveTUIHostThinkingLevelEventUpdatesEditorBorderPiStyle` | covered |
 | Model resolver accepts Pi `model:thinking` patterns and rejects invalid thinking suffixes | `TestParseModelPatternCompatibilityCases`, `TestResolveCLIModelCompatibilityCases` | covered |

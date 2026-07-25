@@ -130,6 +130,11 @@ non-TTY contexts it falls back to a basic single-turn host for
 `gi <message>` or piped stdin. The Pi-equivalent TUI workflow disposition is
 documented in `PI_CODING_AGENT_SOURCE_AUDIT.md`.
 
+Working, retry, compaction, and branch-summary activity share one typed
+transient status slot. Each replacement disposes the previous loader and any
+owned countdown; typed completion events cannot clear a newer status, and
+shutdown drains the active status lifecycle before stopping the TUI.
+
 For an official default installation with no settings file,
 `GI_EXPERIMENTAL=1` (or legacy `PI_EXPERIMENTAL=1`) enables Pi-compatible
 first-time theme and analytics setup before the interactive runtime is built.

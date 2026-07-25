@@ -1670,6 +1670,37 @@ func TestCLIInteractiveLayoutReservesBottomRegionWithLargeOutput(t *testing.T) {
 	}
 }
 
+func TestCLIInteractiveLayoutReservesBottomRegionForTransientStatusPiStyle(t *testing.T) {
+	host := &CLIInteractiveTUIHost{
+		chat:            gitui.NewContainer(),
+		pendingMessages: gitui.NewContainer(),
+		statusContainer: gitui.NewContainer(),
+		editorContainer: gitui.NewContainer(),
+		slots:           map[string]*gitui.Container{"footer": gitui.NewContainer()},
+	}
+	for i := 0; i < 40; i++ {
+		host.chat.AddChild(gitui.NewText(fmt.Sprintf("output-%02d", i), 0, 0))
+	}
+	host.editorContainer.AddChild(gitui.NewText("editor prompt", 0, 0))
+	host.slots["footer"].AddChild(gitui.NewText("footer status", 0, 0))
+	if !host.showStatusIndicator(NewBranchSummaryStatusIndicator(nil)) {
+		t.Fatal("branch summary status was not mounted")
+	}
+	defer host.clearStatusIndicator()
+
+	lines := (&cliInteractiveLayout{host: host}).RenderWithSize(80, 12)
+	plain := StripAnsi(strings.Join(lines, "\n"))
+	for _, expected := range []string{
+		"Summarizing branch... (Esc to cancel)",
+		"editor prompt",
+		"footer status",
+	} {
+		if !strings.Contains(plain, expected) {
+			t.Fatalf("bottom region missing %q:\n%s", expected, plain)
+		}
+	}
+}
+
 func TestCLIInteractiveLayoutKeepsBottomRegionStableWhileOutputGrows(t *testing.T) {
 	terminal := gitui.NewVirtualTerminal(80, 12)
 	ui := gitui.NewTUI(terminal)
@@ -4150,6 +4181,84 @@ func TestCLIInteractiveTUIHostAutoRetrySuccessClearsStatusPiStyle(t *testing.T) 
 	waitUntil(t, func() bool {
 		return !strings.Contains(strings.Join(terminal.GetViewport(), "\n"), "Retrying (1/3)")
 	})
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostSummarizationRetryStatusFlowPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	terminal := gitui.NewVirtualTerminal(120, 24)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	sessionHost.session.emit(AgentSessionEvent{
+		Type:         "summarization_retry_scheduled",
+		Attempt:      1,
+		MaxAttempts:  3,
+		DelayMs:      2100,
+		ErrorMessage: "transient summary failure",
+	})
+	waitForViewport(t, terminal, "Retrying (1/3) in 3s... (Esc to cancel)")
+	waitForViewport(t, terminal, "Error: transient summary failure")
+	if kind := host.activeStatusIndicatorKind(); kind != StatusIndicatorKindRetry {
+		t.Fatalf("scheduled retry status kind = %q, want %q", kind, StatusIndicatorKindRetry)
+	}
+
+	sessionHost.session.emit(AgentSessionEvent{
+		Type:    "summarization_retry_attempt_start",
+		Source:  "branchSummary",
+		Attempt: 1,
+	})
+	waitForViewport(t, terminal, "Summarizing branch... (Esc to cancel)")
+	if kind := host.activeStatusIndicatorKind(); kind != StatusIndicatorKindBranchSummary {
+		t.Fatalf("branch retry status kind = %q, want %q", kind, StatusIndicatorKindBranchSummary)
+	}
+
+	sessionHost.session.emit(AgentSessionEvent{Type: "summarization_retry_finished"})
+	if kind := host.activeStatusIndicatorKind(); kind != StatusIndicatorKindBranchSummary {
+		t.Fatalf("finished event cleared active branch status: kind = %q", kind)
+	}
+
+	sessionHost.session.emit(AgentSessionEvent{
+		Type:        "summarization_retry_scheduled",
+		Attempt:     2,
+		MaxAttempts: 3,
+		DelayMs:     1000,
+	})
+	waitForViewport(t, terminal, "Retrying (2/3) in 1s... (Esc to cancel)")
+	sessionHost.session.emit(AgentSessionEvent{
+		Type:    "summarization_retry_attempt_start",
+		Source:  "compaction",
+		Reason:  "overflow",
+		Attempt: 2,
+	})
+	waitForViewport(t, terminal, "Context overflow detected, Auto-compacting... (Esc to cancel)")
+	if kind := host.activeStatusIndicatorKind(); kind != StatusIndicatorKindCompaction {
+		t.Fatalf("compaction retry status kind = %q, want %q", kind, StatusIndicatorKindCompaction)
+	}
 
 	host.Stop()
 	select {

@@ -150,81 +150,111 @@ func extensionErrorStackLines(stack string) []string {
 }
 
 func (h *CLIInteractiveTUIHost) showLoaderLocked() {
-	if h.ui == nil || h.statusContainer == nil || h.loader != nil || !h.workingVisible {
+	if h.ui == nil || h.statusContainer == nil || !h.workingVisible {
 		return
 	}
-	options := h.workingIndicatorOptionsLocked()
-	options.TUI = h.ui
-	h.statusContainer.Clear()
-	h.loader = gitui.NewLoader(h.workingMessageLocked(), options)
-	h.statusContainer.AddChild(h.loader)
-}
-
-func (h *CLIInteractiveTUIHost) showStatusLoader(message string) *gitui.Loader {
-	if h == nil {
-		return nil
-	}
-	h.statusMu.Lock()
-	loader := h.showStatusLoaderLocked(message)
-	h.statusMu.Unlock()
-	if loader != nil {
-		h.requestRender(false)
-	}
-	return loader
-}
-
-func (h *CLIInteractiveTUIHost) showStatusLoaderLocked(message string) *gitui.Loader {
-	if h == nil || h.ui == nil || h.statusContainer == nil || strings.TrimSpace(message) == "" {
-		return nil
-	}
-	options := gitui.LoaderIndicatorOptions{
-		TUI:          h.ui,
-		SpinnerColor: tuiThemeAccent,
-		MessageColor: tuiThemeMuted,
-	}
-	loader := gitui.NewLoader(message, options)
-	h.statusContainer.Clear()
-	h.statusContainer.AddChild(loader)
-	return loader
-}
-
-func (h *CLIInteractiveTUIHost) showCompactionLoader(message string) {
-	if h == nil {
+	if h.activeStatusIndicatorKind() != "" {
 		return
 	}
+	h.showStatusIndicator(NewWorkingStatusIndicator(
+		h.ui,
+		h.workingMessageLocked(),
+		cloneWorkingIndicatorOptions(h.workingIndicator),
+	))
+}
+
+func (h *CLIInteractiveTUIHost) showStatusIndicator(indicator transientStatusIndicator) bool {
+	if h == nil || indicator == nil {
+		return false
+	}
 	h.statusMu.Lock()
-	previous := h.compactionLoader
-	h.compactionLoader = h.showStatusLoaderLocked(message)
-	visible := h.compactionLoader != nil
-	h.compactionVisible.Store(visible)
+	previous := h.activeStatusIndicator
+	h.activeStatusIndicator = nil
+	if h.statusContainer == nil {
+		h.statusMu.Unlock()
+		indicator.Dispose()
+		if previous != nil {
+			previous.Dispose()
+		}
+		return false
+	}
+	h.activeStatusIndicator = indicator
+	h.statusContainer.Clear()
+	h.statusContainer.AddChild(indicator)
 	h.statusMu.Unlock()
 	if previous != nil {
-		previous.Stop()
+		previous.Dispose()
 	}
-	if !visible {
-		h.addStatus(message)
+	return true
+}
+
+func (h *CLIInteractiveTUIHost) clearStatusIndicator(kinds ...StatusIndicatorKind) bool {
+	if h == nil {
+		return false
+	}
+	var expected StatusIndicatorKind
+	if len(kinds) > 0 {
+		expected = kinds[0]
+	}
+
+	h.statusMu.Lock()
+	indicator := h.activeStatusIndicator
+	if expected != "" && (indicator == nil || indicator.StatusKind() != expected) {
+		h.statusMu.Unlock()
+		return false
+	}
+	h.activeStatusIndicator = nil
+	if h.statusContainer != nil {
+		h.statusContainer.Clear()
+		if indicator != nil && h.ui != nil && h.ui.GetClearOnShrink() {
+			h.statusContainer.AddChild(&h.idleStatus)
+		}
+	}
+	h.statusMu.Unlock()
+	if indicator != nil {
+		indicator.Dispose()
+		return true
+	}
+	return false
+}
+
+func (h *CLIInteractiveTUIHost) activeStatusIndicatorKind() StatusIndicatorKind {
+	if h == nil {
+		return ""
+	}
+	h.statusMu.Lock()
+	defer h.statusMu.Unlock()
+	if h.activeStatusIndicator == nil {
+		return ""
+	}
+	return h.activeStatusIndicator.StatusKind()
+}
+
+func (h *CLIInteractiveTUIHost) workingStatusIndicator() *WorkingStatusIndicator {
+	if h == nil {
+		return nil
+	}
+	h.statusMu.Lock()
+	defer h.statusMu.Unlock()
+	indicator, _ := h.activeStatusIndicator.(*WorkingStatusIndicator)
+	return indicator
+}
+
+func (h *CLIInteractiveTUIHost) showCompactionLoader(reason CompactionStatusReason) {
+	if h == nil {
+		return
+	}
+	if !h.showStatusIndicator(NewCompactionStatusIndicator(h.ui, reason)) {
+		h.addStatus(compactionStatusMessage(reason))
 		return
 	}
 	h.requestRender(false)
 }
 
 func (h *CLIInteractiveTUIHost) clearCompactionLoader() {
-	if h == nil {
-		return
+	if h != nil && h.clearStatusIndicator(StatusIndicatorKindCompaction) {
+		h.requestRender(false)
 	}
-	h.statusMu.Lock()
-	loader := h.compactionLoader
-	h.compactionLoader = nil
-	h.compactionVisible.Store(false)
-	if loader != nil && h.statusContainer != nil {
-		h.statusContainer.Clear()
-	}
-	h.statusMu.Unlock()
-	if loader == nil {
-		return
-	}
-	loader.Stop()
-	h.requestRender(false)
 }
 
 func (h *CLIInteractiveTUIHost) resetLastStatus() {
@@ -264,6 +294,16 @@ func cloneOptionalStringSlice(values []string) []string {
 	return append([]string{}, values...)
 }
 
+func cloneWorkingIndicatorOptions(options *TUIWorkingIndicatorOptions) *TUIWorkingIndicatorOptions {
+	if options == nil {
+		return nil
+	}
+	return &TUIWorkingIndicatorOptions{
+		Frames:     cloneOptionalStringSlice(options.Frames),
+		IntervalMs: options.IntervalMs,
+	}
+}
+
 func (h *CLIInteractiveTUIHost) clearLoader() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -275,17 +315,5 @@ func (h *CLIInteractiveTUIHost) clearLoader() {
 }
 
 func (h *CLIInteractiveTUIHost) clearLoaderLocked() {
-	if h.loader != nil {
-		h.loader.Stop()
-		if h.statusContainer != nil {
-			h.statusContainer.Clear()
-		} else if h.chat != nil {
-			h.chat.RemoveChild(h.loader)
-		}
-		h.loader = nil
-		return
-	}
-	if h.statusContainer != nil {
-		h.statusContainer.Clear()
-	}
+	h.clearStatusIndicator(StatusIndicatorKindWorking)
 }

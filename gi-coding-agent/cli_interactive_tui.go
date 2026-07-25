@@ -128,17 +128,15 @@ type CLIInteractiveTUIHost struct {
 	footerDataProvider      *FooterDataProvider
 	layout                  *cliInteractiveLayout
 	customEditorActive      bool
+	activeStatusIndicator   transientStatusIndicator
+	idleStatus              IdleStatus
 	autocompleteMu          sync.RWMutex
 	autocompleteProvider    gitui.AutocompleteProvider
 	lastStatusText          *gitui.Text
 	lastStatusSpacer        *gitui.Spacer
-	loader                  *gitui.Loader
-	compactionLoader        *gitui.Loader
 	workingMessage          string
 	workingIndicator        *TUIWorkingIndicatorOptions
 	workingVisible          bool
-	retryLoader             *gitui.Loader
-	retryStatus             *gitui.Text
 	hiddenThinkingLabel     string
 	slots                   map[string]*gitui.Container
 	views                   map[string]*ViewTreeComponent
@@ -154,7 +152,6 @@ type CLIInteractiveTUIHost struct {
 	startupResources        []*cliLoadedResourcesComponent
 	rendered                int
 	renderDeferred          atomic.Bool
-	compactionVisible       atomic.Bool
 	viewTreeTickStarted     atomic.Bool
 	done                    chan struct{}
 	once                    sync.Once
@@ -515,7 +512,7 @@ func (h *CLIInteractiveTUIHost) shouldReserveBottomRegion() bool {
 	if h == nil {
 		return false
 	}
-	if h.compactionVisible.Load() {
+	if h.statusContainer != nil && h.statusContainer.ChildCount() > 0 {
 		return true
 	}
 	session := h.agentSession()
@@ -837,20 +834,20 @@ func (h *CLIInteractiveTUIHost) SetTUIWorking(update TUIWorkingUpdate) error {
 	if update.VisibleSet {
 		h.workingVisible = update.Visible
 	}
-	if h.loader != nil {
-		if !h.workingVisible {
-			h.clearLoaderLocked()
-		} else {
-			h.loader.SetMessage(h.workingMessageLocked())
-			h.loader.SetIndicator(h.workingIndicatorOptionsLocked())
-		}
-	} else if !h.workingVisible && h.statusContainer != nil {
-		h.statusContainer.Clear()
-	}
-	if h.workingVisible && streaming && h.loader == nil {
-		h.showLoaderLocked()
-	}
+	visible := h.workingVisible
+	message := h.workingMessageLocked()
+	indicatorOptions := h.workingIndicatorOptionsLocked()
+	workingIndicator := cloneWorkingIndicatorOptions(h.workingIndicator)
 	h.mu.Unlock()
+
+	if !visible {
+		h.clearStatusIndicator(StatusIndicatorKindWorking)
+	} else if indicator := h.workingStatusIndicator(); indicator != nil {
+		indicator.SetMessage(message)
+		indicator.SetIndicator(indicatorOptions)
+	} else if streaming {
+		h.showStatusIndicator(NewWorkingStatusIndicator(h.ui, message, workingIndicator))
+	}
 	h.requestRender(false)
 	return nil
 }
@@ -1763,6 +1760,12 @@ func (h *CLIInteractiveTUIHost) watchAgentSessionQueue() {
 			h.handleAutoRetryStart(event)
 		case "auto_retry_end":
 			h.handleAutoRetryEnd(event)
+		case "summarization_retry_scheduled":
+			h.handleSummarizationRetryScheduled(event)
+		case "summarization_retry_attempt_start":
+			h.handleSummarizationRetryAttemptStart(event)
+		case "summarization_retry_finished":
+			h.handleSummarizationRetryFinished()
 		}
 	})
 	h.installSessionWatcher(unwatch)
@@ -1795,16 +1798,7 @@ func (h *CLIInteractiveTUIHost) handleCompactionStart(event AgentSessionEvent) {
 	}
 	h.setTerminalProgress(true)
 	h.refreshPendingMessagesDisplay()
-	cancelHint := "(Esc to cancel)"
-	label := "Compacting context... " + cancelHint
-	if event.Reason != "" && event.Reason != "manual" {
-		prefix := ""
-		if event.Reason == "overflow" {
-			prefix = "Context overflow detected, "
-		}
-		label = prefix + "Auto-compacting... " + cancelHint
-	}
-	h.showCompactionLoader(label)
+	h.showCompactionLoader(normalizeCompactionStatusReason(event.Reason))
 	h.requestRender(false)
 }
 
@@ -2075,12 +2069,7 @@ func (h *CLIInteractiveTUIHost) removeSessionWatcher(closeWatcher bool) bool {
 }
 
 func (h *CLIInteractiveTUIHost) handleAutoRetryStart(event AgentSessionEvent) {
-	seconds := (event.DelayMs + 999) / 1000
-	if seconds < 0 {
-		seconds = 0
-	}
-	message := fmt.Sprintf("Retrying (%d/%d) in %ds... (Esc to cancel)", event.Attempt, event.MaxAttempts, seconds)
-	h.showRetryStatus(message)
+	h.showRetryStatus(event.Attempt, event.MaxAttempts, time.Duration(event.DelayMs)*time.Millisecond)
 }
 
 func (h *CLIInteractiveTUIHost) handleAutoRetryEnd(event AgentSessionEvent) {
@@ -2095,52 +2084,52 @@ func (h *CLIInteractiveTUIHost) handleAutoRetryEnd(event AgentSessionEvent) {
 	h.addStatus("Retry cancelled")
 }
 
+func (h *CLIInteractiveTUIHost) handleSummarizationRetryScheduled(event AgentSessionEvent) {
+	if h == nil {
+		return
+	}
+	if message := strings.TrimSpace(event.ErrorMessage); message != "" {
+		h.addStatus("Error: " + message)
+	}
+	h.showRetryStatus(event.Attempt, event.MaxAttempts, time.Duration(event.DelayMs)*time.Millisecond)
+}
+
+func (h *CLIInteractiveTUIHost) handleSummarizationRetryAttemptStart(event AgentSessionEvent) {
+	if h == nil {
+		return
+	}
+	h.clearRetryStatus()
+	if event.Source == "branchSummary" {
+		if h.showStatusIndicator(NewBranchSummaryStatusIndicator(h.ui)) {
+			h.requestRender(false)
+		}
+		return
+	}
+	h.showCompactionLoader(normalizeCompactionStatusReason(event.Reason))
+}
+
+func (h *CLIInteractiveTUIHost) handleSummarizationRetryFinished() {
+	if h != nil {
+		h.clearRetryStatus()
+	}
+}
+
 func (h *CLIInteractiveTUIHost) clearRetryStatus() {
 	if h == nil {
 		return
 	}
-	h.statusMu.Lock()
-	loader := h.retryLoader
-	status := h.retryStatus
-	h.retryLoader = nil
-	h.retryStatus = nil
-	if loader != nil && h.statusContainer != nil {
-		h.statusContainer.Clear()
-	}
-	if status != nil && h.chat != nil {
-		h.chat.RemoveChild(status)
-	}
-	h.statusMu.Unlock()
-	if loader != nil {
-		loader.Stop()
-	}
-	if loader != nil || status != nil {
+	if h.clearStatusIndicator(StatusIndicatorKindRetry) {
 		h.requestRender(false)
 	}
 }
 
-func (h *CLIInteractiveTUIHost) showRetryStatus(message string) {
+func (h *CLIInteractiveTUIHost) showRetryStatus(attempt, maxAttempts int, delay time.Duration) {
 	if h == nil {
 		return
 	}
-	h.statusMu.Lock()
-	previousLoader := h.retryLoader
-	previousStatus := h.retryStatus
-	h.retryLoader = nil
-	h.retryStatus = nil
-	if previousLoader != nil && h.statusContainer != nil {
-		h.statusContainer.Clear()
-	}
-	if previousStatus != nil && h.chat != nil {
-		h.chat.RemoveChild(previousStatus)
-	}
-	h.retryLoader = h.showStatusLoaderLocked(message)
-	if h.retryLoader == nil {
-		h.retryStatus = h.addStatusLocked(message)
-	}
-	h.statusMu.Unlock()
-	if previousLoader != nil {
-		previousLoader.Stop()
+	if !h.showStatusIndicator(NewRetryStatusIndicator(h.ui, attempt, maxAttempts, delay)) {
+		h.addStatus(retryStatusMessage(attempt, maxAttempts, countdownSeconds(delay)))
+		return
 	}
 	h.requestRender(false)
 }
@@ -3958,6 +3947,7 @@ func (h *CLIInteractiveTUIHost) stopUI() {
 	if h == nil {
 		return
 	}
+	h.clearStatusIndicator()
 	if h.unwatch != nil {
 		h.unwatch()
 		h.unwatch = nil

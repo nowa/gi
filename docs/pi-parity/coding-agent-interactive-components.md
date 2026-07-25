@@ -28,7 +28,7 @@ All Pi component names in this table are exact files under
 | `branch-summary-message.ts` | Collapsible branch summary | `gi-coding-agent/cli_message_components.go` `newCLICollapsibleMarkdownMessage`, `gi-agent-core/harness/messages.go` | direct | Branch summary role and collapsible render are represented. |
 | `compaction-summary-message.ts` | Collapsible compaction summary | `gi-coding-agent/cli_message_components.go`, `gi-agent-core/harness/messages.go` | direct | Token-before label and collapsed/expanded body are represented. |
 | `config-selector.ts` | Package resource configuration selector | `gi-coding-agent/cli_config.go`, `gi-coding-agent/resource_loader.go`, `gi-coding-agent/package_manager.go` | direct | Gi now mirrors Pi's grouped resource selector shape: source group headers, resource-type subgroups, first-item selection, filter-with-parent-headers behavior, Space/Enter toggles, Esc/Ctrl-C close, and package/top-level filter persistence. |
-| `countdown-timer.ts` | Timeout countdown display | `gi-coding-agent/cli_interactive_dialog_host.go` `startDialogTimeout`, `startExtensionSelectorTimeout` | consolidated | Gi keeps countdown/expiry ownership in dialog runners instead of a standalone component. |
+| `countdown-timer.ts` | Timeout countdown display | `gi-coding-agent/status_indicator.go` `CountdownTimer`; dialog-specific timeout runners | direct | Retry status owns the reusable second-granularity timer and synchronously waits for disposal; dialog runners retain their dialog-local expiry actions. |
 | `custom-editor.ts` | Extension-provided editor surface | `gi-coding-agent/inprocess_components.go`, `gi-coding-agent/cli_interactive_editor_host.go`, `gi-coding-agent/cli_interactive_tui.go` custom editor wiring | protocol | Trusted in-process components and out-of-process ViewTree/editor flows replace Pi's TS extension component boundary. |
 | `custom-message.ts` | Extension-rendered custom message | `gi-coding-agent/cli_interactive_tui.go` `addRenderedCustomMessage`, `viewtree.go` | protocol | Message renderers are registered through Gi's extension protocol. |
 | `daxnuts.ts` | OpenCode Zen easter egg | `gi-coding-agent/cli_message_components.go` `newCLIDaxnutsComponent` | direct | Exact DAX image data, truecolor half-block render, scanline reveal, final attribution text, and link are represented. |
@@ -51,6 +51,7 @@ All Pi component names in this table are exact files under
 | `settings-selector.ts` | Settings menu | `gi-coding-agent/cli_interactive_settings.go`, `settings_manager.go` | consolidated | Settings are built into a focused interactive settings host rather than a standalone package. Item order, image-control gating, select submenus, theme preview/cancel, and callback side effects are represented; transport settings flow into provider stream options, while cache-miss notice changes rebuild the transcript from session entries without persisting presentation state. |
 | `show-images-selector.ts` | Image-display setting selector | `gi-coding-agent/cli_interactive_tui.go`, `tool_execution_component.go` `SetShowImages` | consolidated | User-facing setting exists; standalone selector structure is folded into settings. |
 | `skill-invocation-message.ts` | Collapsible skill invocation | `gi-coding-agent/cli_interactive_tui.go` `addSkillInvocationMessage`, `export_html_skill_block.go` | direct | Skill block parsing and collapsible display are represented. |
+| `status-indicator.ts` | Working, retry, compaction, branch-summary, and idle status components | `gi-coding-agent/status_indicator.go`, `cli_interactive_status.go` | direct | Typed status kinds share one host-owned slot. Replacement and typed clearing dispose the previous loader/countdown outside the host lock; clear-on-shrink installs a fixed-height idle component. |
 | `theme-selector.ts` | Theme picker | `gi-coding-agent/cli_interactive_settings.go` settings theme submenu, `theme_export.go`, theme tests | consolidated | Pi's standalone component is exported but not mounted directly by interactive mode; the mounted SettingsSelector theme submenu behavior is represented, including current selection, preview on selection change, restore on cancel, and Enter/Esc key flow. |
 | `thinking-selector.ts` | Thinking level picker | `gi-coding-agent/model_selector_component.go`, `cli_interactive_model.go`, `model_registry.go` | consolidated | Thinking level selection is integrated with model/scoped-model flows and footer state. |
 | `tool-execution.ts` | Tool call/result UI | `gi-coding-agent/tool_execution_component.go` | direct | Tool arguments, result, expansion, images, and errors are represented. |
@@ -99,12 +100,30 @@ container below chat and above the editor. This matches Pi's
 `chatContainer`/`statusContainer` split and prevents the status spinner from
 appearing as a stale transcript row.
 
-Manual/auto compaction and auto-retry status now use that same split: the
-temporary `Compacting context...`, `Auto-compacting...`, and `Retrying...`
-loaders render in `statusContainer` and are cleared on completion, while only
-the terminal result (`Compaction cancelled`, retry failure, etc.) is written to
-the chat transcript. This follows Pi's interactive-mode state model and avoids
-turning transient status lines into durable messages.
+Working, manual/auto compaction, branch summarization, auto-retry, and
+summarization-retry status use one typed state slot:
+
+```text
+session events / host.tui.working
+              |
+              v
+   activeStatusIndicator (one owner)
+              |
+              v
+        statusContainer
+
+replace / typed clear / shutdown
+              |
+              v
+ dispose loader + owned CountdownTimer
+```
+
+The temporary `Working...`, `Compacting context...`, `Auto-compacting...`,
+`Summarizing branch...`, and `Retrying...` components never become durable
+transcript entries. Summary retry events replace the active summary indicator
+with a retry countdown and restore the appropriate branch-summary or
+compaction indicator when the next attempt begins. A type-filtered completion
+event cannot accidentally clear a newer status owner.
 
 Thinking-level UI updates now match Pi's event path: `thinking_level_changed`
 refreshes the footer and immediately reapplies the editor border color for the

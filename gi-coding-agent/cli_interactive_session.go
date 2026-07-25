@@ -749,9 +749,14 @@ func (h *CLIInteractiveTUIHost) handleTreeSlashCommand(args string) error {
 			return nil
 		}
 		if options.Summarize {
-			h.addStatus("Summarizing branch... (Esc to cancel)")
+			h.showStatusIndicator(NewBranchSummaryStatusIndicator(h.ui))
+			h.requestRender(false)
 		}
 		result, err := session.NavigateTree(entryID, options)
+		if options.Summarize {
+			h.clearStatusIndicator(StatusIndicatorKindBranchSummary)
+			h.requestRender(false)
+		}
 		if err != nil {
 			return err
 		}
