@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"context"
 	"fmt"
+	"io"
 
 	gitui "github.com/nowa/gi/gi-tui"
 )
@@ -16,6 +17,29 @@ type projectTrustInputPrompt func(
 	title string,
 	placeholder string,
 ) (value string, submitted bool, err error)
+
+type cliCommandAppMode string
+
+const (
+	cliCommandAppModeInteractive cliCommandAppMode = "interactive"
+	cliCommandAppModePrint       cliCommandAppMode = "print"
+)
+
+type cliCommandSettingsOptions struct {
+	args                     Args
+	cwd                      string
+	agentDir                 string
+	prompt                   ProjectTrustPrompt
+	appMode                  cliCommandAppMode
+	useSavedProjectTrustOnly bool
+	extensionFactories       []ProtocolExtensionFactory
+}
+
+type cliCommandSettingsResult struct {
+	settingsManager      *SettingsManager
+	projectTrusted       bool
+	projectTrustWarnings []string
+}
 
 // Project trust has one state owner and a one-way startup flow:
 //
@@ -43,7 +67,19 @@ func newCLICommandSettingsManager(
 	prompt ProjectTrustPrompt,
 	useSavedProjectTrustOnly bool,
 ) (*SettingsManager, bool, error) {
-	return newCLISettingsManager(args, cwd, agentDir, prompt, useSavedProjectTrustOnly)
+	appMode := cliCommandAppModePrint
+	if prompt != nil {
+		appMode = cliCommandAppModeInteractive
+	}
+	result, err := createCommandSettingsManager(cliCommandSettingsOptions{
+		args:                     args,
+		cwd:                      cwd,
+		agentDir:                 agentDir,
+		prompt:                   prompt,
+		appMode:                  appMode,
+		useSavedProjectTrustOnly: useSavedProjectTrustOnly,
+	})
+	return result.settingsManager, result.projectTrusted, err
 }
 
 func newCLISettingsManager(
@@ -83,11 +119,124 @@ func newCLISettingsManager(
 	return settings, trusted, nil
 }
 
+func getCommandAppMode(options CLIOptions) cliCommandAppMode {
+	_, stdoutIsTTY := resolveInteractiveOutput(options.Stdout, nil)
+	return commandAppMode(
+		isCLIInteractiveStdin(options),
+		stdoutIsTTY,
+	)
+}
+
+func commandAppMode(stdinIsTTY, stdoutIsTTY bool) cliCommandAppMode {
+	if stdinIsTTY && stdoutIsTTY {
+		return cliCommandAppModeInteractive
+	}
+	return cliCommandAppModePrint
+}
+
+func reportProjectTrustWarnings(writer io.Writer, warnings []string) {
+	if writer == nil {
+		return
+	}
+	for _, warning := range warnings {
+		_, _ = fmt.Fprintf(writer, "Warning: %s\n", warning)
+	}
+}
+
+func createCommandSettingsManager(
+	options cliCommandSettingsOptions,
+) (cliCommandSettingsResult, error) {
+	settings := NewSettingsManagerWithOptions(
+		options.cwd,
+		options.agentDir,
+		SettingsManagerOptions{ProjectTrusted: false},
+	)
+	result := cliCommandSettingsResult{settingsManager: settings}
+	store := NewProjectTrustStore(options.agentDir)
+	if options.useSavedProjectTrustOnly {
+		trusted := false
+		if options.args.ProjectTrustOverride != nil {
+			trusted = *options.args.ProjectTrustOverride
+		} else {
+			decision, found, err := store.Get(options.cwd)
+			if err != nil {
+				return cliCommandSettingsResult{}, err
+			}
+			trusted = found && decision
+		}
+		settings.SetProjectTrusted(trusted)
+		result.projectTrusted = trusted
+		return result, nil
+	}
+
+	var extensionsResult ResourceExtensionsResult
+	hasExtensionsResult := false
+	if options.args.ProjectTrustOverride == nil &&
+		HasTrustRequiringProjectResources(options.cwd) {
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{
+			CWD:                options.cwd,
+			AgentDir:           options.agentDir,
+			SettingsManager:    settings,
+			ExtensionFactories: options.extensionFactories,
+		})
+		extensionsResult = loader.LoadProjectTrustExtensions()
+		hasExtensionsResult = true
+		for _, loadError := range extensionsResult.Errors {
+			result.projectTrustWarnings = append(
+				result.projectTrustWarnings,
+				fmt.Sprintf(
+					`Failed to load extension %q: %s`,
+					loadError.Path,
+					loadError.Error,
+				),
+			)
+		}
+	}
+
+	contextArgs := Args{Print: true}
+	if options.appMode == cliCommandAppModeInteractive {
+		contextArgs.Print = false
+	}
+	resolveOptions := ResolveProjectTrustOptions{
+		CWD:                 options.cwd,
+		TrustStore:          store,
+		TrustOverride:       options.args.ProjectTrustOverride,
+		DefaultProjectTrust: settings.GetDefaultProjectTrust(),
+		Prompt:              options.prompt,
+		ExtensionContext: cliProtocolProjectTrustContext(
+			contextArgs,
+			options.cwd,
+			options.prompt,
+			defaultProjectTrustInputPrompt(settings),
+		),
+		OnExtensionError: func(extensionError ProtocolExtensionError) {
+			result.projectTrustWarnings = append(
+				result.projectTrustWarnings,
+				fmt.Sprintf(
+					`Extension %q project_trust error: %s`,
+					extensionError.ExtensionPath,
+					extensionError.Error,
+				),
+			)
+		},
+	}
+	if hasExtensionsResult {
+		resolveOptions.ExtensionRuntime = extensionsResult.Runtime
+	}
+	trusted, err := ResolveProjectTrusted(resolveOptions)
+	if err != nil {
+		return cliCommandSettingsResult{}, err
+	}
+	settings.SetProjectTrusted(trusted)
+	result.projectTrusted = trusted
+	return result, nil
+}
+
 func cliProjectTrustPrompt(options CLIOptions) ProjectTrustPrompt {
 	if options.ProjectTrustPrompt != nil {
 		return options.ProjectTrustPrompt
 	}
-	if isCLIInteractiveStdin(options) {
+	if getCommandAppMode(options) == cliCommandAppModeInteractive {
 		return defaultCLIProjectTrustPromptWithAgentDir(options.AgentDir)
 	}
 	return nil

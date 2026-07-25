@@ -24,6 +24,7 @@ type CLIOptions struct {
 	InteractiveHostFactory func(Args) (CLIInteractiveRuntimeHost, error)
 	ConfigHostFactory      func(PackageResourceConfigOptions) (CLIConfigRuntimeHost, error)
 	ModelRegistry          *ModelRegistry
+	ModelCatalogRefresh    ModelCatalogRefreshFunc
 	PackageManager         *DefaultPackageManager
 	PackageName            string
 	Version                string
@@ -432,6 +433,25 @@ func reportCLIArgDiagnostics(diagnostics []Diagnostic, writer io.Writer) bool {
 	return hasError
 }
 
+func reportCLISettingsErrors(
+	writer io.Writer,
+	settings *SettingsManager,
+	context string,
+) {
+	if writer == nil || settings == nil {
+		return
+	}
+	for _, settingsError := range settings.DrainErrors() {
+		_, _ = fmt.Fprintf(
+			writer,
+			"Warning (%s, %s settings): %v\n",
+			context,
+			settingsError.Scope,
+			settingsError.Err,
+		)
+	}
+}
+
 func nonNilWriter(writer io.Writer) io.Writer {
 	if writer != nil {
 		return writer
@@ -651,16 +671,32 @@ func runConfigSubcommand(options CLIOptions) int {
 	if factory == nil {
 		factory = newDefaultCLIConfigHost
 	}
-	settings, _, err := newCLIRuntimeSettingsManager(
-		Args{ProjectTrustOverride: options.ProjectTrustOverride},
-		cwd,
-		agentDir,
-		cliProjectTrustPrompt(options),
+	settingsResult, err := createCommandSettingsManager(
+		cliCommandSettingsOptions{
+			args: Args{
+				ProjectTrustOverride: options.ProjectTrustOverride,
+			},
+			cwd:                cwd,
+			agentDir:           agentDir,
+			prompt:             cliProjectTrustPrompt(options),
+			appMode:            getCommandAppMode(options),
+			extensionFactories: options.ExtensionFactories,
+		},
 	)
 	if err != nil {
 		writeCLIError(options.Stderr, err.Error())
 		return 1
 	}
+	reportProjectTrustWarnings(
+		nonNilWriter(options.Stderr),
+		settingsResult.projectTrustWarnings,
+	)
+	settings := settingsResult.settingsManager
+	reportCLISettingsErrors(
+		nonNilWriter(options.Stderr),
+		settings,
+		"config command",
+	)
 	if local && !settings.IsProjectTrusted() {
 		writeCLIError(options.Stderr, "Project is not trusted. Use --approve to modify local resource config.")
 		return 1
@@ -690,15 +726,34 @@ func runConfigSubcommand(options CLIOptions) int {
 	return 0
 }
 
+type cliUpdateTargetKind uint8
+
+const (
+	cliUpdateTargetSelf cliUpdateTargetKind = iota + 1
+	cliUpdateTargetExtensions
+	cliUpdateTargetModels
+	cliUpdateTargetAll
+)
+
 type cliUpdateTarget struct {
-	updateSelf     bool
-	updatePackages bool
-	sources        []string
+	kind   cliUpdateTargetKind
+	source string
+}
+
+func (t cliUpdateTarget) includesSelf() bool {
+	return t.kind == cliUpdateTargetSelf ||
+		t.kind == cliUpdateTargetAll
+}
+
+func (t cliUpdateTarget) includesExtensions() bool {
+	return t.kind == cliUpdateTargetExtensions ||
+		t.kind == cliUpdateTargetAll
 }
 
 type cliUpdateParseResult struct {
 	target             cliUpdateTarget
 	force              bool
+	showExtensionsNote bool
 	invalidOption      string
 	invalidArgument    string
 	missingOptionValue string
@@ -736,6 +791,27 @@ func runUpdateSubcommand(options CLIOptions) (int, bool) {
 		return 1, true
 	}
 
+	if parsed.target.kind == cliUpdateTargetModels {
+		_, agentDir, err := resolveCLICWDAndAgentDir(options)
+		if err != nil {
+			writeCLIError(options.Stderr, err.Error())
+			return 1, true
+		}
+		if err := refreshModelCatalogs(
+			context.Background(),
+			agentDir,
+			cliModelCatalogRefresh(options),
+		); err != nil {
+			writeCLIError(options.Stderr, "Error: "+err.Error())
+			return 1, true
+		}
+		_, _ = fmt.Fprintln(
+			nonNilWriter(options.Stdout),
+			"Model catalogs refreshed",
+		)
+		return 0, true
+	}
+
 	manager := options.PackageManager
 	if manager == nil {
 		var err error
@@ -745,18 +821,28 @@ func runUpdateSubcommand(options CLIOptions) (int, bool) {
 			return 1, true
 		}
 	}
-	if parsed.target.updatePackages {
-		if err := manager.Update(parsed.target.sources...); err != nil {
+	if parsed.showExtensionsNote {
+		_, _ = fmt.Fprintln(
+			nonNilWriter(options.Stdout),
+			"Extensions are skipped. Run gi update --extensions to update extensions.",
+		)
+	}
+	if parsed.target.includesExtensions() {
+		var sources []string
+		if parsed.target.source != "" {
+			sources = []string{parsed.target.source}
+		}
+		if err := manager.Update(sources...); err != nil {
 			writeCLIError(options.Stderr, err.Error())
 			return 1, true
 		}
-		if len(parsed.target.sources) == 1 {
-			_, _ = fmt.Fprintf(nonNilWriter(options.Stdout), "Updated %s\n", parsed.target.sources[0])
+		if parsed.target.source != "" {
+			_, _ = fmt.Fprintf(nonNilWriter(options.Stdout), "Updated %s\n", parsed.target.source)
 		} else {
 			_, _ = fmt.Fprintln(nonNilWriter(options.Stdout), "Updated packages")
 		}
 	}
-	if parsed.target.updateSelf {
+	if parsed.target.includesSelf() {
 		environment := options.InstallEnvironment
 		if isZeroInstallEnvironment(environment) {
 			environment = DefaultInstallEnvironment()
@@ -785,6 +871,8 @@ func parseCLIUpdateArgs(args []string) cliUpdateParseResult {
 	var result cliUpdateParseResult
 	var selfFlag bool
 	var extensionsFlag bool
+	var modelsFlag bool
+	var allFlag bool
 	var extensionSource string
 	var source string
 	for index := 0; index < len(args); index++ {
@@ -794,19 +882,23 @@ func parseCLIUpdateArgs(args []string) cliUpdateParseResult {
 			selfFlag = true
 		case arg == "--extensions":
 			extensionsFlag = true
+		case arg == "--models":
+			modelsFlag = true
+		case arg == "--all":
+			allFlag = true
 		case arg == "--force":
 			result.force = true
 		case arg == "--extension":
-			if extensionSource != "" {
-				result.conflict = firstNonEmptyString(result.conflict, "--extension can only be provided once")
-				continue
-			}
 			if index+1 >= len(args) || strings.HasPrefix(args[index+1], "-") {
 				result.missingOptionValue = firstNonEmptyString(result.missingOptionValue, arg)
 				continue
 			}
 			index++
-			extensionSource = args[index]
+			if extensionSource != "" {
+				result.conflict = firstNonEmptyString(result.conflict, "--extension can only be provided once")
+			} else {
+				extensionSource = args[index]
+			}
 		case strings.HasPrefix(arg, "-"):
 			result.invalidOption = firstNonEmptyString(result.invalidOption, arg)
 		default:
@@ -818,32 +910,85 @@ func parseCLIUpdateArgs(args []string) cliUpdateParseResult {
 		}
 	}
 
+	if allFlag && (selfFlag || extensionsFlag || modelsFlag || extensionSource != "") {
+		result.conflict = firstNonEmptyString(
+			result.conflict,
+			"--all cannot be combined with --self, --extensions, --models, or --extension",
+		)
+	}
+	if allFlag && source != "" {
+		result.conflict = firstNonEmptyString(
+			result.conflict,
+			"--all cannot be combined with a positional source",
+		)
+	}
+
+	if modelsFlag {
+		if selfFlag || extensionsFlag || allFlag || extensionSource != "" {
+			result.conflict = firstNonEmptyString(
+				result.conflict,
+				"--models cannot be combined with --self, --extensions, --all, or --extension",
+			)
+		}
+		if source != "" {
+			result.conflict = firstNonEmptyString(
+				result.conflict,
+				"--models cannot be combined with a positional source",
+			)
+		}
+		result.target = cliUpdateTarget{kind: cliUpdateTargetModels}
+		return result
+	}
+
 	if extensionSource != "" {
-		if selfFlag || extensionsFlag {
-			result.conflict = firstNonEmptyString(result.conflict, "--extension cannot be combined with --self or --extensions")
+		if selfFlag || extensionsFlag || allFlag {
+			result.conflict = firstNonEmptyString(
+				result.conflict,
+				"--extension cannot be combined with --self, --extensions, or --all",
+			)
 		}
 		if source != "" {
 			result.conflict = firstNonEmptyString(result.conflict, "--extension cannot be combined with a positional source")
 		}
-		result.target = cliUpdateTarget{updatePackages: true, sources: []string{extensionSource}}
+		result.target = cliUpdateTarget{
+			kind:   cliUpdateTargetExtensions,
+			source: extensionSource,
+		}
 		return result
 	}
 
 	if source != "" {
 		if source == "self" || source == "gi" {
-			result.target.updateSelf = true
-			result.target.updatePackages = extensionsFlag
+			result.target.kind = cliUpdateTargetSelf
+			if extensionsFlag {
+				result.target.kind = cliUpdateTargetAll
+			}
 			return result
 		}
-		if selfFlag || extensionsFlag {
-			result.conflict = firstNonEmptyString(result.conflict, "positional update targets cannot be combined with --self or --extensions")
+		if selfFlag || extensionsFlag || allFlag {
+			result.conflict = firstNonEmptyString(
+				result.conflict,
+				"positional update targets cannot be combined with --self, --extensions, or --all",
+			)
 		}
-		result.target = cliUpdateTarget{updatePackages: true, sources: []string{source}}
+		result.target = cliUpdateTarget{
+			kind:   cliUpdateTargetExtensions,
+			source: source,
+		}
 		return result
 	}
 
-	result.target.updateSelf = selfFlag
-	result.target.updatePackages = !selfFlag || extensionsFlag
+	switch {
+	case allFlag || selfFlag && extensionsFlag:
+		result.target.kind = cliUpdateTargetAll
+	case selfFlag:
+		result.target.kind = cliUpdateTargetSelf
+	case extensionsFlag:
+		result.target.kind = cliUpdateTargetExtensions
+	default:
+		result.target.kind = cliUpdateTargetSelf
+		result.showExtensionsNote = true
+	}
 	return result
 }
 
@@ -941,13 +1086,16 @@ func writePackageCommandUsage(writer io.Writer, command string) {
 	switch command {
 	case "remove":
 		_, _ = fmt.Fprint(writer, `Usage:
-  gi remove <source> [-l]
+  gi remove <source> [-l] [--approve|--no-approve]
 
 Remove a package and its source from settings.
 Alias: gi uninstall <source> [-l]
 
 Options:
   -l, --local    Remove from project settings (.gi/settings.json)
+  -a, --approve  Trust project-local files for this command
+  -na, --no-approve
+                  Ignore project-local files for this command
 
 Examples:
   gi remove official:gi-tools-ui
@@ -955,12 +1103,15 @@ Examples:
 `)
 	default:
 		_, _ = fmt.Fprint(writer, `Usage:
-  gi install <source> [-l]
+  gi install <source> [-l] [--approve|--no-approve]
 
 Install a package and add it to settings.
 
 Options:
   -l, --local    Install project-locally (.gi/settings.json)
+  -a, --approve  Trust project-local files for this command
+  -na, --no-approve
+                  Ignore project-local files for this command
 
 Examples:
   gi install official:gi-tools-ui
@@ -978,18 +1129,24 @@ func writeUpdateCommandUsage(writer io.Writer) {
 		return
 	}
 	_, _ = fmt.Fprint(writer, `Usage:
-  gi update [source|self|gi] [--self] [--extensions] [--extension <source>] [--force]
+  gi update [source|self|gi] [--self|--extensions|--models|--all] [--extension <source>] [--approve|--no-approve] [--force]
 
-Update gi and installed packages.
+Update gi, installed packages, or model catalogs.
 
 Options:
-  --self                  Update gi only
+  --self                  Update gi only (default when no target is given)
   --extensions            Update installed packages only
+  --models                Refresh model catalogs only
+  --all                   Update gi and installed packages
   --extension <source>    Update one package only
+  -a, --approve           Trust project-local files for this command
+  -na, --no-approve       Ignore project-local files for this command
   --force                 Reinstall gi even if the current version is latest
 
 Short forms:
-  gi update                Update gi and all packages
+  gi update                Update gi only
+  gi update --all          Update gi and all extensions
+  gi update --models       Refresh model catalogs only
   gi update <source>       Update one package
   gi update gi             Update gi only (self works as alias to gi)
 `)
@@ -1000,9 +1157,13 @@ func writeListPackagesUsage(writer io.Writer) {
 		return
 	}
 	_, _ = fmt.Fprint(writer, `Usage:
-  gi list
+  gi list [--approve|--no-approve]
 
 List installed packages from user and project settings.
+
+Options:
+  -a, --approve      Trust project-local files for this command
+  -na, --no-approve  Ignore project-local files for this command
 `)
 }
 
@@ -1011,12 +1172,14 @@ func writeConfigCommandUsage(writer io.Writer) {
 		return
 	}
 	_, _ = fmt.Fprintln(writer, "Usage:")
-	_, _ = fmt.Fprintln(writer, "  gi config [-l]")
+	_, _ = fmt.Fprintln(writer, "  gi config [-l] [--approve|--no-approve]")
 	_, _ = fmt.Fprintln(writer, "")
 	_, _ = fmt.Fprintln(writer, "Open resource configuration.")
 	_, _ = fmt.Fprintln(writer, "")
 	_, _ = fmt.Fprintln(writer, "Options:")
-	_, _ = fmt.Fprintln(writer, "  -l, --local  Start in project-local write mode")
+	_, _ = fmt.Fprintln(writer, "  -l, --local       Start in project-local write mode")
+	_, _ = fmt.Fprintln(writer, "  -a, --approve     Trust project-local files for this command with -l")
+	_, _ = fmt.Fprintln(writer, "  -na, --no-approve Ignore project-local files for this command with -l")
 }
 
 func isZeroInstallEnvironment(env InstallEnvironment) bool {
@@ -1034,17 +1197,36 @@ func defaultCLIPackageManager(options CLIOptions, useSavedProjectTrustOnly bool)
 	if err != nil {
 		return nil, err
 	}
-	settings, _, err := newCLICommandSettingsManager(
-		Args{ProjectTrustOverride: options.ProjectTrustOverride},
-		cwd,
-		agentDir,
-		cliProjectTrustPrompt(options),
-		useSavedProjectTrustOnly,
+	settingsResult, err := createCommandSettingsManager(
+		cliCommandSettingsOptions{
+			args: Args{
+				ProjectTrustOverride: options.ProjectTrustOverride,
+			},
+			cwd:                      cwd,
+			agentDir:                 agentDir,
+			prompt:                   cliProjectTrustPrompt(options),
+			appMode:                  getCommandAppMode(options),
+			useSavedProjectTrustOnly: useSavedProjectTrustOnly,
+			extensionFactories:       options.ExtensionFactories,
+		},
 	)
 	if err != nil {
 		return nil, err
 	}
-	return NewDefaultPackageManager(PackageManagerOptions{CWD: cwd, AgentDir: agentDir, SettingsManager: settings}), nil
+	reportProjectTrustWarnings(
+		nonNilWriter(options.Stderr),
+		settingsResult.projectTrustWarnings,
+	)
+	reportCLISettingsErrors(
+		nonNilWriter(options.Stderr),
+		settingsResult.settingsManager,
+		"package command",
+	)
+	return NewDefaultPackageManager(PackageManagerOptions{
+		CWD:             cwd,
+		AgentDir:        agentDir,
+		SettingsManager: settingsResult.settingsManager,
+	}), nil
 }
 
 func extractPackageProjectTrustFlags(args []string, initial *bool) ([]string, *bool) {

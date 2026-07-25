@@ -283,10 +283,13 @@ func TestPackageCommandPathsGiProtocolBasics(t *testing.T) {
 			t.Fatalf("update help code=%d stderr=%q", code, stderr)
 		}
 		for _, expected := range []string{
-			"gi update [source|self|gi] [--self] [--extensions] [--extension <source>] [--force]",
-			"Update gi and installed packages.",
-			"--self                  Update gi only",
+			"gi update [source|self|gi] [--self|--extensions|--models|--all]",
+			"Update gi, installed packages, or model catalogs.",
+			"--self                  Update gi only (default when no target is given)",
 			"--extensions            Update installed packages only",
+			"--models                Refresh model catalogs only",
+			"--all                   Update gi and installed packages",
+			"gi update --models       Refresh model catalogs only",
 			"gi update gi             Update gi only (self works as alias to gi)",
 		} {
 			if !strings.Contains(stdout, expected) {

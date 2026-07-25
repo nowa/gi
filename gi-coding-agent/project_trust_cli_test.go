@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -242,6 +243,162 @@ func TestCLICommandSettingsUpdateUsesSavedTrustOnly(t *testing.T) {
 	settings, trusted, err = newCLICommandSettingsManager(Args{}, cwd, agentDir, nil, true)
 	if err != nil || !trusted || !settings.IsProjectTrusted() || settings.GetTheme() != "project" {
 		t.Fatalf("remembered settings = %#v, trusted = %t, err = %v", settings, trusted, err)
+	}
+}
+
+func TestCLICommandAppModeRequiresBothTTYStreams(t *testing.T) {
+	tests := []struct {
+		stdinIsTTY  bool
+		stdoutIsTTY bool
+		want        cliCommandAppMode
+	}{
+		{stdinIsTTY: true, stdoutIsTTY: true, want: cliCommandAppModeInteractive},
+		{stdinIsTTY: true, stdoutIsTTY: false, want: cliCommandAppModePrint},
+		{stdinIsTTY: false, stdoutIsTTY: true, want: cliCommandAppModePrint},
+		{stdinIsTTY: false, stdoutIsTTY: false, want: cliCommandAppModePrint},
+	}
+	for _, test := range tests {
+		if got := commandAppMode(
+			test.stdinIsTTY,
+			test.stdoutIsTTY,
+		); got != test.want {
+			t.Fatalf(
+				"commandAppMode(%t, %t) = %q, want %q",
+				test.stdinIsTTY,
+				test.stdoutIsTTY,
+				got,
+				test.want,
+			)
+		}
+	}
+}
+
+func TestCLICommandSettingsLoadsTrustExtensionsAndReportsWarnings(
+	t *testing.T,
+) {
+	root := t.TempDir()
+	cwd := filepath.Join(root, "project")
+	agentDir := filepath.Join(root, "agent")
+	writeSettingsJSON(
+		t,
+		filepath.Join(cwd, ConfigDirName, "settings.json"),
+		map[string]any{"theme": "project"},
+	)
+
+	result, err := createCommandSettingsManager(
+		cliCommandSettingsOptions{
+			cwd:      cwd,
+			agentDir: agentDir,
+			appMode:  cliCommandAppModePrint,
+			extensionFactories: []ProtocolExtensionFactory{
+				{
+					Path: "broken-bootstrap",
+					Factory: func(*ProtocolExtensionContext) error {
+						return errors.New("bootstrap failed")
+					},
+				},
+				{
+					Path: "broken-trust-handler",
+					Factory: func(ctx *ProtocolExtensionContext) error {
+						return ctx.On(
+							ProtocolEventProjectTrust,
+							func(
+								ProtocolSessionEvent,
+							) (ProtocolEventResult, error) {
+								return ProtocolEventResult{},
+									errors.New("trust failed")
+							},
+						)
+					},
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.projectTrusted ||
+		result.settingsManager == nil ||
+		result.settingsManager.IsProjectTrusted() {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(result.projectTrustWarnings) != 2 {
+		t.Fatalf("warnings = %#v", result.projectTrustWarnings)
+	}
+	for _, want := range []string{
+		`Failed to load extension "broken-bootstrap": bootstrap failed`,
+		`Extension "broken-trust-handler" project_trust error: trust failed`,
+	} {
+		if !containsString(result.projectTrustWarnings, want) {
+			t.Fatalf(
+				"warnings = %#v, want %q",
+				result.projectTrustWarnings,
+				want,
+			)
+		}
+	}
+
+	var output bytes.Buffer
+	reportProjectTrustWarnings(
+		&output,
+		result.projectTrustWarnings,
+	)
+	for _, warning := range result.projectTrustWarnings {
+		if !strings.Contains(
+			output.String(),
+			"Warning: "+warning,
+		) {
+			t.Fatalf("output = %q, want warning %q", output.String(), warning)
+		}
+	}
+}
+
+func TestCLICommandSettingsTrustExtensionOwnsDecision(t *testing.T) {
+	root := t.TempDir()
+	cwd := filepath.Join(root, "project")
+	agentDir := filepath.Join(root, "agent")
+	writeSettingsJSON(
+		t,
+		filepath.Join(cwd, ConfigDirName, "settings.json"),
+		map[string]any{"theme": "project"},
+	)
+	result, err := createCommandSettingsManager(
+		cliCommandSettingsOptions{
+			cwd:      cwd,
+			agentDir: agentDir,
+			appMode:  cliCommandAppModePrint,
+			extensionFactories: []ProtocolExtensionFactory{{
+				Path: "trust-bootstrap",
+				Factory: func(ctx *ProtocolExtensionContext) error {
+					return ctx.On(
+						ProtocolEventProjectTrust,
+						func(
+							event ProtocolSessionEvent,
+						) (ProtocolEventResult, error) {
+							if event.ProjectTrustContext == nil ||
+								event.ProjectTrustContext.Mode != "print" ||
+								event.ProjectTrustContext.HasUI {
+								t.Fatalf("event = %#v", event)
+							}
+							return ProtocolEventResult{
+								ProjectTrust: &ProtocolProjectTrustResult{
+									Trusted: ProtocolProjectTrustYes,
+								},
+							}, nil
+						},
+					)
+				},
+			}},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.projectTrusted ||
+		!result.settingsManager.IsProjectTrusted() ||
+		result.settingsManager.GetTheme() != "project" ||
+		len(result.projectTrustWarnings) != 0 {
+		t.Fatalf("result = %#v", result)
 	}
 }
 
