@@ -30,9 +30,6 @@
       "module": "coding",
       "missingFiles": [],
       "missingSymbols": [
-        "config.ts::getEntrypointPackageDir",
-        "config.ts::getPathComparisonCandidates",
-        "config.ts::normalizeSelfUpdatePackageTarget",
         "core/package-manager.ts::DefaultPackageManager.ensureGitRef",
         "core/package-manager.ts::DefaultPackageManager.getLegacyGlobalNpmInstallPath",
         "core/package-manager.ts::DefaultPackageManager.getManagedNpmInstallPath",

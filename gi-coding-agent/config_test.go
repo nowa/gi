@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -81,6 +82,124 @@ func TestBunBinaryUpdateInstructionUsesGiReleases(t *testing.T) {
 	}
 	if got := GetUpdateInstruction(testPackageName, env); got != "Download from: https://github.com/nowa/gi/releases/latest" {
 		t.Fatalf("instruction = %q", got)
+	}
+}
+
+func TestNormalizeSelfUpdatePackageTargetKeepsIdentityAndInstallSpecSeparate(t *testing.T) {
+	t.Run("defaults the install spec to the package identity", func(t *testing.T) {
+		got := normalizeSelfUpdatePackageTarget(SelfUpdatePackageTarget{PackageName: " gi "})
+		want := SelfUpdatePackageTarget{PackageName: "gi", InstallSpec: "gi"}
+		if got != want {
+			t.Fatalf("target = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("preserves an exact install spec", func(t *testing.T) {
+		target := SelfUpdatePackageTarget{
+			PackageName: "gi",
+			InstallSpec: "gi@0.82.0",
+		}
+		if got := normalizeSelfUpdatePackageTarget(target); got != target {
+			t.Fatalf("target = %#v, want %#v", got, target)
+		}
+		instruction := GetSelfUpdateUnavailableInstructionForTarget(
+			"legacy-gi",
+			InstallEnvironment{ExecPath: "/usr/local/bin/gi"},
+			target,
+		)
+		if !strings.Contains(instruction, "Update gi@0.82.0") {
+			t.Fatalf("instruction = %q", instruction)
+		}
+	})
+
+	t.Run("the public target boundary honors the Go zero value", func(t *testing.T) {
+		instruction := GetSelfUpdateUnavailableInstructionForTarget(
+			"gi",
+			InstallEnvironment{ExecPath: "/usr/local/bin/gi"},
+			SelfUpdatePackageTarget{},
+		)
+		if !strings.Contains(instruction, "Update gi ") {
+			t.Fatalf("instruction = %q", instruction)
+		}
+	})
+}
+
+func TestGetPathComparisonCandidatesPreservesLexicalAndRealPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks is not reliable on Windows CI")
+	}
+	realDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkRoot := t.TempDir()
+	link := filepath.Join(linkRoot, "package-link")
+	if err := os.Symlink(realDir, link); err != nil {
+		t.Fatal(err)
+	}
+
+	got := getPathComparisonCandidates(link, runtime.GOOS)
+	wantLexical, err := filepath.Abs(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantReal, err := filepath.EvalSymlinks(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{wantLexical, wantReal} {
+		if !configTestContainsString(got, want) {
+			t.Fatalf("candidates = %#v, missing %q", got, want)
+		}
+	}
+	if got := getPathComparisonCandidates(filepath.Join(linkRoot, "missing"), runtime.GOOS); len(got) != 0 {
+		t.Fatalf("missing candidates = %#v", got)
+	}
+}
+
+func TestGetPathComparisonCandidatesUsesWindowsCasePolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "MixedCase")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range getPathComparisonCandidates(path, "windows") {
+		if candidate != strings.ToLower(candidate) {
+			t.Fatalf("candidate = %q, want lowercase", candidate)
+		}
+	}
+}
+
+func TestGetEntrypointPackageDirFindsNearestGoModule(t *testing.T) {
+	root := t.TempDir()
+	writeConfigTestFile(t, filepath.Join(root, "go.mod"), "module example.com/root\n")
+	nestedModule := filepath.Join(root, "tools", "gi")
+	writeConfigTestFile(t, filepath.Join(nestedModule, "go.mod"), "module example.com/gi\n")
+	entrypoint := filepath.Join(nestedModule, "cmd", "gi", "main")
+	writeConfigTestFile(t, entrypoint, "")
+
+	if got := getEntrypointPackageDir(entrypoint); got != nestedModule {
+		t.Fatalf("package dir = %q, want %q", got, nestedModule)
+	}
+	if got := getEntrypointPackageDir(filepath.Join(t.TempDir(), "bin", "gi")); got != "" {
+		t.Fatalf("package dir = %q, want empty", got)
+	}
+}
+
+func TestDetectInstallMethodFollowsEntrypointSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks is not reliable on Windows CI")
+	}
+	packageDir := filepath.Join(t.TempDir(), "lib", "node_modules", "gi")
+	entrypoint := filepath.Join(packageDir, "bin", "gi")
+	writeConfigTestFile(t, entrypoint, "")
+	linkDir := t.TempDir()
+	link := filepath.Join(linkDir, "gi")
+	if err := os.Symlink(entrypoint, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := DetectInstallMethod(InstallEnvironment{ExecPath: link}); got != InstallMethodNPM {
+		t.Fatalf("method = %q, want %q", got, InstallMethodNPM)
 	}
 }
 
@@ -270,5 +389,24 @@ func assertPath(t *testing.T, got string, parts ...string) {
 	want := filepath.Join(parts...)
 	if got != want {
 		t.Fatalf("path = %q, want %q", got, want)
+	}
+}
+
+func configTestContainsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func writeConfigTestFile(t *testing.T, path, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -958,9 +958,10 @@ func (m *DefaultPackageManager) RunSelfUpdate(options SelfUpdateOptions) (SelfUp
 		}
 	}
 
-	command := GetSelfUpdateCommand(packageName, options.Environment, nil, updatePackageName)
+	updateTarget := resolveSelfUpdatePackageTarget(packageName, SelfUpdatePackageTarget{PackageName: updatePackageName})
+	command := GetSelfUpdateCommandForTarget(packageName, options.Environment, updateTarget)
 	if command == nil {
-		return SelfUpdateResult{}, fmt.Errorf("%s", GetSelfUpdateUnavailableInstruction(packageName, options.Environment, nil, updatePackageName))
+		return SelfUpdateResult{}, fmt.Errorf("%s", GetSelfUpdateUnavailableInstructionForTarget(packageName, options.Environment, updateTarget))
 	}
 	steps := command.Steps
 	if len(steps) == 0 {
@@ -971,7 +972,7 @@ func (m *DefaultPackageManager) RunSelfUpdate(options SelfUpdateOptions) (SelfUp
 			return SelfUpdateResult{}, err
 		}
 	}
-	return SelfUpdateResult{Updated: true, PackageName: updatePackageName}, nil
+	return SelfUpdateResult{Updated: true, PackageName: updateTarget.PackageName}, nil
 }
 
 func (m *DefaultPackageManager) ResolveExtensionSources(sources []string, options ResolveExtensionSourcesOptions) ([]string, error) {

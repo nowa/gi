@@ -42,6 +42,13 @@ type SelfUpdateCommand struct {
 	Steps   []SelfUpdateCommandStep
 }
 
+// SelfUpdatePackageTarget separates the package identity used to replace an
+// installation from the exact spec a package manager would install.
+type SelfUpdatePackageTarget struct {
+	PackageName string
+	InstallSpec string
+}
+
 type InstallEnvironment struct {
 	ExecPath      string
 	PackageDir    string
@@ -188,7 +195,7 @@ func DetectInstallMethod(env InstallEnvironment) InstallMethod {
 	if env.BunBinary {
 		return InstallMethodBunBinary
 	}
-	resolvedPath := strings.ToLower(strings.ReplaceAll(env.PackageDir+"\x00"+env.ExecPath, "\\", "/"))
+	resolvedPath := strings.Join(installDetectionPathCandidates(env), "\x00")
 	switch {
 	case strings.Contains(resolvedPath, "/pnpm/") || strings.Contains(resolvedPath, "/.pnpm/"):
 		return InstallMethodPNPM
@@ -204,9 +211,17 @@ func DetectInstallMethod(env InstallEnvironment) InstallMethod {
 }
 
 func GetSelfUpdateCommand(packageName string, env InstallEnvironment, _ []string, updatePackageName string) *SelfUpdateCommand {
-	if updatePackageName == "" {
-		updatePackageName = packageName
+	target := SelfUpdatePackageTarget{
+		PackageName: firstNonEmptyString(strings.TrimSpace(updatePackageName), strings.TrimSpace(packageName)),
 	}
+	return GetSelfUpdateCommandForTarget(packageName, env, target)
+}
+
+// GetSelfUpdateCommandForTarget preserves the typed update target at the
+// command-generation boundary. Gi intentionally does not execute Node package
+// manager self-updates, so no environment currently produces a command.
+func GetSelfUpdateCommandForTarget(packageName string, _ InstallEnvironment, target SelfUpdatePackageTarget) *SelfUpdateCommand {
+	_ = resolveSelfUpdatePackageTarget(packageName, target)
 	return nil
 }
 
@@ -215,21 +230,142 @@ func GetUpdateInstruction(packageName string, env InstallEnvironment) string {
 }
 
 func GetSelfUpdateUnavailableInstruction(packageName string, env InstallEnvironment, _ []string, updatePackageName string) string {
-	if updatePackageName == "" {
-		updatePackageName = packageName
+	target := SelfUpdatePackageTarget{
+		PackageName: firstNonEmptyString(strings.TrimSpace(updatePackageName), strings.TrimSpace(packageName)),
 	}
+	return GetSelfUpdateUnavailableInstructionForTarget(packageName, env, target)
+}
+
+// GetSelfUpdateUnavailableInstructionForTarget describes the safe manual
+// update path without collapsing an exact install spec into its package name.
+func GetSelfUpdateUnavailableInstructionForTarget(packageName string, env InstallEnvironment, target SelfUpdatePackageTarget) string {
+	target = resolveSelfUpdatePackageTarget(packageName, target)
 	method := DetectInstallMethod(env)
 	if method == InstallMethodBunBinary {
 		return "Download from: https://github.com/nowa/gi/releases/latest"
 	}
 	if isNodePackageManagerInstall(method) {
-		return "Gi does not support npm, pnpm, yarn, or bun self-updates. Update " + updatePackageName + " using the package manager, wrapper, or source checkout that provides this installation."
+		return "Gi does not support npm, pnpm, yarn, or bun self-updates. Update " + target.InstallSpec + " using the package manager, wrapper, or source checkout that provides this installation."
 	}
-	return "Update " + updatePackageName + " using the package manager, wrapper, or source checkout that provides this installation."
+	return "Update " + target.InstallSpec + " using the package manager, wrapper, or source checkout that provides this installation."
 }
 
 func isNodePackageManagerInstall(method InstallMethod) bool {
 	return method == InstallMethodNPM || method == InstallMethodPNPM || method == InstallMethodYarn || method == InstallMethodBun
+}
+
+func normalizeSelfUpdatePackageTarget(target SelfUpdatePackageTarget) SelfUpdatePackageTarget {
+	target.PackageName = strings.TrimSpace(target.PackageName)
+	target.InstallSpec = strings.TrimSpace(target.InstallSpec)
+	if target.InstallSpec == "" {
+		target.InstallSpec = target.PackageName
+	}
+	return target
+}
+
+func resolveSelfUpdatePackageTarget(packageName string, target SelfUpdatePackageTarget) SelfUpdatePackageTarget {
+	if strings.TrimSpace(target.PackageName) == "" {
+		target.PackageName = packageName
+	}
+	return normalizeSelfUpdatePackageTarget(target)
+}
+
+func installDetectionPathCandidates(env InstallEnvironment) []string {
+	paths := []string{env.PackageDir, env.ExecPath}
+	if packageDir := getEntrypointPackageDir(env.ExecPath); packageDir != "" {
+		paths = append(paths, packageDir)
+	}
+
+	candidates := make([]string, 0, len(paths)*3)
+	seen := make(map[string]struct{}, len(paths)*3)
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		path = strings.ToLower(strings.ReplaceAll(path, "\\", "/"))
+		if _, ok := seen[path]; ok {
+			return
+		}
+		seen[path] = struct{}{}
+		candidates = append(candidates, path)
+	}
+	for _, path := range paths {
+		add(path)
+		for _, candidate := range getPathComparisonCandidates(path, env.Platform) {
+			add(candidate)
+		}
+	}
+	return candidates
+}
+
+func normalizeExistingPathForComparison(path string, resolveSymlinks bool, platform string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return ""
+	}
+	if _, err := os.Stat(absolutePath); err != nil {
+		return ""
+	}
+	normalizedPath := filepath.Clean(absolutePath)
+	if resolveSymlinks {
+		normalizedPath, err = filepath.EvalSymlinks(normalizedPath)
+		if err != nil {
+			return ""
+		}
+		normalizedPath = filepath.Clean(normalizedPath)
+	}
+	if isWindowsInstallPlatform(platform) {
+		normalizedPath = strings.ToLower(normalizedPath)
+	}
+	return normalizedPath
+}
+
+func getPathComparisonCandidates(path string, platform string) []string {
+	candidates := make([]string, 0, 2)
+	seen := make(map[string]struct{}, 2)
+	for _, resolveSymlinks := range []bool{false, true} {
+		candidate := normalizeExistingPathForComparison(path, resolveSymlinks, platform)
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		candidates = append(candidates, candidate)
+	}
+	return candidates
+}
+
+func getEntrypointPackageDir(entrypoint string) string {
+	entrypoint = strings.TrimSpace(entrypoint)
+	if entrypoint == "" {
+		return ""
+	}
+	absoluteEntrypoint, err := filepath.Abs(entrypoint)
+	if err != nil {
+		return ""
+	}
+	for dir := filepath.Dir(absoluteEntrypoint); dir != filepath.Dir(dir); dir = filepath.Dir(dir) {
+		info, err := os.Stat(filepath.Join(dir, "go.mod"))
+		if err == nil && !info.IsDir() {
+			return dir
+		}
+	}
+	return ""
+}
+
+func isWindowsInstallPlatform(platform string) bool {
+	platform = strings.ToLower(strings.TrimSpace(platform))
+	if platform == "" {
+		platform = runtime.GOOS
+	}
+	return platform == "windows" || platform == "win32"
 }
 
 func optionalInstallEnvironment(envs ...InstallEnvironment) InstallEnvironment {
