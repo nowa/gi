@@ -242,7 +242,8 @@ func (h *CLIInteractiveTUIHost) showModelSelector(host *RPCSessionHost, search s
 		return errors.New("model selector requires a session host")
 	}
 	allModels := host.getAvailableModels()
-	if len(allModels) == 0 {
+	runtime := h.modelRuntime()
+	if len(allModels) == 0 && runtime == nil {
 		h.addStatus("No models available")
 		return nil
 	}
@@ -252,22 +253,40 @@ func (h *CLIInteractiveTUIHost) showModelSelector(host *RPCSessionHost, search s
 			h.requestRender(false)
 		}
 	}
+	callbacks := ModelSelectorCallbacks{
+		OnSelect: func(model llm.Model) {
+			closeSelector()
+			if err := h.applyModelSelection(
+				host,
+				model.Provider,
+				model.ID,
+			); err != nil {
+				h.addStatus(
+					"Model selection failed: " + err.Error(),
+				)
+			}
+		},
+		OnCancel: closeSelector,
+	}
+	var selectorRuntime ModelSelectorRuntime
+	refreshOptions := ModelRegistryRefreshOptions{}
+	if runtime != nil {
+		selectorRuntime = runtime
+		refreshOptions = runtime.defaultRefreshOptions()
+		refreshOptions.Timeout = modelSelectorRefreshTimeout
+	}
 	selector := NewInteractiveModelSelectorComponent(ModelSelectorConfig{
-		CurrentModel:  host.Session.Agent.State.Model,
-		AllModels:     allModels,
-		ScopedModels:  scopedModelsFromRPC(host.ScopedModels),
-		InitialSearch: search,
-		Keybindings:   h.effectiveKeybindings(),
-	}, ModelSelectorCallbacks{})
-	selector.callbacks.OnSelect = func(model llm.Model) {
-		closeSelector()
-		if err := h.applyModelSelection(host, model.Provider, model.ID); err != nil {
-			h.addStatus("Model selection failed: " + err.Error())
-		}
-	}
-	selector.callbacks.OnCancel = func() {
-		closeSelector()
-	}
+		CurrentModel:   host.Session.Agent.State.Model,
+		AllModels:      allModels,
+		ScopedModels:   scopedModelsFromRPC(host.ScopedModels),
+		InitialSearch:  search,
+		Keybindings:    h.effectiveKeybindings(),
+		Runtime:        selectorRuntime,
+		RefreshOptions: refreshOptions,
+		RequestRender: func() {
+			h.requestRender(false)
+		},
+	}, callbacks)
 	replacement.install(h.showEditorReplacement(selector, selector))
 	return nil
 }

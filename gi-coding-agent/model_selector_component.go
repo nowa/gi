@@ -1,9 +1,14 @@
 package gicodingagent
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
 	gitui "github.com/nowa/gi/gi-tui"
@@ -493,11 +498,14 @@ func indexOfString(values []string, target string) int {
 }
 
 type ModelSelectorConfig struct {
-	CurrentModel  llm.Model
-	AllModels     []llm.Model
-	ScopedModels  []ScopedModel
-	InitialSearch string
-	Keybindings   KeybindingsConfig
+	CurrentModel   llm.Model
+	AllModels      []llm.Model
+	ScopedModels   []ScopedModel
+	InitialSearch  string
+	Keybindings    KeybindingsConfig
+	Runtime        ModelSelectorRuntime
+	RefreshOptions ModelRegistryRefreshOptions
+	RequestRender  func()
 }
 
 type ModelSelectorCallbacks struct {
@@ -505,7 +513,24 @@ type ModelSelectorCallbacks struct {
 	OnCancel func()
 }
 
+// ModelSelectorRuntime is the narrow catalog boundary consumed by the
+// interactive selector. ModelRuntime implements it, while callers can provide
+// deterministic implementations without constructing provider transports.
+type ModelSelectorRuntime interface {
+	GetAvailableSnapshot() []llm.Model
+	GetModel(providerID, modelID string) (llm.Model, bool)
+	GetError() string
+	Refresh(
+		context.Context,
+		ModelRegistryRefreshOptions,
+	) (llm.ModelsRefreshResult, error)
+}
+
+const modelSelectorRefreshTimeout = 15 * time.Second
+
 type ModelSelectorComponent struct {
+	mu sync.RWMutex
+
 	currentModel  llm.Model
 	allModels     []llm.Model
 	scopedModels  []ScopedModel
@@ -515,6 +540,16 @@ type ModelSelectorComponent struct {
 	callbacks     ModelSelectorCallbacks
 	keybindings   KeybindingsConfig
 	focus         gitui.FocusState
+
+	runtime              ModelSelectorRuntime
+	refreshOptions       ModelRegistryRefreshOptions
+	requestRender        func()
+	refreshCancel        context.CancelFunc
+	refreshDone          chan struct{}
+	errorMessage         string
+	refreshStatusMessage string
+	refreshStatusSuccess bool
+	closed               bool
 }
 
 func NewModelSelectorComponent(currentModel llm.Model, scopedModels []ScopedModel) *ModelSelectorComponent {
@@ -541,6 +576,16 @@ func NewInteractiveModelSelectorComponent(config ModelSelectorConfig, callbacks 
 		scope:        scope,
 		search:       config.InitialSearch,
 		callbacks:    callbacks,
+		runtime:      config.Runtime,
+		refreshOptions: func() ModelRegistryRefreshOptions {
+			options := config.RefreshOptions
+			if options.Timeout <= 0 {
+				options.Timeout = modelSelectorRefreshTimeout
+			}
+			return options
+		}(),
+		requestRender: config.RequestRender,
+		refreshDone:   make(chan struct{}),
 		keybindings: func() KeybindingsConfig {
 			if config.Keybindings != nil {
 				return cloneKeybindingsConfig(config.Keybindings)
@@ -553,7 +598,35 @@ func NewInteractiveModelSelectorComponent(config ModelSelectorConfig, callbacks 
 			component.allModels = append(component.allModels, scoped.Model)
 		}
 	}
+	if isNilModelSelectorRuntime(component.runtime) {
+		component.runtime = nil
+		close(component.refreshDone)
+		return component
+	}
+
+	component.refreshStatusMessage = "Refreshing model catalogs…"
+	component.loadModelsFromSnapshot()
+	refreshContext, cancel := context.WithCancel(context.Background())
+	component.refreshCancel = cancel
+	if component.requestRender != nil {
+		component.requestRender()
+	}
+	go component.refreshModels(refreshContext)
 	return component
+}
+
+func isNilModelSelectorRuntime(runtime ModelSelectorRuntime) bool {
+	if runtime == nil {
+		return true
+	}
+	value := reflect.ValueOf(runtime)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map,
+		reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 func sortModelSelectorModels(models []llm.Model, current llm.Model) []llm.Model {
@@ -569,26 +642,179 @@ func sortModelSelectorModels(models []llm.Model, current llm.Model) []llm.Model 
 	return result
 }
 
+// loadModelsFromSnapshot atomically replaces the selector's catalog projection
+// from the runtime's last fully published snapshot. Scoped thinking levels
+// remain session-owned while their model definitions are refreshed by ID.
+func (c *ModelSelectorComponent) loadModelsFromSnapshot() {
+	if c == nil || c.runtime == nil {
+		return
+	}
+	models := c.runtime.GetAvailableSnapshot()
+
+	c.mu.RLock()
+	scopedModels := append([]ScopedModel(nil), c.scopedModels...)
+	c.mu.RUnlock()
+	for index, scoped := range scopedModels {
+		if model, ok := c.runtime.GetModel(
+			scoped.Model.Provider,
+			scoped.Model.ID,
+		); ok {
+			scopedModels[index].Model = model
+		}
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
+	c.allModels = sortModelSelectorModels(models, c.currentModel)
+	c.scopedModels = scopedModels
+	c.reselectCurrentOrClampLocked()
+}
+
+// refreshModels refreshes provider catalogs in the background and publishes
+// only a complete runtime snapshot back into the selector.
+func (c *ModelSelectorComponent) refreshModels(ctx context.Context) {
+	if c == nil || c.runtime == nil {
+		return
+	}
+	defer close(c.refreshDone)
+
+	options := c.refreshOptions
+	timeout := options.Timeout
+	if timeout <= 0 {
+		timeout = modelSelectorRefreshTimeout
+		options.Timeout = timeout
+	}
+	refreshContext, cancel := context.WithTimeout(ctx, timeout)
+	result, err := c.runtime.Refresh(refreshContext, options)
+	timedOut := errors.Is(refreshContext.Err(), context.DeadlineExceeded)
+	cancel()
+
+	c.mu.RLock()
+	closed := c.closed
+	c.mu.RUnlock()
+	if closed {
+		return
+	}
+	c.loadModelsFromSnapshot()
+
+	errorMessage, statusMessage, statusSuccess := modelSelectorRefreshOutcome(
+		c.runtime,
+		result,
+		err,
+		timedOut,
+	)
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return
+	}
+	c.errorMessage = errorMessage
+	c.refreshStatusMessage = statusMessage
+	c.refreshStatusSuccess = statusSuccess
+	requestRender := c.requestRender
+	c.mu.Unlock()
+	if requestRender != nil {
+		requestRender()
+	}
+}
+
+func modelSelectorRefreshOutcome(
+	runtime ModelSelectorRuntime,
+	result llm.ModelsRefreshResult,
+	err error,
+	timedOut bool,
+) (errorMessage, statusMessage string, statusSuccess bool) {
+	switch {
+	case timedOut && (result.Aborted ||
+		errors.Is(err, context.DeadlineExceeded)):
+		return "Model refresh timed out; showing cached models.", "", false
+	case len(result.Errors) == 1:
+		providers := sortedModelRefreshErrorProviders(result.Errors)
+		return fmt.Sprintf(
+			"Could not refresh %s; showing cached models.",
+			providers[0],
+		), "", false
+	case len(result.Errors) > 1:
+		return fmt.Sprintf(
+			"Could not refresh %d model catalogs; showing cached models.",
+			len(result.Errors),
+		), "", false
+	case err != nil:
+		return "Could not refresh model catalogs; showing cached models.", "", false
+	}
+	if runtimeError := runtime.GetError(); runtimeError != "" {
+		return runtimeError, "", false
+	}
+	return "", "Model catalogs refreshed.", true
+}
+
+func sortedModelRefreshErrorProviders(values map[string]error) []string {
+	providers := make([]string, 0, len(values))
+	for providerID := range values {
+		providers = append(providers, providerID)
+	}
+	sort.Strings(providers)
+	return providers
+}
+
+// Close cancels an in-flight catalog refresh. It is safe to call repeatedly.
+func (c *ModelSelectorComponent) Close() {
+	c.close()
+}
+
+func (c *ModelSelectorComponent) close() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return
+	}
+	c.closed = true
+	cancel := c.refreshCancel
+	c.refreshCancel = nil
+	c.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
 func (c *ModelSelectorComponent) HandleInput(data string) {
 	if c == nil {
 		return
 	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return
+	}
 	kb := gitui.GetKeybindings()
+	var (
+		selected *llm.Model
+		onSelect func(llm.Model)
+		onCancel func()
+		cancel   context.CancelFunc
+	)
 	switch {
 	case kb.Matches(data, "tui.input.tab"):
-		c.toggleScope()
+		c.toggleScopeLocked()
 	case kb.Matches(data, "tui.select.up"):
-		c.moveSelection(-1)
+		c.moveSelectionLocked(-1)
 	case kb.Matches(data, "tui.select.down"):
-		c.moveSelection(1)
+		c.moveSelectionLocked(1)
 	case kb.Matches(data, "tui.select.confirm"):
-		if selected, ok := c.selectedModel(); ok && c.callbacks.OnSelect != nil {
-			c.callbacks.OnSelect(selected)
+		if model, ok := c.selectedModelLocked(); ok {
+			selected = &model
+			onSelect = c.callbacks.OnSelect
+			cancel = c.closeLocked()
 		}
 	case kb.Matches(data, "tui.select.cancel"):
-		if c.callbacks.OnCancel != nil {
-			c.callbacks.OnCancel()
-		}
+		onCancel = c.callbacks.OnCancel
+		cancel = c.closeLocked()
 	case isBackspaceInput(data):
 		c.search = trimLastRune(c.search)
 		c.selectedIndex = 0
@@ -596,14 +822,26 @@ func (c *ModelSelectorComponent) HandleInput(data string) {
 		c.search += data
 		c.selectedIndex = 0
 	}
+	c.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if selected != nil && onSelect != nil {
+		onSelect(*selected)
+	}
+	if onCancel != nil {
+		onCancel()
+	}
 }
 
 func (c *ModelSelectorComponent) Render(width int) []string {
 	if c == nil {
 		return nil
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	width = max(24, width)
-	items := c.filteredItems()
+	items := c.filteredItemsLocked()
 	if c.selectedIndex < 0 {
 		c.selectedIndex = 0
 	}
@@ -612,16 +850,29 @@ func (c *ModelSelectorComponent) Render(width int) []string {
 	}
 	lines := []string{tuiThemeBorder(strings.Repeat("─", width)), ""}
 	if len(c.scopedModels) > 0 {
-		lines = append(lines, c.scopeText(), c.tabScopeHint())
+		lines = append(
+			lines,
+			c.scopeTextLocked(),
+			c.tabScopeHintLocked(),
+		)
 	} else {
 		lines = append(lines, tuiThemeWarning("Only showing models from configured providers. Use /login to add providers."))
 	}
-	lines = append(lines, "", selectorSearchInputLine(c.search, c.Focused()), "")
-	if len(items) == 0 {
-		lines = append(lines, tuiThemeMuted("  No matching models"))
-	} else {
+	lines = append(
+		lines,
+		"",
+		selectorSearchInputLine(c.search, c.focus.Focused()),
+		"",
+	)
+	if len(items) > 0 {
 		const maxVisible = 10
-		start := max(0, min(c.selectedIndex-(maxVisible/2), len(items)-maxVisible))
+		start := max(
+			0,
+			min(
+				c.selectedIndex-(maxVisible/2),
+				len(items)-maxVisible,
+			),
+		)
 		end := min(len(items), start+maxVisible)
 		for index := start; index < end; index++ {
 			item := items[index]
@@ -633,36 +884,93 @@ func (c *ModelSelectorComponent) Render(width int) []string {
 			if index == c.selectedIndex {
 				modelID = tuiThemeAccent(modelID)
 			}
-			line := prefix + modelID + " " + tuiThemeMuted("["+item.model.Provider+"]")
+			line := prefix + modelID + " " +
+				tuiThemeMuted("["+item.model.Provider+"]")
 			if sameModel(c.currentModel, item.model) {
 				line += tuiThemeSuccess(" ✓")
 			}
-			lines = append(lines, truncateSelectorLine(line, width))
+			lines = append(
+				lines,
+				truncateSelectorLine(line, width),
+			)
 		}
 		if start > 0 || end < len(items) {
-			lines = append(lines, tuiThemeMuted(fmt.Sprintf("  (%d/%d)", c.selectedIndex+1, len(items))))
+			lines = append(
+				lines,
+				tuiThemeMuted(fmt.Sprintf(
+					"  (%d/%d)",
+					c.selectedIndex+1,
+					len(items),
+				)),
+			)
 		}
-		if selected, ok := c.selectedItem(items); ok && strings.TrimSpace(selected.model.Name) != "" {
-			lines = append(lines, "", truncateSelectorLine(tuiThemeMuted("  Model Name: "+selected.model.Name), width))
+	}
+	switch {
+	case c.errorMessage != "":
+		for _, line := range strings.Split(c.errorMessage, "\n") {
+			lines = append(lines, tuiThemeError(line))
 		}
+	case len(items) == 0:
+		lines = append(lines, tuiThemeMuted("  No matching models"))
+	default:
+		if selected, ok := c.selectedItemLocked(items); ok &&
+			strings.TrimSpace(selected.model.Name) != "" {
+			lines = append(
+				lines,
+				"",
+				truncateSelectorLine(
+					tuiThemeMuted("  Model Name: "+
+						selected.model.Name),
+					width,
+				),
+			)
+		}
+	}
+	if c.refreshStatusMessage != "" {
+		status := tuiThemeMuted("  " + c.refreshStatusMessage)
+		if c.refreshStatusSuccess {
+			status = tuiThemeSuccess(
+				"  " + c.refreshStatusMessage,
+			)
+		}
+		lines = append(lines, "", status)
 	}
 	lines = append(lines, "", tuiThemeBorder(strings.Repeat("─", width)))
 	return lines
 }
 
 func (c *ModelSelectorComponent) scopeText() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.scopeTextLocked()
+}
+
+func (c *ModelSelectorComponent) scopeTextLocked() string {
 	all := tuiThemeMuted("all")
 	scoped := tuiThemeMuted("scoped")
-	if c != nil && c.scope == "all" {
+	if c.scope == "all" {
 		all = tuiThemeAccent("all")
 	}
-	if c != nil && c.scope == "scoped" {
+	if c.scope == "scoped" {
 		scoped = tuiThemeAccent("scoped")
 	}
-	return tuiThemeMuted("Scope: ") + all + tuiThemeMuted(" | ") + scoped
+	return tuiThemeMuted("Scope: ") + all +
+		tuiThemeMuted(" | ") + scoped
 }
 
 func (c *ModelSelectorComponent) tabScopeHint() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.tabScopeHintLocked()
+}
+
+func (c *ModelSelectorComponent) tabScopeHintLocked() string {
 	tab := firstNonEmptyString(formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.input.tab"), true), "Tab")
 	return tuiThemeKeyHint(tab, "scope") + tuiThemeMuted(" (all/scoped)")
 }
@@ -671,6 +979,8 @@ func (c *ModelSelectorComponent) Focused() bool {
 	if c == nil {
 		return false
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.focus.Focused()
 }
 
@@ -678,6 +988,8 @@ func (c *ModelSelectorComponent) SetFocused(focused bool) {
 	if c == nil {
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.focus.SetFocused(focused)
 }
 
@@ -691,6 +1003,12 @@ func (c *ModelSelectorComponent) filteredItems() []modelSelectorItem {
 	if c == nil {
 		return nil
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.filteredItemsLocked()
+}
+
+func (c *ModelSelectorComponent) filteredItemsLocked() []modelSelectorItem {
 	var models []llm.Model
 	if c.scope == "scoped" && len(c.scopedModels) > 0 {
 		for _, scoped := range c.scopedModels {
@@ -712,11 +1030,29 @@ func (c *ModelSelectorComponent) filteredItems() []modelSelectorItem {
 }
 
 func (c *ModelSelectorComponent) selectedModel() (llm.Model, bool) {
-	item, ok := c.selectedItem(c.filteredItems())
+	if c == nil {
+		return llm.Model{}, false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.selectedModelLocked()
+}
+
+func (c *ModelSelectorComponent) selectedModelLocked() (llm.Model, bool) {
+	item, ok := c.selectedItemLocked(c.filteredItemsLocked())
 	return item.model, ok
 }
 
 func (c *ModelSelectorComponent) selectedItem(items []modelSelectorItem) (modelSelectorItem, bool) {
+	if c == nil {
+		return modelSelectorItem{}, false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.selectedItemLocked(items)
+}
+
+func (c *ModelSelectorComponent) selectedItemLocked(items []modelSelectorItem) (modelSelectorItem, bool) {
 	if c == nil || len(items) == 0 || c.selectedIndex < 0 || c.selectedIndex >= len(items) {
 		return modelSelectorItem{}, false
 	}
@@ -724,7 +1060,16 @@ func (c *ModelSelectorComponent) selectedItem(items []modelSelectorItem) (modelS
 }
 
 func (c *ModelSelectorComponent) moveSelection(delta int) {
-	items := c.filteredItems()
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.moveSelectionLocked(delta)
+}
+
+func (c *ModelSelectorComponent) moveSelectionLocked(delta int) {
+	items := c.filteredItemsLocked()
 	if len(items) == 0 {
 		return
 	}
@@ -738,7 +1083,16 @@ func (c *ModelSelectorComponent) moveSelection(delta int) {
 }
 
 func (c *ModelSelectorComponent) toggleScope() {
-	if c == nil || len(c.scopedModels) == 0 {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.toggleScopeLocked()
+}
+
+func (c *ModelSelectorComponent) toggleScopeLocked() {
+	if len(c.scopedModels) == 0 {
 		return
 	}
 	if c.scope == "scoped" {
@@ -746,7 +1100,64 @@ func (c *ModelSelectorComponent) toggleScope() {
 	} else {
 		c.scope = "scoped"
 	}
+	activeModels := c.activeModelsLocked()
 	c.selectedIndex = 0
+	for index, model := range activeModels {
+		if sameModel(c.currentModel, model) {
+			c.selectedIndex = index
+			break
+		}
+	}
+	c.clampSelectionLocked()
+}
+
+func (c *ModelSelectorComponent) activeModelsLocked() []llm.Model {
+	if c.scope == "scoped" && len(c.scopedModels) > 0 {
+		models := make([]llm.Model, 0, len(c.scopedModels))
+		for _, scoped := range c.scopedModels {
+			models = append(models, scoped.Model)
+		}
+		return models
+	}
+	return c.allModels
+}
+
+func (c *ModelSelectorComponent) reselectCurrentOrClampLocked() {
+	activeModels := c.activeModelsLocked()
+	currentIndex := -1
+	for index, model := range activeModels {
+		if sameModel(c.currentModel, model) {
+			currentIndex = index
+			break
+		}
+	}
+	if currentIndex >= 0 {
+		c.selectedIndex = currentIndex
+	} else if len(activeModels) == 0 {
+		c.selectedIndex = 0
+	} else {
+		c.selectedIndex = min(c.selectedIndex, len(activeModels)-1)
+	}
+	c.clampSelectionLocked()
+}
+
+func (c *ModelSelectorComponent) clampSelectionLocked() {
+	items := c.filteredItemsLocked()
+	if len(items) == 0 {
+		c.selectedIndex = 0
+		return
+	}
+	c.selectedIndex = min(max(c.selectedIndex, 0), len(items)-1)
+}
+
+func (c *ModelSelectorComponent) closeLocked() context.CancelFunc {
+	if c.closed {
+		return nil
+	}
+	c.closed = true
+	cancel := c.refreshCancel
+	c.refreshCancel = nil
+	return cancel
 }
 
 func scopedModelFullID(model llm.Model) string {

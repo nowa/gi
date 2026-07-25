@@ -180,6 +180,18 @@ func (r *ModelRuntime) ModelRegistry() *ModelRegistry {
 	return r.registry
 }
 
+func (r *ModelRuntime) defaultRefreshOptions() ModelRegistryRefreshOptions {
+	if r == nil || r.registry == nil {
+		return ModelRegistryRefreshOptions{}
+	}
+	r.registry.mu.RLock()
+	defer r.registry.mu.RUnlock()
+	return ModelRegistryRefreshOptions{
+		AllowNetwork: r.registry.modelNetworkEnabled,
+		Timeout:      r.registry.modelRefreshTimeout,
+	}
+}
+
 func (r *ModelRuntime) providerIDsLocked() []string {
 	seen := map[string]struct{}{}
 	var ids []string

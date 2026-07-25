@@ -109,6 +109,14 @@ activation, or export. Built-in `thinkingMax` colors are distinct, while legacy
 themes that omit the optional token fall back to `thinkingXhigh` in both TUI and
 HTML color projections.
 
+The interactive `/model` picker now consumes the same immutable availability
+snapshot owned by `ModelRuntime`. It renders cached models immediately, performs
+one explicit background catalog refresh with a 15-second context, atomically
+replaces selector state while preserving scoped thinking levels, and reports
+success, timeout, provider, or runtime diagnostics. Selection and cancellation
+close that lifecycle before host callbacks run, so a late refresh cannot mutate
+an overlay after it has been removed.
+
 With the experimental flag enabled, official default installations without an
 existing settings file now run Pi's first-time theme and analytics flow before
 constructing the interactive runtime. Gi models eligibility as an immutable

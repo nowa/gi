@@ -1,9 +1,14 @@
 package gicodingagent
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
@@ -314,5 +319,445 @@ func TestModelSelectorRowsPadAfterThemeResetLikePiText(t *testing.T) {
 	}
 	if got := len(StripAnsi(lastModelLine)); got != width {
 		t.Fatalf("model line visible width = %d, want %d: %q", got, width, lastModelLine)
+	}
+}
+
+func TestModelSelectorTreatsTypedNilRuntimeAsStaticCatalog(t *testing.T) {
+	model := llm.Model{
+		Provider: "openai",
+		ID:       "gpt-static",
+		Name:     "Static",
+	}
+	var runtime *ModelRuntime
+	selector := NewInteractiveModelSelectorComponent(
+		ModelSelectorConfig{
+			CurrentModel: model,
+			AllModels:    []llm.Model{model},
+			Runtime:      runtime,
+		},
+		ModelSelectorCallbacks{},
+	)
+
+	rendered := StripAnsi(strings.Join(selector.Render(100), "\n"))
+	if !strings.Contains(rendered, "gpt-static") {
+		t.Fatalf("static selector lost its model:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "Refreshing model catalogs") {
+		t.Fatalf("typed nil runtime started a refresh:\n%s", rendered)
+	}
+	select {
+	case <-selector.refreshDone:
+	default:
+		t.Fatal("typed nil runtime left an active refresh lifecycle")
+	}
+}
+
+func TestModelSelectorLoadsCachedSnapshotThenPublishesRefresh(t *testing.T) {
+	current := llm.Model{
+		Provider: "openai",
+		ID:       "gpt-current",
+		Name:     "Cached current",
+	}
+	other := llm.Model{
+		Provider: "anthropic",
+		ID:       "claude-other",
+		Name:     "Cached other",
+	}
+	refreshedCurrent := current
+	refreshedCurrent.Name = "Fresh current"
+	refreshedOther := other
+	refreshedOther.Name = "Fresh other"
+	added := llm.Model{
+		Provider: "openai",
+		ID:       "gpt-added",
+		Name:     "Fresh addition",
+	}
+	runtime := newModelSelectorRuntimeStub(
+		[]llm.Model{other, current},
+		[]llm.Model{refreshedOther, refreshedCurrent, added},
+	)
+	var renderRequests atomic.Int32
+	selector := NewInteractiveModelSelectorComponent(
+		ModelSelectorConfig{
+			CurrentModel: current,
+			AllModels: []llm.Model{{
+				Provider: "stale",
+				ID:       "stale",
+			}},
+			ScopedModels: []ScopedModel{
+				{
+					Model:         other,
+					ThinkingLevel: ThinkingLevel("high"),
+				},
+				{
+					Model:         current,
+					ThinkingLevel: ThinkingLevel("xhigh"),
+				},
+			},
+			InitialSearch: "current",
+			Runtime:       runtime,
+			RefreshOptions: ModelRegistryRefreshOptions{
+				AllowNetwork: true,
+				Timeout:      time.Second,
+			},
+			RequestRender: func() {
+				renderRequests.Add(1)
+			},
+		},
+		ModelSelectorCallbacks{},
+	)
+	t.Cleanup(selector.Close)
+
+	waitModelSelectorSignal(t, runtime.refreshStarted, "refresh start")
+	rendered := StripAnsi(strings.Join(selector.Render(100), "\n"))
+	for _, expected := range []string{
+		"gpt-current",
+		"Cached current",
+		"Refreshing model catalogs…",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf(
+				"cached selector missing %q before refresh:\n%s",
+				expected,
+				rendered,
+			)
+		}
+	}
+	if strings.Contains(rendered, "stale") {
+		t.Fatalf(
+			"selector retained constructor catalog instead of runtime snapshot:\n%s",
+			rendered,
+		)
+	}
+
+	close(runtime.refreshRelease)
+	waitModelSelectorSignal(t, selector.refreshDone, "refresh completion")
+
+	rendered = StripAnsi(strings.Join(selector.Render(100), "\n"))
+	for _, expected := range []string{
+		"Fresh current",
+		"Model catalogs refreshed.",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf(
+				"refreshed selector missing %q:\n%s",
+				expected,
+				rendered,
+			)
+		}
+	}
+	if strings.Contains(rendered, "Cached current") {
+		t.Fatalf("selector retained stale model metadata:\n%s", rendered)
+	}
+
+	selector.mu.RLock()
+	scoped := append([]ScopedModel(nil), selector.scopedModels...)
+	allModels := append([]llm.Model(nil), selector.allModels...)
+	selector.mu.RUnlock()
+	if got, want := scoped[0].ThinkingLevel, ThinkingLevel("high"); got != want {
+		t.Fatalf("first scoped thinking = %q, want %q", got, want)
+	}
+	if got, want := scoped[1].ThinkingLevel, ThinkingLevel("xhigh"); got != want {
+		t.Fatalf("second scoped thinking = %q, want %q", got, want)
+	}
+	if got, want := scoped[1].Model.Name, "Fresh current"; got != want {
+		t.Fatalf("scoped model name = %q, want %q", got, want)
+	}
+	if len(allModels) != 3 {
+		t.Fatalf("all model count = %d, want 3", len(allModels))
+	}
+	if got := renderRequests.Load(); got != 2 {
+		t.Fatalf("render requests = %d, want initial and refreshed", got)
+	}
+	select {
+	case options := <-runtime.refreshOptions:
+		if !options.AllowNetwork || options.Timeout != time.Second {
+			t.Fatalf("refresh options = %#v", options)
+		}
+	default:
+		t.Fatal("selector did not pass refresh options")
+	}
+}
+
+func TestModelSelectorReportsRefreshOutcomes(t *testing.T) {
+	model := llm.Model{
+		Provider: "openai",
+		ID:       "gpt-current",
+		Name:     "Current",
+	}
+	tests := []struct {
+		name         string
+		result       llm.ModelsRefreshResult
+		refreshError error
+		runtimeError string
+		want         string
+	}{
+		{
+			name: "one provider",
+			result: llm.ModelsRefreshResult{Errors: map[string]error{
+				"openai": errors.New("offline"),
+			}},
+			want: "Could not refresh openai; showing cached models.",
+		},
+		{
+			name: "multiple providers",
+			result: llm.ModelsRefreshResult{Errors: map[string]error{
+				"openai":    errors.New("offline"),
+				"anthropic": errors.New("offline"),
+			}},
+			want: "Could not refresh 2 model catalogs; showing cached models.",
+		},
+		{
+			name:         "runtime diagnostic",
+			runtimeError: "models.json: invalid provider",
+			want:         "models.json: invalid provider",
+		},
+		{
+			name:         "refresh failure",
+			refreshError: errors.New("reload failed"),
+			want:         "Could not refresh model catalogs; showing cached models.",
+		},
+		{
+			name: "success",
+			want: "Model catalogs refreshed.",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runtime := newModelSelectorRuntimeStub(
+				[]llm.Model{model},
+				[]llm.Model{model},
+			)
+			runtime.refreshResult = test.result
+			runtime.refreshError = test.refreshError
+			runtime.runtimeError = test.runtimeError
+			close(runtime.refreshRelease)
+			selector := NewInteractiveModelSelectorComponent(
+				ModelSelectorConfig{
+					CurrentModel: model,
+					Runtime:      runtime,
+				},
+				ModelSelectorCallbacks{},
+			)
+			t.Cleanup(selector.Close)
+			waitModelSelectorSignal(
+				t,
+				selector.refreshDone,
+				"refresh completion",
+			)
+
+			rendered := StripAnsi(
+				strings.Join(selector.Render(100), "\n"),
+			)
+			if !strings.Contains(rendered, test.want) {
+				t.Fatalf(
+					"selector missing refresh outcome %q:\n%s",
+					test.want,
+					rendered,
+				)
+			}
+			if strings.Contains(
+				rendered,
+				"Refreshing model catalogs…",
+			) {
+				t.Fatalf(
+					"selector retained in-progress status:\n%s",
+					rendered,
+				)
+			}
+		})
+	}
+}
+
+func TestModelSelectorTimesOutAndKeepsCachedModels(t *testing.T) {
+	model := llm.Model{
+		Provider: "openai",
+		ID:       "gpt-cached",
+		Name:     "Cached",
+	}
+	runtime := newModelSelectorRuntimeStub(
+		[]llm.Model{model},
+		nil,
+	)
+	selector := NewInteractiveModelSelectorComponent(
+		ModelSelectorConfig{
+			CurrentModel: model,
+			Runtime:      runtime,
+			RefreshOptions: ModelRegistryRefreshOptions{
+				Timeout: 10 * time.Millisecond,
+			},
+		},
+		ModelSelectorCallbacks{},
+	)
+	t.Cleanup(selector.Close)
+	waitModelSelectorSignal(t, selector.refreshDone, "refresh timeout")
+
+	rendered := StripAnsi(strings.Join(selector.Render(100), "\n"))
+	for _, expected := range []string{
+		"gpt-cached",
+		"Model refresh timed out; showing cached models.",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf(
+				"timed-out selector missing %q:\n%s",
+				expected,
+				rendered,
+			)
+		}
+	}
+	waitModelSelectorSignal(
+		t,
+		runtime.refreshCanceled,
+		"refresh cancellation",
+	)
+}
+
+func TestModelSelectorSelectionClosesRefreshBeforeCallback(t *testing.T) {
+	model := llm.Model{
+		Provider: "openai",
+		ID:       "gpt-current",
+		Name:     "Current",
+	}
+	runtime := newModelSelectorRuntimeStub(
+		[]llm.Model{model},
+		nil,
+	)
+	var selected llm.Model
+	selector := NewInteractiveModelSelectorComponent(
+		ModelSelectorConfig{
+			CurrentModel: model,
+			Runtime:      runtime,
+		},
+		ModelSelectorCallbacks{
+			OnSelect: func(model llm.Model) {
+				selected = model
+				select {
+				case refreshContext := <-runtime.refreshContexts:
+					select {
+					case <-refreshContext.Done():
+					default:
+						t.Fatal(
+							"refresh context was not cancelled before selection callback",
+						)
+					}
+				default:
+					t.Fatal("refresh did not receive a context")
+				}
+			},
+		},
+	)
+	waitModelSelectorSignal(t, runtime.refreshStarted, "refresh start")
+
+	selector.HandleInput("\r")
+	selector.Close()
+	waitModelSelectorSignal(t, selector.refreshDone, "refresh completion")
+	if !sameModel(selected, model) {
+		t.Fatalf("selected model = %#v, want %#v", selected, model)
+	}
+	selector.mu.RLock()
+	closed := selector.closed
+	selector.mu.RUnlock()
+	if !closed {
+		t.Fatal("selector remained open after selection")
+	}
+}
+
+type modelSelectorRuntimeStub struct {
+	mu sync.RWMutex
+
+	snapshot      []llm.Model
+	nextSnapshot  []llm.Model
+	runtimeError  string
+	refreshResult llm.ModelsRefreshResult
+	refreshError  error
+
+	refreshStarted  chan struct{}
+	refreshRelease  chan struct{}
+	refreshCanceled chan struct{}
+	refreshOptions  chan ModelRegistryRefreshOptions
+	refreshContexts chan context.Context
+	startOnce       sync.Once
+	cancelOnce      sync.Once
+}
+
+func newModelSelectorRuntimeStub(
+	snapshot []llm.Model,
+	nextSnapshot []llm.Model,
+) *modelSelectorRuntimeStub {
+	return &modelSelectorRuntimeStub{
+		snapshot:        append([]llm.Model(nil), snapshot...),
+		nextSnapshot:    append([]llm.Model(nil), nextSnapshot...),
+		refreshStarted:  make(chan struct{}),
+		refreshRelease:  make(chan struct{}),
+		refreshCanceled: make(chan struct{}),
+		refreshOptions:  make(chan ModelRegistryRefreshOptions, 1),
+		refreshContexts: make(chan context.Context, 1),
+		refreshResult:   llm.ModelsRefreshResult{Errors: map[string]error{}},
+	}
+}
+
+func (r *modelSelectorRuntimeStub) GetAvailableSnapshot() []llm.Model {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]llm.Model(nil), r.snapshot...)
+}
+
+func (r *modelSelectorRuntimeStub) GetModel(
+	providerID string,
+	modelID string,
+) (llm.Model, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, model := range r.snapshot {
+		if model.Provider == providerID && model.ID == modelID {
+			return model, true
+		}
+	}
+	return llm.Model{}, false
+}
+
+func (r *modelSelectorRuntimeStub) GetError() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.runtimeError
+}
+
+func (r *modelSelectorRuntimeStub) Refresh(
+	ctx context.Context,
+	options ModelRegistryRefreshOptions,
+) (llm.ModelsRefreshResult, error) {
+	r.refreshOptions <- options
+	r.refreshContexts <- ctx
+	r.startOnce.Do(func() {
+		close(r.refreshStarted)
+	})
+	select {
+	case <-ctx.Done():
+		r.cancelOnce.Do(func() {
+			close(r.refreshCanceled)
+		})
+		result := r.refreshResult
+		result.Aborted = true
+		return result, nil
+	case <-r.refreshRelease:
+		r.mu.Lock()
+		r.snapshot = append([]llm.Model(nil), r.nextSnapshot...)
+		result := r.refreshResult
+		err := r.refreshError
+		r.mu.Unlock()
+		return result, err
+	}
+}
+
+func waitModelSelectorSignal(
+	t *testing.T,
+	signal <-chan struct{},
+	description string,
+) {
+	t.Helper()
+	select {
+	case <-signal:
+	case <-time.After(time.Second):
+		t.Fatalf("timed out waiting for %s", description)
 	}
 }

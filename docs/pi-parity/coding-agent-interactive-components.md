@@ -43,7 +43,7 @@ All Pi component names in this table are exact files under
 | `index.ts` | Component re-exports | Go package exports and constructors | consolidated | Gi does not need a re-export barrel; public constructors are in package files. |
 | `keybinding-hints.ts` | Hotkey hint display | `gi-coding-agent/keybindings.go`, `gi-coding-agent/cli_interactive_tui.go`, selector components | consolidated | Hints are rendered where each host surface needs them. |
 | `login-dialog.ts` | Login flow dialog | `gi-coding-agent/login_dialog.go`, `gi-coding-agent/cli_provider_auth_interaction.go`, `gi-coding-agent/cli_interactive_auth.go` | direct | Typed provider prompts/events drive one dialog for URL, manual code, text/secret input, device code, info, and progress. Provider protocol tests stay in `gi-llm-provider`; virtual-terminal tests cover the generic runtime login path for API keys, Bedrock, Anthropic, OpenAI Codex, and GitHub Copilot. |
-| `model-selector.ts` | Model picker | `gi-coding-agent/model_selector_component.go`, `gi-coding-agent/model_search.go`, `gi-coding-agent/cli_interactive_model.go` | direct | Provider/model filtering, slash-command selection, and thinking info are represented. `/model` uses the selector-specific search projection so exact provider-prefixed models rank before proxy IDs. |
+| `model-selector.ts` | Model picker | `gi-coding-agent/model_selector_component.go`, `gi-coding-agent/model_runtime.go`, `gi-coding-agent/model_search.go`, `gi-coding-agent/cli_interactive_model.go` | direct | `/model` renders the runtime's immutable cached snapshot immediately, refreshes catalogs under a cancellable 15-second context, atomically replaces model state while retaining scoped thinking levels, and reports refresh outcomes. Search uses the selector-specific projection so exact provider-prefixed models rank before proxy IDs; selection/cancel closes refresh before the host callback. |
 | `oauth-selector.ts` | OAuth provider selector and `formatAuthSelectorProviderType` | `gi-coding-agent/oauth_selector.go` `formatAuthSelectorProviderType`, `OAuthSelectorComponent`; `gi-coding-agent/cli_interactive_auth.go`, `gi-coding-agent/cli_provider_auth_interaction.go` | direct | Login choices are derived from runtime `ProviderAuth`; mixed lists label subscription versus API key, and the same selector handles provider-owned method prompts before restoring the login dialog. |
 | `scoped-models-selector.ts` | Scoped model picker | `gi-coding-agent/model_selector_component.go`, `gi-coding-agent/model_search.go`, `gi-coding-agent/cli_interactive_model.go`, `model_registry.go` | direct | Scoped model order, interactive enable/disable flow, canonical provider/ID/name search, and thinking-level preservation are covered by Gi model tests. |
 | `session-selector-search.ts` | Search query renderer for sessions | `gi-coding-agent/session_selector_search.go` | direct | Session search tokenization and display are represented. |
@@ -117,6 +117,33 @@ replace / typed clear / shutdown
               v
  dispose loader + owned CountdownTimer
 ```
+
+Model selection follows a separate single-direction catalog flow:
+
+```text
+ModelRuntime immutable availability snapshot
+                 |
+                 v
+ selector-owned catalog + scope/search/selection
+                 |
+                 v
+          derived render rows
+
+background Refresh(context)
+                 |
+                 v
+ complete runtime snapshot -> atomic selector transition -> requestRender
+
+select / cancel / explicit Close
+                 |
+                 v
+ cancel context -> mark closed -> host callback
+```
+
+The runtime remains the only provider/catalog owner. The selector owns only
+presentation and lifecycle state under one mutex, never holds that mutex across
+runtime or render callbacks, and preserves `ScopedModel.ThinkingLevel` when it
+refreshes each scoped model definition by provider and ID.
 
 The temporary `Working...`, `Compacting context...`, `Auto-compacting...`,
 `Summarizing branch...`, and `Retrying...` components never become durable
