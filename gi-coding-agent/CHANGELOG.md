@@ -1,3 +1,7 @@
+## 0.82.0
+
+- Closed the declared Pi v0.82.0 parity scope with a reproducible zero-gap gate.
+
 ## 0.0.3
 
 - Stabilized large-output TUI rendering, sanitized streamed tool output, and restored editor history.

@@ -7526,10 +7526,25 @@ func TestCLIInteractiveTUIHostChangelogFallsBackToPackageChangelog(t *testing.T)
 		t.Fatal(err)
 	}
 
-	waitForViewport(t, terminal, "What's New")
-	waitForViewport(t, terminal, "Go coding-agent port")
-	if strings.Contains(strings.Join(terminal.GetViewport(), "\n"), "No changelog entries found") {
-		t.Fatalf("changelog command should use embedded package changelog:\n%s", strings.Join(terminal.GetViewport(), "\n"))
+	output := strings.Join(terminal.GetScrollBuffer(), "\n")
+	for _, expected := range []string{
+		"What's New",
+		"Go coding-agent port",
+		"0.82.0",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf(
+				"embedded package changelog missing %q:\n%s",
+				expected,
+				output,
+			)
+		}
+	}
+	if strings.Contains(output, "No changelog entries found") {
+		t.Fatalf(
+			"changelog command should use embedded package changelog:\n%s",
+			output,
+		)
 	}
 }
 

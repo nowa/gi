@@ -38,20 +38,21 @@ it without changing public APIs. Current examples include
 the parent packages keep
 compatibility facades for existing callers and tests.
 
-Pi's `pi-web-ui` package is not ported here. The `pi-coding-agent` migration is
-active. The current catch-up target is the immutable Pi `v0.82.0` release at
-`083e6162`; scope, known debt, and reproducible verification commands are in
+Pi's `pi-web-ui` package is not ported here. The declared `pi-coding-agent`
+migration scope is closed against the immutable Pi `v0.82.0` release at
+`083e6162`; scope decisions, the zero-gap snapshot, and reproducible
+verification commands are in
 [docs/pi-parity/README.md](docs/pi-parity/README.md).
 
 ## Compatibility Status
 
 | Pi package | Gi package | Status |
 | --- | --- | --- |
-| `@earendil-works/pi-ai` | `gi-llm-provider` | Pi-compatible for the audited provider contracts, model catalogs, message conversion, streaming, and registered transports; open source-level risks are tracked under `docs/pi-parity/`. |
+| `@earendil-works/pi-ai` | `gi-llm-provider` | Pi-compatible for the audited provider contracts, model catalogs, message conversion, streaming, and registered transports; the v0.82.0 source/member/test mapping gate is closed under `docs/pi-parity/`. |
 | `@earendil-works/pi-agent-core` | `gi-agent-core` | Pi-compatible for the audited agent loop, tools, stateful agent behavior, queues, lifecycle events, and proxy stream helper. |
 | `pi-agent-core` harness/session | `gi-agent-core/harness` | Pi-compatible for audited sessions, prompt formatting, compaction, local env, skills, and storage helpers. |
 | `@earendil-works/pi-tui` | `gi-tui` | Pi-compatible for the audited public TUI surface and case-level behavior; Markdown and headless terminal behavior remain fixture-level parity risks. |
-| `@earendil-works/pi-coding-agent` | `gi-coding-agent` | Active migration surface. Case-level mapping exists, but source-level parity must be evaluated against `docs/pi-parity/module-audit.md` and the current Pi checkout before claiming completion. |
+| `@earendil-works/pi-coding-agent` | `gi-coding-agent` | The declared Pi v0.82.0 audit scope is closed. TypeScript in-process extensions and Node/npm lifecycle behavior remain explicit Go protocol/runtime replacements rather than direct API copies. |
 
 Detailed coverage is tracked in [PI_COMPATIBILITY.md](PI_COMPATIBILITY.md).
 Per-case provider/agent mapping is tracked in

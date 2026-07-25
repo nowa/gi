@@ -12,7 +12,7 @@ type InstallMethod string
 
 const (
 	DefaultCodingAgentPackageName = "gi"
-	DefaultCodingAgentVersion     = "0.0.3"
+	DefaultCodingAgentVersion     = "0.82.0"
 	DefaultCodingAgentAppName     = "gi"
 	DefaultCodingAgentAppTitle    = "Gi"
 
