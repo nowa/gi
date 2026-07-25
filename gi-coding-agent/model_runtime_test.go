@@ -261,8 +261,15 @@ func TestModelRuntimeNativeProviderLifecyclePiStyle(
 	t *testing.T,
 ) {
 	authStorage := NewInMemoryAuthStorage(nil)
+	registry := NewModelRegistryWithOptions(
+		context.Background(),
+		ModelRegistryOptions{
+			AuthStorage:         authStorage,
+			ModelNetworkEnabled: modelRuntimeBoolPointer(false),
+		},
+	)
 	runtime, err := NewModelRuntimeFromRegistry(
-		NewInMemoryModelRegistry(authStorage),
+		registry,
 	)
 	if err != nil {
 		t.Fatal(err)
