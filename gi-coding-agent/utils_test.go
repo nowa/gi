@@ -79,6 +79,18 @@ func TestPathUtilitiesMatchPiReadPathBehavior(t *testing.T) {
 	if got := ExpandPath("file\u00a0name.txt"); got != "file name.txt" {
 		t.Fatalf("ExpandPath NBSP = %q", got)
 	}
+	if got := ExpandPath("@file.txt"); got != "file.txt" {
+		t.Fatalf("ExpandPath @ prefix = %q", got)
+	}
+	if got := ExpandPath("@@literal.txt"); got != "@literal.txt" {
+		t.Fatalf("ExpandPath single @ prefix = %q", got)
+	}
+	if got := ExpandPath("file\u2007name.txt"); got != "file name.txt" {
+		t.Fatalf("ExpandPath unicode space = %q", got)
+	}
+	if got := ResolveToCwd("@~draft.md", "/some/cwd"); got != filepath.Clean("/some/cwd/~draft.md") {
+		t.Fatalf("ResolveToCwd @ tilde filename = %q", got)
+	}
 	if got := ExpandPath("~"); strings.Contains(got, "~") {
 		t.Fatalf("ExpandPath home did not expand: %q", got)
 	}
@@ -97,6 +109,14 @@ func TestPathUtilitiesMatchPiReadPathBehavior(t *testing.T) {
 	got, err := ResolveReadPath("test-file.txt", temp)
 	if err != nil || got != existing {
 		t.Fatalf("ResolveReadPath existing = %q err=%v", got, err)
+	}
+	atLiteral := filepath.Join(temp, "@literal.txt")
+	if err := os.WriteFile(atLiteral, []byte("content"), 0o600); err != nil {
+		t.Fatalf("write @ fixture: %v", err)
+	}
+	got, err = ResolveReadPath("@@literal.txt", temp)
+	if err != nil || got != atLiteral {
+		t.Fatalf("ResolveReadPath literal @ = %q err=%v", got, err)
 	}
 
 	nfdName := "filee\u0301.txt"

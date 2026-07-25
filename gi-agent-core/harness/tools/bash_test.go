@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -11,6 +12,27 @@ import (
 	core "github.com/nowa/gi/gi-agent-core"
 	harnessenv "github.com/nowa/gi/gi-agent-core/harness/env"
 )
+
+func TestResolveBashTimeoutUsesTypedDurationBoundary(t *testing.T) {
+	timeout, err := resolveBashTimeout(0, false)
+	if err != nil || timeout != 0 {
+		t.Fatalf("unset timeout = %s, %v", timeout, err)
+	}
+	timeout, err = resolveBashTimeout(0.125, true)
+	if err != nil || timeout != 125*time.Millisecond {
+		t.Fatalf("fractional timeout = %s, %v", timeout, err)
+	}
+	for _, value := range []float64{0, -1, math.NaN(), math.Inf(1)} {
+		if _, err := resolveBashTimeout(value, true); err == nil ||
+			!strings.Contains(err.Error(), "finite number of seconds") {
+			t.Fatalf("timeout %v error = %v", value, err)
+		}
+	}
+	if _, err := resolveBashTimeout(maxBashTimeoutSeconds+1, true); err == nil ||
+		!strings.Contains(err.Error(), "maximum is") {
+		t.Fatalf("oversized timeout error = %v", err)
+	}
+}
 
 func TestBashToolCombinesOutputAndReportsFailures(t *testing.T) {
 	toolContext := newTestExecutionContext(t)

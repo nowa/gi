@@ -372,7 +372,8 @@ func renderEditToolCall(args any, context ToolRenderContext) []string {
 	if err == nil {
 		path = input.Path
 	}
-	lines := []string{strings.TrimSpace("edit " + path)}
+	pathDisplay := renderToolPath(toolPathArgument(args, path, "file_path", "path"), context.CWD)
+	lines := []string{"edit " + pathDisplay}
 	if context.PreflightDiff != nil {
 		if context.PreflightDiff.Error != "" {
 			return append(lines, context.PreflightDiff.Error)
@@ -402,10 +403,8 @@ func renderReadToolCall(args any, context ToolRenderContext) []string {
 		return []string{formatCompactReadCall(*classification, args)}
 	}
 	path, _, _ := readRenderArgs(args)
-	if path == "" {
-		path = "..."
-	}
-	return []string{strings.TrimSpace("read " + shortenDisplayPath(path))}
+	pathDisplay := renderToolPath(toolPathArgument(args, path, "file_path", "path"), context.CWD)
+	return []string{"read " + pathDisplay}
 }
 
 func renderReadToolResult(result FileToolResult, options ToolRenderResultOptions, context ToolRenderContext) []string {
@@ -478,10 +477,8 @@ type writeHighlightCache struct {
 
 func renderWriteToolCall(args any, context ToolRenderContext) []string {
 	path, content, hasContent := writeRenderArgs(args)
-	if path == "" {
-		path = "..."
-	}
-	lines := []string{strings.TrimSpace("write " + shortenDisplayPath(path))}
+	pathDisplay := renderToolPath(toolPathArgument(args, path, "file_path", "path"), context.CWD)
+	lines := []string{"write " + pathDisplay}
 	if hasContent {
 		contentLines := trimTrailingEmptyLines(renderWritePreviewLines(path, content, context))
 		if !context.Expanded && len(contentLines) > 10 {
@@ -700,12 +697,14 @@ func renderFindToolResult(result FileToolResult, options ToolRenderResultOptions
 	return renderSearchToolResult(result, options, 20)
 }
 
-func renderLsToolCall(args any, _ ToolRenderContext) []string {
+func renderLsToolCall(args any, context ToolRenderContext) []string {
 	path, limit := lsRenderArgs(args)
-	if path == "" {
-		path = "."
-	}
-	line := "ls " + shortenDisplayPath(path)
+	pathDisplay := renderToolPath(
+		toolPathArgument(args, path, "path"),
+		context.CWD,
+		toolPathRenderOptions{emptyFallback: "."},
+	)
+	line := "ls " + pathDisplay
 	if limit > 0 {
 		line += fmt.Sprintf(" (limit %d)", limit)
 	}
@@ -897,9 +896,9 @@ func readRenderArgs(args any) (string, *int, *int) {
 	case ReadToolInput:
 		return typed.Path, intPointerIfNonZero(typed.Offset), intPointerIfNonZero(typed.Limit)
 	case map[string]any:
-		path, _ := typed["path"].(string)
-		if legacy, ok := typed["file_path"].(string); ok && legacy != "" {
-			path = legacy
+		path := ""
+		if rawPath := toolPathArgument(typed, "", "file_path", "path"); rawPath != nil {
+			path = *rawPath
 		}
 		return path, intArgPointer(typed["offset"]), intArgPointer(typed["limit"])
 	default:
@@ -912,9 +911,9 @@ func writeRenderArgs(args any) (string, string, bool) {
 	case WriteToolInput:
 		return typed.Path, typed.Content, true
 	case map[string]any:
-		path, _ := typed["path"].(string)
-		if legacy, ok := typed["file_path"].(string); ok && legacy != "" {
-			path = legacy
+		path := ""
+		if rawPath := toolPathArgument(typed, "", "file_path", "path"); rawPath != nil {
+			path = *rawPath
 		}
 		content, ok := typed["content"].(string)
 		return path, content, ok
@@ -962,7 +961,11 @@ func lsRenderArgs(args any) (string, int) {
 	case LsToolInput:
 		return typed.Path, 0
 	case map[string]any:
-		return stringArg(typed["path"]), intArgValue(typed["limit"])
+		path := ""
+		if rawPath := toolPathArgument(typed, "", "path"); rawPath != nil {
+			path = *rawPath
+		}
+		return path, intArgValue(typed["limit"])
 	default:
 		return "", 0
 	}
@@ -973,8 +976,10 @@ func editRenderPath(args any) string {
 	case EditToolInput:
 		return typed.Path
 	case map[string]any:
-		path, _ := typed["path"].(string)
-		return path
+		if rawPath := toolPathArgument(typed, "", "file_path", "path"); rawPath != nil {
+			return *rawPath
+		}
+		return ""
 	default:
 		return ""
 	}

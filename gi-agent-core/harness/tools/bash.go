@@ -70,7 +70,8 @@ func CreateBashTool(options ...BashToolOptions) agentharness.AgentHarnessTool {
 			if err != nil {
 				return core.AgentToolResult{}, err
 			}
-			if err := validateBashTimeout(timeoutSeconds, hasTimeout); err != nil {
+			timeout, err := resolveBashTimeout(timeoutSeconds, hasTimeout)
+			if err != nil {
 				return core.AgentToolResult{}, err
 			}
 			if opts.CommandPrefix != "" {
@@ -112,10 +113,6 @@ func CreateBashTool(options ...BashToolOptions) agentharness.AgentHarnessTool {
 				onUpdate(bashProgressResult(progress(), false))
 			}
 
-			timeout := time.Duration(0)
-			if hasTimeout {
-				timeout = time.Duration(timeoutSeconds * float64(time.Second))
-			}
 			capture, err := harnessutils.ExecuteShellWithCapture(ctx, env, execution.Command, harnessutils.ShellCaptureOptions{
 				CWD:                   execution.CWD,
 				Env:                   execution.Env,
@@ -173,17 +170,17 @@ func CreateBashTool(options ...BashToolOptions) agentharness.AgentHarnessTool {
 	}
 }
 
-func validateBashTimeout(timeout float64, set bool) error {
+func resolveBashTimeout(timeout float64, set bool) (time.Duration, error) {
 	if !set {
-		return nil
+		return 0, nil
 	}
 	if math.IsNaN(timeout) || math.IsInf(timeout, 0) || timeout <= 0 {
-		return fmt.Errorf("Invalid timeout: must be a finite number of seconds")
+		return 0, fmt.Errorf("Invalid timeout: must be a finite number of seconds")
 	}
 	if timeout > maxBashTimeoutSeconds {
-		return fmt.Errorf("Invalid timeout: maximum is %g seconds", maxBashTimeoutSeconds)
+		return 0, fmt.Errorf("Invalid timeout: maximum is %g seconds", maxBashTimeoutSeconds)
 	}
-	return nil
+	return time.Duration(timeout * float64(time.Second)), nil
 }
 
 func bashProgressResult(progress harnessutils.ShellCaptureProgress, includeSummary bool) core.AgentToolResult {

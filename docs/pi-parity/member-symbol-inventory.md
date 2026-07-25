@@ -343,13 +343,6 @@ No missing files or symbols.
 | `core/resource-loader.ts::DefaultResourceLoader.loadFinalExtensionSet` |
 | `core/resource-loader.ts::DefaultResourceLoader.addExtensionConflictDiagnostics` |
 | `core/timings.ts::printTimingGroup` |
-| `core/tools/bash.ts::resolveTimeoutMs` |
-| `core/tools/file-mutation-queue.ts::isMissingPathError` |
-| `core/tools/path-utils.ts::pathExists` |
-| `core/tools/path-utils.ts::resolveReadPathAsync` |
-| `core/tools/render-utils.ts::linkPath` |
-| `core/tools/render-utils.ts::renderToolPath` |
-| `core/tools/truncate.ts::splitLinesForCounting` |
 | `extensions/llama/client.ts::errorMessage` |
 | `extensions/llama/client.ts::isModelInfo` |
 | `extensions/llama/client.ts::linkSignal` |
@@ -598,20 +591,20 @@ No missing files or symbols.
 | `core/system-prompt.ts` | `buildSystemPrompt` |  |
 | `core/telemetry.ts` | `isTruthyEnvFlag`<br>`isInstallTelemetryEnabled` |  |
 | `core/timings.ts` | `resetTimings`<br>`time`<br>`printTimingGroup`<br>`printTimings` | `printTimingGroup` |
-| `core/tools/bash.ts` | `resolveTimeoutMs`<br>`createLocalBashOperations`<br>`resolveSpawnContext`<br>`BashResultRenderComponent`<br>`formatDuration`<br>`formatBashCall`<br>`rebuildBashResultRenderComponent`<br>`createBashToolDefinition`<br>`createBashTool` | `resolveTimeoutMs` |
+| `core/tools/bash.ts` | `resolveTimeoutMs`<br>`createLocalBashOperations`<br>`resolveSpawnContext`<br>`BashResultRenderComponent`<br>`formatDuration`<br>`formatBashCall`<br>`rebuildBashResultRenderComponent`<br>`createBashToolDefinition`<br>`createBashTool` |  |
 | `core/tools/edit-diff.ts` | `detectLineEnding`<br>`normalizeToLF`<br>`restoreLineEndings`<br>`normalizeForFuzzyMatch`<br>`splitLinesWithEndings`<br>`getLineSpans`<br>`getReplacementLineRange`<br>`applyReplacements`<br>`applyReplacementsPreservingUnchangedLines`<br>`fuzzyFindText`<br>`stripBom`<br>`countOccurrences`<br>`getNotFoundError`<br>`getDuplicateError`<br>`getEmptyOldTextError`<br>`getNoChangeError`<br>`applyEditsToNormalizedContent`<br>`generateUnifiedPatch`<br>`generateDiffString`<br>`computeEditsDiff`<br>`computeEditDiff` |  |
 | `core/tools/edit.ts` | `prepareEditArguments`<br>`validateEditInput`<br>`createEditCallRenderComponent`<br>`getEditCallRenderComponent`<br>`getRenderablePreviewInput`<br>`formatEditCall`<br>`formatEditResult`<br>`getEditHeaderBg`<br>`buildEditCallComponent`<br>`setEditPreview`<br>`createEditToolDefinition`<br>`createEditTool` |  |
-| `core/tools/file-mutation-queue.ts` | `isMissingPathError`<br>`getMutationQueueKey`<br>`withFileMutationQueue` | `isMissingPathError` |
+| `core/tools/file-mutation-queue.ts` | `isMissingPathError`<br>`getMutationQueueKey`<br>`withFileMutationQueue` |  |
 | `core/tools/find.ts` | `toPosixPath`<br>`formatFindCall`<br>`formatFindResult`<br>`createFindToolDefinition`<br>`createFindTool` |  |
 | `core/tools/grep.ts` | `formatGrepCall`<br>`formatGrepResult`<br>`createGrepToolDefinition`<br>`createGrepTool` |  |
 | `core/tools/index.ts` | `createToolDefinition`<br>`createTool`<br>`createCodingToolDefinitions`<br>`createReadOnlyToolDefinitions`<br>`createAllToolDefinitions`<br>`createCodingTools`<br>`createReadOnlyTools`<br>`createAllTools` |  |
 | `core/tools/ls.ts` | `formatLsCall`<br>`formatLsResult`<br>`createLsToolDefinition`<br>`createLsTool` |  |
 | `core/tools/output-accumulator.ts` | `defaultTempFilePath`<br>`byteLength`<br>`OutputAccumulator`<br>`OutputAccumulator.constructor`<br>`OutputAccumulator.append`<br>`OutputAccumulator.finish`<br>`OutputAccumulator.snapshot`<br>`OutputAccumulator.closeTempFile`<br>`OutputAccumulator.getLastLineBytes`<br>`OutputAccumulator.appendDecodedText`<br>`OutputAccumulator.trimTail`<br>`OutputAccumulator.getSnapshotText`<br>`OutputAccumulator.shouldUseTempFile`<br>`OutputAccumulator.ensureTempFile` |  |
-| `core/tools/path-utils.ts` | `tryMacOSScreenshotPath`<br>`tryNFDVariant`<br>`tryCurlyQuoteVariant`<br>`fileExists`<br>`pathExists`<br>`expandPath`<br>`resolveToCwd`<br>`resolveReadPath`<br>`resolveReadPathAsync` | `pathExists`<br>`resolveReadPathAsync` |
+| `core/tools/path-utils.ts` | `tryMacOSScreenshotPath`<br>`tryNFDVariant`<br>`tryCurlyQuoteVariant`<br>`fileExists`<br>`pathExists`<br>`expandPath`<br>`resolveToCwd`<br>`resolveReadPath`<br>`resolveReadPathAsync` |  |
 | `core/tools/read.ts` | `formatReadLineRange`<br>`formatReadCall`<br>`trimTrailingEmptyLines`<br>`getNonVisionImageNote`<br>`toPosixPath`<br>`getPiDocsClassification`<br>`getCompactReadClassification`<br>`formatCompactReadCall`<br>`formatReadResult`<br>`createReadToolDefinition`<br>`createReadTool` |  |
-| `core/tools/render-utils.ts` | `shortenPath`<br>`linkPath`<br>`str`<br>`replaceTabs`<br>`normalizeDisplayText`<br>`getTextOutput`<br>`invalidArgText`<br>`renderToolPath` | `linkPath`<br>`renderToolPath` |
+| `core/tools/render-utils.ts` | `shortenPath`<br>`linkPath`<br>`str`<br>`replaceTabs`<br>`normalizeDisplayText`<br>`getTextOutput`<br>`invalidArgText`<br>`renderToolPath` |  |
 | `core/tools/tool-definition-wrapper.ts` | `wrapToolDefinition`<br>`wrapToolDefinitions`<br>`createToolDefinitionFromAgentTool` |  |
-| `core/tools/truncate.ts` | `splitLinesForCounting`<br>`formatSize`<br>`truncateHead`<br>`truncateTail`<br>`truncateStringToBytesFromEnd`<br>`truncateLine` | `splitLinesForCounting` |
+| `core/tools/truncate.ts` | `splitLinesForCounting`<br>`formatSize`<br>`truncateHead`<br>`truncateTail`<br>`truncateStringToBytesFromEnd`<br>`truncateLine` |  |
 | `core/tools/write.ts` | `WriteCallRenderComponent`<br>`highlightSingleLine`<br>`refreshWriteHighlightPrefix`<br>`rebuildWriteHighlightCacheFull`<br>`updateWriteHighlightCacheIncremental`<br>`trimTrailingEmptyLines`<br>`formatWriteCall`<br>`formatWriteResult`<br>`createWriteToolDefinition`<br>`createWriteTool`<br>`WriteCallRenderComponent.constructor` |  |
 | `core/trust-manager.ts` | `normalizeCwd`<br>`findNearestTrustEntry`<br>`getProjectTrustParentPath`<br>`getProjectTrustOptions`<br>`readTrustFile`<br>`writeTrustFile`<br>`acquireTrustLockSync`<br>`withTrustFileLock`<br>`hasTrustRequiringProjectResources`<br>`ProjectTrustStore`<br>`ProjectTrustStore.constructor`<br>`ProjectTrustStore.get`<br>`ProjectTrustStore.getEntry`<br>`ProjectTrustStore.set`<br>`ProjectTrustStore.setMany` |  |
 | `core/usage-totals.ts` | `createUsageTotals`<br>`addUsageToTotals`<br>`getUsageCostBreakdown` |  |

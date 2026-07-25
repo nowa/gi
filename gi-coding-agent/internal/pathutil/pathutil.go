@@ -8,7 +8,7 @@ import (
 )
 
 func ExpandPath(path string) string {
-	path = NormalizeUserPathText(path)
+	path = strings.TrimPrefix(NormalizeUserPathText(path), "@")
 	if path == "~" {
 		if home, err := os.UserHomeDir(); err == nil {
 			return home
@@ -100,8 +100,19 @@ func IsLocalPath(value string) bool {
 }
 
 func NormalizeUserPathText(value string) string {
-	replacer := strings.NewReplacer("\u00a0", " ", "\u202f", " ")
-	return replacer.Replace(value)
+	value = strings.Map(func(r rune) rune {
+		switch {
+		case r == '\u00a0',
+			r >= '\u2000' && r <= '\u200a',
+			r == '\u202f',
+			r == '\u205f',
+			r == '\u3000':
+			return ' '
+		default:
+			return r
+		}
+	}, value)
+	return value
 }
 
 func ComparableUserPathText(value string) string {

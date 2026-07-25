@@ -28,7 +28,11 @@ type BashToolOptions struct {
 
 type BashToolInput struct {
 	Command string
-	Timeout int
+	// Timeout is expressed in seconds to match the tool protocol. Fractional
+	// values are preserved and converted to time.Duration at the harness edge.
+	Timeout float64
+
+	timeoutSet bool
 }
 
 func NewBashTool(cwd string, options ...BashToolOptions) BashTool {
@@ -64,7 +68,7 @@ func (t BashTool) ExecuteWithUpdates(toolCallID string, input BashToolInput, onU
 		CommandPrefix: t.commandPrefix,
 	})
 	params := map[string]any{"command": input.Command}
-	if input.Timeout > 0 {
+	if input.timeoutSet || input.Timeout != 0 {
 		params["timeout"] = input.Timeout
 	}
 	var updateCallback core.AgentToolUpdateCallback

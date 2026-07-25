@@ -3,8 +3,10 @@ package tools
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"path/filepath"
 	"sync"
+	"syscall"
 
 	harnessenv "github.com/nowa/gi/gi-agent-core/harness/env"
 )
@@ -53,11 +55,29 @@ func mutationQueueKey(env harnessenv.ExecutionEnv, path string) (string, error) 
 		return canonicalPath, nil
 	}
 	var fileError *harnessenv.FileError
-	if errors.As(err, &fileError) &&
-		(fileError.Code == harnessenv.FileErrorNotFound || fileError.Code == harnessenv.FileErrorNotSupported) {
+	if isMissingPathError(err) ||
+		(errors.As(err, &fileError) && fileError.Code == harnessenv.FileErrorNotSupported) {
 		return filepath.Clean(absolutePath), nil
 	}
 	return "", err
+}
+
+func isMissingPathError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var fileError *harnessenv.FileError
+	if errors.As(err, &fileError) {
+		switch fileError.Code {
+		case harnessenv.FileErrorNotFound, harnessenv.FileErrorNotDirectory:
+			return true
+		case harnessenv.FileErrorAborted,
+			harnessenv.FileErrorPermissionDenied,
+			harnessenv.FileErrorInvalid:
+			return false
+		}
+	}
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
 }
 
 func (q *FileMutationQueue) acquire(key string) *fileMutation {

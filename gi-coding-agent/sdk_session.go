@@ -562,8 +562,16 @@ func executeDefaultSDKBashTool(toolCallID string, input map[string]any, cwd stri
 	if strings.TrimSpace(command) == "" {
 		return SDKToolResult{}, fmt.Errorf("bash command is required")
 	}
+	timeout, timeoutSet, err := optionalBashTimeout(input)
+	if err != nil {
+		return SDKToolResult{}, err
+	}
 	tool := NewBashTool(cwd)
-	result, err := tool.ExecuteWithUpdates(toolCallID, BashToolInput{Command: command, Timeout: intFromToolInput(input, "timeout")}, func(partial FileToolResult) {
+	result, err := tool.ExecuteWithUpdates(toolCallID, BashToolInput{
+		Command:    command,
+		Timeout:    timeout,
+		timeoutSet: timeoutSet,
+	}, func(partial FileToolResult) {
 		if onUpdate != nil {
 			onUpdate(sdkToolResultFromFileToolResult(partial))
 		}
