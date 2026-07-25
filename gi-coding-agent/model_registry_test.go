@@ -519,7 +519,7 @@ func TestModelRegistryAPIKeyResolution(t *testing.T) {
 	}
 
 	t.Setenv("TEST_API_KEY_12345", "env-api-key-value")
-	writeRawModelsJSON(t, modelsPath, map[string]any{"providers": map[string]any{"custom-provider": registryProviderWithAPIKey("TEST_API_KEY_12345")}})
+	writeRawModelsJSON(t, modelsPath, map[string]any{"providers": map[string]any{"custom-provider": registryProviderWithAPIKey("$TEST_API_KEY_12345")}})
 	registry = NewModelRegistry(auth, modelsPath)
 	if key, ok := registry.GetAPIKeyForProvider("custom-provider"); !ok || key != "env-api-key-value" {
 		t.Fatalf("env api key = %q / %v", key, ok)
@@ -574,7 +574,7 @@ func TestModelRegistryAPIKeyResolution(t *testing.T) {
 	}
 
 	t.Setenv("TEST_API_KEY_STATUS_TEST_98765", "status-test-key")
-	writeRawModelsJSON(t, modelsPath, map[string]any{"providers": map[string]any{"custom-provider": registryProviderWithAPIKey("TEST_API_KEY_STATUS_TEST_98765")}})
+	writeRawModelsJSON(t, modelsPath, map[string]any{"providers": map[string]any{"custom-provider": registryProviderWithAPIKey("$TEST_API_KEY_STATUS_TEST_98765")}})
 	registry = NewModelRegistry(auth, modelsPath)
 	if got := registry.GetProviderAuthStatus("custom-provider"); got != (AuthStatus{Configured: true, Source: "environment", Label: "TEST_API_KEY_STATUS_TEST_98765"}) {
 		t.Fatalf("env auth status = %#v", got)
@@ -599,7 +599,7 @@ func TestModelRegistryAPIKeyResolution(t *testing.T) {
 	}
 
 	t.Setenv("TEST_API_KEY_CACHE_TEST_98765", "first-value")
-	writeRawModelsJSON(t, modelsPath, map[string]any{"providers": map[string]any{"custom-provider": registryProviderWithAPIKey("TEST_API_KEY_CACHE_TEST_98765")}})
+	writeRawModelsJSON(t, modelsPath, map[string]any{"providers": map[string]any{"custom-provider": registryProviderWithAPIKey("$TEST_API_KEY_CACHE_TEST_98765")}})
 	registry = NewModelRegistry(auth, modelsPath)
 	if key, _ := registry.GetAPIKeyForProvider("custom-provider"); key != "first-value" {
 		t.Fatalf("first env key = %q", key)

@@ -718,11 +718,11 @@ func TestCodingAgentPiModelRegistryCommandResolutionExactCaseNames(t *testing.T)
 	})
 	t.Run("environment variables are not cached (changes are picked up)", func(t *testing.T) {
 		t.Setenv("GI_TEST_DYNAMIC_ENV", "first")
-		if got, ok := ResolveConfigValue("GI_TEST_DYNAMIC_ENV"); !ok || got != "first" {
+		if got, ok := ResolveConfigValue("$GI_TEST_DYNAMIC_ENV"); !ok || got != "first" {
 			t.Fatalf("first = %q %v", got, ok)
 		}
 		t.Setenv("GI_TEST_DYNAMIC_ENV", "second")
-		if got, ok := ResolveConfigValue("GI_TEST_DYNAMIC_ENV"); !ok || got != "second" {
+		if got, ok := ResolveConfigValue("$GI_TEST_DYNAMIC_ENV"); !ok || got != "second" {
 			t.Fatalf("second = %q %v", got, ok)
 		}
 	})
@@ -733,7 +733,7 @@ func TestCodingAgentPiModelRegistryHeadersExactCaseNames(t *testing.T) {
 		modelsPath := filepath.Join(t.TempDir(), "models.json")
 		t.Setenv("GI_TEST_HEADER_VALUE", "first")
 		writeRawModelsJSON(t, modelsPath, map[string]any{"providers": map[string]any{
-			"anthropic": map[string]any{"headers": map[string]string{"X-Test": "GI_TEST_HEADER_VALUE"}},
+			"anthropic": map[string]any{"headers": map[string]string{"X-Test": "$GI_TEST_HEADER_VALUE"}},
 		}})
 		registry := NewModelRegistry(NewInMemoryAuthStorage(nil), modelsPath)
 		model := registryMustFind(t, registry, "anthropic", "claude-sonnet-4-5")
@@ -749,7 +749,7 @@ func TestCodingAgentPiModelRegistryHeadersExactCaseNames(t *testing.T) {
 		modelsPath := filepath.Join(t.TempDir(), "models.json")
 		t.Setenv("GI_TEST_ONLY_HEADER_VALUE", "only")
 		writeRawModelsJSON(t, modelsPath, map[string]any{"providers": map[string]any{
-			"anthropic": map[string]any{"headers": map[string]string{"X-Only": "GI_TEST_ONLY_HEADER_VALUE"}},
+			"anthropic": map[string]any{"headers": map[string]string{"X-Only": "$GI_TEST_ONLY_HEADER_VALUE"}},
 		}})
 		registry := NewModelRegistry(NewInMemoryAuthStorage(nil), modelsPath)
 		model := registryMustFind(t, registry, "anthropic", "claude-sonnet-4-5")

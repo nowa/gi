@@ -106,20 +106,9 @@
       "module": "coding",
       "undocumentedFiles": [],
       "noCandidateFiles": [
-        "packages/coding-agent/test/suite/regressions/5661-uppercase-header-values.test.ts",
         "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts"
       ],
       "noCandidateCases": [
-        {
-          "file": "packages/coding-agent/test/config-value-migration.test.ts",
-          "line": 41,
-          "name": "leaves uppercase auth.json API key values unchanged"
-        },
-        {
-          "file": "packages/coding-agent/test/config-value-migration.test.ts",
-          "line": 89,
-          "name": "leaves uppercase models.json API key and header values unchanged"
-        },
         {
           "file": "packages/coding-agent/test/git-merge-and-resolve-extension.test.ts",
           "line": 87,
@@ -149,11 +138,6 @@
           "file": "packages/coding-agent/test/suite/regressions/5433-extension-oauth-prompt-input.test.ts",
           "line": 99,
           "name": "keeps previous manual input stable when a later prompt is active"
-        },
-        {
-          "file": "packages/coding-agent/test/suite/regressions/5661-uppercase-header-values.test.ts",
-          "line": 33,
-          "name": "keeps uppercase header strings as literals during startup migrations"
         },
         {
           "file": "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts",

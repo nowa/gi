@@ -812,13 +812,6 @@ func configuredAPIKeyAuthStatus(value string) AuthStatus {
 			Label:      strings.Join(names, ", "),
 		}
 	}
-	if os.Getenv(value) != "" {
-		return AuthStatus{
-			Configured: true,
-			Source:     "environment",
-			Label:      value,
-		}
-	}
 	return AuthStatus{Configured: true, Source: "models_json_key"}
 }
 

@@ -54,15 +54,15 @@ func TestResolveConfigValueUsesCredentialEnvironmentFirst(t *testing.T) {
 	}
 }
 
-func TestResolveConfigValuePreservesBareEnvironmentCompatibility(t *testing.T) {
+func TestResolveConfigValueTreatsBareEnvironmentNamesAsLiterals(t *testing.T) {
 	t.Setenv("TEST_CONFIG_LEGACY", "legacy-value")
 	env := llm.ProviderEnv{"TEST_CONFIG_SCOPED_LEGACY": "scoped-value"}
 
-	if got, ok := ResolveConfigValue("TEST_CONFIG_LEGACY"); !ok || got != "legacy-value" {
-		t.Fatalf("process bare environment = %q, %v", got, ok)
+	if got, ok := ResolveConfigValue("TEST_CONFIG_LEGACY"); !ok || got != "TEST_CONFIG_LEGACY" {
+		t.Fatalf("process bare literal = %q, %v", got, ok)
 	}
-	if got, ok := ResolveConfigValueWithEnv("TEST_CONFIG_SCOPED_LEGACY", env); !ok || got != "scoped-value" {
-		t.Fatalf("scoped bare environment = %q, %v", got, ok)
+	if got, ok := ResolveConfigValueWithEnv("TEST_CONFIG_SCOPED_LEGACY", env); !ok || got != "TEST_CONFIG_SCOPED_LEGACY" {
+		t.Fatalf("scoped bare literal = %q, %v", got, ok)
 	}
 }
 

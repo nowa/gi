@@ -256,6 +256,9 @@ const modules = [
 				"gi-agent-core/harness/compaction_test.go",
 				"gi-coding-agent/pi_coding_agent_case_names_test.go",
 			],
+			"packages/coding-agent/test/config-value-migration.test.ts": [
+				"gi-coding-agent/config_value_migration_test.go",
+			],
 			"packages/coding-agent/test/extensions-discovery.test.ts": [
 				"gi-coding-agent/extension_discovery_test.go",
 				"gi-coding-agent/protocol_extension_descriptor_test.go",
@@ -375,6 +378,9 @@ const modules = [
 			"packages/coding-agent/test/suite/regressions/3592-no-builtin-tools-keeps-extension-tools.test.ts": [
 				"gi-coding-agent/agent_session_dynamic_provider_tools_test.go",
 				"gi-coding-agent/pi_coding_agent_case_names_test.go",
+			],
+			"packages/coding-agent/test/suite/regressions/5661-uppercase-header-values.test.ts": [
+				"gi-coding-agent/config_value_migration_test.go",
 			],
 			"packages/coding-agent/test/suite/regressions/6363-agent-settled-event.test.ts": [
 				"gi-coding-agent/agent_session_concurrent_test.go",

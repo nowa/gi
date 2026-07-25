@@ -89,10 +89,10 @@ func TestAuthStorageAPIKeyResolution(t *testing.T) {
 		}
 	})
 
-	t.Run("apiKey as environment variable name resolves to env value", func(t *testing.T) {
+	t.Run("apiKey with explicit environment reference resolves to env value", func(t *testing.T) {
 		t.Setenv("TEST_AUTH_API_KEY_12345", "env-api-key-value")
 		storage := newTestAuthStorage(t, AuthStorageData{
-			"anthropic": {Type: "api_key", Key: "TEST_AUTH_API_KEY_12345"},
+			"anthropic": {Type: "api_key", Key: "$TEST_AUTH_API_KEY_12345"},
 		})
 
 		if got, ok := storage.GetAPIKey("anthropic"); !ok || got != "env-api-key-value" {
@@ -206,7 +206,7 @@ func TestAuthStorageAPIKeyResolutionCaching(t *testing.T) {
 	t.Run("environment variables are not cached (changes are picked up)", func(t *testing.T) {
 		t.Setenv("TEST_AUTH_KEY_CACHE_TEST_98765", "first-value")
 		storage := newTestAuthStorage(t, AuthStorageData{
-			"anthropic": {Type: "api_key", Key: "TEST_AUTH_KEY_CACHE_TEST_98765"},
+			"anthropic": {Type: "api_key", Key: "$TEST_AUTH_KEY_CACHE_TEST_98765"},
 		})
 
 		if got, ok := storage.GetAPIKey("anthropic"); !ok || got != "first-value" {

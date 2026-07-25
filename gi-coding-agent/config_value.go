@@ -86,17 +86,14 @@ func ResolveConfigValue(config string) (string, bool) {
 	return ResolveConfigValueWithEnv(config, nil)
 }
 
-// ResolveConfigValueWithEnv resolves commands, environment templates, escapes,
-// and literals. Credential-scoped env values take precedence over process
-// environment. For backward compatibility, a bare environment-variable name
-// is also resolved when present.
+// ResolveConfigValueWithEnv resolves commands, explicit environment templates,
+// escapes, and literals. Credential-scoped env values take precedence over
+// process environment. Bare names are literals; environment references require
+// $NAME or ${NAME} syntax.
 func ResolveConfigValueWithEnv(config string, env llm.ProviderEnv) (string, bool) {
 	reference := parseConfigValueReference(config)
 	if reference.command != "" {
 		return resolveCommandConfigValue(reference.command)
-	}
-	if value, ok := resolveLegacyBareEnv(config, env); ok {
-		return value, true
 	}
 	return resolveConfigValueTemplate(reference.parts, env)
 }
@@ -113,9 +110,6 @@ func ResolveConfigValueUncachedWithEnv(config string, env llm.ProviderEnv) (stri
 	reference := parseConfigValueReference(config)
 	if reference.command != "" {
 		return executeConfigCommand(strings.TrimPrefix(reference.command, "!"))
-	}
-	if value, ok := resolveLegacyBareEnv(config, env); ok {
-		return value, true
 	}
 	return resolveConfigValueTemplate(reference.parts, env)
 }
@@ -318,13 +312,6 @@ func resolveEnvConfigValue(name string, env llm.ProviderEnv) (string, bool) {
 		return "", false
 	}
 	return value, true
-}
-
-func resolveLegacyBareEnv(config string, env llm.ProviderEnv) (string, bool) {
-	if !isEnvVarName(config) {
-		return "", false
-	}
-	return resolveEnvConfigValue(config, env)
 }
 
 func isEnvVarName(value string) bool {
