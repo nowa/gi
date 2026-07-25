@@ -35,7 +35,7 @@ gap.
 | `packages/ai/src` | `gi-llm-provider` public package: model catalog, registry, stream entrypoints, base types, image API | consistent; Go keeps one provider package instead of TS root/barrel files. |
 | `packages/ai/src/api` | `gi-llm-provider` provider, payload, stream, registry, and transport files | Go-native consistent; eager Go linking replaces lazy TS modules, while typed provider interfaces preserve the transport boundary and request snapshot ownership. |
 | `packages/ai/src/auth` | `auth.go`, `credential_store.go`, `models_runtime.go`, and provider-owned auth hooks | Go-native consistent; one canonical credential shape, request-scoped auth context, serialized store mutation, and typed model errors cover provider login, refresh, request auth, and availability snapshots. |
-| `packages/ai/src/auth/oauth` | provider-owned `*_oauth.go` flows, shared `oauth_authorization_code.go`, `oauth_device_code.go`, `oauth_pkce.go`, and `internal/oauthpage` | Go-native consistent; provider packages own protocol state and token exchange, `context.Context` owns cancellation, and application `AuthInteraction` implementations own terminal/browser presentation. Legacy coding-agent protocol helpers remain migration adapters until the CLI is switched to the provider runtime. |
+| `packages/ai/src/auth/oauth` | provider-owned `*_oauth.go` flows, shared `oauth_authorization_code.go`, `oauth_device_code.go`, `oauth_pkce.go`, and `internal/oauthpage` | Go-native consistent; provider packages own protocol state and token exchange, `context.Context` owns cancellation, `ModelRuntime` owns credential persistence and provider recomposition, and the coding-agent `AuthInteraction` adapter owns only terminal/browser presentation. |
 | `packages/ai/src/compat` | `types.go` model compatibility metadata plus provider conversion/config helpers | consolidated; generated compatibility flags are typed model data in Go and consumed by the relevant protocol adapter. |
 | `packages/ai/src/providers` | `gi-llm-provider/*_provider.go`, `*_payload.go`, `*_stream.go`, `*_config.go` | consistent; provider files are split by protocol responsibility rather than nested directories. |
 | `packages/ai/src/providers/images` | `images.go`, `image_models.go`, `openrouter_images*.go` | consistent; image provider registry stays in the same Go package. |
@@ -69,7 +69,7 @@ gap.
 | `packages/coding-agent/src` | `cmd/gi/main.go`, `gi-coding-agent/cli.go`, `config.go`, mode dispatch files | split but consistent; Go separates binary entrypoint from reusable package logic. |
 | `packages/coding-agent/src/bun` | `internal/sandboxenv`, `restore_sandbox_env.go` facade; Bun bootstrap/provider files are excluded | Go-native; binary/runtime bootstrap does not apply to Gi, while sandbox environment restoration now lives behind a focused package. |
 | `packages/coding-agent/src/cli` | `gi-coding-agent/internal/cli`, `cli_api.go`, `file_arguments.go`, `list_models.go`, `cli_config.go`, resume/session selector files | consistent; argument parsing and initial-message assembly now have a focused Go subpackage with root-level compatibility wrappers. |
-| `packages/coding-agent/src/core` | `agent_session_*`, auth/settings/model/resource/system/footer/session manager files, `internal/authguide`, `internal/authwarning`, `internal/attribution`, `internal/modelresolver`, `internal/planmode`, `internal/oauthflow`, `internal/sessioncwd`, `internal/telemetry` | consistent but still partly flattened; Go keeps tightly-coupled session/runtime pieces in one package to avoid artificial import cycles, while auth guidance/warnings, attribution headers, model-resolution, plan-mode, OAuth URL/PKCE/callback helpers, missing-session-cwd checks, and telemetry env parsing now have focused subpackages. |
+| `packages/coding-agent/src/core` | `agent_session_*`, auth/settings/model/resource/system/footer/session manager files, `internal/authguide`, `internal/authwarning`, `internal/attribution`, `internal/modelresolver`, `internal/planmode`, `internal/sessioncwd`, `internal/telemetry` | consistent but still partly flattened; Go keeps tightly-coupled session/runtime pieces in one package to avoid artificial import cycles, while auth guidance/warnings, attribution headers, model-resolution, plan-mode, missing-session-cwd checks, and telemetry env parsing have focused subpackages. OAuth protocol ownership lives entirely in `gi-llm-provider`. |
 | `packages/coding-agent/src/core/compaction` | `gi-agent-core/harness` compaction plus `agent_session_compaction*.go` | split but consistent; reusable compaction lives in harness, session-trigger wiring lives in coding-agent. |
 | `packages/coding-agent/src/core/export-html` | `export_html.go` and export tests | partial; ANSI/session-data/custom-tool paths are mapped, while Pi's full static template/vendor asset pipeline remains a documented gap. |
 | `packages/coding-agent/src/core/export-html/vendor` | `ExportHTMLTemplateJS` safe DOM markdown/highlight helpers | partial; Gi intentionally does not embed Pi's `marked.min.js` and `highlight.min.js` assets yet, while keeping their browser-rendering responsibilities documented in the file map. |
@@ -107,7 +107,6 @@ behind focused subpackages:
 | `gi-coding-agent/internal/attribution` | `packages/coding-agent/src/core/sdk.ts` attribution header helpers | `gi-coding-agent/sdk_attribution.go` forwards `GetAttributionHeaders` and `BuildSDKStreamHeaders` while provider-specific attribution header merging lives in the SDK metadata subpackage. |
 | `gi-coding-agent/internal/modelresolver` | `packages/coding-agent/src/core/model-resolver.ts` | `gi-coding-agent/model_resolver.go` aliases model-resolution types/constants and forwards model pattern/scope/initial selection helpers. |
 | `gi-coding-agent/internal/planmode` | plan-mode parsing/status helpers used by coding-agent tests and UI | `gi-coding-agent/plan_mode_api.go` aliases `PlanTodoItem` and forwards plan parsing helpers. |
-| `gi-coding-agent/internal/oauthflow` | OAuth URL/PKCE/callback helper logic used by Pi's provider login flows | `gi-coding-agent/oauth_login.go`, `oauth_openai_codex.go`, and `oauth_anthropic.go` keep package-local compatibility wrappers while ordered URL construction, PKCE challenge generation, manual callback parsing, callback host selection, and browser launch live in the auth utility subpackage. |
 | `gi-coding-agent/internal/sessioncwd` | `packages/coding-agent/src/core/session-cwd.ts` missing stored-cwd detection and prompt formatting | `gi-coding-agent/session_cwd.go` preserves `MissingSessionCwd*` types and runtime factory helpers while pure cwd validation lives in the session-cwd subpackage. |
 | `gi-coding-agent/internal/telemetry` | `packages/coding-agent/src/core/telemetry.ts` install-telemetry env parsing | `gi-coding-agent/telemetry.go` forwards install telemetry checks while env precedence/truthy parsing lives in the telemetry subpackage. |
 | `gi-coding-agent/internal/rpcwire` | `packages/coding-agent/src/modes/rpc/jsonl.ts` | `gi-coding-agent/rpc_jsonl.go` forwards JSONL serialization and line-reader functions. |
@@ -151,7 +150,7 @@ The member-level source inventory currently reports:
 | LLM provider | 169 | 99 | 632 | 0 | 0 |
 | Agent core | 35 | 35 | 327 | 0 | 0 |
 | TUI | 28 | 32 | 449 | 0 | 0 |
-| Coding agent | 177 | 172 | 2115 | 27 | 398 |
+| Coding agent | 177 | 169 | 2115 | 27 | 394 |
 
 `docs/pi-parity/member-symbol-inventory.md` is the generated per-file detail.
 A mentioned symbol means its ownership or gap has been classified; it does not
@@ -261,7 +260,7 @@ the root package owns the tightly coupled session/runtime/TUI files, while
 low-cycle helpers are incrementally extracted into focused internal
 subpackages such as `internal/cli`, `internal/authguide`,
 `internal/authwarning`, `internal/clipboard`, `internal/mcpstdio`,
-`internal/modelresolver`, `internal/oauthflow`, `internal/sessioncwd`,
+`internal/modelresolver`, `internal/sessioncwd`,
 `internal/toolqueue`, and `internal/tooloutput`.
 
 The same verifier can also expose non-exported top-level implementation
@@ -276,7 +275,7 @@ function-by-function audit:
 
 | Module | Pi top-level implementation symbols | Currently not named in maps | Meaning |
 | --- | ---: | ---: | --- |
-| LLM provider | 364 | 0 | LLM provider top-level private helper ownership is grouped in `llm-provider-file-map.md`; remaining work centers on the default Bedrock transport, Google Vertex default ADC token source, and bundled Anthropic, GitHub Copilot, and OpenAI Codex OAuth integration. |
+| LLM provider | 364 | 0 | LLM provider top-level private helper ownership is grouped in `llm-provider-file-map.md`; remaining work is behavioral parity and release-gate validation rather than source-symbol coverage. |
 | Agent core | 161 | 0 | Agent-core top-level private helper ownership is now grouped in `agent-core-file-map.md`; remaining work is behavior/test-case parity and Go-native boundary validation, not source-symbol coverage. |
 | TUI | 121 | 0 | TUI top-level private helper ownership is now grouped in `tui-file-map.md`; remaining work is behavior/test-case parity, not source-symbol coverage. |
 | Coding agent | 660 | 0 | Coding-agent top-level private helper ownership is now grouped in `coding-agent-file-map.md`; remaining work is behavior/test-case parity and the documented protocol/product-scope gaps. |

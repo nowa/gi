@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode"
 
+	llm "github.com/nowa/gi/gi-llm-provider"
 	gitui "github.com/nowa/gi/gi-tui"
 )
 
@@ -25,13 +26,21 @@ type OAuthSelector struct {
 }
 
 type OAuthSelectorComponent struct {
-	focus    gitui.FocusState
-	selector OAuthSelector
-	query    string
-	filtered []AuthSelectorProvider
-	selected int
-	OnSelect func(providerID string)
-	OnCancel func()
+	focus              gitui.FocusState
+	selector           OAuthSelector
+	query              string
+	filtered           []AuthSelectorProvider
+	selected           int
+	showAuthTypeLabels bool
+	OnSelect           func(providerID string)
+	OnCancel           func()
+}
+
+func formatAuthSelectorProviderType(authType string) string {
+	if authType == string(llm.CredentialTypeOAuth) {
+		return "subscription"
+	}
+	return "API key"
 }
 
 func IsAPIKeyLoginProvider(providerID string, oauthProviderIDs, builtInProviderIDs map[string]bool) bool {
@@ -111,7 +120,14 @@ func (s OAuthSelector) statusIndicator(provider AuthSelectorProvider) string {
 }
 
 func NewOAuthSelectorComponent(selector OAuthSelector) *OAuthSelectorComponent {
-	component := &OAuthSelectorComponent{selector: selector}
+	authTypes := map[string]struct{}{}
+	for _, provider := range selector.Providers {
+		authTypes[provider.AuthType] = struct{}{}
+	}
+	component := &OAuthSelectorComponent{
+		selector:           selector,
+		showAuthTypeLabels: len(authTypes) > 1,
+	}
 	component.filter()
 	return component
 }
@@ -164,9 +180,17 @@ func (c *OAuthSelectorComponent) Render(width int) []string {
 	end := min(len(c.filtered), start+8)
 	for index := start; index < end; index++ {
 		provider := c.filtered[index]
-		line := "  " + tuiThemeFG("text", provider.Name) + c.selector.statusIndicator(provider)
+		authTypeLabel := ""
+		if c.showAuthTypeLabels {
+			authTypeLabel = tuiThemeMuted(
+				" [" + formatAuthSelectorProviderType(provider.AuthType) + "]",
+			)
+		}
+		line := "  " + tuiThemeFG("text", provider.Name) +
+			authTypeLabel + c.selector.statusIndicator(provider)
 		if index == c.selected {
-			line = tuiThemeAccent("→ ") + tuiThemeAccent(provider.Name) + c.selector.statusIndicator(provider)
+			line = tuiThemeAccent("→ ") + tuiThemeAccent(provider.Name) +
+				authTypeLabel + c.selector.statusIndicator(provider)
 		}
 		lines = append(lines, selectorTextLine(line, width))
 	}
@@ -261,6 +285,12 @@ func loginAuthSelectorProviders(registry *ModelRegistry, authType string) []Auth
 	if registry == nil {
 		return nil
 	}
+	if registry.modelRuntime != nil {
+		return runtimeLoginAuthSelectorProviders(
+			registry.modelRuntime,
+			authType,
+		)
+	}
 	oauthProviders := GetOAuthProviders()
 	oauthProviderIDs := map[string]bool{}
 	for _, provider := range oauthProviders {
@@ -288,6 +318,40 @@ func loginAuthSelectorProviders(registry *ModelRegistry, authType string) []Auth
 				continue
 			}
 			providers = append(providers, AuthSelectorProvider{ID: providerID, Name: registry.GetProviderDisplayName(providerID), AuthType: "api_key"})
+		}
+	}
+	sortAuthSelectorProviders(providers)
+	return providers
+}
+
+func runtimeLoginAuthSelectorProviders(
+	runtime *ModelRuntime,
+	authType string,
+) []AuthSelectorProvider {
+	if runtime == nil {
+		return nil
+	}
+	var providers []AuthSelectorProvider
+	for _, provider := range runtime.GetProviders() {
+		if provider == nil {
+			continue
+		}
+		name := firstNonEmptyString(provider.Name, provider.ID)
+		if (authType == "" || authType == "oauth") &&
+			provider.Auth.OAuth != nil {
+			providers = append(providers, AuthSelectorProvider{
+				ID:       provider.ID,
+				Name:     name,
+				AuthType: "oauth",
+			})
+		}
+		if (authType == "" || authType == "api_key") &&
+			provider.Auth.APIKey != nil {
+			providers = append(providers, AuthSelectorProvider{
+				ID:       provider.ID,
+				Name:     name,
+				AuthType: "api_key",
+			})
 		}
 	}
 	sortAuthSelectorProviders(providers)

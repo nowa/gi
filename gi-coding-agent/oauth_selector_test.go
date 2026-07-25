@@ -76,11 +76,14 @@ func TestOAuthSelectorPiCases(t *testing.T) {
 	}
 }
 
-func TestLoginAuthSelectorProvidersIncludesBuiltInSubscriptionProvidersPiStyle(t *testing.T) {
+func TestLoginAuthSelectorProvidersIncludesProviderOwnedOAuthFlows(t *testing.T) {
 	ResetOAuthProviders()
 	t.Cleanup(ResetOAuthProviders)
 
 	registry := NewModelRegistry(NewInMemoryAuthStorage(nil), "")
+	if _, err := NewModelRuntimeFromRegistry(registry); err != nil {
+		t.Fatal(err)
+	}
 	providers := loginAuthSelectorProviders(registry, "oauth")
 	var labels []string
 	for _, provider := range providers {
@@ -90,12 +93,39 @@ func TestLoginAuthSelectorProvidersIncludesBuiltInSubscriptionProvidersPiStyle(t
 		}
 	}
 	want := []string{
-		"Anthropic (Claude Pro/Max)",
-		"ChatGPT Plus/Pro (Codex Subscription)",
+		"Anthropic",
 		"GitHub Copilot",
+		"Kimi For Coding",
+		"OpenAI Codex",
+		"OpenRouter",
+		"Radius",
+		"xAI",
 	}
 	if strings.Join(labels, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("subscription providers = %#v, want %#v", labels, want)
+	}
+}
+
+func TestOAuthSelectorComponentLabelsMixedAuthTypes(t *testing.T) {
+	if got := formatAuthSelectorProviderType("oauth"); got != "subscription" {
+		t.Fatalf("OAuth label = %q", got)
+	}
+	if got := formatAuthSelectorProviderType("api_key"); got != "API key" {
+		t.Fatalf("API key label = %q", got)
+	}
+
+	selector := NewOAuthSelectorComponent(OAuthSelector{
+		Mode: "logout",
+		Providers: []AuthSelectorProvider{
+			{ID: "anthropic", Name: "Anthropic", AuthType: "oauth"},
+			{ID: "openai", Name: "OpenAI", AuthType: "api_key"},
+		},
+	})
+	rendered := strings.Join(selector.Render(120), "\n")
+	for _, expected := range []string{"[subscription]", "[API key]"} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("render missing %q:\n%s", expected, rendered)
+		}
 	}
 }
 
@@ -196,7 +226,7 @@ func TestLoginDialogComponentShowInfoUsesPiStyle(t *testing.T) {
 		tuiThemeFG("text", "Amazon Bedrock uses AWS credentials instead of a single API key."),
 		tuiThemeMuted("See:"),
 		tuiThemeAccent("  /tmp/docs/providers.md"),
-	})
+	}, true)
 
 	rendered := strings.Join(dialog.Render(120), "\n")
 	for _, expected := range []string{
@@ -250,6 +280,56 @@ func TestLoginDialogComponentShowAuthUsesPiStyle(t *testing.T) {
 	dialog.HandleInput("\x1b")
 	if !cancelled {
 		t.Fatal("cancel keybinding did not cancel OAuth dialog")
+	}
+}
+
+func TestLoginDialogComponentPreservesProviderPromptContext(t *testing.T) {
+	dialog := NewLoginDialogComponent("Login to Amazon Bedrock", "")
+	submitted := ""
+	dialog.OnSubmit = func(value string) {
+		submitted = value
+	}
+	dialog.ShowInfo([]string{"AWS credential provider chain"})
+	dialog.ShowPrompt("Enter AWS profile name", "default")
+
+	rendered := strings.Join(dialog.Render(120), "\n")
+	for _, expected := range []string{
+		"AWS credential provider chain",
+		"Enter AWS profile name",
+		"e.g., default",
+		"to submit",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("render missing %q:\n%s", expected, rendered)
+		}
+	}
+	dialog.HandleInput("engineering")
+	dialog.HandleInput("\r")
+	if submitted != "engineering" {
+		t.Fatalf("submitted = %q", submitted)
+	}
+	if rendered = strings.Join(dialog.Render(120), "\n"); !strings.Contains(rendered, "> engineering") {
+		t.Fatalf("submitted input was not retained:\n%s", rendered)
+	}
+
+	dialog.ShowDeviceCode(
+		"https://github.com/login/device",
+		"USER-CODE",
+	)
+	dialog.ShowWaiting("Waiting for authentication...")
+	rendered = strings.Join(dialog.Render(120), "\n")
+	for _, expected := range []string{
+		"https://github.com/login/device",
+		"Enter code: USER-CODE",
+		"Waiting for authentication...",
+		"to cancel",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("render missing %q:\n%s", expected, rendered)
+		}
+	}
+	if strings.Contains(rendered, "to submit") {
+		t.Fatalf("device-code progress should not render submit hint:\n%s", rendered)
 	}
 }
 

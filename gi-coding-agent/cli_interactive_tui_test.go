@@ -6563,7 +6563,7 @@ func TestCLIInteractiveTUIHostLoginSlashUsesProviderSelectorPiStyle(t *testing.T
 	waitForViewport(t, terminal, "> openai openai")
 	waitForViewport(t, terminal, "OpenAI")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Enter API key:")
+	waitForViewport(t, terminal, "Enter OpenAI API key")
 	terminal.SendInput("test-openai-key")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Saved API key for OpenAI")
@@ -6580,8 +6580,71 @@ func TestCLIInteractiveTUIHostLoginSlashUsesProviderSelectorPiStyle(t *testing.T
 	}
 }
 
+func TestCLIInteractiveTUIHostLoginPreservesSequentialProviderPrompts(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	terminal := gitui.NewVirtualTerminal(120, 32)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	host.editor.SetText("/login")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select authentication method:")
+	terminal.SendInput("\x1b[B")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Select provider to configure:")
+	terminal.SendInput("cloudflare-workers-ai")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Enter Cloudflare API key")
+	terminal.SendInput("cloudflare-key")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "> cloudflare-key")
+	waitForViewport(t, terminal, "Enter Cloudflare account ID")
+	terminal.SendInput("account-id")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Saved API key for Cloudflare Workers AI")
+
+	credential, ok := sessionHost.modelRegistry.authStorage.Get(
+		"cloudflare-workers-ai",
+	)
+	if !ok ||
+		credential.Type != llm.CredentialTypeAPIKey ||
+		credential.Key != "cloudflare-key" ||
+		credential.Env["CLOUDFLARE_ACCOUNT_ID"] != "account-id" {
+		t.Fatalf("stored credential = %#v, ok=%v", credential, ok)
+	}
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
 func TestCLIInteractiveTUIHostLoginBedrockUsesPiInfoDialog(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
 	terminal := gitui.NewVirtualTerminal(120, 32)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
@@ -6606,17 +6669,21 @@ func TestCLIInteractiveTUIHostLoginBedrockUsesPiInfoDialog(t *testing.T) {
 	terminal.SendInput("bedrock")
 	waitForViewport(t, terminal, "Amazon Bedrock")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Amazon Bedrock setup")
-	waitForViewport(t, terminal, "Amazon Bedrock uses AWS credentials instead of a single API key.")
+	waitForViewport(t, terminal, "Select Amazon Bedrock authentication method:")
+	terminal.SendInput("\x1b[B")
+	terminal.SendInput("\x1b[B")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "You can also use an AWS profile")
 	waitForViewport(t, terminal, "docs/providers.md")
-	waitForViewport(t, terminal, "to close")
-	if viewport := strings.Join(terminal.GetViewport(), "\n"); strings.Contains(viewport, "~/.gi/agent/models.json") {
-		t.Fatalf("Bedrock info dialog should point to provider docs, not models.json:\n%s", viewport)
-	}
-	terminal.SendInput("\x1b")
-	waitForHostEditor(t, host)
-	if viewport := strings.Join(terminal.GetViewport(), "\n"); strings.Contains(viewport, "Resume cancelled") {
-		t.Fatalf("/resume cancel should return silently like Pi:\n%s", viewport)
+	waitForViewport(t, terminal, "Amazon Bedrock supports AWS profiles")
+	waitForViewport(t, terminal, "AWS credential provider chain")
+	waitForViewport(t, terminal, "Configure AWS credentials, then press Enter to continue")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Saved API key for Amazon Bedrock")
+
+	credential, ok := sessionHost.modelRegistry.authStorage.Get("amazon-bedrock")
+	if !ok || credential.Type != "api_key" || credential.Key != "" || len(credential.Env) != 0 {
+		t.Fatalf("stored credential = %#v, ok=%v", credential, ok)
 	}
 
 	host.Stop()
@@ -6630,32 +6697,56 @@ func TestCLIInteractiveTUIHostLoginBedrockUsesPiInfoDialog(t *testing.T) {
 	}
 }
 
-func TestCLIInteractiveTUIHostLoginSubscriptionShowsOAuthDialogPiStyle(t *testing.T) {
-	previousRuntime := defaultAnthropicOAuthRuntime
-	defaultAnthropicOAuthRuntime = anthropicOAuthRuntime{
-		NewFlow: func() (anthropicOAuthFlow, error) {
-			return anthropicOAuthFlow{
-				Verifier:    "verifier-ok",
-				State:       "verifier-ok",
-				RedirectURI: anthropicOAuthRedirect,
-				URL:         "https://claude.ai/oauth/authorize?code=true&client_id=test-client",
-			}, nil
+func installTestOAuthProvider(
+	t *testing.T,
+	runtimeHost PrintModeRuntimeHost,
+	providerID string,
+	login func(context.Context, llm.AuthInteraction) (llm.Credential, error),
+) *agentSessionPrintModeHost {
+	t.Helper()
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	provider, err := llm.NewBuiltinProvider(providerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.Auth.OAuth = &llm.OAuthAuth{
+		Name:  provider.Name + " test OAuth",
+		Login: login,
+		Refresh: func(_ context.Context, credential llm.Credential) (llm.Credential, error) {
+			return credential, nil
 		},
-		StartCallbackServer: func(string) (openAICodexOAuthCallbackServer, error) {
-			return &fakeOpenAICodexCallbackServer{result: make(chan openAICodexOAuthCallbackResult)}, nil
-		},
-		ExchangeCode: func(context.Context, string, string, string) (AuthCredential, error) {
-			t.Fatal("OAuth exchange should not run in dialog rendering test")
-			return AuthCredential{}, nil
-		},
-		OpenBrowser: func(string) error {
-			t.Fatal("virtual terminal tests should not auto-open a browser")
-			return nil
+		ToAuth: func(_ context.Context, credential llm.Credential) (llm.ModelAuth, error) {
+			return llm.ModelAuth{APIKey: credential.Access}, nil
 		},
 	}
-	t.Cleanup(func() { defaultAnthropicOAuthRuntime = previousRuntime })
+	if err := sessionHost.modelRuntime.RegisterNativeProvider(provider); err != nil {
+		t.Fatal(err)
+	}
+	return sessionHost
+}
 
+func TestCLIInteractiveTUIHostLoginSubscriptionShowsProviderOwnedDialog(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	installTestOAuthProvider(
+		t,
+		runtimeHost,
+		"anthropic",
+		func(ctx context.Context, interaction llm.AuthInteraction) (llm.Credential, error) {
+			interaction.Notify(llm.AuthEvent{
+				Type:         llm.AuthEventURL,
+				URL:          "https://claude.ai/oauth/authorize?code=true&client_id=test-client",
+				Instructions: "Complete login in your browser.",
+			})
+			_, err := interaction.Prompt(ctx, llm.AuthPrompt{
+				Type:    llm.AuthPromptManualCode,
+				Message: "Paste redirect URL below, or complete login in browser:",
+			})
+			return llm.Credential{}, err
+		},
+	)
 	terminal := gitui.NewVirtualTerminal(120, 32)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
@@ -6676,16 +6767,16 @@ func TestCLIInteractiveTUIHostLoginSubscriptionShowsOAuthDialogPiStyle(t *testin
 	waitForViewport(t, terminal, "Select authentication method:")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Select provider to configure:")
-	waitForViewport(t, terminal, "Anthropic (Claude Pro/Max)")
+	waitForViewport(t, terminal, "Anthropic")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Login to Anthropic (Claude Pro/Max)")
+	waitForViewport(t, terminal, "Login to Anthropic")
 	waitForViewport(t, terminal, "https://claude.ai/oauth/authorize")
 	waitForViewport(t, terminal, oauthClickHint())
 	waitForViewport(t, terminal, "Complete login in your browser.")
 	waitForViewport(t, terminal, "Paste redirect URL below, or complete login in browser:")
 	waitForViewport(t, terminal, "to cancel")
 	if viewport := strings.Join(terminal.GetViewport(), "\n"); strings.Contains(viewport, "Subscription login is not implemented yet") {
-		t.Fatalf("OAuth login should show the Pi-style login dialog, not the placeholder status:\n%s", viewport)
+		t.Fatalf("provider login should not show the legacy placeholder status:\n%s", viewport)
 	}
 	terminal.SendInput("\x1b")
 	waitForHostEditor(t, host)
@@ -6702,45 +6793,35 @@ func TestCLIInteractiveTUIHostLoginSubscriptionShowsOAuthDialogPiStyle(t *testin
 }
 
 func TestCLIInteractiveTUIHostLoginAnthropicSubscriptionStoresCredential(t *testing.T) {
-	previousRuntime := defaultAnthropicOAuthRuntime
-	defaultAnthropicOAuthRuntime = anthropicOAuthRuntime{
-		NewFlow: func() (anthropicOAuthFlow, error) {
-			return anthropicOAuthFlow{
-				Verifier:    "verifier-ok",
-				State:       "verifier-ok",
-				RedirectURI: anthropicOAuthRedirect,
-				URL:         "https://claude.ai/oauth/authorize?code=true&client_id=test-client",
-			}, nil
-		},
-		StartCallbackServer: func(state string) (openAICodexOAuthCallbackServer, error) {
-			if state != "verifier-ok" {
-				t.Fatalf("callback state = %q", state)
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost := installTestOAuthProvider(
+		t,
+		runtimeHost,
+		"anthropic",
+		func(ctx context.Context, interaction llm.AuthInteraction) (llm.Credential, error) {
+			interaction.Notify(llm.AuthEvent{
+				Type:         llm.AuthEventURL,
+				URL:          "https://claude.ai/oauth/authorize?code=true&client_id=test-client",
+				Instructions: "Complete login in your browser.",
+			})
+			redirect, err := interaction.Prompt(ctx, llm.AuthPrompt{
+				Type:    llm.AuthPromptManualCode,
+				Message: "Paste redirect URL below, or complete login in browser:",
+			})
+			if err != nil {
+				return llm.Credential{}, err
 			}
-			return &fakeOpenAICodexCallbackServer{result: make(chan openAICodexOAuthCallbackResult)}, nil
-		},
-		ExchangeCode: func(_ context.Context, code, verifier, redirectURI string) (AuthCredential, error) {
-			if code != "manual-code" || verifier != "verifier-ok" || redirectURI != anthropicOAuthRedirect {
-				t.Fatalf("exchange code=%q verifier=%q redirectURI=%q", code, verifier, redirectURI)
+			if redirect != "http://localhost:53692/callback?code=manual-code&state=verifier-ok" {
+				t.Fatalf("redirect = %q", redirect)
 			}
-			return AuthCredential{
-				Type:    "oauth",
+			return llm.Credential{
+				Type:    llm.CredentialTypeOAuth,
 				Access:  "anthropic-access",
 				Refresh: "anthropic-refresh",
 				Expires: nowUnixMilli() + 3600_000,
 			}, nil
 		},
-		OpenBrowser: func(string) error {
-			t.Fatal("virtual terminal tests should not auto-open a browser")
-			return nil
-		},
-	}
-	t.Cleanup(func() { defaultAnthropicOAuthRuntime = previousRuntime })
-
-	runtimeHost := newOfflineInteractiveRuntimeHost(t)
-	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
-	if !ok {
-		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
-	}
+	)
 	terminal := gitui.NewVirtualTerminal(120, 32)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
@@ -6762,10 +6843,10 @@ func TestCLIInteractiveTUIHostLoginAnthropicSubscriptionStoresCredential(t *test
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Select provider to configure:")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Login to Anthropic (Claude Pro/Max)")
+	waitForViewport(t, terminal, "Login to Anthropic")
 	terminal.SendInput("http://localhost:53692/callback?code=manual-code&state=verifier-ok")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Logged in to Anthropic (Claude Pro/Max)")
+	waitForViewport(t, terminal, "Logged in to Anthropic")
 
 	credential, ok := sessionHost.modelRegistry.authStorage.Get("anthropic")
 	if !ok || credential.Type != "oauth" || credential.Access != "anthropic-access" || credential.Refresh != "anthropic-refresh" {
@@ -6784,45 +6865,52 @@ func TestCLIInteractiveTUIHostLoginAnthropicSubscriptionStoresCredential(t *test
 }
 
 func TestCLIInteractiveTUIHostLoginOpenAICodexSubscriptionStoresCredential(t *testing.T) {
-	previousRuntime := defaultOpenAICodexOAuthRuntime
-	fakeServer := &fakeOpenAICodexCallbackServer{result: make(chan openAICodexOAuthCallbackResult)}
-	defaultOpenAICodexOAuthRuntime = openAICodexOAuthRuntime{
-		NewFlow: func() (openAICodexOAuthFlow, error) {
-			return openAICodexOAuthFlow{
-				Verifier: "verifier-ok",
-				State:    "state-ok",
-				URL:      "https://auth.openai.com/oauth/authorize?state=state-ok",
-			}, nil
-		},
-		StartCallbackServer: func(state string) (openAICodexOAuthCallbackServer, error) {
-			if state != "state-ok" {
-				t.Fatalf("callback state = %q", state)
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost := installTestOAuthProvider(
+		t,
+		runtimeHost,
+		"openai-codex",
+		func(ctx context.Context, interaction llm.AuthInteraction) (llm.Credential, error) {
+			method, err := interaction.Prompt(ctx, llm.AuthPrompt{
+				Type:    llm.AuthPromptSelect,
+				Message: "Select OpenAI Codex login method:",
+				Options: []llm.AuthPromptOption{
+					{ID: "browser", Label: "Sign in with browser"},
+					{ID: "device", Label: "Sign in with device code"},
+				},
+			})
+			if err != nil {
+				return llm.Credential{}, err
 			}
-			return fakeServer, nil
-		},
-		ExchangeCode: func(_ context.Context, code, verifier string) (AuthCredential, error) {
-			if code != "manual-code" || verifier != "verifier-ok" {
-				t.Fatalf("exchange code=%q verifier=%q", code, verifier)
+			if method != "browser" {
+				t.Fatalf("login method = %q", method)
 			}
-			return AuthCredential{
-				Type:    "oauth",
-				Access:  testOpenAICodexAccessToken(t, "acc_test"),
+			interaction.Notify(llm.AuthEvent{
+				Type:         llm.AuthEventURL,
+				URL:          "https://auth.openai.com/oauth/authorize?state=state-ok",
+				Instructions: "Complete login in your browser.",
+			})
+			redirect, err := interaction.Prompt(ctx, llm.AuthPrompt{
+				Type:    llm.AuthPromptManualCode,
+				Message: "Paste redirect URL below, or complete login in browser:",
+			})
+			if err != nil {
+				return llm.Credential{}, err
+			}
+			if redirect != "http://localhost:1455/auth/callback?code=manual-code&state=state-ok" {
+				t.Fatalf("redirect = %q", redirect)
+			}
+			return llm.Credential{
+				Type:    llm.CredentialTypeOAuth,
+				Access:  "codex-access",
 				Refresh: "refresh-token",
 				Expires: nowUnixMilli() + 3600_000,
+				Metadata: map[string]any{
+					"accountId": "acc_test",
+				},
 			}, nil
 		},
-		OpenBrowser: func(string) error {
-			t.Fatal("virtual terminal tests should not auto-open a browser")
-			return nil
-		},
-	}
-	t.Cleanup(func() { defaultOpenAICodexOAuthRuntime = previousRuntime })
-
-	runtimeHost := newOfflineInteractiveRuntimeHost(t)
-	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
-	if !ok {
-		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
-	}
+	)
 	terminal := gitui.NewVirtualTerminal(120, 32)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
@@ -6843,16 +6931,21 @@ func TestCLIInteractiveTUIHostLoginOpenAICodexSubscriptionStoresCredential(t *te
 	waitForViewport(t, terminal, "Select authentication method:")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Select provider to configure:")
-	terminal.SendInput("j")
+	terminal.SendInput("openai-codex")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Login to ChatGPT Plus/Pro (Codex Subscription)")
+	waitForViewport(t, terminal, "Select OpenAI Codex login method:")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Login to OpenAI Codex")
 	waitForViewport(t, terminal, "Paste redirect URL below, or complete login in browser:")
 	terminal.SendInput("http://localhost:1455/auth/callback?code=manual-code&state=state-ok")
 	terminal.SendInput("\r")
-	waitForViewport(t, terminal, "Logged in to ChatGPT Plus/Pro (Codex Subscription)")
+	waitForViewport(t, terminal, "Logged in to OpenAI Codex")
 
 	credential, ok := sessionHost.modelRegistry.authStorage.Get("openai-codex")
-	if !ok || credential.Type != "oauth" || credential.Refresh != "refresh-token" {
+	if !ok ||
+		credential.Type != "oauth" ||
+		credential.Refresh != "refresh-token" ||
+		credential.Metadata["accountId"] != "acc_test" {
 		t.Fatalf("stored credential = %#v, ok=%v", credential, ok)
 	}
 
@@ -6868,59 +6961,51 @@ func TestCLIInteractiveTUIHostLoginOpenAICodexSubscriptionStoresCredential(t *te
 }
 
 func TestCLIInteractiveTUIHostLoginGitHubCopilotSubscriptionStoresCredential(t *testing.T) {
-	previousRuntime := defaultGitHubCopilotOAuthRuntime
-	var enabled bool
 	releasePoll := make(chan struct{})
-	defaultGitHubCopilotOAuthRuntime = githubCopilotOAuthRuntime{
-		StartDeviceFlow: func(_ context.Context, domain string) (githubCopilotDeviceCode, error) {
-			if domain != githubCopilotDefaultDomain {
-				t.Fatalf("domain = %q", domain)
-			}
-			return githubCopilotDeviceCode{
-				DeviceCode:      "device-code",
-				UserCode:        "USER-CODE",
-				VerificationURI: "https://github.com/login/device",
-				Interval:        1,
-				ExpiresIn:       600,
-			}, nil
-		},
-		PollAccessToken: func(_ context.Context, domain string, device githubCopilotDeviceCode) (string, error) {
-			if domain != githubCopilotDefaultDomain || device.DeviceCode != "device-code" {
-				t.Fatalf("poll domain=%q device=%#v", domain, device)
-			}
-			<-releasePoll
-			return "github-access-token", nil
-		},
-		RefreshToken: func(_ context.Context, refreshToken, enterpriseDomain string) (AuthCredential, error) {
-			if refreshToken != "github-access-token" || enterpriseDomain != "" {
-				t.Fatalf("refresh token=%q enterprise=%q", refreshToken, enterpriseDomain)
-			}
-			return AuthCredential{
-				Type:    "oauth",
-				Access:  "tid=1;proxy-ep=proxy.individual.githubcopilot.com;",
-				Refresh: refreshToken,
-				Expires: nowUnixMilli() + 3600_000,
-			}, nil
-		},
-		EnableModels: func(_ context.Context, credential AuthCredential) error {
-			if credential.Refresh != "github-access-token" {
-				t.Fatalf("enable credential = %#v", credential)
-			}
-			enabled = true
-			return nil
-		},
-		OpenBrowser: func(string) error {
-			t.Fatal("virtual terminal tests should not auto-open a browser")
-			return nil
-		},
-	}
-	t.Cleanup(func() { defaultGitHubCopilotOAuthRuntime = previousRuntime })
-
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
-	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
-	if !ok {
-		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
-	}
+	sessionHost := installTestOAuthProvider(
+		t,
+		runtimeHost,
+		"github-copilot",
+		func(ctx context.Context, interaction llm.AuthInteraction) (llm.Credential, error) {
+			domain, err := interaction.Prompt(ctx, llm.AuthPrompt{
+				Type:        llm.AuthPromptText,
+				Message:     "GitHub Enterprise URL/domain",
+				Placeholder: "github.example.com",
+			})
+			if err != nil {
+				return llm.Credential{}, err
+			}
+			if domain != "" {
+				t.Fatalf("enterprise domain = %q", domain)
+			}
+			interaction.Notify(llm.AuthEvent{
+				Type:             llm.AuthEventDeviceCode,
+				UserCode:         "USER-CODE",
+				VerificationURI:  "https://github.com/login/device",
+				IntervalSeconds:  1,
+				ExpiresInSeconds: 600,
+			})
+			select {
+			case <-releasePoll:
+			case <-ctx.Done():
+				return llm.Credential{}, ctx.Err()
+			}
+			interaction.Notify(llm.AuthEvent{
+				Type:    llm.AuthEventProgress,
+				Message: "Enabling GitHub Copilot models...",
+			})
+			return llm.Credential{
+				Type:    llm.CredentialTypeOAuth,
+				Access:  "tid=1;proxy-ep=proxy.individual.githubcopilot.com;",
+				Refresh: "github-access-token",
+				Expires: nowUnixMilli() + 3600_000,
+				Metadata: map[string]any{
+					"availableModelIds": []string{"claude-sonnet-4.6"},
+				},
+			}, nil
+		},
+	)
 	terminal := gitui.NewVirtualTerminal(120, 32)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
 		RuntimeHost: runtimeHost,
@@ -6941,8 +7026,7 @@ func TestCLIInteractiveTUIHostLoginGitHubCopilotSubscriptionStoresCredential(t *
 	waitForViewport(t, terminal, "Select authentication method:")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Select provider to configure:")
-	terminal.SendInput("j")
-	terminal.SendInput("j")
+	terminal.SendInput("github-copilot")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "GitHub Enterprise URL/domain")
 	terminal.SendInput("\r")
@@ -6951,8 +7035,13 @@ func TestCLIInteractiveTUIHostLoginGitHubCopilotSubscriptionStoresCredential(t *
 	waitForViewport(t, terminal, "Logged in to GitHub Copilot")
 
 	credential, ok := sessionHost.modelRegistry.authStorage.Get("github-copilot")
-	if !ok || credential.Type != "oauth" || credential.Refresh != "github-access-token" || !enabled {
-		t.Fatalf("stored credential = %#v, ok=%v enabled=%v", credential, ok, enabled)
+	available, metadataOK := credential.Metadata["availableModelIds"].([]string)
+	if !ok ||
+		credential.Type != "oauth" ||
+		credential.Refresh != "github-access-token" ||
+		!metadataOK ||
+		!reflect.DeepEqual(available, []string{"claude-sonnet-4.6"}) {
+		t.Fatalf("stored credential = %#v, ok=%v", credential, ok)
 	}
 	model, ok := sessionHost.modelRegistry.Find("github-copilot", "claude-sonnet-4.6")
 	if !ok || model.BaseURL != "https://api.individual.githubcopilot.com" {
@@ -6969,16 +7058,6 @@ func TestCLIInteractiveTUIHostLoginGitHubCopilotSubscriptionStoresCredential(t *
 		t.Fatal("interactive TUI host did not stop")
 	}
 }
-
-type fakeOpenAICodexCallbackServer struct {
-	result chan openAICodexOAuthCallbackResult
-}
-
-func (s *fakeOpenAICodexCallbackServer) Result() <-chan openAICodexOAuthCallbackResult {
-	return s.result
-}
-
-func (s *fakeOpenAICodexCallbackServer) Close() {}
 
 func TestCLIInteractiveTUIHostLogoutSlashUsesProviderSelectorPiStyle(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)

@@ -642,43 +642,62 @@ var (
 	oauthProviders   = builtInOAuthProviderMap()
 )
 
-var builtInOAuthProviders = []OAuthProvider{
-	{
-		ID:           "anthropic",
-		Name:         "Anthropic (Claude Pro/Max)",
-		RefreshToken: refreshAnthropicOAuthToken,
-	},
-	{
-		ID:           "github-copilot",
-		Name:         "GitHub Copilot",
-		RefreshToken: refreshGitHubCopilotOAuthToken,
-	},
-	{
-		ID:           "openai-codex",
-		Name:         "ChatGPT Plus/Pro (Codex Subscription)",
-		RefreshToken: refreshOpenAICodexOAuthToken,
-	},
-}
-
 func builtInOAuthProviderMap() map[string]OAuthProvider {
-	providers := make(map[string]OAuthProvider, len(builtInOAuthProviders))
-	for _, provider := range builtInOAuthProviders {
-		providers[provider.ID] = provider
+	providers := map[string]OAuthProvider{}
+	builtins, err := llm.BuiltinProviders()
+	if err != nil {
+		return providers
+	}
+	for _, provider := range builtins {
+		if compatible, ok := providerOwnedOAuthCompatibility(provider); ok {
+			providers[compatible.ID] = compatible
+		}
 	}
 	return providers
 }
 
 func builtInOAuthProvider(providerID string) (OAuthProvider, bool) {
-	for _, provider := range builtInOAuthProviders {
-		if provider.ID == providerID {
-			return provider, true
-		}
+	provider, err := llm.NewBuiltinProvider(providerID)
+	if err != nil {
+		return OAuthProvider{}, false
 	}
-	return OAuthProvider{}, false
+	return providerOwnedOAuthCompatibility(provider)
 }
 
-func unsupportedOAuthTokenRefresh(AuthCredential) (AuthCredential, error) {
-	return AuthCredential{}, errors.New("OAuth token refresh is not implemented for this provider")
+func providerOwnedOAuthCompatibility(
+	provider *llm.Provider,
+) (OAuthProvider, bool) {
+	if provider == nil || provider.Auth.OAuth == nil {
+		return OAuthProvider{}, false
+	}
+	oauth := provider.Auth.OAuth
+	return OAuthProvider{
+		ID:   provider.ID,
+		Name: firstNonEmptyString(provider.Name, oauth.Name, provider.ID),
+		RefreshToken: func(
+			credential AuthCredential,
+		) (AuthCredential, error) {
+			if oauth.Refresh == nil {
+				return AuthCredential{}, errors.New(
+					"OAuth token refresh is not implemented for this provider",
+				)
+			}
+			return oauth.Refresh(context.Background(), credential)
+		},
+		GetAPIKey: func(credential AuthCredential) string {
+			if oauth.ToAuth == nil {
+				return ""
+			}
+			auth, err := oauth.ToAuth(
+				context.Background(),
+				credential,
+			)
+			if err != nil {
+				return ""
+			}
+			return auth.APIKey
+		},
+	}, true
 }
 
 func RegisterOAuthProvider(provider OAuthProvider) {

@@ -255,6 +255,56 @@ func TestAuthStorageOAuthCompromisedLockAllowsRetry(t *testing.T) {
 	}
 }
 
+func TestBuiltInOAuthCompatibilityDelegatesToProviderAuth(t *testing.T) {
+	const providerID = "anthropic"
+	llm.RegisterOAuthAuthLoader(
+		providerID,
+		func(context.Context) (*llm.OAuthAuth, error) {
+			return &llm.OAuthAuth{
+				Refresh: func(
+					_ context.Context,
+					credential llm.Credential,
+				) (llm.Credential, error) {
+					credential.Access = "provider-refreshed-access"
+					credential.Expires = nowUnixMilli() + 60_000
+					return credential, nil
+				},
+				ToAuth: func(
+					_ context.Context,
+					credential llm.Credential,
+				) (llm.ModelAuth, error) {
+					return llm.ModelAuth{
+						APIKey: "provider:" + credential.Access,
+					}, nil
+				},
+			}, nil
+		},
+	)
+	t.Cleanup(func() {
+		llm.UnregisterOAuthAuthLoader(providerID)
+	})
+
+	provider, ok := builtInOAuthProvider(providerID)
+	if !ok {
+		t.Fatal("Anthropic provider-owned OAuth compatibility is missing")
+	}
+	refreshed, err := provider.RefreshToken(AuthCredential{
+		Type:    llm.CredentialTypeOAuth,
+		Access:  "expired-access",
+		Refresh: "refresh-token",
+		Expires: nowUnixMilli() - 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Access != "provider-refreshed-access" {
+		t.Fatalf("refreshed credential = %#v", refreshed)
+	}
+	if got := provider.APIKey(refreshed); got != "provider:provider-refreshed-access" {
+		t.Fatalf("provider API key = %q", got)
+	}
+}
+
 func TestAuthStoragePersistenceSemantics(t *testing.T) {
 	t.Run("set preserves unrelated external edits", func(t *testing.T) {
 		authPath := writeTestAuthJSON(t, AuthStorageData{
