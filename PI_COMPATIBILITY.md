@@ -95,6 +95,11 @@ startup value, keeps step/theme/analytics selection in one component-owned
 state, and commits the submitted theme, opt-in preference, and stable local
 tracking ID through one locked settings transition.
 
+Main and extension editors now share one external-editor process boundary.
+Editor selection follows merged settings, `VISUAL`, `EDITOR`, and the platform
+default; content moves through a private temporary directory that is removed
+after the child exits, and failed edits leave the UI-owned text unchanged.
+
 The live `/settings` selector follows Pi's image-capability behavior: inline
 terminal image toggles are hidden when the active terminal cannot render images,
 while model-input image settings remain configurable.

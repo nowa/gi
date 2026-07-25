@@ -120,8 +120,10 @@ runtime mount/patch/unmount/status/dialog host actions. Overlay mounts support
 anchor, size, margin, priority, and non-capturing focus options. Package
 extensions can also read, set, insert into, and submit the active editor through
 the protocol host bridge; the default editor can toggle thinking block
-visibility with `Ctrl+T`, open `$VISUAL` / `$EDITOR` with `Ctrl+G`, and paste
-clipboard images to temp files with `Ctrl+V`. `Ctrl+Z` suspends the live TUI on
+visibility with `Ctrl+T`, open the configured editor, `$VISUAL`, `$EDITOR`, or
+the platform default with `Ctrl+G`, and paste clipboard images to temp files
+with `Ctrl+V`. External edits use a private temporary workspace and replace
+editor text only after a successful exit. `Ctrl+Z` suspends the live TUI on
 Unix-like systems and restores it on `SIGCONT`. In tmux, startup checks warn
 when extended keyboard reporting is likely to break modified Enter keys. In
 non-TTY contexts it falls back to a basic single-turn host for

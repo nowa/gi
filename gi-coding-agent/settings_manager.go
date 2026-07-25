@@ -597,6 +597,10 @@ func (s *SettingsManager) SetShowCacheMissNotices(show bool) {
 	s.setGlobal("showCacheMissNotices", show)
 }
 
+func (s *SettingsManager) GetExternalEditorCommand() string {
+	return defaultExternalEditorCommand(settingsString(s.mergedSnapshot(), "externalEditor"))
+}
+
 func (s *SettingsManager) GetCollapseChangelog() bool {
 	return settingsBool(s.mergedSnapshot(), "collapseChangelog", false)
 }

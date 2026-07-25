@@ -1,9 +1,8 @@
 package gicodingagent
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"reflect"
 	"strings"
 	"sync"
@@ -25,6 +24,7 @@ type cliTUIDialogComponent struct {
 	footer                string
 	footerKind            string
 	keybindings           KeybindingsConfig
+	externalEditorCommand string
 	onCancel              func()
 	onToggleToolsExpanded func()
 }
@@ -60,14 +60,15 @@ func newCLIEditorDialog(tui *gitui.TUI, title, message, defaultText string, onSu
 	}
 	editor.SetOnSubmit(onSubmit)
 	return &cliTUIDialogComponent{
-		title:        firstNonEmptyString(title, "Editor"),
-		message:      message,
-		editor:       editor,
-		editorSubmit: onSubmit,
-		tui:          tui,
-		footerKind:   "editor",
-		keybindings:  DefaultProtocolKeybindings(),
-		onCancel:     onCancel,
+		title:                 firstNonEmptyString(title, "Editor"),
+		message:               message,
+		editor:                editor,
+		editorSubmit:          onSubmit,
+		tui:                   tui,
+		footerKind:            "editor",
+		keybindings:           DefaultProtocolKeybindings(),
+		externalEditorCommand: defaultExternalEditorCommand(""),
+		onCancel:              onCancel,
 	}
 }
 
@@ -291,7 +292,7 @@ func (c *cliTUIDialogComponent) footerText() string {
 	case "editor":
 		newLine := firstNonEmptyString(formatHotkeyKeys(gitui.GetKeybindings().GetKeys("tui.input.newLine"), true), "Shift+Enter")
 		footer := confirm + " submit   " + newLine + " newline   " + cancel + " cancel"
-		if externalEditorCommand() != "" {
+		if strings.TrimSpace(c.externalEditorCommand) != "" {
 			footer += "   " + c.appKeyText("app.editor.external", "Ctrl+G") + " external editor"
 		}
 		return footer
@@ -333,68 +334,27 @@ func (c *cliTUIDialogComponent) isExternalEditorInput(data string) bool {
 	return matchesKeybindingAction(data, c.keybindings, "app.editor.external") || gitui.MatchesKey(data, "ctrl+g")
 }
 
-func externalEditorCommand() string {
-	if command := strings.TrimSpace(os.Getenv("VISUAL")); command != "" {
-		return command
-	}
-	return strings.TrimSpace(os.Getenv("EDITOR"))
-}
-
 func (c *cliTUIDialogComponent) openExternalEditor() {
 	if c == nil || c.editor == nil {
 		return
 	}
-	command := externalEditorCommand()
-	if command == "" {
-		return
-	}
-	name, args, ok := splitExternalEditorCommand(command)
-	if !ok {
-		return
-	}
-	tmp, err := os.CreateTemp("", "gi-extension-editor-*.md")
-	if err != nil {
-		return
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if _, err := tmp.WriteString(c.editor.GetText()); err != nil {
-		tmp.Close()
-		return
-	}
-	if err := tmp.Close(); err != nil {
-		return
-	}
-
 	stoppedTUI := c.tui != nil
 	if stoppedTUI {
 		c.tui.Stop()
+		defer func() {
+			c.tui.Start()
+			c.tui.RequestRender(true)
+		}()
 	}
-	cmd := exec.Command(name, append(args, tmpName)...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if stoppedTUI {
-		c.tui.Start()
-		c.tui.RequestRender(true)
-	}
-	if err != nil {
-		return
-	}
-	content, err := os.ReadFile(tmpName)
-	if err != nil {
-		return
-	}
-	c.editor.SetText(strings.TrimSuffix(string(content), "\n"))
-}
 
-func splitExternalEditorCommand(command string) (string, []string, bool) {
-	fields := strings.Fields(command)
-	if len(fields) == 0 {
-		return "", nil, false
+	result, err := EditInExternalEditor(context.Background(), ExternalEditorOptions{
+		Command: c.externalEditorCommand,
+		Content: c.editor.GetText(),
+	})
+	if err != nil || result.Status != ExternalEditorStatusComplete {
+		return
 	}
-	return fields[0], fields[1:], true
+	c.editor.SetText(result.Content)
 }
 
 func dialogOptionKey(option TUIDialogOption, index int) string {

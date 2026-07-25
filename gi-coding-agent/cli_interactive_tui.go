@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -1680,55 +1679,30 @@ func (h *CLIInteractiveTUIHost) openExternalEditor() {
 	if h == nil {
 		return
 	}
-	command := externalEditorCommand()
-	if command == "" {
-		h.addStatus("No editor configured. Set $VISUAL or $EDITOR.")
-		return
+	command := defaultExternalEditorCommand("")
+	if settings := h.settingsManager(); settings != nil {
+		command = settings.GetExternalEditorCommand()
 	}
-	name, args, ok := splitExternalEditorCommand(command)
-	if !ok {
-		h.addStatus("Invalid editor command")
-		return
-	}
-	tmp, err := os.CreateTemp("", "gi-editor-*.md")
-	if err != nil {
-		h.addStatus("Error: " + err.Error())
-		return
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	if _, err := tmp.WriteString(h.activeEditorText()); err != nil {
-		tmp.Close()
-		h.addStatus("Error: " + err.Error())
-		return
-	}
-	if err := tmp.Close(); err != nil {
-		h.addStatus("Error: " + err.Error())
-		return
-	}
-
 	if h.ui != nil {
 		h.ui.Stop()
+		defer func() {
+			h.ui.Start()
+			h.ui.RequestRender(true)
+		}()
 	}
-	cmd := exec.Command(name, append(args, tmpName)...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if h.ui != nil {
-		h.ui.Start()
-		h.ui.RequestRender(true)
-	}
-	if err != nil {
-		h.addStatus("External editor failed: " + err.Error())
-		return
-	}
-	content, err := os.ReadFile(tmpName)
+	result, err := EditInExternalEditor(context.Background(), ExternalEditorOptions{
+		Command: command,
+		Content: h.activeEditorText(),
+	})
 	if err != nil {
 		h.addStatus("Error: " + err.Error())
 		return
 	}
-	h.setActiveEditorText(strings.TrimSuffix(string(content), "\n"))
+	if result.Status != ExternalEditorStatusComplete {
+		h.addStatus("External editor failed")
+		return
+	}
+	h.setActiveEditorText(result.Content)
 	h.requestRender(true)
 }
 

@@ -224,6 +224,11 @@ func (h *CLIInteractiveTUIHost) runSelectionDialog(component *cliTUIDialogCompon
 		return TUIDialogResult{}, errors.New("interactive TUI dialog component is not ready")
 	}
 	component.keybindings = h.effectiveKeybindings()
+	if component.editor != nil {
+		if settings := h.settingsManager(); settings != nil {
+			component.externalEditorCommand = settings.GetExternalEditorCommand()
+		}
+	}
 	component.onToggleToolsExpanded = h.toggleToolOutputExpansion
 	var finish func(TUIDialogResult)
 	originalCancel := component.onCancel

@@ -4806,7 +4806,7 @@ func TestCLIInteractiveTUIHostCtrlGUsesExternalEditorPiStyle(t *testing.T) {
 	}
 }
 
-func TestCLIInteractiveTUIHostCtrlGWarnsWhenExternalEditorMissingPiStyle(t *testing.T) {
+func TestCLIInteractiveTUIHostCtrlGReportsExternalEditorFailurePiStyle(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	terminal := gitui.NewVirtualTerminal(120, 24)
 	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
@@ -4822,11 +4822,15 @@ func TestCLIInteractiveTUIHostCtrlGWarnsWhenExternalEditorMissingPiStyle(t *test
 	}()
 	t.Cleanup(func() { host.Stop() })
 	waitForHostEditor(t, host)
-	t.Setenv("VISUAL", "")
+	t.Setenv("VISUAL", "gi-editor-command-that-does-not-exist")
 	t.Setenv("EDITOR", "")
+	host.editor.SetText("Draft")
 
 	terminal.SendInput("\x07")
-	waitForViewport(t, terminal, "No editor configured")
+	waitForViewport(t, terminal, "External editor failed")
+	if got := host.activeEditorText(); got != "Draft" {
+		t.Fatalf("editor text after failed external edit = %q, want original", got)
+	}
 
 	host.Stop()
 	select {
