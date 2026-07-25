@@ -74,7 +74,7 @@ not to the agent runtime.
 
 | Pi file | Pi surface / major functions | Gi equivalent | Status | Notes |
 | --- | --- | --- | --- | --- |
-| `cli/args.ts` | `parseArgs`, `isValidThinkingLevel`, CLI usage text and diagnostics | `args.go`, `cli.go`, `cli_print_mode.go`, CLI tests | direct | Flags, model/thinking shorthand, resource flags, mode dispatch, help text, and diagnostics are represented with Gi names where product identity differs. |
+| `cli/args.ts` | `parseArgs`, `isValidThinkingLevel`, CLI usage text and diagnostics | `internal/cli/args.go`, `cli_api.go`, `cli.go`, `cli_print_mode.go`, CLI tests | direct | One typed thinking-level enum, including Pi v0.82.0's `max`, flows through parsing, model-pattern resolution, settings restore, model-capability clamping, session state, help text, and diagnostics. Other flags and mode dispatch use Gi names where product identity differs. |
 | `cli/config-selector.ts` | resource config selector and config command interaction | `cli_config.go`, `resource_config.go`, `package_manager.go`, `resource_loader.go` | direct | Gi resolves immutable user-only and effective-project projections, renders the Pi-style grouped selector, switches write scope with Tab, cycles project inherit/load/unload state, and persists package/top-level overrides through the package manager. |
 | `cli/file-processor.ts` | `@file` argument expansion into initial user content | `file_arguments.go`, `initial_message.go` | direct | File expansion, missing-file errors, and initial-message merge behavior are represented. |
 | `cli/initial-message.ts` | stdin plus positional message assembly | `initial_message.go` | direct | Stdin/message precedence and empty-input behavior are covered by tests. |

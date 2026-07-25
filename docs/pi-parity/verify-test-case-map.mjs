@@ -282,6 +282,7 @@ const modules = [
 				"gi-coding-agent/llama_extension_test.go",
 				"gi-coding-agent/internal/llama/llama_test.go",
 			],
+			"packages/coding-agent/test/max-thinking.test.ts": ["gi-coding-agent/max_thinking_test.go"],
 			"packages/coding-agent/test/model-registry.test.ts": [
 				"gi-coding-agent/model_registry_test.go",
 				"gi-coding-agent/auth_storage_test.go",

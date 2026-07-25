@@ -21,6 +21,7 @@ const (
 	ThinkingMedium  ThinkingLevel = internalcli.ThinkingMedium
 	ThinkingHigh    ThinkingLevel = internalcli.ThinkingHigh
 	ThinkingXHigh   ThinkingLevel = internalcli.ThinkingXHigh
+	ThinkingMax     ThinkingLevel = internalcli.ThinkingMax
 )
 
 var DefaultModelPerProvider = map[string]string{

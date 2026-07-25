@@ -386,7 +386,9 @@ func thinkingLevelDescription(level string) string {
 	case "high":
 		return "Deep reasoning (~16k tokens)"
 	case "xhigh":
-		return "Maximum reasoning (~32k tokens)"
+		return "Extra-high reasoning (~32k tokens)"
+	case "max":
+		return "Maximum reasoning"
 	default:
 		return ""
 	}

@@ -19,6 +19,7 @@ const (
 	ThinkingMedium  ThinkingLevel = internalcli.ThinkingMedium
 	ThinkingHigh    ThinkingLevel = internalcli.ThinkingHigh
 	ThinkingXHigh   ThinkingLevel = internalcli.ThinkingXHigh
+	ThinkingMax     ThinkingLevel = internalcli.ThinkingMax
 )
 
 type Diagnostic = internalcli.Diagnostic

@@ -123,7 +123,7 @@ func TestParseModelPatternCompatibilityCases(t *testing.T) {
 			t.Fatalf("thinking/warning = %q / %q", result.ThinkingLevel, result.Warning)
 		}
 
-		for _, level := range []ThinkingLevel{ThinkingOff, ThinkingMinimal, ThinkingLow, ThinkingMedium, ThinkingHigh, ThinkingXHigh} {
+		for _, level := range []ThinkingLevel{ThinkingOff, ThinkingMinimal, ThinkingLow, ThinkingMedium, ThinkingHigh, ThinkingXHigh, ThinkingMax} {
 			result := ParseModelPattern("sonnet:"+string(level), resolverAllModels)
 			assertResolvedModel(t, result.Model, "anthropic", "claude-sonnet-4-5")
 			if result.ThinkingLevel != level || result.Warning != "" {

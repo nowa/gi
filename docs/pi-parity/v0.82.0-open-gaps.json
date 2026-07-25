@@ -106,7 +106,6 @@
       "module": "coding",
       "undocumentedFiles": [],
       "noCandidateFiles": [
-        "packages/coding-agent/test/max-thinking.test.ts",
         "packages/coding-agent/test/suite/regressions/5661-uppercase-header-values.test.ts",
         "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts"
       ],
@@ -135,16 +134,6 @@
           "file": "packages/coding-agent/test/git-merge-and-resolve-extension.test.ts",
           "line": 177,
           "name": "handles empty ours or theirs sections"
-        },
-        {
-          "file": "packages/coding-agent/test/max-thinking.test.ts",
-          "line": 19,
-          "name": "is accepted by CLI and settings"
-        },
-        {
-          "file": "packages/coding-agent/test/max-thinking.test.ts",
-          "line": 28,
-          "name": "falls back to thinkingXhigh for legacy themes"
         },
         {
           "file": "packages/coding-agent/test/suite/regressions/5080-signal-shutdown-extension-cleanup.test.ts",

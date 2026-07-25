@@ -19,6 +19,7 @@ const (
 	ThinkingMedium  ThinkingLevel = "medium"
 	ThinkingHigh    ThinkingLevel = "high"
 	ThinkingXHigh   ThinkingLevel = "xhigh"
+	ThinkingMax     ThinkingLevel = "max"
 )
 
 type Diagnostic struct {
@@ -77,6 +78,7 @@ var validThinkingLevels = map[string]ThinkingLevel{
 	"medium":  ThinkingMedium,
 	"high":    ThinkingHigh,
 	"xhigh":   ThinkingXHigh,
+	"max":     ThinkingMax,
 }
 
 func IsValidThinkingLevel(level string) bool {
@@ -156,7 +158,7 @@ func ParseArgs(argv []string) Args {
 			} else {
 				result.Diagnostics = append(result.Diagnostics, Diagnostic{
 					Type:    "warning",
-					Message: `Invalid thinking level "` + argv[i] + `". Valid values: off, minimal, low, medium, high, xhigh`,
+					Message: `Invalid thinking level "` + argv[i] + `". Valid values: off, minimal, low, medium, high, xhigh, max`,
 				})
 			}
 		case arg == "--print" || arg == "-p":
