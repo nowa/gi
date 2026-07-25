@@ -924,6 +924,174 @@ func TestProtocolPackageConfiguredSourceDedupe(t *testing.T) {
 	})
 }
 
+func TestProtocolPackageAutoloadDeltaPiParity(t *testing.T) {
+	t.Run("project delta overrides only explicit global package resources", func(t *testing.T) {
+		agentDir, projectDir := createPackageManagerSettingsDirs(t)
+		pkgDir := filepath.Join(projectDir, "shared-pkg")
+		alpha := filepath.Join(pkgDir, "extensions", "alpha.gi.json")
+		beta := filepath.Join(pkgDir, "extensions", "beta.gi.json")
+		gamma := filepath.Join(pkgDir, "extensions", "gamma.gi.json")
+		for _, path := range []string{alpha, beta, gamma} {
+			writeGiProtocolExtensionDescriptor(t, path)
+		}
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "gi.package.json"), map[string]any{
+			"extensions": []any{
+				"extensions/alpha.gi.json",
+				"extensions/beta.gi.json",
+				"extensions/gamma.gi.json",
+				map[string]any{
+					"id": "daemon",
+					"entry": map[string]any{
+						"kind":    "process",
+						"command": []any{"gi-daemon"},
+					},
+				},
+			},
+		})
+
+		globalSource, err := filepath.Rel(agentDir, pkgDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		projectSource, err := filepath.Rel(filepath.Join(projectDir, ConfigDirName), pkgDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		settings := NewSettingsManager(projectDir, agentDir)
+		settings.SetPackages([]any{globalSource})
+		if err := settings.SetProjectPackages([]any{map[string]any{
+			"source":   projectSource,
+			"autoload": false,
+			"extensions": []any{
+				"-extensions/alpha.gi.json",
+				"+extensions/beta.gi.json",
+				"-daemon",
+			},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		manager := NewDefaultPackageManager(PackageManagerOptions{
+			CWD:             projectDir,
+			AgentDir:        agentDir,
+			SettingsManager: settings,
+		})
+
+		result, err := manager.ResolveConfiguredProtocolPackageResources()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathDisabled(result.Extensions, alpha) ||
+			!protocolPackagePathEnabled(result.Extensions, beta) ||
+			!protocolPackagePathEnabled(result.Extensions, gamma) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+		if len(result.ProcessExtensions) != 0 {
+			t.Fatalf("process extensions = %#v, want daemon unloaded", result.ProcessExtensions)
+		}
+		for _, resource := range result.Extensions {
+			wantScope := "user"
+			if resource.Path == alpha || resource.Path == beta {
+				wantScope = "project"
+			}
+			if resource.Metadata.Scope != wantScope {
+				t.Fatalf("%s scope = %q, want %q", resource.Path, resource.Metadata.Scope, wantScope)
+			}
+		}
+
+		items, err := manager.ListPackageResourceToggles()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != 4 ||
+			!packageResourceToggleItemState(items, "extensions", "extensions/alpha.gi.json", false) ||
+			!packageResourceToggleItemState(items, "extensions", "extensions/beta.gi.json", true) ||
+			!packageResourceToggleItemState(items, "extensions", "extensions/gamma.gi.json", true) ||
+			!packageResourceToggleItemState(items, "extensions", "daemon", false) {
+			t.Fatalf("toggle items = %#v", items)
+		}
+	})
+
+	t.Run("project delta can load a globally disabled process extension", func(t *testing.T) {
+		agentDir, projectDir := createPackageManagerSettingsDirs(t)
+		pkgDir := filepath.Join(projectDir, "process-pkg")
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "gi.package.json"), map[string]any{
+			"extensions": []any{map[string]any{
+				"id": "daemon",
+				"entry": map[string]any{
+					"kind":    "process",
+					"command": []any{"gi-daemon"},
+				},
+			}},
+		})
+		settings := NewSettingsManager(projectDir, agentDir)
+		settings.SetPackages([]any{map[string]any{
+			"source":     pkgDir,
+			"extensions": []any{"-daemon"},
+		}})
+		if err := settings.SetProjectPackages([]any{map[string]any{
+			"source":     pkgDir,
+			"autoload":   false,
+			"extensions": []any{"+daemon"},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		manager := NewDefaultPackageManager(PackageManagerOptions{
+			CWD:             projectDir,
+			AgentDir:        agentDir,
+			SettingsManager: settings,
+		})
+
+		result, err := manager.ResolveConfiguredProtocolPackageResources()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.ProcessExtensions) != 1 ||
+			result.ProcessExtensions[0].ID != "daemon" ||
+			result.ProcessExtensions[0].Metadata.Scope != "project" {
+			t.Fatalf("process extensions = %#v", result.ProcessExtensions)
+		}
+	})
+
+	t.Run("configured empty filter unloads every resource of that type", func(t *testing.T) {
+		manager := NewDefaultPackageManager(PackageManagerOptions{
+			CWD:             t.TempDir(),
+			AgentDir:        t.TempDir(),
+			SettingsManager: NewInMemorySettingsManager(nil),
+		})
+		pkgDir := filepath.Join(manager.cwd, "empty-filter-pkg")
+		extension := filepath.Join(pkgDir, "extensions", "alpha.gi.json")
+		writeGiProtocolExtensionDescriptor(t, extension)
+		writeProtocolPackageManifest(t, filepath.Join(pkgDir, "gi.package.json"), map[string]any{
+			"extensions": []any{
+				"extensions/alpha.gi.json",
+				map[string]any{
+					"id": "daemon",
+					"entry": map[string]any{
+						"kind":    "process",
+						"command": []any{"gi-daemon"},
+					},
+				},
+			},
+		})
+
+		result, err := manager.ResolveProtocolPackageSourceSpecs([]ProtocolPackageSourceSpec{{
+			Source: pkgDir,
+			Filters: ProtocolPackageResourceFilters{
+				Extensions: []string{},
+			},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !protocolPackagePathDisabled(result.Extensions, extension) {
+			t.Fatalf("extensions = %#v", result.Extensions)
+		}
+		if len(result.ProcessExtensions) != 0 {
+			t.Fatalf("process extensions = %#v", result.ProcessExtensions)
+		}
+	})
+}
+
 func writeProtocolPackageManifest(t *testing.T, path string, fields map[string]any) {
 	t.Helper()
 	gi := map[string]any{"manifestVersion": 1}

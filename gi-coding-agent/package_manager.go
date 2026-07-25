@@ -360,16 +360,30 @@ func (m *DefaultPackageManager) ListPackageResourceToggles() ([]PackageResourceT
 		return nil, nil
 	}
 	var result []PackageResourceToggleItem
-	for _, spec := range m.configuredProtocolPackageSourceSpecs() {
-		resolved, packageDir, err := m.resolveProtocolPackageSource(spec.Source, spec.Scope)
+	specs := m.configuredProtocolPackageSourceSpecs()
+	for _, spec := range specs {
+		resolvedSource := spec.Source
+		resolvedScope := spec.Scope
+		if base, ok := m.findAutoloadDeltaBase(spec, specs); ok {
+			resolvedSource = base.Source
+			resolvedScope = base.Scope
+		}
+		resolved, packageDir, err := m.resolveProtocolPackageSource(resolvedSource, resolvedScope)
 		if err != nil {
 			return nil, err
 		}
 		if packageDir == "" {
 			continue
 		}
-		addResources := func(resourceType string, resources []ProtocolPackageResource, filters []string) {
-			for _, resource := range applyProtocolPackageFilters(packageDir, resources, filters) {
+		addResources := func(resourceType string, resources []ProtocolPackageResource) {
+			filters, configured := spec.Filters.forResourceType(resourceType)
+			var filtered []ProtocolPackageResource
+			if spec.autoloadEnabled() {
+				filtered = applyProtocolPackageFiltersConfigured(packageDir, resources, filters, configured)
+			} else {
+				filtered = applyProtocolPackageDeltaFilters(packageDir, resources, filters)
+			}
+			for _, resource := range protocolPackageResourcesWithSpecMetadata(filtered, spec) {
 				pattern := packageResourceTogglePattern(packageDir, resource.Path)
 				if pattern == "" {
 					continue
@@ -386,11 +400,20 @@ func (m *DefaultPackageManager) ListPackageResourceToggles() ([]PackageResourceT
 				})
 			}
 		}
-		addResources("extensions", resolved.Extensions, spec.Filters.Extensions)
-		addResources("skills", resolved.Skills, spec.Filters.Skills)
-		addResources("prompts", resolved.Prompts, spec.Filters.Prompts)
-		addResources("themes", resolved.Themes, spec.Filters.Themes)
+		addResources("extensions", resolved.Extensions)
+		addResources("skills", resolved.Skills)
+		addResources("prompts", resolved.Prompts)
+		addResources("themes", resolved.Themes)
+		extensionFilters, extensionsConfigured := spec.Filters.forResourceType("extensions")
 		for _, process := range resolved.ProcessExtensions {
+			enabled := protocolPackageProcessEnabledConfigured(packageDir, process, extensionFilters, extensionsConfigured)
+			if !spec.autoloadEnabled() {
+				var matched bool
+				enabled, matched = protocolPackageDeltaProcessState(packageDir, process, extensionFilters)
+				if !matched {
+					continue
+				}
+			}
 			pattern := strings.TrimSpace(process.ID)
 			if pattern == "" {
 				pattern = packageResourceTogglePattern(packageDir, process.Path)
@@ -409,13 +432,13 @@ func (m *DefaultPackageManager) ListPackageResourceToggles() ([]PackageResourceT
 				Pattern:      pattern,
 				Path:         process.Path,
 				DisplayName:  displayName,
-				Enabled:      protocolPackageProcessEnabled(packageDir, process, spec.Filters.Extensions),
-				Metadata:     process.Metadata,
+				Enabled:      enabled,
+				Metadata:     protocolPackageProcessWithSpecMetadata(process, spec).Metadata,
 			})
 		}
 	}
 	sortPackageResourceToggleItems(result)
-	return result, nil
+	return dedupePackageResourceToggleItems(result), nil
 }
 
 func (m *DefaultPackageManager) ListResourceToggles() ([]PackageResourceToggleItem, error) {
@@ -542,6 +565,23 @@ func sortPackageResourceToggleItems(items []PackageResourceToggleItem) {
 		}
 		return left.Pattern < right.Pattern
 	})
+}
+
+func dedupePackageResourceToggleItems(items []PackageResourceToggleItem) []PackageResourceToggleItem {
+	seen := map[string]struct{}{}
+	result := make([]PackageResourceToggleItem, 0, len(items))
+	for _, item := range items {
+		key := item.ResourceType + "\x00" + CanonicalizePath(item.Path)
+		if item.Path == "" {
+			key = item.ResourceType + "\x00" + item.Source + "\x00" + item.Pattern
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, item)
+	}
+	return result
 }
 
 func packageSettingHasFilters(value any) bool {

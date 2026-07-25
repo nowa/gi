@@ -129,7 +129,7 @@ func TestPackageManagerListPackageResourceToggles(t *testing.T) {
 		"themes":  []any{"themes/dark.json"},
 	})
 	settings := NewInMemorySettingsManager(map[string]any{"packages": []any{map[string]any{
-		"source":     "./toggle-pkg",
+		"source":     pkgDir,
 		"skills":     []any{"-skills/skill-a/SKILL.md"},
 		"extensions": []any{"-daemon"},
 	}}})

@@ -36,9 +36,10 @@ type ProtocolPackageProcessExtension struct {
 }
 
 type ProtocolPackageSourceSpec struct {
-	Source  string
-	Scope   string
-	Filters ProtocolPackageResourceFilters
+	Source   string
+	Scope    string
+	Autoload *bool
+	Filters  ProtocolPackageResourceFilters
 }
 
 type ProtocolPackageResourceFilters struct {
@@ -46,6 +47,11 @@ type ProtocolPackageResourceFilters struct {
 	Skills     []string
 	Prompts    []string
 	Themes     []string
+
+	extensionsSet bool
+	skillsSet     bool
+	promptsSet    bool
+	themesSet     bool
 }
 
 type protocolPackageManifest struct {
@@ -75,22 +81,63 @@ func (m *DefaultPackageManager) ResolveProtocolPackageResources(sources []string
 
 func (m *DefaultPackageManager) ResolveProtocolPackageSourceSpecs(specs []ProtocolPackageSourceSpec) (ProtocolPackageResources, error) {
 	var result ProtocolPackageResources
+	processOverrides := map[string]bool{}
 	for _, spec := range specs {
 		if err := m.assertProjectTrustedForScope(spec.Scope); err != nil {
 			return ProtocolPackageResources{}, err
 		}
-		resolved, packageDir, err := m.resolveProtocolPackageSource(spec.Source, spec.Scope)
+		resolvedSource := spec.Source
+		resolvedScope := spec.Scope
+		if base, ok := m.findAutoloadDeltaBase(spec, specs); ok {
+			resolvedSource = base.Source
+			resolvedScope = base.Scope
+		}
+		resolved, packageDir, err := m.resolveProtocolPackageSource(resolvedSource, resolvedScope)
 		if err != nil {
 			return ProtocolPackageResources{}, err
 		}
 		if packageDir == "" {
 			continue
 		}
-		result.Extensions = append(result.Extensions, applyProtocolPackageFilters(packageDir, resolved.Extensions, spec.Filters.Extensions)...)
-		result.ProcessExtensions = append(result.ProcessExtensions, applyProtocolPackageProcessFilters(packageDir, resolved.ProcessExtensions, spec.Filters.Extensions)...)
-		result.Skills = append(result.Skills, applyProtocolPackageFilters(packageDir, resolved.Skills, spec.Filters.Skills)...)
-		result.Prompts = append(result.Prompts, applyProtocolPackageFilters(packageDir, resolved.Prompts, spec.Filters.Prompts)...)
-		result.Themes = append(result.Themes, applyProtocolPackageFilters(packageDir, resolved.Themes, spec.Filters.Themes)...)
+		appendResources := func(target *[]ProtocolPackageResource, resources []ProtocolPackageResource, resourceType string) {
+			filters, configured := spec.Filters.forResourceType(resourceType)
+			var filtered []ProtocolPackageResource
+			if spec.autoloadEnabled() {
+				filtered = applyProtocolPackageFiltersConfigured(packageDir, resources, filters, configured)
+			} else {
+				filtered = applyProtocolPackageDeltaFilters(packageDir, resources, filters)
+			}
+			*target = append(*target, protocolPackageResourcesWithSpecMetadata(filtered, spec)...)
+		}
+		appendResources(&result.Extensions, resolved.Extensions, "extensions")
+		appendResources(&result.Skills, resolved.Skills, "skills")
+		appendResources(&result.Prompts, resolved.Prompts, "prompts")
+		appendResources(&result.Themes, resolved.Themes, "themes")
+
+		extensionFilters, extensionsConfigured := spec.Filters.forResourceType("extensions")
+		if !spec.autoloadEnabled() {
+			for _, process := range resolved.ProcessExtensions {
+				enabled, matched := protocolPackageDeltaProcessState(packageDir, process, extensionFilters)
+				if !matched {
+					continue
+				}
+				key := protocolPackageProcessKey(process)
+				processOverrides[key] = enabled
+				if enabled {
+					result.ProcessExtensions = append(result.ProcessExtensions, protocolPackageProcessWithSpecMetadata(process, spec))
+				}
+			}
+			continue
+		}
+		for _, process := range resolved.ProcessExtensions {
+			key := protocolPackageProcessKey(process)
+			if _, overridden := processOverrides[key]; overridden {
+				continue
+			}
+			if protocolPackageProcessEnabledConfigured(packageDir, process, extensionFilters, extensionsConfigured) {
+				result.ProcessExtensions = append(result.ProcessExtensions, protocolPackageProcessWithSpecMetadata(process, spec))
+			}
+		}
 	}
 	result.Extensions = dedupeProtocolPackageResources(result.Extensions)
 	result.ProcessExtensions = dedupeProtocolPackageProcessExtensions(result.ProcessExtensions)
@@ -106,34 +153,41 @@ func (m *DefaultPackageManager) ResolveConfiguredProtocolPackageResources() (Pro
 }
 
 func (m *DefaultPackageManager) configuredProtocolPackageSourceSpecs() []ProtocolPackageSourceSpec {
-	type keyedSpec struct {
-		key  string
-		spec ProtocolPackageSourceSpec
-	}
-	var order []keyedSpec
-	index := map[string]int{}
-	addSpecs := func(values []any, scope, baseDir string) {
+	var candidates []ProtocolPackageSourceSpec
+	addSpecs := func(values []any, scope string) {
 		for _, value := range values {
 			spec, ok := protocolPackageSourceSpecFromSettings(value, scope)
 			if !ok {
 				continue
 			}
-			key := protocolPackageSettingsIdentity(spec.Source, baseDir)
-			if existing, ok := index[key]; ok {
-				order[existing].spec = spec
-				continue
-			}
-			index[key] = len(order)
-			order = append(order, keyedSpec{key: key, spec: spec})
+			candidates = append(candidates, spec)
 		}
 	}
-	addSpecs(settingsSlice(m.settingsManager.GetGlobalSettings(), "packages"), "user", m.agentDir)
 	if m.settingsManager.IsProjectTrusted() {
-		addSpecs(settingsSlice(m.settingsManager.GetProjectSettings(), "packages"), "project", filepath.Join(m.cwd, ConfigDirName))
+		addSpecs(settingsSlice(m.settingsManager.GetProjectSettings(), "packages"), "project")
 	}
-	specs := make([]ProtocolPackageSourceSpec, 0, len(order))
-	for _, item := range order {
-		specs = append(specs, item.spec)
+	addSpecs(settingsSlice(m.settingsManager.GetGlobalSettings(), "packages"), "user")
+
+	specs := make([]ProtocolPackageSourceSpec, 0, len(candidates))
+	index := map[string]int{}
+	for _, candidate := range candidates {
+		baseDir := m.settingsBaseDir(candidate.Scope == "project")
+		key := protocolPackageSettingsIdentity(candidate.Source, baseDir)
+		existingIndex, exists := index[key]
+		if !exists {
+			index[key] = len(specs)
+			specs = append(specs, candidate)
+			continue
+		}
+		existing := specs[existingIndex]
+		switch {
+		case existing.Scope == "project" && candidate.Scope == "user":
+			if !existing.autoloadEnabled() {
+				specs = append(specs, candidate)
+			}
+		case candidate.Scope == "project":
+			specs[existingIndex] = candidate
+		}
 	}
 	return specs
 }
@@ -150,7 +204,7 @@ func protocolPackageSourceSpecFromSettings(value any, scope string) (ProtocolPac
 	if strings.TrimSpace(source) == "" {
 		return ProtocolPackageSourceSpec{}, false
 	}
-	return ProtocolPackageSourceSpec{
+	spec := ProtocolPackageSourceSpec{
 		Source: strings.TrimSpace(source),
 		Scope:  scope,
 		Filters: ProtocolPackageResourceFilters{
@@ -158,8 +212,79 @@ func protocolPackageSourceSpecFromSettings(value any, scope string) (ProtocolPac
 			Skills:     settingsStringSlice(object, "skills"),
 			Prompts:    settingsStringSlice(object, "prompts"),
 			Themes:     settingsStringSlice(object, "themes"),
+
+			extensionsSet: settingsHasSlice(object, "extensions"),
+			skillsSet:     settingsHasSlice(object, "skills"),
+			promptsSet:    settingsHasSlice(object, "prompts"),
+			themesSet:     settingsHasSlice(object, "themes"),
 		},
-	}, true
+	}
+	if autoload, ok := object["autoload"].(bool); ok {
+		spec.Autoload = &autoload
+	}
+	return spec, true
+}
+
+func settingsHasSlice(settings map[string]any, key string) bool {
+	_, ok := settings[key].([]any)
+	return ok
+}
+
+func (s ProtocolPackageSourceSpec) autoloadEnabled() bool {
+	return s.Autoload == nil || *s.Autoload
+}
+
+func (f ProtocolPackageResourceFilters) forResourceType(resourceType string) ([]string, bool) {
+	switch resourceType {
+	case "extensions":
+		return f.Extensions, f.extensionsSet || f.Extensions != nil
+	case "skills":
+		return f.Skills, f.skillsSet || f.Skills != nil
+	case "prompts":
+		return f.Prompts, f.promptsSet || f.Prompts != nil
+	case "themes":
+		return f.Themes, f.themesSet || f.Themes != nil
+	default:
+		return nil, false
+	}
+}
+
+func (m *DefaultPackageManager) findAutoloadDeltaBase(spec ProtocolPackageSourceSpec, specs []ProtocolPackageSourceSpec) (ProtocolPackageSourceSpec, bool) {
+	if spec.Scope != "project" || spec.autoloadEnabled() {
+		return ProtocolPackageSourceSpec{}, false
+	}
+	identity := protocolPackageSettingsIdentity(spec.Source, filepath.Join(m.cwd, ConfigDirName))
+	for _, candidate := range specs {
+		if candidate.Scope != "user" {
+			continue
+		}
+		if protocolPackageSettingsIdentity(candidate.Source, m.agentDir) == identity {
+			return candidate, true
+		}
+	}
+	return ProtocolPackageSourceSpec{}, false
+}
+
+func protocolPackageResourcesWithSpecMetadata(resources []ProtocolPackageResource, spec ProtocolPackageSourceSpec) []ProtocolPackageResource {
+	result := make([]ProtocolPackageResource, len(resources))
+	for index, resource := range resources {
+		result[index] = resource
+		if !spec.autoloadEnabled() {
+			result[index].Metadata.Source = spec.Source
+			result[index].Metadata.Scope = firstNonEmptyString(spec.Scope, "temporary")
+			result[index].Metadata.Origin = "package"
+		}
+	}
+	return result
+}
+
+func protocolPackageProcessWithSpecMetadata(process ProtocolPackageProcessExtension, spec ProtocolPackageSourceSpec) ProtocolPackageProcessExtension {
+	if !spec.autoloadEnabled() {
+		process.Metadata.Source = spec.Source
+		process.Metadata.Scope = firstNonEmptyString(spec.Scope, "temporary")
+		process.Metadata.Origin = "package"
+	}
+	return process
 }
 
 func protocolPackageSettingsIdentity(source, baseDir string) string {
@@ -210,7 +335,14 @@ func (m *DefaultPackageManager) resolveProtocolPackageSource(sourceText, scope s
 	if parsed.Type == "unsupported" {
 		return ProtocolPackageResources{}, "", unsupportedPackageSourceError(sourceText)
 	}
-	sourcePath := ResolveToCwd(sourceText, m.cwd)
+	baseDir := m.cwd
+	switch scope {
+	case "user":
+		baseDir = m.agentDir
+	case "project":
+		baseDir = filepath.Join(m.cwd, ConfigDirName)
+	}
+	sourcePath := ResolveToCwd(sourceText, baseDir)
 	info, err := os.Stat(sourcePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -467,6 +599,62 @@ func applyProtocolPackageFilters(packageDir string, resources []ProtocolPackageR
 	return result
 }
 
+func applyProtocolPackageFiltersConfigured(packageDir string, resources []ProtocolPackageResource, filters []string, configured bool) []ProtocolPackageResource {
+	if configured && len(filters) == 0 {
+		result := make([]ProtocolPackageResource, len(resources))
+		copy(result, resources)
+		for index := range result {
+			result[index].Enabled = false
+		}
+		return result
+	}
+	return applyProtocolPackageFilters(packageDir, resources, filters)
+}
+
+func applyProtocolPackageDeltaFilters(packageDir string, resources []ProtocolPackageResource, filters []string) []ProtocolPackageResource {
+	if len(filters) == 0 {
+		return nil
+	}
+	enabledByPath := map[string]bool{}
+	for _, filter := range filters {
+		filter = strings.TrimSpace(filter)
+		if filter == "" {
+			continue
+		}
+		patternText := filter
+		enabled := true
+		exact := false
+		switch filter[0] {
+		case '-', '!':
+			enabled = false
+			exact = filter[0] == '-'
+			patternText = strings.TrimSpace(filter[1:])
+		case '+':
+			exact = true
+			patternText = strings.TrimSpace(filter[1:])
+		}
+		for _, resource := range resources {
+			matched := protocolPackagePatternMatches(packageDir, resource.Path, patternText)
+			if exact {
+				matched = protocolPackageExactPatternMatches(packageDir, resource.Path, patternText)
+			}
+			if matched {
+				enabledByPath[filepath.Clean(resource.Path)] = enabled
+			}
+		}
+	}
+	result := make([]ProtocolPackageResource, 0, len(enabledByPath))
+	for _, resource := range resources {
+		enabled, ok := enabledByPath[filepath.Clean(resource.Path)]
+		if !ok {
+			continue
+		}
+		resource.Enabled = enabled
+		result = append(result, resource)
+	}
+	return result
+}
+
 func applyProtocolPackageProcessFilters(packageDir string, resources []ProtocolPackageProcessExtension, filters []string) []ProtocolPackageProcessExtension {
 	if len(filters) == 0 {
 		return resources
@@ -478,6 +666,13 @@ func applyProtocolPackageProcessFilters(packageDir string, resources []ProtocolP
 		}
 	}
 	return filtered
+}
+
+func protocolPackageProcessEnabledConfigured(packageDir string, resource ProtocolPackageProcessExtension, filters []string, configured bool) bool {
+	if configured && len(filters) == 0 {
+		return false
+	}
+	return protocolPackageProcessEnabled(packageDir, resource, filters)
 }
 
 func protocolPackageProcessEnabled(packageDir string, resource ProtocolPackageProcessExtension, filters []string) bool {
@@ -509,6 +704,42 @@ func protocolPackageProcessEnabled(packageDir string, resource ProtocolPackagePr
 		}
 	}
 	return enabled
+}
+
+func protocolPackageDeltaProcessState(packageDir string, resource ProtocolPackageProcessExtension, filters []string) (bool, bool) {
+	var enabled bool
+	matched := false
+	for _, filter := range filters {
+		filter = strings.TrimSpace(filter)
+		if filter == "" {
+			continue
+		}
+		patternText := filter
+		nextEnabled := true
+		exact := false
+		switch filter[0] {
+		case '-', '!':
+			nextEnabled = false
+			exact = filter[0] == '-'
+			patternText = strings.TrimSpace(filter[1:])
+		case '+':
+			exact = true
+			patternText = strings.TrimSpace(filter[1:])
+		}
+		pathMatched := protocolPackagePatternMatches(packageDir, resource.Path, patternText)
+		if exact {
+			pathMatched = protocolPackageExactPatternMatches(packageDir, resource.Path, patternText)
+		}
+		if pathMatched || patternText == resource.ID {
+			enabled = nextEnabled
+			matched = true
+		}
+	}
+	return enabled, matched
+}
+
+func protocolPackageProcessKey(resource ProtocolPackageProcessExtension) string {
+	return filepath.Clean(resource.PackageDir) + "\x00" + resource.ID
 }
 
 func filterProtocolPackagePaths(packageDir string, paths []string, excludePatterns []string) []string {
@@ -561,6 +792,31 @@ func protocolPackagePatternMatches(packageDir, candidate, patternText string) bo
 		return true
 	}
 	return false
+}
+
+func protocolPackageExactPatternMatches(packageDir, candidate, patternText string) bool {
+	patternText = strings.TrimPrefix(strings.TrimSpace(filepath.ToSlash(patternText)), "./")
+	if patternText == "" {
+		return false
+	}
+	candidate = filepath.Clean(candidate)
+	rel, err := filepath.Rel(filepath.Clean(packageDir), candidate)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	if patternText == rel || filepath.Clean(patternText) == candidate {
+		return true
+	}
+	if filepath.Base(candidate) != "SKILL.md" {
+		return false
+	}
+	parent := filepath.Dir(candidate)
+	parentRel, err := filepath.Rel(filepath.Clean(packageDir), parent)
+	if err != nil {
+		return false
+	}
+	return patternText == filepath.ToSlash(parentRel) || filepath.Clean(patternText) == parent
 }
 
 func collectProtocolPackageDir(dir, kind string) []string {
