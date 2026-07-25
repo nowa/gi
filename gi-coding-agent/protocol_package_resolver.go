@@ -2,6 +2,7 @@ package gicodingagent
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -314,7 +315,17 @@ func (m *DefaultPackageManager) resolveProtocolPackageSource(sourceText, scope s
 		return resolveProtocolPackageDir(packageDir, metadata), packageDir, nil
 	}
 	if parsed.Type == "git" {
-		packageDir := m.gitPackageInstallPath(GitSource{Host: parsed.Host, Path: parsed.Path}, scope == "project")
+		installScope, ok := parsePackageInstallScope(scope)
+		if !ok {
+			return ProtocolPackageResources{}, "", fmt.Errorf("unsupported package install scope %q", scope)
+		}
+		packageDir, err := m.resolveGitPackageInstallPath(
+			GitSource{Host: parsed.Host, Path: parsed.Path},
+			installScope,
+		)
+		if err != nil {
+			return ProtocolPackageResources{}, "", err
+		}
 		info, err := os.Stat(packageDir)
 		if err != nil {
 			if os.IsNotExist(err) {

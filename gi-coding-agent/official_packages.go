@@ -309,13 +309,20 @@ func (m *DefaultPackageManager) materializeOfficialPackage(name string) (string,
 	if !ok {
 		return "", fmt.Errorf("unknown official package %q", name)
 	}
-	root := filepath.Join(officialPackageStoreDir(m.agentDir, m.cwd), definition.Name)
+	root, err := resolveManagedPath(officialPackageStoreDir(m.agentDir, m.cwd), definition.Name)
+	if err != nil {
+		return "", err
+	}
 	files, err := definition.files()
 	if err != nil {
 		return "", err
 	}
 	for relPath, content := range files {
-		if err := writeOfficialPackageFile(filepath.Join(root, relPath), []byte(content)); err != nil {
+		path, err := resolveManagedPath(root, relPath)
+		if err != nil {
+			return "", err
+		}
+		if err := writeOfficialPackageFile(path, []byte(content)); err != nil {
 			return "", err
 		}
 	}

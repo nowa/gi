@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -209,7 +210,7 @@ func TestDefaultPackageManagerGitUpdatePiPinnedTemporaryAndScope(t *testing.T) {
 
 	t.Run("refreshes cached temporary git sources when resolving", func(t *testing.T) {
 		env.reset(t)
-		cachedDir := packageManagerTemporaryGitDir("github.com", "test/extension")
+		cachedDir := packageManagerTemporaryGitDir(env.agentDir, "github.com", "test/extension")
 		extensionFile := filepath.Join(cachedDir, "pi-extensions", "session-breakdown.ts")
 		removeAll(t, cachedDir)
 		mkdirAll(t, filepath.Join(cachedDir, "pi-extensions"))
@@ -230,7 +231,7 @@ func TestDefaultPackageManagerGitUpdatePiPinnedTemporaryAndScope(t *testing.T) {
 				if reflect.DeepEqual(args, []string{"rev-parse", "HEAD"}) {
 					return "local-head", nil
 				}
-				if reflect.DeepEqual(args, []string{"rev-parse", "origin/main"}) {
+				if reflect.DeepEqual(args, []string{"rev-parse", "origin/main^{commit}"}) {
 					return "remote-head", nil
 				}
 				return "", nil
@@ -251,7 +252,7 @@ func TestDefaultPackageManagerGitUpdatePiPinnedTemporaryAndScope(t *testing.T) {
 
 	t.Run("does not refresh pinned temporary git sources", func(t *testing.T) {
 		env.reset(t)
-		cachedDir := packageManagerTemporaryGitDir("github.com", "test/extension")
+		cachedDir := packageManagerTemporaryGitDir(env.agentDir, "github.com", "test/extension")
 		extensionFile := filepath.Join(cachedDir, "pi-extensions", "session-breakdown.ts")
 		removeAll(t, cachedDir)
 		mkdirAll(t, filepath.Join(cachedDir, "pi-extensions"))
@@ -280,7 +281,7 @@ func TestDefaultPackageManagerGitUpdatePiPinnedTemporaryAndScope(t *testing.T) {
 	t.Run("skips refreshing temporary git sources when offline", func(t *testing.T) {
 		env.reset(t)
 		t.Setenv("GI_OFFLINE", "1")
-		cachedDir := packageManagerTemporaryGitDir("github.com", "test/extension")
+		cachedDir := packageManagerTemporaryGitDir(env.agentDir, "github.com", "test/extension")
 		removeAll(t, cachedDir)
 		mkdirAll(t, filepath.Join(cachedDir, "extensions"))
 		writeFile(t, filepath.Join(cachedDir, "extensions", "index.gi.json"), `{"gi":{"extensionProtocol":"jsonl-rpc.v1"}}`)
@@ -304,7 +305,7 @@ func TestDefaultPackageManagerGitUpdatePiPinnedTemporaryAndScope(t *testing.T) {
 	t.Run("skips missing package sources when offline", func(t *testing.T) {
 		env.reset(t)
 		t.Setenv("GI_OFFLINE", "1")
-		cachedDir := packageManagerTemporaryGitDir("github.com", "test/extension")
+		cachedDir := packageManagerTemporaryGitDir(env.agentDir, "github.com", "test/extension")
 		removeAll(t, cachedDir)
 		t.Cleanup(func() { _ = os.RemoveAll(cachedDir) })
 
@@ -343,7 +344,7 @@ func TestDefaultPackageManagerGitUpdatePiPinnedTemporaryAndScope(t *testing.T) {
 				if reflect.DeepEqual(args, []string{"rev-parse", "HEAD"}) {
 					return "local-head", nil
 				}
-				if reflect.DeepEqual(args, []string{"rev-parse", "origin/main"}) {
+				if reflect.DeepEqual(args, []string{"rev-parse", "origin/main^{commit}"}) {
 					return "remote-head", nil
 				}
 				return "", nil
@@ -386,6 +387,136 @@ func TestDefaultPackageManagerGitUpdatePiPinnedTemporaryAndScope(t *testing.T) {
 			t.Fatalf("project git dir exists after update: %v", err)
 		}
 	})
+}
+
+func TestDefaultPackageManagerReconcilesExistingPinnedGitRef(t *testing.T) {
+	agentDir := t.TempDir()
+	source := GitSource{
+		Repo:   "https://github.com/test/extension",
+		Host:   "github.com",
+		Path:   "test/extension",
+		Ref:    "v2",
+		Pinned: true,
+	}
+	targetDir := filepath.Join(agentDir, "git", "github.com", "test", "extension")
+	mkdirAll(t, targetDir)
+
+	type commandCall struct {
+		args []string
+		cwd  string
+	}
+	var commands []commandCall
+	manager := NewDefaultPackageManager(PackageManagerOptions{
+		CWD:      t.TempDir(),
+		AgentDir: agentDir,
+		Operations: PackageManagerOperations{
+			RunCommand: func(command string, args []string, options PackageCommandOptions) error {
+				if command != "git" {
+					t.Fatalf("command = %q", command)
+				}
+				commands = append(commands, commandCall{args: append([]string(nil), args...), cwd: options.CWD})
+				return nil
+			},
+			RunCommandCapture: func(command string, args []string, options PackageCommandOptions) (string, error) {
+				if command != "git" || options.CWD != targetDir {
+					t.Fatalf("capture = %q %#v cwd=%q", command, args, options.CWD)
+				}
+				switch {
+				case reflect.DeepEqual(args, []string{"rev-parse", "HEAD"}):
+					return "old-head", nil
+				case reflect.DeepEqual(args, []string{"rev-parse", "FETCH_HEAD^{commit}"}):
+					return "new-head", nil
+				default:
+					t.Fatalf("unexpected capture args: %#v", args)
+					return "", nil
+				}
+			},
+		},
+	})
+
+	if err := manager.installGitPackage(source, false); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		{"fetch", "origin", "v2"},
+		{"reset", "--hard", "FETCH_HEAD^{commit}"},
+		{"clean", "-fdx"},
+	}
+	if len(commands) != len(want) {
+		t.Fatalf("commands = %#v, want %#v", commands, want)
+	}
+	for index, args := range want {
+		if !reflect.DeepEqual(commands[index].args, args) || commands[index].cwd != targetDir {
+			t.Fatalf("command[%d] = %#v, want args=%#v cwd=%q", index, commands[index], args, targetDir)
+		}
+	}
+}
+
+func TestPackageInstallLocatorContainsManagedPaths(t *testing.T) {
+	agentDir := t.TempDir()
+	tempFolder := filepath.Join(agentDir, "tmp", "extensions")
+	if err := os.MkdirAll(tempFolder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(tempFolder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gotTempFolder, err := GetExtensionTempFolder(agentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotTempFolder != tempFolder {
+		t.Fatalf("temp folder = %q, want %q", gotTempFolder, tempFolder)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(tempFolder)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o700 {
+			t.Fatalf("temp folder mode = %#o, want 0700", got)
+		}
+	}
+
+	locator := packageInstallLocator{cwd: t.TempDir(), agentDir: agentDir}
+	unsafeSource := GitSource{Host: "evil.example", Path: "../../victim/repo"}
+	for _, scope := range []packageInstallScope{
+		packageInstallScopeUser,
+		packageInstallScopeProject,
+		packageInstallScopeTemporary,
+	} {
+		if path, err := locator.gitInstallPath(unsafeSource, scope); err == nil ||
+			!strings.Contains(err.Error(), "outside package install root") {
+			t.Fatalf("scope %d path = %q, err = %v", scope, path, err)
+		}
+	}
+	if runtime.GOOS != "windows" {
+		outside := t.TempDir()
+		symlink := filepath.Join(agentDir, "git", "linked-host")
+		if err := os.MkdirAll(filepath.Dir(symlink), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, symlink); err != nil {
+			t.Fatal(err)
+		}
+		if path, err := resolveManagedPath(filepath.Join(agentDir, "git"), "linked-host", "package"); err == nil ||
+			!strings.Contains(err.Error(), "outside package install root") {
+			t.Fatalf("symlink path = %q, err = %v", path, err)
+		}
+	}
+
+	validSource := GitSource{Host: "github.com", Path: "test/extension"}
+	temporaryPath, err := locator.gitInstallPath(validSource, packageInstallScopeTemporary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(tempFolder, temporaryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		t.Fatalf("temporary path = %q, want under %q", temporaryPath, tempFolder)
+	}
 }
 
 type packageManagerGitTestEnv struct {
@@ -484,11 +615,11 @@ func gitForPackageManager(t *testing.T, args []string, cwd string) string {
 	return strings.TrimSpace(string(output))
 }
 
-func packageManagerTemporaryGitDir(host, path string) string {
+func packageManagerTemporaryGitDir(agentDir, host, path string) string {
 	cacheKey := "git-" + host + "-" + path
 	sum := sha256.Sum256([]byte(cacheKey))
 	hash := hex.EncodeToString(sum[:])[:8]
-	parts := []string{os.TempDir(), "pi-extensions", "git-" + host, hash}
+	parts := []string{agentDir, "tmp", "extensions", "git-" + host, hash}
 	parts = append(parts, strings.Split(path, "/")...)
 	return filepath.Join(parts...)
 }
@@ -528,7 +659,12 @@ func TestPackageManagerGitTestHelpersUseSameTemporaryPath(t *testing.T) {
 	if !ok {
 		t.Fatal("source did not parse")
 	}
-	if got, want := temporaryGitPackagePath(source), packageManagerTemporaryGitDir("github.com", "test/extension"); got != want {
+	agentDir := t.TempDir()
+	got, err := (packageInstallLocator{agentDir: agentDir}).temporaryGitInstallPath(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := packageManagerTemporaryGitDir(agentDir, "github.com", "test/extension"); got != want {
 		t.Fatalf("temporary path = %q, want %q", got, want)
 	}
 }

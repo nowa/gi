@@ -116,6 +116,24 @@ type PackageSource struct {
 	Pinned bool
 }
 
+type packageInstallScope uint8
+
+const (
+	packageInstallScopeUser packageInstallScope = iota
+	packageInstallScopeProject
+	packageInstallScopeTemporary
+)
+
+type packageInstallLocator struct {
+	cwd      string
+	agentDir string
+}
+
+type gitRefTarget struct {
+	FetchArgs []string
+	Ref       string
+}
+
 type DefaultPackageManager struct {
 	cwd             string
 	agentDir        string
@@ -262,9 +280,23 @@ func (m *DefaultPackageManager) removePackageArtifact(source string, project boo
 	parsed := ParsePackageSource(source)
 	switch parsed.Type {
 	case "git":
-		return os.RemoveAll(m.gitPackageInstallPath(GitSource{Host: parsed.Host, Path: parsed.Path}, project))
+		installPath, err := m.resolveGitPackageInstallPath(
+			GitSource{Host: parsed.Host, Path: parsed.Path},
+			packageInstallScopeForProject(project),
+		)
+		if err != nil {
+			return err
+		}
+		return os.RemoveAll(installPath)
 	case "official":
-		return os.RemoveAll(filepath.Join(officialPackageStoreDir(m.agentDir, m.cwd), parsed.Path))
+		if !isOfficialPackageName(parsed.Path) {
+			return fmt.Errorf("unknown official package %q", parsed.Path)
+		}
+		installPath, err := resolveManagedPath(officialPackageStoreDir(m.agentDir, m.cwd), parsed.Path)
+		if err != nil {
+			return err
+		}
+		return os.RemoveAll(installPath)
 	case "local":
 		return nil
 	default:
@@ -602,9 +634,27 @@ func (m *DefaultPackageManager) GetInstalledPath(source, scope string) string {
 	parsed := ParsePackageSource(source)
 	switch parsed.Type {
 	case "git":
-		return m.gitPackageInstallPath(GitSource{Host: parsed.Host, Path: parsed.Path}, scope == "project")
+		installScope, ok := parsePackageInstallScope(scope)
+		if !ok {
+			return ""
+		}
+		path, err := m.resolveGitPackageInstallPath(
+			GitSource{Host: parsed.Host, Path: parsed.Path},
+			installScope,
+		)
+		if err != nil {
+			return ""
+		}
+		return path
 	case "official":
-		return filepath.Join(officialPackageStoreDir(m.agentDir, m.cwd), parsed.Path)
+		if !isOfficialPackageName(parsed.Path) {
+			return ""
+		}
+		path, err := resolveManagedPath(officialPackageStoreDir(m.agentDir, m.cwd), parsed.Path)
+		if err != nil {
+			return ""
+		}
+		return path
 	case "local":
 		baseDir := m.agentDir
 		if scope == "project" {
@@ -857,22 +907,10 @@ func (m *DefaultPackageManager) Update(sources ...string) error {
 	for _, target := range targets {
 		sourceText := strings.TrimSpace(target.source)
 		source, ok := ParseGitURL(sourceText)
-		if !ok || source.Pinned {
+		if !ok {
 			continue
 		}
-		installedDir := m.gitPackageInstallPath(source, target.scope == "project")
-		if _, err := os.Stat(installedDir); err != nil {
-			if os.IsNotExist(err) {
-				if err := m.installGitPackage(source, target.scope == "project"); err != nil {
-					m.emitProgress(PackageProgressEvent{Type: "error", Action: "update", Source: sourceText, Error: err.Error()})
-					return err
-				}
-				continue
-			}
-			m.emitProgress(PackageProgressEvent{Type: "error", Action: "update", Source: sourceText, Error: err.Error()})
-			return err
-		}
-		if err := m.refreshGitPackage(installedDir); err != nil {
+		if err := m.installGitPackageForScope(source, packageInstallScopeForProject(target.scope == "project")); err != nil {
 			m.emitProgress(PackageProgressEvent{Type: "error", Action: "update", Source: sourceText, Error: err.Error()})
 			return err
 		}
@@ -982,9 +1020,13 @@ func (m *DefaultPackageManager) ResolveExtensionSources(sources []string, option
 		if !ok {
 			continue
 		}
-		packageDir := gitPackageInstallPath(m.agentDir, source)
+		scope := packageInstallScopeUser
 		if options.Temporary {
-			packageDir = temporaryGitPackagePath(source)
+			scope = packageInstallScopeTemporary
+		}
+		packageDir, err := m.resolveGitPackageInstallPath(source, scope)
+		if err != nil {
+			return nil, err
 		}
 		offline := packageManagerOffline()
 		if options.Temporary && !source.Pinned && !offline {
@@ -992,7 +1034,19 @@ func (m *DefaultPackageManager) ResolveExtensionSources(sources []string, option
 				if err := m.refreshGitPackage(packageDir); err != nil {
 					return nil, err
 				}
+			} else if os.IsNotExist(err) {
+				if err := m.installGitPackageForScope(source, scope); err != nil {
+					return nil, err
+				}
 			} else if err != nil && !os.IsNotExist(err) {
+				return nil, err
+			}
+		} else if options.Temporary && source.Pinned && !offline {
+			if _, err := os.Stat(packageDir); os.IsNotExist(err) {
+				if err := m.installGitPackageForScope(source, scope); err != nil {
+					return nil, err
+				}
+			} else if err != nil {
 				return nil, err
 			}
 		} else if offline {
@@ -1009,17 +1063,36 @@ func (m *DefaultPackageManager) ResolveExtensionSources(sources []string, option
 }
 
 func (m *DefaultPackageManager) installGitPackage(source GitSource, project bool) error {
-	targetDir := m.gitPackageInstallPath(source, project)
+	return m.installGitPackageForScope(source, packageInstallScopeForProject(project))
+}
+
+func (m *DefaultPackageManager) installGitPackageForScope(source GitSource, scope packageInstallScope) error {
+	targetDir, err := m.resolveGitPackageInstallPath(source, scope)
+	if err != nil {
+		return err
+	}
 	if _, err := os.Stat(targetDir); err == nil {
-		return nil
+		if source.Ref != "" {
+			return m.ensureGitRef(targetDir, gitRefTarget{
+				FetchArgs: []string{"fetch", "origin", source.Ref},
+				Ref:       "FETCH_HEAD",
+			})
+		}
+		return m.refreshGitPackage(targetDir)
 	} else if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if err := ensurePackageStoreGitIgnore(
-		m.gitPackageInstallRoot(project),
-		m.operations.MarkPathIgnoredByCloudSync,
-	); err != nil {
-		return err
+	if scope != packageInstallScopeTemporary {
+		installRoot, err := m.packageInstallLocator().gitInstallRoot(scope)
+		if err != nil {
+			return err
+		}
+		if err := ensurePackageStoreGitIgnore(
+			installRoot,
+			m.operations.MarkPathIgnoredByCloudSync,
+		); err != nil {
+			return err
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(targetDir), 0o755); err != nil {
 		return err
@@ -1045,21 +1118,47 @@ func packageManagerOffline() bool {
 
 func (m *DefaultPackageManager) refreshGitPackage(packageDir string) error {
 	branch := "main"
-	fetchArgs := []string{"fetch", "--prune", "--no-tags", "origin", "+refs/heads/" + branch + ":refs/remotes/origin/" + branch}
-	if err := m.operations.RunCommand("git", fetchArgs, PackageCommandOptions{CWD: packageDir}); err != nil {
+	return m.ensureGitRef(packageDir, gitRefTarget{
+		FetchArgs: []string{"fetch", "--prune", "--no-tags", "origin", "+refs/heads/" + branch + ":refs/remotes/origin/" + branch},
+		Ref:       "origin/" + branch,
+	})
+}
+
+func (m *DefaultPackageManager) ensureGitRef(targetDir string, target gitRefTarget) error {
+	targetDir = strings.TrimSpace(targetDir)
+	target.Ref = strings.TrimSpace(target.Ref)
+	if targetDir == "" {
+		return fmt.Errorf("missing git checkout path")
+	}
+	if len(target.FetchArgs) == 0 || target.Ref == "" {
+		return fmt.Errorf("missing git ref target")
+	}
+	if err := m.operations.RunCommand("git", append([]string(nil), target.FetchArgs...), PackageCommandOptions{CWD: targetDir}); err != nil {
 		return err
 	}
 
-	localHead, _ := m.operations.RunCommandCapture("git", []string{"rev-parse", "HEAD"}, PackageCommandOptions{CWD: packageDir})
-	remoteHead, _ := m.operations.RunCommandCapture("git", []string{"rev-parse", "origin/" + branch}, PackageCommandOptions{CWD: packageDir})
-	if strings.TrimSpace(localHead) != "" && strings.TrimSpace(localHead) == strings.TrimSpace(remoteHead) {
+	localHead, err := m.operations.RunCommandCapture("git", []string{"rev-parse", "HEAD"}, PackageCommandOptions{CWD: targetDir})
+	if err != nil {
+		return err
+	}
+	commitRef := target.Ref + "^{commit}"
+	targetHead, err := m.operations.RunCommandCapture("git", []string{"rev-parse", commitRef}, PackageCommandOptions{CWD: targetDir})
+	if err != nil {
+		return err
+	}
+	localHead = strings.TrimSpace(localHead)
+	targetHead = strings.TrimSpace(targetHead)
+	if localHead == "" || targetHead == "" {
+		return fmt.Errorf("could not resolve git ref %q in %s", target.Ref, targetDir)
+	}
+	if localHead == targetHead {
 		return nil
 	}
 
-	if err := m.operations.RunCommand("git", []string{"reset", "--hard", "origin/" + branch}, PackageCommandOptions{CWD: packageDir}); err != nil {
+	if err := m.operations.RunCommand("git", []string{"reset", "--hard", commitRef}, PackageCommandOptions{CWD: targetDir}); err != nil {
 		return err
 	}
-	return m.operations.RunCommand("git", []string{"clean", "-fdx"}, PackageCommandOptions{CWD: packageDir})
+	return m.operations.RunCommand("git", []string{"clean", "-fdx"}, PackageCommandOptions{CWD: targetDir})
 }
 
 func (m *DefaultPackageManager) gitPackageHasAvailableUpdate(packageDir string) (bool, error) {
@@ -1210,32 +1309,148 @@ func packageLocalIdentity(path, baseDir string) string {
 	return filepath.Clean(absolute)
 }
 
-func gitPackageInstallPath(agentDir string, source GitSource) string {
-	elements := []string{agentDir, "git", source.Host}
-	elements = append(elements, strings.Split(source.Path, "/")...)
-	return filepath.Join(elements...)
-}
-
-func (m *DefaultPackageManager) gitPackageInstallPath(source GitSource, project bool) string {
-	return gitPackageInstallPath(m.packageInstallBaseDir(project), source)
-}
-
-func (m *DefaultPackageManager) gitPackageInstallRoot(project bool) string {
-	return filepath.Join(m.packageInstallBaseDir(project), "git")
-}
-
-func (m *DefaultPackageManager) packageInstallBaseDir(project bool) string {
+func packageInstallScopeForProject(project bool) packageInstallScope {
 	if project {
-		return filepath.Join(m.cwd, ConfigDirName)
+		return packageInstallScopeProject
 	}
-	return m.agentDir
+	return packageInstallScopeUser
 }
 
-func temporaryGitPackagePath(source GitSource) string {
-	cacheKey := "git-" + source.Host + "-" + source.Path
+func parsePackageInstallScope(scope string) (packageInstallScope, bool) {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "", "user":
+		return packageInstallScopeUser, true
+	case "project":
+		return packageInstallScopeProject, true
+	case "temporary":
+		return packageInstallScopeTemporary, true
+	default:
+		return packageInstallScopeUser, false
+	}
+}
+
+func (m *DefaultPackageManager) packageInstallLocator() packageInstallLocator {
+	return packageInstallLocator{cwd: m.cwd, agentDir: m.agentDir}
+}
+
+func (m *DefaultPackageManager) resolveGitPackageInstallPath(source GitSource, scope packageInstallScope) (string, error) {
+	return m.packageInstallLocator().gitInstallPath(source, scope)
+}
+
+func (l packageInstallLocator) gitInstallPath(source GitSource, scope packageInstallScope) (string, error) {
+	if scope == packageInstallScopeTemporary {
+		return l.temporaryGitInstallPath(source)
+	}
+	root, err := l.gitInstallRoot(scope)
+	if err != nil {
+		return "", err
+	}
+	return resolveManagedPath(root, source.Host, source.Path)
+}
+
+func (l packageInstallLocator) gitInstallRoot(scope packageInstallScope) (string, error) {
+	switch scope {
+	case packageInstallScopeUser:
+		return resolveManagedPath(l.agentDir, "git")
+	case packageInstallScopeProject:
+		return resolveManagedPath(l.cwd, ConfigDirName, "git")
+	default:
+		return "", fmt.Errorf("git install root is not available for scope %d", scope)
+	}
+}
+
+func (l packageInstallLocator) temporaryGitInstallPath(source GitSource) (string, error) {
+	tempFolder, err := GetExtensionTempFolder(l.agentDir)
+	if err != nil {
+		return "", err
+	}
+	prefix := "git-" + source.Host
+	root, err := resolveManagedPath(tempFolder, prefix)
+	if err != nil {
+		return "", err
+	}
+	cacheKey := prefix + "-" + source.Path
 	sum := sha256.Sum256([]byte(cacheKey))
 	hash := hex.EncodeToString(sum[:])[:8]
-	elements := []string{os.TempDir(), "pi-extensions", "git-" + source.Host, hash}
-	elements = append(elements, strings.Split(source.Path, "/")...)
-	return filepath.Join(elements...)
+	return resolveManagedPath(root, hash, source.Path)
+}
+
+// GetExtensionTempFolder returns the private cache root used for temporary
+// extension checkouts. Existing directories are tightened on every access.
+func GetExtensionTempFolder(agentDir string) (string, error) {
+	if strings.TrimSpace(agentDir) == "" {
+		return "", fmt.Errorf("missing agent directory")
+	}
+	tempFolder, err := resolveManagedPath(agentDir, "tmp", "extensions")
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(tempFolder, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(tempFolder, 0o700); err != nil {
+		return "", err
+	}
+	return tempFolder, nil
+}
+
+func resolveManagedPath(root string, parts ...string) (string, error) {
+	if strings.TrimSpace(root) == "" {
+		return "", fmt.Errorf("missing package install root")
+	}
+	resolvedRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	elements := make([]string, 0, len(parts)+1)
+	elements = append(elements, resolvedRoot)
+	elements = append(elements, parts...)
+	resolvedPath, err := filepath.Abs(filepath.Join(elements...))
+	if err != nil {
+		return "", err
+	}
+	realRoot, err := resolvePathWithExistingPrefix(resolvedRoot)
+	if err != nil {
+		return "", err
+	}
+	realPath, err := resolvePathWithExistingPrefix(resolvedPath)
+	if err != nil {
+		return "", err
+	}
+	relativePath, err := filepath.Rel(realRoot, realPath)
+	if err != nil {
+		return "", err
+	}
+	if relativePath == ".." ||
+		strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) ||
+		filepath.IsAbs(relativePath) {
+		return "", fmt.Errorf("refusing to use path outside package install root: %s", resolvedPath)
+	}
+	return resolvedPath, nil
+}
+
+func resolvePathWithExistingPrefix(path string) (string, error) {
+	current := filepath.Clean(path)
+	var suffix []string
+	for {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			for index := len(suffix) - 1; index >= 0; index-- {
+				resolved = filepath.Join(resolved, suffix[index])
+			}
+			return filepath.Clean(resolved), nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		if info, statErr := os.Lstat(current); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("could not resolve managed path symlink %s: %w", current, err)
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", err
+		}
+		suffix = append(suffix, filepath.Base(current))
+		current = parent
+	}
 }
