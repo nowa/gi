@@ -96,6 +96,45 @@ func TestPackageManagerSourceParsingPiDocsAndHTTPSMatrix(t *testing.T) {
 	}
 }
 
+func TestPackageManagerRejectsUnsafeGitInstallPaths(t *testing.T) {
+	unsafeSources := []string{
+		"git:github.com/user/../repo",
+		"git:github.com/user/%2e%2e/repo",
+		"git:github.com/user/%2E%2E/repo",
+		"git:github.com/user/%5Crepo",
+		"git:github.com/user/%00repo",
+		"git:github.com/user/%zzrepo",
+		"git:github.com%2Fattacker/user/repo",
+		`git:github.com\attacker/user/repo`,
+		"git:git@github.com:user/../repo",
+		"git:git@github.com:/user/repo",
+		"https://github.com/user/%2e%2e/repo",
+	}
+	for _, source := range unsafeSources {
+		t.Run(source, func(t *testing.T) {
+			if parsed, ok := ParseGitURL(source); ok {
+				t.Fatalf("ParseGitURL(%q) = %#v, want rejected", source, parsed)
+			}
+		})
+	}
+
+	encodedSlash, ok := ParseGitURL("https://github.com/user/%2Frepo")
+	if !ok || encodedSlash.Path != "user/%2Frepo" {
+		t.Fatalf("encoded slash source = %#v, ok = %t", encodedSlash, ok)
+	}
+	encodedSlashRef, ok := ParseGitURL("https://github.com/user/%2Frepo@main")
+	if !ok ||
+		encodedSlashRef.Repo != "https://github.com/user/%2Frepo" ||
+		encodedSlashRef.Path != "user/%2Frepo" ||
+		encodedSlashRef.Ref != "main" {
+		t.Fatalf("encoded slash ref source = %#v, ok = %t", encodedSlashRef, ok)
+	}
+	encodedAt, ok := ParseGitURL("https://github.com/user/repo%40mirror")
+	if !ok || encodedAt.Path != "user/repo%40mirror" || encodedAt.Ref != "" {
+		t.Fatalf("encoded at source = %#v, ok = %t", encodedAt, ok)
+	}
+}
+
 func TestPackageManagerPackageIdentityDedupePiParity(t *testing.T) {
 	manager := NewDefaultPackageManager(PackageManagerOptions{CWD: t.TempDir(), AgentDir: t.TempDir(), SettingsManager: NewInMemorySettingsManager(nil)})
 

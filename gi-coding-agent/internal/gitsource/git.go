@@ -15,6 +15,13 @@ type GitSource struct {
 	Pinned bool
 }
 
+type gitSourceParts struct {
+	repo string
+	host string
+	path string
+	ref  string
+}
+
 var scpLikeGitPattern = regexp.MustCompile(`^git@([^:]+):(.+)$`)
 
 func ParseGitURL(source string) (GitSource, bool) {
@@ -51,9 +58,6 @@ func parseGenericGitURL(rawURL string) (GitSource, bool) {
 		}
 		host = parsed.Hostname()
 		path = strings.TrimLeft(parsed.EscapedPath(), "/")
-		if unescaped, err := url.PathUnescape(path); err == nil {
-			path = unescaped
-		}
 	} else {
 		slashIndex := strings.Index(repoWithoutRef, "/")
 		if slashIndex < 0 {
@@ -67,17 +71,55 @@ func parseGenericGitURL(rawURL string) (GitSource, bool) {
 		repo = "https://" + repoWithoutRef
 	}
 
-	normalizedPath := strings.TrimLeft(strings.TrimSuffix(path, ".git"), "/")
-	if host == "" || normalizedPath == "" || len(strings.Split(normalizedPath, "/")) < 2 {
+	return buildGitSource(gitSourceParts{repo: repo, host: host, path: path, ref: ref})
+}
+
+func decodeForValidation(value string) (string, bool) {
+	decoded, err := url.PathUnescape(value)
+	return decoded, err == nil
+}
+
+func hasUnsafeGitInstallPart(value string, allowSlash bool) bool {
+	decoded, ok := decodeForValidation(value)
+	if !ok {
+		return true
+	}
+	for _, candidate := range []string{value, decoded} {
+		if strings.ContainsRune(candidate, '\x00') ||
+			strings.Contains(candidate, `\`) ||
+			strings.HasPrefix(candidate, "/") {
+			return true
+		}
+		if !allowSlash && strings.Contains(candidate, "/") {
+			return true
+		}
+		for _, segment := range strings.Split(candidate, "/") {
+			if segment == ".." {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func buildGitSource(parts gitSourceParts) (GitSource, bool) {
+	if strings.HasPrefix(parts.path, "/") {
+		return GitSource{}, false
+	}
+	normalizedPath := strings.TrimLeft(strings.TrimSuffix(parts.path, ".git"), "/")
+	if parts.host == "" || normalizedPath == "" || len(strings.Split(normalizedPath, "/")) < 2 {
+		return GitSource{}, false
+	}
+	if hasUnsafeGitInstallPart(parts.host, false) || hasUnsafeGitInstallPart(normalizedPath, true) {
 		return GitSource{}, false
 	}
 	return GitSource{
 		Type:   "git",
-		Repo:   repo,
-		Host:   host,
+		Repo:   parts.repo,
+		Host:   parts.host,
 		Path:   normalizedPath,
-		Ref:    ref,
-		Pinned: ref != "",
+		Ref:    parts.ref,
+		Pinned: parts.ref != "",
 	}, true
 }
 
@@ -101,7 +143,7 @@ func splitGitRef(rawURL string) (repo string, ref string) {
 		if err != nil {
 			return rawURL, ""
 		}
-		pathWithRef := strings.TrimLeft(parsed.Path, "/")
+		pathWithRef := strings.TrimLeft(parsed.EscapedPath(), "/")
 		refSeparator := strings.Index(pathWithRef, "@")
 		if refSeparator < 0 {
 			return rawURL, ""
@@ -111,7 +153,12 @@ func splitGitRef(rawURL string) (repo string, ref string) {
 		if repoPath == "" || ref == "" {
 			return rawURL, ""
 		}
-		parsed.Path = "/" + repoPath
+		decodedRepoPath, err := url.PathUnescape("/" + repoPath)
+		if err != nil {
+			return rawURL, ""
+		}
+		parsed.Path = decodedRepoPath
+		parsed.RawPath = "/" + repoPath
 		return strings.TrimRight(parsed.String(), "/"), ref
 	}
 

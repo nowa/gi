@@ -481,9 +481,6 @@ No missing files or symbols.
 | `utils/clipboard.ts::readClipboardText` |
 | `utils/deprecation.ts::warnDeprecation` |
 | `utils/deprecation.ts::clearDeprecationWarningsForTests` |
-| `utils/git.ts::decodeForValidation` |
-| `utils/git.ts::hasUnsafeGitInstallPart` |
-| `utils/git.ts::buildGitSource` |
 | `utils/image-convert.ts::convertImageBytesToPng` |
 | `utils/image-process.ts::normalizeSupportedImageMimeType` |
 | `utils/image-process.ts::normalizeImage` |
@@ -668,7 +665,7 @@ No missing files or symbols.
 | `utils/exif-orientation.ts` | `readOrientationFromTiff`<br>`findJpegTiffOffset`<br>`findWebpTiffOffset`<br>`hasExifHeader`<br>`getExifOrientation`<br>`rotate90`<br>`applyExifOrientation` |  |
 | `utils/frontmatter.ts` | _none_ |  |
 | `utils/fs-watch.ts` | `closeWatcher`<br>`watchWithErrorHandler` |  |
-| `utils/git.ts` | `splitRef`<br>`decodeForValidation`<br>`hasUnsafeGitInstallPart`<br>`buildGitSource`<br>`parseGenericGitUrl`<br>`parseGitUrl` | `decodeForValidation`<br>`hasUnsafeGitInstallPart`<br>`buildGitSource` |
+| `utils/git.ts` | `splitRef`<br>`decodeForValidation`<br>`hasUnsafeGitInstallPart`<br>`buildGitSource`<br>`parseGenericGitUrl`<br>`parseGitUrl` |  |
 | `utils/highlight-js-lib-index.d.ts` | _none_ |  |
 | `utils/html.ts` | `decodeCodePoint`<br>`decodeHtmlEntity`<br>`decodeHtmlEntityAt` |  |
 | `utils/image-convert.ts` | `convertImageBytesToPng`<br>`convertToPng` | `convertImageBytesToPng` |
