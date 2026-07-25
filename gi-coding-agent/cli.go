@@ -525,13 +525,20 @@ func newDefaultCLIRPCSessionHost(
 		return nil, nil, err
 	}
 	printHost, ok := host.(*agentSessionPrintModeHost)
-	if !ok || printHost.session == nil {
+	if !ok {
 		_ = host.Dispose()
 		return nil, nil, fmt.Errorf(
 			"RPC mode requires an agent session host",
 		)
 	}
-	rpcHost := NewRPCSessionHost(printHost.session)
+	session := printHost.AgentSession()
+	if session == nil {
+		_ = host.Dispose()
+		return nil, nil, fmt.Errorf(
+			"RPC mode requires an agent session host",
+		)
+	}
+	rpcHost := NewRPCSessionHost(session)
 	rpcHost.Settings = printHost.settingsManager
 	return rpcHost, host, nil
 }

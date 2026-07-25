@@ -2,6 +2,7 @@ package gicodingagent
 
 import (
 	"context"
+	"sort"
 	"strings"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
@@ -65,6 +66,9 @@ func (h *CLIInteractiveTUIHost) autocompleteSlashCommands() []gitui.SlashCommand
 		if command.Name == "model" {
 			slash.GetArgumentCompletions = h.modelArgumentCompletions
 		}
+		if command.Name == "login" {
+			slash.GetArgumentCompletions = h.loginArgumentCompletions
+		}
 		add(slash)
 	}
 	if host, err := h.newRPCSessionHost(); err == nil && host != nil {
@@ -91,23 +95,158 @@ func (h *CLIInteractiveTUIHost) modelArgumentCompletions(prefix string) []gitui.
 			models = append(models, scopedModel.Model)
 		}
 	}
-	filter := strings.TrimSpace(prefix)
-	if filter != "" {
-		models = gitui.FuzzyFilter(models, filter, func(model llm.Model) string {
+	return createFuzzyAutocompleteItems(
+		models,
+		prefix,
+		func(model llm.Model) string {
 			return modelSearchText(modelSearchItemFromModel(model))
+		},
+		func(model llm.Model) gitui.AutocompleteItem {
+			value := scopedModelFullID(model)
+			return gitui.AutocompleteItem{
+				Value:       value,
+				Label:       model.ID,
+				Description: strings.TrimSpace(model.Provider),
+			}
+		},
+	)
+}
+
+type loginProviderCompletionOption struct {
+	id        string
+	name      string
+	authTypes []string
+}
+
+func createFuzzyAutocompleteItems[T any](
+	items []T,
+	prefix string,
+	searchText func(T) string,
+	toAutocompleteItem func(T) gitui.AutocompleteItem,
+) []gitui.AutocompleteItem {
+	filtered := gitui.FuzzyFilter(items, prefix, searchText)
+	if len(filtered) == 0 {
+		return nil
+	}
+	completions := make([]gitui.AutocompleteItem, 0, len(filtered))
+	for _, item := range filtered {
+		completions = append(completions, toAutocompleteItem(item))
+	}
+	return completions
+}
+
+func getLoginProviderCompletionOptions(
+	providers []AuthSelectorProvider,
+) []loginProviderCompletionOption {
+	options := make([]loginProviderCompletionOption, 0, len(providers))
+	indexByID := make(map[string]int, len(providers))
+	for _, provider := range providers {
+		if index, ok := indexByID[provider.ID]; ok {
+			existing := &options[index]
+			if !containsString(existing.authTypes, provider.AuthType) {
+				existing.authTypes = append(
+					existing.authTypes,
+					provider.AuthType,
+				)
+				sort.SliceStable(
+					existing.authTypes,
+					func(i, j int) bool {
+						return loginAuthTypeRank(existing.authTypes[i]) <
+							loginAuthTypeRank(existing.authTypes[j])
+					},
+				)
+			}
+			continue
+		}
+		indexByID[provider.ID] = len(options)
+		options = append(options, loginProviderCompletionOption{
+			id:        provider.ID,
+			name:      provider.Name,
+			authTypes: []string{provider.AuthType},
 		})
 	}
-	items := make([]gitui.AutocompleteItem, 0, len(models))
-	for _, model := range models {
-		value := scopedModelFullID(model)
-		description := strings.TrimSpace(model.Provider)
-		items = append(items, gitui.AutocompleteItem{
-			Value:       value,
-			Label:       model.ID,
-			Description: description,
-		})
+	sort.SliceStable(options, func(i, j int) bool {
+		left := strings.ToLower(options[i].name)
+		right := strings.ToLower(options[j].name)
+		if left == right {
+			return options[i].id < options[j].id
+		}
+		return left < right
+	})
+	return options
+}
+
+func loginAuthTypeRank(authType string) int {
+	switch authType {
+	case string(llm.CredentialTypeOAuth):
+		return 0
+	case string(llm.CredentialTypeAPIKey):
+		return 1
+	default:
+		return 2
 	}
-	return items
+}
+
+func getLoginProviderSearchText(
+	provider loginProviderCompletionOption,
+) string {
+	authTypes := make([]string, 0, len(provider.authTypes)*2)
+	for _, authType := range provider.authTypes {
+		authTypes = append(
+			authTypes,
+			authType,
+			formatAuthSelectorProviderType(authType),
+		)
+	}
+	return strings.Join(
+		[]string{
+			provider.id,
+			provider.name,
+			strings.Join(authTypes, " "),
+		},
+		" ",
+	)
+}
+
+func formatLoginProviderCompletionDescription(
+	provider loginProviderCompletionOption,
+) string {
+	authTypes := make([]string, 0, len(provider.authTypes))
+	for _, authType := range provider.authTypes {
+		authTypes = append(
+			authTypes,
+			formatAuthSelectorProviderType(authType),
+		)
+	}
+	description := strings.Join(authTypes, "/")
+	if provider.name == provider.id {
+		return description
+	}
+	return provider.name + " · " + description
+}
+
+func (h *CLIInteractiveTUIHost) loginArgumentCompletions(
+	prefix string,
+) []gitui.AutocompleteItem {
+	registry := h.modelRegistry()
+	if registry == nil {
+		return nil
+	}
+	providers := getLoginProviderCompletionOptions(
+		loginAuthSelectorProviders(registry, ""),
+	)
+	return createFuzzyAutocompleteItems(
+		providers,
+		prefix,
+		getLoginProviderSearchText,
+		func(provider loginProviderCompletionOption) gitui.AutocompleteItem {
+			return gitui.AutocompleteItem{
+				Value:       provider.id,
+				Label:       provider.id,
+				Description: formatLoginProviderCompletionDescription(provider),
+			}
+		},
+	)
 }
 
 func autocompleteDescriptionWithSource(description string, sourceInfo any) string {

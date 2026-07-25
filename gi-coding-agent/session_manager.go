@@ -90,6 +90,13 @@ type FileEntry struct {
 	raw           map[string]any
 }
 
+// IsCustom reports whether the entry carries extension-owned session data.
+// Go keeps persisted entries and rendered LLM messages as distinct types, so
+// callers use this method instead of a runtime union type assertion.
+func (e FileEntry) IsCustom() bool {
+	return e.Type == "custom"
+}
+
 func (e *FileEntry) UnmarshalJSON(data []byte) error {
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {

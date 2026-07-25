@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -71,9 +72,13 @@ func (f *FooterComponent) Render(width int) []string {
 	if pwd == "" {
 		pwd = "."
 	}
-	if home := os.Getenv("HOME"); home != "" && strings.HasPrefix(pwd, home) {
-		pwd = "~" + strings.TrimPrefix(pwd, home)
-	}
+	pwd = FormatCWDForFooter(
+		pwd,
+		firstNonEmptyString(
+			os.Getenv("HOME"),
+			os.Getenv("USERPROFILE"),
+		),
+	)
 	if state.GitBranch != "" {
 		pwd += " (" + state.GitBranch + ")"
 	}
@@ -219,6 +224,41 @@ func sortedFooterStatuses(statuses map[string]string) []string {
 func sanitizeStatusText(text string) string {
 	fields := strings.Fields(strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(text))
 	return strings.Join(fields, " ")
+}
+
+// FormatCWDForFooter replaces home with ~ only when cwd is home itself or a
+// descendant. Both inputs are resolved before comparison so sibling prefixes
+// such as "/home/me-other" are never shortened.
+func FormatCWDForFooter(cwd, home string) string {
+	if home == "" {
+		return cwd
+	}
+	resolvedCWD, err := filepath.Abs(cwd)
+	if err != nil {
+		return cwd
+	}
+	resolvedHome, err := filepath.Abs(home)
+	if err != nil {
+		return cwd
+	}
+	relativeToHome, err := filepath.Rel(resolvedHome, resolvedCWD)
+	if err != nil {
+		return cwd
+	}
+	insideHome := relativeToHome == "." ||
+		(relativeToHome != ".." &&
+			!strings.HasPrefix(
+				relativeToHome,
+				".."+string(filepath.Separator),
+			) &&
+			!filepath.IsAbs(relativeToHome))
+	if !insideHome {
+		return cwd
+	}
+	if relativeToHome == "." {
+		return "~"
+	}
+	return "~" + string(filepath.Separator) + relativeToHome
 }
 
 func formatFooterTokens(count int) string {

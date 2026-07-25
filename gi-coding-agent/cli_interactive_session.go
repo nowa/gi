@@ -596,7 +596,7 @@ func (h *CLIInteractiveTUIHost) handleCloneSlashCommand() error {
 				return err
 			}
 			if owner, ok := h.runtimeHost.(*agentSessionPrintModeHost); ok {
-				owner.session = newSession
+				owner.setAgentSession(newSession)
 			} else {
 				return errors.New("clone requires a replaceable agent session host")
 			}
@@ -624,7 +624,7 @@ func (h *CLIInteractiveTUIHost) handleCloneSlashCommand() error {
 			return errors.New("clone did not produce a session")
 		}
 		if owner, ok := h.runtimeHost.(*agentSessionPrintModeHost); ok {
-			owner.session = result.Session
+			owner.setAgentSession(result.Session)
 		} else {
 			return errors.New("clone requires a replaceable agent session host")
 		}
@@ -668,7 +668,7 @@ func (h *CLIInteractiveTUIHost) handleForkSlashCommand(args string) error {
 		result, err = session.Fork(entryID)
 		if err == nil && result.Session != nil {
 			if owner, ok := h.runtimeHost.(*agentSessionPrintModeHost); ok {
-				owner.session = result.Session
+				owner.setAgentSession(result.Session)
 			}
 		}
 	}

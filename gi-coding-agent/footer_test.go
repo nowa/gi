@@ -1,12 +1,34 @@
 package gicodingagent
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
 	gitui "github.com/nowa/gi/gi-tui"
 )
+
+func TestFormatCWDForFooterOnlyShortensHomeAndDescendants(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "me")
+	nested := filepath.Join(home, "projects", "gi")
+	sibling := filepath.Join(root, "me-other")
+
+	if got := FormatCWDForFooter(home, home); got != "~" {
+		t.Fatalf("home path = %q", got)
+	}
+	if got, want := FormatCWDForFooter(nested, home),
+		"~"+string(filepath.Separator)+filepath.Join("projects", "gi"); got != want {
+		t.Fatalf("nested path = %q, want %q", got, want)
+	}
+	if got := FormatCWDForFooter(sibling, home); got != sibling {
+		t.Fatalf("sibling prefix path = %q, want %q", got, sibling)
+	}
+	if got := FormatCWDForFooter(nested, ""); got != nested {
+		t.Fatalf("path without home = %q, want %q", got, nested)
+	}
+}
 
 func TestFooterComponentKeepsAllLinesWithinWidthForWideSessionNames(t *testing.T) {
 	width := 93

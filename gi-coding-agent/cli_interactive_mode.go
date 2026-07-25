@@ -72,6 +72,7 @@ func newDefaultCLIInteractiveHost(args Args, options CLIOptions) (CLIInteractive
 			InitialMessage:      initial.message,
 			InitialImages:       initial.images,
 			Messages:            promptArgs.Messages,
+			Stdout:              options.Stdout,
 			VerboseStartup:      args.Verbose,
 			ClearScreenOnStart:  true,
 			ShowFooter:          true,

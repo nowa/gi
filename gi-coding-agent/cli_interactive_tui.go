@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,6 +24,8 @@ type CLIInteractiveTUIHostOptions struct {
 	InitialImages       []llm.ContentPart
 	Messages            []string
 	Terminal            gitui.Terminal
+	Stdout              io.Writer
+	StdoutIsTTY         *bool
 	ViewTreeHost        *ViewTreeHost
 	InProcessUI         *InProcessUIRegistry
 	ClipboardCopy       func(string) error
@@ -96,6 +99,8 @@ type CLIInteractiveTUIHost struct {
 	initialImages       []llm.ContentPart
 	messages            []string
 	terminal            gitui.Terminal
+	stdout              io.Writer
+	stdoutIsTTY         bool
 	viewTreeHost        *ViewTreeHost
 	inProcessUI         *InProcessUIRegistry
 	clipboardCopy       func(string) error
@@ -184,6 +189,7 @@ type CLIInteractiveTUIHost struct {
 	activePromptCount       int
 	themeController         *interactiveThemeController
 	deadTerminal            atomic.Bool
+	resumeCommandSuppressed atomic.Bool
 }
 
 type cliInteractiveLiveState struct {
@@ -559,12 +565,18 @@ func NewCLIInteractiveTUIHost(options CLIInteractiveTUIHostOptions) (*CLIInterac
 		options.StartupWarnings,
 		startupWarningsFromRuntimeHost(options.RuntimeHost),
 	)
+	stdout, stdoutIsTTY := resolveInteractiveOutput(
+		options.Stdout,
+		options.StdoutIsTTY,
+	)
 	return &CLIInteractiveTUIHost{
 		runtimeHost:         options.RuntimeHost,
 		initialMessage:      options.InitialMessage,
 		initialImages:       append([]llm.ContentPart(nil), options.InitialImages...),
 		messages:            append([]string(nil), options.Messages...),
 		terminal:            terminal,
+		stdout:              stdout,
+		stdoutIsTTY:         stdoutIsTTY,
 		viewTreeHost:        viewTreeHost,
 		inProcessUI:         options.InProcessUI,
 		clipboardCopy:       options.ClipboardCopy,
@@ -618,8 +630,16 @@ func (h *CLIInteractiveTUIHost) RunContext(ctx context.Context) (runErr error) {
 		h.waitForActivePrompts(500 * time.Millisecond)
 		h.stopUI()
 		h.stopProtocolExtensionProcesses()
+		resumeCommand, showResumeCommand :=
+			h.resumeCommandForShutdown()
 		if err := h.runtimeHost.Dispose(); err != nil && runErr == nil {
 			runErr = err
+		}
+		if showResumeCommand {
+			if err := h.writeResumeCommand(resumeCommand); err != nil &&
+				runErr == nil {
+				runErr = err
+			}
 		}
 	}()
 	h.buildUI()
@@ -728,6 +748,7 @@ func (h *CLIInteractiveTUIHost) startShutdownSignalWatcher(ctx context.Context) 
 			if !ok {
 				return
 			}
+			h.resumeCommandSuppressed.Store(true)
 			if isCLIInteractiveHangupSignal(signal) {
 				h.stopForDeadTerminal()
 				return
@@ -768,6 +789,7 @@ func (h *CLIInteractiveTUIHost) stopForDeadTerminal() {
 		return
 	}
 	h.deadTerminal.Store(true)
+	h.resumeCommandSuppressed.Store(true)
 	h.Stop()
 }
 
@@ -2697,7 +2719,7 @@ func (h *CLIInteractiveTUIHost) renderSessionEntries(
 		items = items[:0]
 	}
 	for _, entry := range entries {
-		if entry.Type == "custom" {
+		if entry.IsCustom() {
 			flush()
 			h.addCustomEntryToChat(entry)
 			continue
@@ -3292,7 +3314,7 @@ func (h *CLIInteractiveTUIHost) addRenderedCustomMessage(message llm.Message) bo
 }
 
 func (h *CLIInteractiveTUIHost) addCustomEntryToChat(entry FileEntry) bool {
-	if entry.Type != "custom" || strings.TrimSpace(entry.CustomType) == "" ||
+	if !entry.IsCustom() || strings.TrimSpace(entry.CustomType) == "" ||
 		h == nil || h.chat == nil {
 		return false
 	}
@@ -4082,7 +4104,7 @@ func (h *CLIInteractiveTUIHost) newRPCSessionHost() (*RPCSessionHost, error) {
 	}
 	if owner, ok := h.runtimeHost.(*agentSessionPrintModeHost); ok {
 		host.OnSessionReplaced(func(session *AgentSession) {
-			owner.session = session
+			owner.setAgentSession(session)
 		})
 	}
 	return host, nil
