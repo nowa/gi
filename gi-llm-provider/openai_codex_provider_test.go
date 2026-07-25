@@ -3,6 +3,7 @@ package gillmprovider
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -22,7 +23,17 @@ func TestOpenAICodexResponsesProviderStreamsFromHTTP(t *testing.T) {
 		authHeader = r.Header.Get("Authorization")
 		accountHeader = r.Header.Get("chatgpt-account-id")
 		sessionHeader = r.Header.Get("session-id")
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request: %v", err)
+		}
+		if r.Header.Get("content-encoding") == "zstd" {
+			body, err = decodeOpenAICodexZstd(body)
+			if err != nil {
+				t.Errorf("decode zstd request: %v", err)
+			}
+		}
+		if err := json.Unmarshal(body, &payload); err != nil {
 			t.Errorf("decode request: %v", err)
 		}
 		w.Header().Set("content-type", "text/event-stream")

@@ -131,16 +131,24 @@ func TestOpenAICodexResponsesProviderZstdCompressesSSERequestBodies(t *testing.T
 
 func decodeOpenAICodexZstdRequest(t *testing.T, body []byte) []byte {
 	t.Helper()
-	decoder, err := zstd.NewReader(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer decoder.Close()
-	decoded, err := decoder.DecodeAll(body, nil)
+	decoded, err := decodeOpenAICodexZstd(body)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return decoded
+}
+
+func decodeOpenAICodexZstd(body []byte) ([]byte, error) {
+	decoder, err := zstd.NewReader(nil)
+	if err != nil {
+		return nil, err
+	}
+	defer decoder.Close()
+	decoded, err := decoder.DecodeAll(body, nil)
+	if err != nil {
+		return nil, err
+	}
+	return decoded, nil
 }
 
 func openAICodexCompressionTestCaseLabel(text string) string {
