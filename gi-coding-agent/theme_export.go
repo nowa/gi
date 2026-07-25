@@ -23,12 +23,18 @@ type themeFile struct {
 }
 
 func loadThemeExportFile(themeName, agentDir string) (themeFile, error) {
+	if err := validateTUIThemeName(themeName); err != nil {
+		return themeFile{}, err
+	}
 	content, err := os.ReadFile(filepath.Join(agentDir, "themes", themeName+".json"))
 	if err != nil {
 		return themeFile{}, err
 	}
 	var theme themeFile
 	if err := json.Unmarshal(content, &theme); err != nil {
+		return themeFile{}, err
+	}
+	if err := validateTUIThemeName(theme.Name); err != nil {
 		return themeFile{}, err
 	}
 	return theme, nil
@@ -66,6 +72,13 @@ func GetResolvedThemeCSSColors(themeName, agentDir string) (map[string]string, e
 	for key, value := range theme.Colors {
 		if color, ok := resolveThemeCSSColor(value, theme.Vars, defaultText, map[string]bool{}); ok {
 			resolved[key] = color
+		}
+	}
+	if _, ok := resolved["thinkingMax"]; !ok {
+		if value, found := tuiThemeColorWithFallback(theme.Colors, "thinkingMax"); found {
+			if color, resolvedOK := resolveThemeCSSColor(value, theme.Vars, defaultText, map[string]bool{}); resolvedOK {
+				resolved["thinkingMax"] = color
+			}
 		}
 	}
 	return resolved, nil

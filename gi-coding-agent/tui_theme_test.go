@@ -59,6 +59,7 @@ func TestTUIThemeForegroundTokensMatchPiDarkTheme(t *testing.T) {
 		"thinkingMedium":     "\x1b[38;2;129;162;190m",
 		"thinkingHigh":       "\x1b[38;2;178;148;187m",
 		"thinkingXhigh":      "\x1b[38;2;209;131;232m",
+		"thinkingMax":        "\x1b[38;2;255;95;255m",
 		"bashMode":           "\x1b[38;2;181;189;104m",
 	}
 	for color, prefix := range expected {
@@ -140,6 +141,7 @@ func TestTUIThemeForegroundTokensMatchPiLightTheme(t *testing.T) {
 		"thinkingMedium":     "\x1b[38;2;90;128;128m",
 		"thinkingHigh":       "\x1b[38;2;135;95;135m",
 		"thinkingXhigh":      "\x1b[38;2;139;0;139m",
+		"thinkingMax":        "\x1b[38;2;175;0;95m",
 		"bashMode":           "\x1b[38;2;88;132;88m",
 	}
 	for color, prefix := range expected {
@@ -197,6 +199,47 @@ func TestTUIThemeLoadsCustomThemeTokens(t *testing.T) {
 	}
 }
 
+func TestTUIThemeMaxThinkingColorMatchesPiAndFallsBackForLegacyThemes(t *testing.T) {
+	t.Run("uses distinct built-in max colors", func(t *testing.T) {
+		setTUIThemeForTest(t, "dark", nil)
+		if got, want := tuiThemeThinkingBorder("max")("x"), "\x1b[38;2;255;95;255mx"+tuiResetFG; got != want {
+			t.Fatalf("dark max border = %q, want %q", got, want)
+		}
+
+		setTUIThemeForTest(t, "light", nil)
+		if got, want := tuiThemeThinkingBorder("max")("x"), "\x1b[38;2;175;0;95mx"+tuiResetFG; got != want {
+			t.Fatalf("light max border = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("falls back to xhigh for a legacy custom theme", func(t *testing.T) {
+		themePath := filepath.Join(t.TempDir(), "legacy.json")
+		fixture := completeTUIThemeFixture("legacy", map[string]any{
+			"thinkingXhigh": "#123456",
+		})
+		delete(fixture["colors"].(map[string]any), "thinkingMax")
+		writeJSON(t, themePath, fixture)
+
+		setTUIThemeForTest(t, "legacy", []TUIThemeInfo{{Name: "legacy", Path: themePath}})
+		if got, want := tuiThemeThinkingBorder("max")("x"), "\x1b[38;2;18;52;86mx"+tuiResetFG; got != want {
+			t.Fatalf("legacy max border = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestTUIThemeRejectsSlashNamesReservedForAutomaticSettings(t *testing.T) {
+	themePath := filepath.Join(t.TempDir(), "invalid.json")
+	writeJSON(t, themePath, completeTUIThemeFixture("paper/night", nil))
+
+	if _, err := tuiLoadThemePaletteFromPath("paper/night", themePath); err == nil ||
+		!strings.Contains(err.Error(), "reserved for automatic light/dark theme settings") {
+		t.Fatalf("theme load error = %v", err)
+	}
+	if themes := loadThemeFile(themePath); len(themes) != 0 {
+		t.Fatalf("invalid theme was discoverable: %#v", themes)
+	}
+}
+
 func TestTUIThemeSchemaMatchesPiThemeContract(t *testing.T) {
 	var schema map[string]any
 	if err := json.Unmarshal(TUIThemeSchemaJSON(), &schema); err != nil {
@@ -213,21 +256,26 @@ func TestTUIThemeSchemaMatchesPiThemeContract(t *testing.T) {
 	}
 
 	properties := schemaObject(t, schema["properties"], "properties")
+	nameProperty := schemaObject(t, properties["name"], "properties.name")
+	if got, want := nameProperty["pattern"], "^[^/]+$"; got != want {
+		t.Fatalf("name pattern = %v, want %q", got, want)
+	}
 	colors := schemaObject(t, properties["colors"], "properties.colors")
 	if got := colors["additionalProperties"]; got != false {
 		t.Fatalf("colors.additionalProperties = %v, want false", got)
 	}
 	gotTokens := schemaStringSlice(t, colors["required"], "properties.colors.required")
 	sort.Strings(gotTokens)
-	wantTokens := tuiThemeSchemaColorTokens()
-	if !reflect.DeepEqual(gotTokens, wantTokens) {
-		t.Fatalf("schema color tokens = %#v, want %#v", gotTokens, wantTokens)
+	wantRequiredTokens := tuiThemeSchemaRequiredColorTokens()
+	if !reflect.DeepEqual(gotTokens, wantRequiredTokens) {
+		t.Fatalf("schema required color tokens = %#v, want %#v", gotTokens, wantRequiredTokens)
 	}
 	colorProperties := schemaObject(t, colors["properties"], "properties.colors.properties")
-	if len(colorProperties) != len(wantTokens) {
-		t.Fatalf("colors.properties has %d tokens, want %d", len(colorProperties), len(wantTokens))
+	wantPropertyTokens := tuiThemeSchemaColorTokens()
+	if len(colorProperties) != len(wantPropertyTokens) {
+		t.Fatalf("colors.properties has %d tokens, want %d", len(colorProperties), len(wantPropertyTokens))
 	}
-	for _, token := range wantTokens {
+	for _, token := range wantPropertyTokens {
 		if _, ok := colorProperties[token]; !ok {
 			t.Fatalf("colors.properties missing token %q", token)
 		}
@@ -390,6 +438,16 @@ func tuiThemeSchemaColorTokens() []string {
 		tokens = append(tokens, token)
 	}
 	sort.Strings(tokens)
+	return tokens
+}
+
+func tuiThemeSchemaRequiredColorTokens() []string {
+	tokens := tuiThemeSchemaColorTokens()
+	for index, token := range tokens {
+		if token == "thinkingMax" {
+			return append(tokens[:index], tokens[index+1:]...)
+		}
+	}
 	return tokens
 }
 

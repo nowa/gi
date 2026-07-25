@@ -1037,17 +1037,7 @@ func loadThemesFromDir(dir string) []ResourceTheme {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		content, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		var value struct {
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal(content, &value); err != nil || strings.TrimSpace(value.Name) == "" {
-			continue
-		}
-		themes = append(themes, ResourceTheme{Name: value.Name, SourcePath: path})
+		themes = append(themes, loadThemeFile(path)...)
 	}
 	return themes
 }
@@ -1064,6 +1054,9 @@ func loadThemeFile(path string) []ResourceTheme {
 		Name string `json:"name"`
 	}
 	if err := json.Unmarshal(content, &value); err != nil || strings.TrimSpace(value.Name) == "" {
+		return nil
+	}
+	if err := validateTUIThemeName(value.Name); err != nil {
 		return nil
 	}
 	return []ResourceTheme{{Name: value.Name, SourcePath: path}}

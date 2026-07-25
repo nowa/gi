@@ -63,6 +63,7 @@ var tuiDarkThemeFG = map[string]string{
 	"thinkingMedium":     "\x1b[38;2;129;162;190m",
 	"thinkingHigh":       "\x1b[38;2;178;148;187m",
 	"thinkingXhigh":      "\x1b[38;2;209;131;232m",
+	"thinkingMax":        "\x1b[38;2;255;95;255m",
 	"bashMode":           "\x1b[38;2;181;189;104m",
 }
 
@@ -120,6 +121,7 @@ var tuiLightThemeFG = map[string]string{
 	"thinkingMedium":     "\x1b[38;2;90;128;128m",
 	"thinkingHigh":       "\x1b[38;2;135;95;135m",
 	"thinkingXhigh":      "\x1b[38;2;139;0;139m",
+	"thinkingMax":        "\x1b[38;2;175;0;95m",
 	"bashMode":           "\x1b[38;2;88;132;88m",
 }
 
@@ -190,6 +192,9 @@ func tuiLoadThemePalette(name string, available []TUIThemeInfo) (tuiThemePalette
 	name = strings.TrimSpace(name)
 	if name == "" || name == "system" {
 		name = tuiDefaultThemeName()
+	}
+	if err := validateTUIThemeName(name); err != nil {
+		return tuiThemePalette{}, err
 	}
 	switch name {
 	case "dark":
@@ -270,6 +275,9 @@ func tuiTruecolorANSITo256(value string, foreground bool) (string, bool) {
 }
 
 func tuiLoadThemePaletteFromPath(name, path string) (tuiThemePalette, error) {
+	if err := validateTUIThemeName(name); err != nil {
+		return tuiThemePalette{}, err
+	}
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return tuiThemePalette{}, err
@@ -281,9 +289,12 @@ func tuiLoadThemePaletteFromPath(name, path string) (tuiThemePalette, error) {
 	if strings.TrimSpace(theme.Name) == "" {
 		return tuiThemePalette{}, errors.New("theme name is required")
 	}
+	if err := validateTUIThemeName(theme.Name); err != nil {
+		return tuiThemePalette{}, err
+	}
 	fg := make(map[string]string, len(tuiDarkThemeFG))
 	for token := range tuiDarkThemeFG {
-		value, ok := theme.Colors[token]
+		value, ok := tuiThemeColorWithFallback(theme.Colors, token)
 		if !ok {
 			return tuiThemePalette{}, fmt.Errorf("theme %q missing color token %q", name, token)
 		}
@@ -306,6 +317,27 @@ func tuiLoadThemePaletteFromPath(name, path string) (tuiThemePalette, error) {
 		bg[token] = ansi
 	}
 	return tuiThemePalette{name: theme.Name, fg: fg, bg: bg}, nil
+}
+
+func validateTUIThemeName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return errors.New("theme name is required")
+	}
+	if strings.Contains(name, "/") {
+		return fmt.Errorf(
+			"invalid theme name %q: theme names cannot contain \"/\" because it is reserved for automatic light/dark theme settings",
+			name,
+		)
+	}
+	return nil
+}
+
+func tuiThemeColorWithFallback(colors map[string]any, token string) (any, bool) {
+	value, ok := colors[token]
+	if !ok && token == "thinkingMax" {
+		value, ok = colors["thinkingXhigh"]
+	}
+	return value, ok
 }
 
 func tuiThemeANSI(value any, vars map[string]any, foreground bool, seen map[string]bool) (string, error) {
@@ -558,6 +590,8 @@ func tuiThemeThinkingBorder(level string) func(string) string {
 		return func(text string) string { return tuiThemeFG("thinkingHigh", text) }
 	case "xhigh":
 		return func(text string) string { return tuiThemeFG("thinkingXhigh", text) }
+	case "max":
+		return func(text string) string { return tuiThemeFG("thinkingMax", text) }
 	default:
 		return func(text string) string { return tuiThemeFG("thinkingOff", text) }
 	}

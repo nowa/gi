@@ -103,6 +103,12 @@ single/automatic mode flow, including independent light and dark choices,
 active-terminal preview, explicit Apply, mode switching, and cancel restoration;
 only the completed selection reaches persistent settings.
 
+Theme loading also follows Pi v0.82.0's reserved-name and max-thinking color
+contracts. Custom theme names containing `/` are rejected before discovery,
+activation, or export. Built-in `thinkingMax` colors are distinct, while legacy
+themes that omit the optional token fall back to `thinkingXhigh` in both TUI and
+HTML color projections.
+
 With the experimental flag enabled, official default installations without an
 existing settings file now run Pi's first-time theme and analytics flow before
 constructing the interactive runtime. Gi models eligibility as an immutable

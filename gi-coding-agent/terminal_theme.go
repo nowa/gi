@@ -84,7 +84,7 @@ func DetectTerminalBackgroundFromEnv(environment map[string]string) TerminalThem
 	background, ok := colorFGBGBackgroundIndex(environmentValue(environment, "COLORFGBG"))
 	if ok {
 		return TerminalThemeDetection{
-			Theme:      GetThemeForRGBColor(ansi256RGB(background)),
+			Theme:      terminalThemeForLuminance(ansiColorLuminance(background)),
 			Source:     "COLORFGBG",
 			Detail:     fmt.Sprintf("background color index %d", background),
 			Confidence: "high",
@@ -147,6 +147,10 @@ func DetectTerminalThemeForAuto(
 }
 
 func GetThemeForRGBColor(color gitui.RGBColor) TerminalTheme {
+	return terminalThemeForLuminance(rgbColorLuminance(color))
+}
+
+func rgbColorLuminance(color gitui.RGBColor) float64 {
 	toLinear := func(channel int) float64 {
 		channel = min(max(channel, 0), 255)
 		value := float64(channel) / 255
@@ -155,7 +159,14 @@ func GetThemeForRGBColor(color gitui.RGBColor) TerminalTheme {
 		}
 		return math.Pow((value+0.055)/1.055, 2.4)
 	}
-	luminance := 0.2126*toLinear(color.R) + 0.7152*toLinear(color.G) + 0.0722*toLinear(color.B)
+	return 0.2126*toLinear(color.R) + 0.7152*toLinear(color.G) + 0.0722*toLinear(color.B)
+}
+
+func ansiColorLuminance(index int) float64 {
+	return rgbColorLuminance(ansi256RGB(index))
+}
+
+func terminalThemeForLuminance(luminance float64) TerminalTheme {
 	if luminance >= 0.5 {
 		return TerminalThemeLight
 	}

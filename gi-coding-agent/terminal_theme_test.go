@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -175,6 +176,38 @@ func TestThemeDetectionFromRGBClassifiesByLuminance(t *testing.T) {
 	}
 	if got := GetThemeForRGBColor(gitui.RGBColor{R: 250, G: 250, B: 250}); got != TerminalThemeLight {
 		t.Fatalf("light RGB theme = %q", got)
+	}
+}
+
+func TestTerminalThemeLuminanceHelpersMatchPi(t *testing.T) {
+	if got := rgbColorLuminance(gitui.RGBColor{}); got != 0 {
+		t.Fatalf("black luminance = %v, want 0", got)
+	}
+	if got := rgbColorLuminance(gitui.RGBColor{R: 255, G: 255, B: 255}); math.Abs(got-1) > 1e-12 {
+		t.Fatalf("white luminance = %v, want 1", got)
+	}
+	if got := ansiColorLuminance(0); got != 0 {
+		t.Fatalf("ANSI black luminance = %v, want 0", got)
+	}
+	if got := ansiColorLuminance(15); math.Abs(got-1) > 1e-12 {
+		t.Fatalf("ANSI white luminance = %v, want 1", got)
+	}
+
+	tests := []struct {
+		value string
+		want  int
+		ok    bool
+	}{
+		{value: "0;7;15", want: 15, ok: true},
+		{value: "15;invalid;0", want: 0, ok: true},
+		{value: "0;256", want: 0, ok: true},
+		{value: "invalid"},
+	}
+	for _, test := range tests {
+		got, ok := colorFGBGBackgroundIndex(test.value)
+		if got != test.want || ok != test.ok {
+			t.Fatalf("COLORFGBG background for %q = (%d, %t), want (%d, %t)", test.value, got, ok, test.want, test.ok)
+		}
 	}
 }
 

@@ -50,6 +50,12 @@ This document tracks source-level parity for Pi `packages/coding-agent/src` in t
   projection and terminal appearance snapshot; navigation emits preview-only
   values, Apply commits one complete setting through `SettingsManager` and the
   interactive theme controller, and cancel restores the original preview.
+- Latest theme-core increment: custom theme validation now reserves `/` for
+  automatic settings across discovery, palette loading, schema validation, and
+  HTML export. Pi v0.82.0's distinct built-in `thinkingMax` colors are present,
+  while legacy custom themes inherit `thinkingXhigh` through one shared
+  terminal/CSS fallback rule; RGB and ANSI detection also share one luminance
+  calculation.
 - Latest dynamic-resource increment: Gi now handles `resources_discover`
   results for Go-native extension factories, merges returned skill, prompt, and
   theme paths into the default resource loader during startup/reload, carries
