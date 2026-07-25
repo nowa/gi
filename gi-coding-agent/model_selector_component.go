@@ -294,7 +294,7 @@ func (c *ScopedModelsSelectorComponent) items() []scopedModelSelectorItem {
 	}
 	if strings.TrimSpace(c.search) != "" {
 		items = gitui.FuzzyFilter(items, c.search, func(item scopedModelSelectorItem) string {
-			return item.model.ID + " " + item.model.Provider + " " + item.model.Name + " " + item.id
+			return modelSearchText(modelSearchItemFromModel(item.model))
 		})
 	}
 	return items
@@ -705,8 +705,7 @@ func (c *ModelSelectorComponent) filteredItems() []modelSelectorItem {
 	}
 	if strings.TrimSpace(c.search) != "" {
 		items = gitui.FuzzyFilter(items, c.search, func(item modelSelectorItem) string {
-			model := item.model
-			return model.ID + " " + model.Provider + " " + scopedModelFullID(model) + " " + model.Provider + " " + model.ID
+			return modelSelectorSearchText(modelSearchItemFromModel(item.model))
 		})
 	}
 	return items

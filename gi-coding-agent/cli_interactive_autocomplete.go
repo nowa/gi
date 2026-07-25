@@ -94,7 +94,7 @@ func (h *CLIInteractiveTUIHost) modelArgumentCompletions(prefix string) []gitui.
 	filter := strings.TrimSpace(prefix)
 	if filter != "" {
 		models = gitui.FuzzyFilter(models, filter, func(model llm.Model) string {
-			return strings.Join([]string{model.ID, model.Provider}, " ")
+			return modelSearchText(modelSearchItemFromModel(model))
 		})
 	}
 	items := make([]gitui.AutocompleteItem, 0, len(models))
