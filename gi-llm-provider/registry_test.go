@@ -53,6 +53,7 @@ func TestBuiltInAPIProviderLifecyclePiStyle(t *testing.T) {
 		"openai-codex-responses",
 		"azure-openai-responses",
 		"google-generative-ai",
+		"google-vertex",
 		"mistral-conversations",
 		"bedrock-converse-stream",
 		"pi-messages",

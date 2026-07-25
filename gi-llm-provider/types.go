@@ -240,6 +240,8 @@ type StreamOptions struct {
 	Temperature                   *float64
 	MaxTokens                     int
 	APIKey                        string
+	Project                       string
+	Location                      string
 	Transport                     string
 	CacheRetention                string
 	SessionID                     string

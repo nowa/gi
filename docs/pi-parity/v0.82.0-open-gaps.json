@@ -16,8 +16,6 @@
       "missingFiles": [
         "api/bedrock-converse-stream.lazy.ts",
         "api/bedrock-converse-stream.ts",
-        "api/google-vertex.lazy.ts",
-        "api/google-vertex.ts",
         "auth/oauth/anthropic.ts",
         "auth/oauth/github-copilot.ts",
         "auth/oauth/load.ts",
@@ -35,7 +33,6 @@
         "api/bedrock-converse-stream.ts::createRequiredTextBlock",
         "api/bedrock-converse-stream.ts::getConfiguredBedrockCredentials",
         "api/bedrock-converse-stream.ts::isReservedHeader",
-        "api/google-vertex.ts::buildGoogleAuthOptions",
         "auth/oauth/github-copilot.ts::asRecord",
         "auth/oauth/github-copilot.ts::copilotEnterpriseDomain",
         "auth/oauth/github-copilot.ts::fetchAvailableGitHubCopilotModelIds",

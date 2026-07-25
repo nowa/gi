@@ -276,7 +276,7 @@ function-by-function audit:
 
 | Module | Pi top-level implementation symbols | Currently not named in maps | Meaning |
 | --- | ---: | ---: | --- |
-| LLM provider | 364 | 0 | LLM provider top-level private helper ownership is grouped in `llm-provider-file-map.md`; remaining work centers on the default Bedrock and Google Vertex transports plus bundled Anthropic, GitHub Copilot, and OpenAI Codex OAuth integration. |
+| LLM provider | 364 | 0 | LLM provider top-level private helper ownership is grouped in `llm-provider-file-map.md`; remaining work centers on the default Bedrock transport, Google Vertex default ADC token source, and bundled Anthropic, GitHub Copilot, and OpenAI Codex OAuth integration. |
 | Agent core | 161 | 0 | Agent-core top-level private helper ownership is now grouped in `agent-core-file-map.md`; remaining work is behavior/test-case parity and Go-native boundary validation, not source-symbol coverage. |
 | TUI | 121 | 0 | TUI top-level private helper ownership is now grouped in `tui-file-map.md`; remaining work is behavior/test-case parity, not source-symbol coverage. |
 | Coding agent | 660 | 0 | Coding-agent top-level private helper ownership is now grouped in `coding-agent-file-map.md`; remaining work is behavior/test-case parity and the documented protocol/product-scope gaps. |

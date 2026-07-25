@@ -33,7 +33,10 @@ const modules = [
 			],
 			"packages/ai/test/faux-provider.test.ts": ["gi-llm-provider/faux_test.go"],
 			"packages/ai/test/fireworks-models.test.ts": ["gi-llm-provider/model_catalog_test.go"],
-			"packages/ai/test/google-vertex-api-key-resolution.test.ts": ["gi-llm-provider/config_test.go"],
+			"packages/ai/test/google-vertex-api-key-resolution.test.ts": [
+				"gi-llm-provider/config_test.go",
+				"gi-llm-provider/google_vertex_provider_test.go",
+			],
 			"packages/ai/test/image-tool-result.test.ts": [
 				"gi-llm-provider/anthropic_payload_test.go",
 				"gi-llm-provider/google_convert_test.go",
