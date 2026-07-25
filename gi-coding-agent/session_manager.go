@@ -1276,6 +1276,24 @@ func (s *SessionManager) BuildSessionContext() SessionContext {
 	return s.BuildSessionContextWithOptions(SessionContextOptions{})
 }
 
+// BuildContextEntries returns the active, compaction-aware entry projection.
+// The snapshot is captured under one read lock so branch navigation cannot
+// produce a path assembled from different session states.
+func (s *SessionManager) BuildContextEntries() []FileEntry {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	entries := entriesWithoutHeader(cloneFileEntries(s.fileEntries))
+	leafID := cloneStringPtr(s.leafID)
+	byID := cloneFileEntryMap(s.byID)
+	s.mu.RUnlock()
+	if leafID == nil {
+		return nil
+	}
+	return BuildContextEntries(entries, leafID, byID)
+}
+
 func (s *SessionManager) BuildSessionContextWithOptions(
 	options SessionContextOptions,
 ) SessionContext {
@@ -1304,49 +1322,153 @@ func BuildSessionContext(entries []FileEntry, leafID *string, byID map[string]Fi
 	)
 }
 
-func BuildSessionContextWithOptions(
+// BuildContextEntries follows the selected leaf to the root and applies the
+// latest compaction. It retains FileEntry identity so presentation layers can
+// attach derived state, such as cache-miss notices, without persisting it.
+func BuildContextEntries(
 	entries []FileEntry,
 	leafID *string,
 	byID map[string]FileEntry,
-	options SessionContextOptions,
-) SessionContext {
+) []FileEntry {
+	path := buildSessionPath(entriesWithoutHeader(entries), leafID, byID)
+	return buildContextEntriesFromPath(path, nil)
+}
+
+func buildSessionPath(
+	entries []FileEntry,
+	leafID *string,
+	byID map[string]FileEntry,
+) []FileEntry {
+	if len(entries) == 0 {
+		return nil
+	}
 	if byID == nil {
-		byID = map[string]FileEntry{}
+		byID = make(map[string]FileEntry, len(entries))
 		for _, entry := range entries {
 			if entry.ID != "" {
 				byID[entry.ID] = entry
 			}
 		}
 	}
-	context := SessionContext{ThinkingLevel: "off"}
+
 	var leaf FileEntry
 	var ok bool
 	if leafID != nil {
 		leaf, ok = byID[*leafID]
 	}
-	if !ok && len(entries) > 0 {
-		leaf = entries[len(entries)-1]
-		ok = true
-	}
 	if !ok {
-		return context
+		leaf = entries[len(entries)-1]
 	}
-	var path []FileEntry
+
+	path := make([]FileEntry, 0, len(entries))
 	current := leaf
 	for {
-		path = append([]FileEntry{current}, path...)
+		path = append(path, cloneFileEntry(current))
 		if current.ParentID == nil {
 			break
 		}
-		next, ok := byID[*current.ParentID]
-		if !ok {
+		next, found := byID[*current.ParentID]
+		if !found {
 			break
 		}
 		current = next
 	}
+	for left, right := 0, len(path)-1; left < right; left, right = left+1, right-1 {
+		path[left], path[right] = path[right], path[left]
+	}
+	return path
+}
 
+func buildContextEntriesFromPath(
+	path []FileEntry,
+	excludedEntryIDs map[string]struct{},
+) []FileEntry {
 	compactionIndex := -1
-	for idx, entry := range path {
+	for index, entry := range path {
+		if _, excluded := excludedEntryIDs[entry.ID]; excluded {
+			continue
+		}
+		if entry.Type == "compaction" {
+			compactionIndex = index
+		}
+	}
+	if compactionIndex < 0 {
+		return cloneFileEntries(path)
+	}
+
+	contextEntries := make([]FileEntry, 0, len(path)-compactionIndex+1)
+	contextEntries = append(contextEntries, cloneFileEntry(path[compactionIndex]))
+	foundFirstKept := false
+	firstKeptID := path[compactionIndex].FirstKeptID
+	for index := 0; index < compactionIndex; index++ {
+		entry := path[index]
+		if entry.ID == firstKeptID {
+			foundFirstKept = true
+		}
+		if foundFirstKept {
+			contextEntries = append(contextEntries, cloneFileEntry(entry))
+		}
+	}
+	contextEntries = append(contextEntries, cloneFileEntries(path[compactionIndex+1:])...)
+	return contextEntries
+}
+
+// SessionEntryToContextMessages converts one selected session entry into the
+// canonical message representation consumed by the agent and TUI.
+func SessionEntryToContextMessages(entry FileEntry) []llm.Message {
+	var value any
+	switch entry.Type {
+	case "message":
+		value = entry.Message
+	case "custom_message":
+		value = map[string]any{
+			"role":       "custom",
+			"customType": entry.CustomType,
+			"content":    entry.Content,
+			"display":    entry.Display,
+			"timestamp":  sessionEntryTimestampMillis(entry.Timestamp),
+			"details":    entry.Details,
+		}
+	case "branch_summary":
+		if entry.Summary == "" {
+			return nil
+		}
+		value = map[string]any{
+			"role":      "branchSummary",
+			"summary":   entry.Summary,
+			"fromId":    entry.FromID,
+			"timestamp": sessionEntryTimestampMillis(entry.Timestamp),
+		}
+	case "compaction":
+		value = map[string]any{
+			"role":         "compactionSummary",
+			"summary":      entry.Summary,
+			"tokensBefore": entry.TokensBefore,
+			"timestamp":    sessionEntryTimestampMillis(entry.Timestamp),
+		}
+	default:
+		return nil
+	}
+	message, ok := sessionMessageToLLM(value)
+	if !ok {
+		return nil
+	}
+	return []llm.Message{message}
+}
+
+func BuildSessionContextWithOptions(
+	entries []FileEntry,
+	leafID *string,
+	byID map[string]FileEntry,
+	options SessionContextOptions,
+) SessionContext {
+	context := SessionContext{ThinkingLevel: "off"}
+	path := buildSessionPath(entriesWithoutHeader(entries), leafID, byID)
+	if len(path) == 0 {
+		return context
+	}
+
+	for _, entry := range path {
 		if _, excluded := options.ExcludeEntryIDs[entry.ID]; excluded {
 			continue
 		}
@@ -1356,13 +1478,11 @@ func BuildSessionContextWithOptions(
 		case "model_change":
 			context.Model = &SessionModel{Provider: entry.Provider, ModelID: entry.ModelID}
 		case "message":
-			if messageRole(entry.Message) == "assistant" {
-				if provider, modelID := messageProviderModel(entry.Message); provider != "" || modelID != "" {
-					context.Model = &SessionModel{Provider: provider, ModelID: modelID}
+			if message, converted := sessionMessageToLLM(entry.Message); converted && message.Role == llm.RoleAssistant {
+				if message.Provider != "" || message.Model != "" {
+					context.Model = &SessionModel{Provider: message.Provider, ModelID: message.Model}
 				}
 			}
-		case "compaction":
-			compactionIndex = idx
 		}
 	}
 
@@ -1391,33 +1511,17 @@ func BuildSessionContextWithOptions(
 					"timestamp": sessionEntryTimestampMillis(entry.Timestamp),
 				})
 			}
+		case "compaction":
+			context.Messages = append(context.Messages, map[string]any{
+				"role":         "compactionSummary",
+				"summary":      entry.Summary,
+				"tokensBefore": entry.TokensBefore,
+				"timestamp":    sessionEntryTimestampMillis(entry.Timestamp),
+			})
 		}
 	}
 
-	if compactionIndex >= 0 {
-		compaction := path[compactionIndex]
-		context.Messages = append(context.Messages, map[string]any{
-			"role":         "compactionSummary",
-			"summary":      compaction.Summary,
-			"tokensBefore": compaction.TokensBefore,
-			"timestamp":    sessionEntryTimestampMillis(compaction.Timestamp),
-		})
-		foundFirstKept := false
-		for idx := 0; idx < compactionIndex; idx++ {
-			entry := path[idx]
-			if entry.ID == compaction.FirstKeptID {
-				foundFirstKept = true
-			}
-			if foundFirstKept {
-				appendEntryMessage(entry)
-			}
-		}
-		for idx := compactionIndex + 1; idx < len(path); idx++ {
-			appendEntryMessage(path[idx])
-		}
-		return context
-	}
-	for _, entry := range path {
+	for _, entry := range buildContextEntriesFromPath(path, options.ExcludeEntryIDs) {
 		appendEntryMessage(entry)
 	}
 	return context

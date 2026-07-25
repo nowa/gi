@@ -1913,6 +1913,7 @@ func (h *CLIInteractiveTUIHost) handleLiveMessageEnd(event AgentSessionEvent) {
 		h.updateLiveAssistantComponent(message)
 		h.completeLiveAssistantToolCalls(message)
 		h.liveState.clearStreaming()
+		h.maybeShowCacheMissNotice(message)
 	} else if message.Role == llm.RoleToolResult {
 		h.addToolResultMessage(message)
 	}
@@ -2572,8 +2573,17 @@ func viewTreeSizeValueToTUI(value ViewTreeSizeValue) *gitui.SizeValue {
 }
 
 func (h *CLIInteractiveTUIHost) renderExistingMessages(populateHistory bool) {
+	if h == nil || h.runtimeHost == nil {
+		return
+	}
 	session := h.runtimeHost.PrintModeSession()
 	if session == nil {
+		return
+	}
+	if agentSession := h.agentSession(); agentSession != nil && agentSession.SessionManager != nil {
+		h.renderSessionEntries(agentSession.SessionManager.BuildContextEntries(), populateHistory)
+		h.rendered = len(session.Messages())
+		h.requestRender(false)
 		return
 	}
 	messages := session.Messages()
@@ -2585,6 +2595,116 @@ func (h *CLIInteractiveTUIHost) renderExistingMessages(populateHistory bool) {
 	}
 	h.rendered = len(messages)
 	h.requestRender(false)
+}
+
+type cliRenderSessionItem struct {
+	EntryID string
+	Message llm.Message
+}
+
+func (h *CLIInteractiveTUIHost) renderSessionEntries(
+	entries []FileEntry,
+	populateHistory bool,
+) {
+	items := make([]cliRenderSessionItem, 0, len(entries))
+	for _, entry := range entries {
+		for _, message := range SessionEntryToContextMessages(entry) {
+			items = append(items, cliRenderSessionItem{
+				EntryID: entry.ID,
+				Message: message,
+			})
+		}
+	}
+	h.renderSessionItems(items, populateHistory, h.sessionCacheMisses())
+}
+
+func (h *CLIInteractiveTUIHost) renderSessionItems(
+	items []cliRenderSessionItem,
+	populateHistory bool,
+	cacheMisses map[string]CacheMiss,
+) {
+	for _, item := range items {
+		h.addMessage(item.Message)
+		if populateHistory && item.Message.Role == llm.RoleUser {
+			h.addEditorHistory(interactiveTextFromLLMMessage(item.Message))
+		}
+		if item.Message.Role != llm.RoleAssistant ||
+			item.Message.StopReason == llm.StopReasonAborted ||
+			item.Message.StopReason == llm.StopReasonError {
+			continue
+		}
+		if miss, ok := cacheMisses[item.EntryID]; ok {
+			h.addCacheMissNotice(miss)
+		}
+	}
+}
+
+func (h *CLIInteractiveTUIHost) sessionCacheMisses() map[string]CacheMiss {
+	settings := h.settingsManager()
+	session := h.agentSession()
+	if settings == nil || !settings.GetShowCacheMissNotices() ||
+		session == nil || session.SessionManager == nil {
+		return nil
+	}
+	return collectCacheMisses(
+		session.SessionManager.GetEntries(),
+		session.ModelRuntime,
+	)
+}
+
+func (h *CLIInteractiveTUIHost) maybeShowCacheMissNotice(message llm.Message) {
+	settings := h.settingsManager()
+	session := h.agentSession()
+	if settings == nil || !settings.GetShowCacheMissNotices() ||
+		session == nil || session.SessionManager == nil ||
+		message.Role != llm.RoleAssistant ||
+		message.StopReason == llm.StopReasonAborted ||
+		message.StopReason == llm.StopReasonError {
+		return
+	}
+
+	entries := session.SessionManager.GetEntries()
+	// Gi persists the completed assistant turn before message_end. Detection
+	// needs the preceding request, so remove the just-persisted tail entry.
+	if len(entries) > 0 {
+		last := entries[len(entries)-1]
+		if last.Type == "message" {
+			if persisted, ok := sessionMessageToLLM(last.Message); ok &&
+				persisted.Role == llm.RoleAssistant {
+				entries = entries[:len(entries)-1]
+			}
+		}
+	}
+	if miss, ok := detectCacheMiss(entries, message, session.ModelRuntime); ok {
+		h.addCacheMissNotice(miss)
+	}
+}
+
+func (h *CLIInteractiveTUIHost) addCacheMissNotice(miss CacheMiss) {
+	if h == nil || h.chat == nil ||
+		(miss.MissedTokens < 20_000 && miss.MissedCost < 0.1) {
+		return
+	}
+
+	cost := ""
+	if miss.MissedCost >= 0.01 {
+		cost = fmt.Sprintf(" (~$%.2f)", miss.MissedCost)
+	}
+	label := "Cache miss"
+	if miss.ModelChanged {
+		label = "Cache miss after model switch"
+	} else if miss.Idle >= CacheTTL {
+		minutes := int((miss.Idle + time.Minute/2) / time.Minute)
+		label = fmt.Sprintf("Cache miss after %dm idle", minutes)
+	}
+	text := fmt.Sprintf(
+		"%s: %s tokens re-billed%s",
+		label,
+		formatFooterTokens(miss.MissedTokens),
+		cost,
+	)
+	h.chat.AddChild(gitui.NewSpacer(1))
+	h.chat.AddChild(gitui.NewText(tuiThemeWarning(text), 1, 0))
 }
 
 func (h *CLIInteractiveTUIHost) addEditorHistory(text string) {
@@ -2628,7 +2748,7 @@ func (h *CLIInteractiveTUIHost) rerenderSessionMessages() {
 	h.chat.Clear()
 	h.liveState.reset()
 	h.rendered = 0
-	h.renderMessagesFrom(0)
+	h.renderExistingMessages(false)
 }
 
 func (h *CLIInteractiveTUIHost) submitPrompt(message string, images []llm.ContentPart) error {

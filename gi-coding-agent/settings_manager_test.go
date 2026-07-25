@@ -323,6 +323,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 		"httpIdleTimeoutMs":         120000,
 		"enableSkillCommands":       false,
 		"hideThinkingBlock":         true,
+		"showCacheMissNotices":      true,
 		"collapseChangelog":         true,
 		"lastChangelogVersion":      "0.1.0",
 		"quietStartup":              true,
@@ -343,6 +344,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 		manager.GetHTTPIdleTimeoutMS() != 120000 ||
 		manager.GetEnableSkillCommands() ||
 		!manager.GetHideThinkingBlock() ||
+		!manager.GetShowCacheMissNotices() ||
 		!manager.GetCollapseChangelog() ||
 		manager.GetLastChangelogVersion() != "0.1.0" ||
 		!manager.GetQuietStartup() ||
@@ -370,6 +372,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 	manager.SetShowTerminalProgress(false)
 	manager.SetEnableSkillCommands(true)
 	manager.SetHideThinkingBlock(false)
+	manager.SetShowCacheMissNotices(false)
 	manager.SetCollapseChangelog(false)
 	manager.SetLastChangelogVersion("0.2.0")
 	manager.SetQuietStartup(false)
@@ -388,6 +391,7 @@ func TestSettingsManagerPiInteractiveSettingsAccessors(t *testing.T) {
 		saved["httpIdleTimeoutMs"] != float64(0) ||
 		saved["enableSkillCommands"] != true ||
 		saved["hideThinkingBlock"] != false ||
+		saved["showCacheMissNotices"] != false ||
 		saved["collapseChangelog"] != false ||
 		saved["lastChangelogVersion"] != "0.2.0" ||
 		saved["quietStartup"] != false ||
@@ -430,6 +434,7 @@ func TestSettingsManagerPiInteractiveSettingsDefaultsAndValidation(t *testing.T)
 		manager.GetShowTerminalProgress() ||
 		!manager.GetEnableSkillCommands() ||
 		manager.GetHideThinkingBlock() ||
+		manager.GetShowCacheMissNotices() ||
 		manager.GetCollapseChangelog() ||
 		manager.GetQuietStartup() ||
 		manager.GetDoubleEscapeAction() != "tree" ||

@@ -958,7 +958,7 @@ func (s *AgentSession) emitMessageStart(message llm.Message) error {
 
 func (s *AgentSession) emitExtensionMessageEnd(message llm.Message) (llm.Message, error) {
 	if s == nil || s.ExtensionRuntime == nil {
-		return message, nil
+		return normalizeSessionMessageContent(message), nil
 	}
 	result, err := s.ExtensionRuntime.EmitSessionEvent(ProtocolSessionEvent{
 		Type:    ProtocolEventMessageEnd,
@@ -969,9 +969,9 @@ func (s *AgentSession) emitExtensionMessageEnd(message llm.Message) (llm.Message
 		return llm.Message{}, err
 	}
 	if result.MessageSet && result.Message != nil {
-		return *result.Message, nil
+		return normalizeSessionMessageContent(*result.Message), nil
 	}
-	return message, nil
+	return normalizeSessionMessageContent(message), nil
 }
 
 func (s *AgentSession) appendToolResultMessage(message llm.Message) error {

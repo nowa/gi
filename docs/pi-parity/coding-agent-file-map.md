@@ -94,14 +94,14 @@ not to the agent runtime.
 | `core/models-store.ts` | `FileModelsStore`, `FileModelsStore.constructor`, `FileModelsStore.parse`, `FileModelsStore.read`, `FileModelsStore.write`, `FileModelsStore.delete`, `InMemoryCodingAgentModelsStore`, `InMemoryCodingAgentModelsStore.read`, `InMemoryCodingAgentModelsStore.write`, `InMemoryCodingAgentModelsStore.delete` | `models_store.go` `FileModelsStore`, `NewFileModelsStore`, read/write/delete helpers; `gi-llm-provider/models_store.go` `InMemoryModelsStore` | direct | The file store preserves unrelated providers under a path-scoped lock and atomically replaces private JSON; the reusable provider package owns the in-memory clone-on-read/write store. |
 | `core/radius.ts` | `RADIUS_PROVIDER_ID` | `model_registry_dynamic.go` `RadiusProviderID` | direct | The identifier is centralized for `models.json` validation and provider composition. |
 | `core/event-bus.ts` | event fanout | `agent_session_runtime_events.go`, `rpc_session_host.go` | split | Go uses typed callbacks/channels and runtime event structs. |
-| `core/cache-stats.ts` | prompt-cache miss detection and cumulative waste | `cache_stats.go`, `usage_totals.go`, `sdk_session.go`, `cli_interactive_session.go` | direct | Pure scans derive miss state from one immutable session-entry snapshot; durable entry IDs replace JavaScript object identity, `time.Duration` represents idle time, and model pricing is accessed through a narrow interface satisfied by `ModelRuntime`. |
+| `core/cache-stats.ts` | prompt-cache miss detection and cumulative waste | `cache_stats.go`, `usage_totals.go`, `sdk_session.go`, `cli_interactive_session.go`, `cli_interactive_tui.go` | direct | Pure scans derive miss state from one immutable session-entry snapshot; durable entry IDs replace JavaScript object identity, `time.Duration` represents idle time, and model pricing is accessed through a narrow interface satisfied by `ModelRuntime`. Significant misses are injected into the transcript as derived UI state and are never persisted. |
 | `core/footer-data-provider.ts` | cwd/git/model/token footer data | `footer_data_provider.go`, `footer.go`, `usage_totals.go` | direct | Footer state consumes the canonical `llm.Usage` snapshot instead of maintaining a second token/cost structure; width, provider, subscription, cache-hit, and data-provider behavior are tested. |
 | `core/messages.ts` | coding-agent session message helpers | `message_components.go`, `gi-agent-core/harness/messages.go`, session manager files | split | UI render and model-context projection are split by ownership. |
 | `core/output-guard.ts` | stdout guard | writer injection plus `stdout_cleanliness_test.go` | go-native | Gi does not monkey-patch global stdout. |
 | `core/package-manager.ts` | package source resolution, resource precedence, install/update/remove | `package_manager.go`, `protocol_package_resolver.go`, `official_packages.go` | protocol | Gi preserves resource/filter semantics but intentionally removes npm source support. |
 | `core/prompt-templates.ts`, `core/resource-loader.ts`, `core/skills.ts`, `core/system-prompt.ts` | resources and prompt assembly | `prompt_templates.go`, `resource_loader.go`, `system_prompt.go`, harness skill helpers | split | `.gi` resource discovery replaces `.pi` paths by design. |
 | `core/sdk.ts` | SDK session, attribution headers, and tool/provider registration | `sdk_session.go`, `internal/attribution`, `sdk_attribution.go` facade, protocol runtime | protocol | Go SDK shape is not a TS API clone; behaviors are covered through host/runtime tests, and attribution header merging now lives in a focused SDK metadata subpackage. |
-| `core/settings-manager.ts` | global/project settings, migrations, reload | `settings_manager.go` | direct | Settings reload and migration cases are covered. |
+| `core/settings-manager.ts` | global/project settings, migrations, reload | `settings_manager.go` | direct | Settings reload and migration cases are covered, including the default-off `showCacheMissNotices` setting. |
 | `core/slash-commands.ts` | command metadata | `cli_interactive_tui.go`, `prompt_templates.go`, protocol command registry | split | Built-ins, prompt templates, skills, and extension commands share the Go command registry. |
 | `core/source-info.ts`, `core/diagnostics.ts`, `core/timings.ts`, `core/telemetry.ts` | metadata, diagnostics, timing, telemetry | `resource_loader.go`, `diagnostics` structs, `internal/startuptiming`, `startup_timings.go` facade, `internal/telemetry`, `telemetry.go` facade | split | Gi-specific names are used where the product boundary differs from Pi, with timing and telemetry env parsing behind focused helper packages. |
 | `core/usage-totals.ts` | cumulative billed usage and cost attribution | `usage_totals.go`, `sdk_session.go`, `rpc_session_host.go`, `footer.go` | direct | `llm.Usage` is the single token/cost structure from provider output through persistence, session statistics, RPC projection, and footer rendering. Totals include assistant, tool-result, compaction, and branch-summary usage across the append-only session log. |
@@ -112,6 +112,34 @@ not to the agent runtime.
 | --- | --- | --- | --- | --- |
 | `core/usage-totals.ts` | `createUsageTotals`, `addUsageToTotals`, `getUsageCostBreakdown` | `usage_totals.go` `aggregateAgentSessionStats`, `addUsage`, `usageCostBreakdown` | direct | Go reuses `llm.Usage` rather than introducing a structurally identical totals type. Cost attribution uses `responseModel` when an OpenAI-compatible router reports a concrete model and sorts ties deterministically. |
 | `core/cache-stats.ts` | `asPreviousRequest`, `detectMiss`, `computeCacheWaste`, `collectCacheMisses`, `detectCacheMiss` | `cache_stats.go` `asPreviousCacheRequest`, `detectCacheMissFromPrevious`, `computeCacheWaste`, `collectCacheMisses`, `detectCacheMiss` | direct | The scan resets after compaction/branch summaries, preserves sticky cache-capability evidence, applies the 1,024-token noise floor, and derives re-billed cost from actual usage with catalog fallback pricing. |
+| `core/session-manager.ts` | `buildContextEntries`, `sessionEntryToContextMessages`, `SessionManager.buildContextEntries` | `session_manager.go` `BuildContextEntries`, `SessionEntryToContextMessages`, `SessionManager.BuildContextEntries` | direct | One immutable `FileEntry` projection retains durable IDs for derived presentation state, while explicit conversion produces canonical `llm.Message` values for rendering. Null or missing message content is normalized to a non-nil empty slice at load and extension replacement boundaries. |
+| `core/settings-manager.ts` | `SettingsManager.getShowCacheMissNotices`, `SettingsManager.setShowCacheMissNotices` | `settings_manager.go` `SettingsManager.GetShowCacheMissNotices`, `SettingsManager.SetShowCacheMissNotices` | direct | The global default is false; the settings list owns mutation and a toggle triggers a transcript rebuild without changing session history. |
+| `modes/interactive/interactive-mode.ts` | `InteractiveMode.renderSessionItems`, `InteractiveMode.renderSessionEntries`, `InteractiveMode.maybeShowCacheMissNotice`, `InteractiveMode.addCacheMissNotice` | `cli_interactive_tui.go` `CLIInteractiveTUIHost.renderSessionItems`, `CLIInteractiveTUIHost.renderSessionEntries`, `CLIInteractiveTUIHost.maybeShowCacheMissNotice`, `CLIInteractiveTUIHost.addCacheMissNotice` | direct | Live detection accounts for Gi's persist-before-`message_end` ordering. Rebuilds derive misses from all entries, associate them by entry ID, and inject only significant warning components after successful assistant turns. |
+
+### Cache-Miss Notice State And Data Flow
+
+```text
+SettingsManager(showCacheMissNotices)
+          |
+          v
+SessionManager locked FileEntry snapshot
+          |
+          +--> detectCacheMiss(previous entries, completed assistant)
+          |          |
+          |          +--> ephemeral live transcript notice
+          |
+          +--> BuildContextEntries(active branch + latest compaction)
+                     |
+                     +--> collectCacheMisses(all entries, keyed by entry ID)
+                     |
+                     +--> SessionEntryToContextMessages
+                                  |
+                                  +--> rebuilt transcript + derived notices
+```
+
+The append-only session log is the sole durable state. Cache notices are pure
+projections: they are neither appended as custom messages nor included in model
+context.
 
 ### Session Statistics State And Data Flow
 
@@ -240,7 +268,7 @@ login dialog and selector components.
 | `core/provider-display-names.ts` | `BUILT_IN_PROVIDER_DISPLAY_NAMES` | `model_registry.go` `builtInProviderDisplayNames`, `GetProviderDisplayName` | direct | Built-in and configured provider display names are represented. |
 | `core/resolve-config-value.ts` | shell/env/literal config resolution, header resolution, cache reset | `config_value.go`, `model_registry.go` | direct | `ResolveConfigValue`, `ResolveConfigValueWithEnv`, uncached resolution, strict/non-strict header resolution, environment-reference inspection, escapes, and concurrent command-result caching are represented. Gi additionally preserves its legacy bare-environment-name resolution. |
 | `core/session-cwd.ts` | missing stored cwd detection, prompt formatting, typed error | `internal/sessioncwd`, `session_cwd.go` facade, `cli_missing_cwd.go`, `interactive_mode.go`, `cli_print_mode.go` | direct | Missing session cwd detection, prompt text, fallback cwd override, and typed error handling are represented behind a focused session-cwd package. |
-| `core/session-manager.ts` | coding-agent JSONL session manager, labels, context, tree metadata, import/export helpers | `session_manager.go`, `session_selector.go`, `tree_selector.go`, `user_message_selector.go` | direct | Coding-agent-specific session files remain separate from reusable `gi-agent-core/harness` sessions. |
+| `core/session-manager.ts` | coding-agent JSONL session manager, labels, context, tree metadata, import/export helpers | `session_manager.go`, `session_selector.go`, `tree_selector.go`, `user_message_selector.go` | direct | Coding-agent-specific session files remain separate from reusable `gi-agent-core/harness` sessions. `BuildContextEntries` is the single locked, compaction-aware entry projection used to rebuild model and transcript views. |
 
 ### Core Package Manager Function Map
 

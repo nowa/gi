@@ -482,6 +482,14 @@ func (s *SettingsManager) SetHideThinkingBlock(hidden bool) {
 	s.setGlobal("hideThinkingBlock", hidden)
 }
 
+func (s *SettingsManager) GetShowCacheMissNotices() bool {
+	return settingsBool(s.mergedSnapshot(), "showCacheMissNotices", false)
+}
+
+func (s *SettingsManager) SetShowCacheMissNotices(show bool) {
+	s.setGlobal("showCacheMissNotices", show)
+}
+
 func (s *SettingsManager) GetCollapseChangelog() bool {
 	return settingsBool(s.mergedSnapshot(), "collapseChangelog", false)
 }

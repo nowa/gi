@@ -41,6 +41,7 @@ func TestSessionManagerSerializesConcurrentAppendsAndSnapshots(t *testing.T) {
 			default:
 				_ = manager.GetEntries()
 				_ = manager.GetLeafEntry()
+				_ = manager.BuildContextEntries()
 				_ = manager.BuildSessionContext()
 				_ = manager.GetTree()
 			}

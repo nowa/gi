@@ -45,6 +45,7 @@ func (h *CLIInteractiveTUIHost) renderSettingsSummary(state RPCSessionState, set
 			"| Session dir | "+markdownTableValue(settings.GetSessionDir())+" |",
 			"| Image auto resize | "+markdownTableValue(fmt.Sprintf("%t", settings.GetImageAutoResize()))+" |",
 			"| Block images | "+markdownTableValue(fmt.Sprintf("%t", settings.GetBlockImages()))+" |",
+			"| Cache miss notices | "+markdownTableValue(fmt.Sprintf("%t", settings.GetShowCacheMissNotices()))+" |",
 			"| Install telemetry | "+markdownTableValue(fmt.Sprintf("%t", settings.GetEnableInstallTelemetry()))+" |",
 		)
 	}
@@ -239,6 +240,7 @@ func settingsListItems(host *RPCSessionHost, state RPCSessionState, settings *Se
 		{ID: "transport", Label: "Transport", Description: "Preferred transport for providers that support multiple transports", CurrentValue: settings.GetTransport(), Values: []string{"sse", "websocket", "websocket-cached", "auto"}},
 		{ID: "http-idle-timeout", Label: "HTTP idle timeout", Description: "Maximum idle gap while waiting for HTTP headers or body chunks. Disable for local models that pause longer than five minutes.", CurrentValue: formatHTTPIdleTimeoutMS(settings.GetHTTPIdleTimeoutMS()), Values: httpIdleTimeoutLabels()},
 		{ID: "hide-thinking", Label: "Hide thinking", Description: "Hide thinking blocks in assistant responses", CurrentValue: fmt.Sprintf("%t", settings.GetHideThinkingBlock()), Values: []string{"true", "false"}},
+		{ID: "cache-miss-notices", Label: "Cache miss notices", Description: "Show transcript notices for significant prompt-cache misses", CurrentValue: fmt.Sprintf("%t", settings.GetShowCacheMissNotices()), Values: []string{"true", "false"}},
 		{ID: "collapse-changelog", Label: "Collapse changelog", Description: "Show condensed changelog after updates", CurrentValue: fmt.Sprintf("%t", settings.GetCollapseChangelog()), Values: []string{"true", "false"}},
 		{ID: "quiet-startup", Label: "Quiet startup", Description: "Disable verbose printing at startup", CurrentValue: fmt.Sprintf("%t", settings.GetQuietStartup()), Values: []string{"true", "false"}},
 		{ID: "install-telemetry", Label: "Install telemetry", Description: "Send an anonymous version/update ping after changelog-detected updates", CurrentValue: fmt.Sprintf("%t", settings.GetEnableInstallTelemetry()), Values: []string{"true", "false"}},
@@ -515,6 +517,9 @@ func (h *CLIInteractiveTUIHost) applySettingsListChange(host *RPCSessionHost, se
 	case "hide-thinking":
 		settings.SetHideThinkingBlock(newValue == "true")
 		h.updateAssistantThinkingPresentation()
+	case "cache-miss-notices":
+		settings.SetShowCacheMissNotices(newValue == "true")
+		h.rerenderSessionMessages()
 	case "collapse-changelog":
 		settings.SetCollapseChangelog(newValue == "true")
 	case "quiet-startup":

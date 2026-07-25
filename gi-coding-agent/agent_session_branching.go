@@ -215,12 +215,15 @@ func sessionMessageText(message any) string {
 func sessionMessageToLLM(message any) (llm.Message, bool) {
 	switch typed := message.(type) {
 	case llm.Message:
-		return typed, true
+		return normalizeSessionMessageContent(typed), true
 	case map[string]any:
 		role, _ := typed["role"].(string)
 		if role == "" {
 			return llm.Message{}, false
 		}
+		rawContent, hasContent := typed["content"]
+		normalizeEmptyContent := sessionRoleRequiresContent(role) &&
+			(!hasContent || sessionMessageContentIsEmpty(rawContent))
 		details := typed["details"]
 		if role == "branchSummary" || role == "compactionSummary" {
 			detailMap := map[string]any{}
@@ -274,15 +277,46 @@ func sessionMessageToLLM(message any) (llm.Message, bool) {
 		if usage, ok := usageFromSessionMessageValue(typed["usage"]); ok {
 			message.Usage = usage
 		}
-		if role == "custom" && len(message.Content) == 0 && typed["content"] != nil {
-			message.Content = []llm.ContentPart{llm.Text(customMessageText(typed["content"]))}
+		if role == "custom" && len(message.Content) == 0 && rawContent != nil {
+			message.Content = []llm.ContentPart{llm.Text(customMessageText(rawContent))}
 		}
-		if len(message.Content) == 0 {
+		if normalizeEmptyContent {
+			message.Content = []llm.ContentPart{}
+		} else if len(message.Content) == 0 {
 			message.Content = []llm.ContentPart{llm.Text(extractMessageText(typed))}
 		}
 		return message, true
 	default:
 		return llm.Message{}, false
+	}
+}
+
+func normalizeSessionMessageContent(message llm.Message) llm.Message {
+	if sessionRoleRequiresContent(message.Role) && message.Content == nil {
+		message.Content = []llm.ContentPart{}
+	}
+	return message
+}
+
+func sessionRoleRequiresContent(role string) bool {
+	switch role {
+	case llm.RoleUser, llm.RoleAssistant, llm.RoleToolResult, "custom":
+		return true
+	default:
+		return false
+	}
+}
+
+func sessionMessageContentIsEmpty(content any) bool {
+	switch typed := content.(type) {
+	case nil:
+		return true
+	case []any:
+		return len(typed) == 0
+	case []llm.ContentPart:
+		return len(typed) == 0
+	default:
+		return false
 	}
 }
 

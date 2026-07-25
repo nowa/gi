@@ -3,6 +3,8 @@ package gicodingagent
 import (
 	"reflect"
 	"testing"
+
+	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
 func TestBuildSessionContextPiParityCases(t *testing.T) {
@@ -214,6 +216,160 @@ func TestBuildSessionContextPiParityCases(t *testing.T) {
 			t.Fatalf("messages = %#v", ctx.Messages)
 		}
 	})
+}
+
+func TestBuildContextEntriesReturnsCompactionAwareEntriesIncludingCustomEntries(t *testing.T) {
+	entries := []FileEntry{
+		contextUserEntry("1", nil, "first"),
+		{Type: "custom_message", ID: "2", ParentID: stringPtr("1"), CustomType: "old-state", Content: "old"},
+		contextAssistantEntry("3", stringPtr("2"), "response1"),
+		{Type: "custom_message", ID: "4", ParentID: stringPtr("3"), CustomType: "kept-card", Content: "kept"},
+		contextUserEntry("5", stringPtr("4"), "second"),
+		contextCompactionEntry("6", stringPtr("5"), "Summary", "4"),
+		{Type: "custom_message", ID: "7", ParentID: stringPtr("6"), CustomType: "after-card", Content: "after"},
+		contextAssistantEntry("8", stringPtr("7"), "response2"),
+	}
+
+	contextEntries := BuildContextEntries(entries, nil, nil)
+	ids := make([]string, 0, len(contextEntries))
+	for _, entry := range contextEntries {
+		ids = append(ids, entry.ID)
+	}
+	if want := []string{"6", "4", "5", "7", "8"}; !reflect.DeepEqual(ids, want) {
+		t.Fatalf("context entry ids = %#v, want %#v", ids, want)
+	}
+}
+
+func TestSessionEntryToContextMessagesProjectsDisplayAndSummaryEntries(t *testing.T) {
+	display := false
+	tests := []struct {
+		name        string
+		entry       FileEntry
+		wantRole    string
+		wantText    string
+		wantDisplay *bool
+		wantEmpty   bool
+	}{
+		{
+			name:     "message",
+			entry:    contextUserEntry("message", nil, "hello"),
+			wantRole: "user",
+			wantText: "hello",
+		},
+		{
+			name: "custom message",
+			entry: FileEntry{
+				Type:       "custom_message",
+				ID:         "custom",
+				Timestamp:  "2025-01-01T00:00:00Z",
+				CustomType: "card",
+				Content:    "custom body",
+				Display:    false,
+			},
+			wantRole:    "custom",
+			wantText:    "custom body",
+			wantDisplay: &display,
+		},
+		{
+			name: "loaded assistant with null content",
+			entry: FileEntry{
+				Type: "message",
+				ID:   "assistant-null",
+				Message: map[string]any{
+					"role":    "assistant",
+					"content": nil,
+				},
+			},
+			wantRole:  "assistant",
+			wantEmpty: true,
+		},
+		{
+			name: "loaded tool result with missing content",
+			entry: FileEntry{
+				Type: "message",
+				ID:   "tool-missing",
+				Message: map[string]any{
+					"role":       "toolResult",
+					"toolCallID": "call-1",
+				},
+			},
+			wantRole:  "toolResult",
+			wantEmpty: true,
+		},
+		{
+			name: "custom message with null content",
+			entry: FileEntry{
+				Type:       "custom_message",
+				ID:         "custom-null",
+				CustomType: "card",
+				Content:    nil,
+			},
+			wantRole:  "custom",
+			wantEmpty: true,
+		},
+		{
+			name: "branch summary",
+			entry: contextBranchSummaryEntry(
+				"branch",
+				nil,
+				"branch body",
+				"source",
+			),
+			wantRole: "branchSummary",
+			wantText: "branch body",
+		},
+		{
+			name: "compaction",
+			entry: contextCompactionEntry(
+				"compaction",
+				nil,
+				"compaction body",
+				"message",
+			),
+			wantRole: "compactionSummary",
+			wantText: "compaction body",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			messages := SessionEntryToContextMessages(test.entry)
+			if len(messages) != 1 {
+				t.Fatalf("messages = %#v", messages)
+			}
+			message := messages[0]
+			if message.Role != test.wantRole ||
+				interactiveTextFromLLMMessage(message) != test.wantText {
+				t.Fatalf("message = %#v", message)
+			}
+			if test.wantDisplay != nil &&
+				(message.Display == nil || *message.Display != *test.wantDisplay) {
+				t.Fatalf("display = %#v, want %t", message.Display, *test.wantDisplay)
+			}
+			if test.wantEmpty && (message.Content == nil || len(message.Content) != 0) {
+				t.Fatalf("content = %#v, want non-nil empty content", message.Content)
+			}
+		})
+	}
+
+	if messages := SessionEntryToContextMessages(FileEntry{
+		Type: "model_change",
+		ID:   "metadata",
+	}); len(messages) != 0 {
+		t.Fatalf("metadata messages = %#v", messages)
+	}
+}
+
+func TestAgentSessionMessageEndNormalizesNilContent(t *testing.T) {
+	message, err := (&AgentSession{}).emitExtensionMessageEnd(llm.Message{
+		Role: llm.RoleAssistant,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.Content == nil || len(message.Content) != 0 {
+		t.Fatalf("content = %#v, want non-nil empty content", message.Content)
+	}
 }
 
 func contextUserEntry(id string, parentID *string, text string) FileEntry {

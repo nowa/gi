@@ -6006,6 +6006,7 @@ func TestCLIInteractiveTUISettingsListIncludesAndAppliesPiControls(t *testing.T)
 		"skill-commands",
 		"transport",
 		"hide-thinking",
+		"cache-miss-notices",
 		"double-escape-action",
 		"tree-filter-mode",
 		"warnings",
@@ -6035,6 +6036,7 @@ func TestCLIInteractiveTUISettingsListIncludesAndAppliesPiControls(t *testing.T)
 	host.applySettingsListChange(rpcHost, settings, "autocomplete-max-visible", "20")
 	host.applySettingsListChange(rpcHost, settings, "clear-on-shrink", "true")
 	host.applySettingsListChange(rpcHost, settings, "hide-thinking", "true")
+	host.applySettingsListChange(rpcHost, settings, "cache-miss-notices", "true")
 	host.applySettingsListChange(rpcHost, settings, "double-escape-action", "fork")
 	host.applySettingsListChange(rpcHost, settings, "tree-filter-mode", "labeled-only")
 	host.applySettingsListChange(rpcHost, settings, "warning-anthropic-extra-usage", "false")
@@ -6047,6 +6049,7 @@ func TestCLIInteractiveTUISettingsListIncludesAndAppliesPiControls(t *testing.T)
 		settings.GetImageAutoResize() ||
 		settings.GetEnableSkillCommands() ||
 		!settings.GetHideThinkingBlock() ||
+		!settings.GetShowCacheMissNotices() ||
 		settings.GetDoubleEscapeAction() != "fork" ||
 		settings.GetTreeFilterMode() != "labeled-only" ||
 		settings.GetWarnings().AnthropicExtraUsage ||
