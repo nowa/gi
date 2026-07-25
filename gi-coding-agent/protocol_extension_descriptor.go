@@ -74,32 +74,21 @@ type protocolResourceDescriptor struct {
 type protocolExtensionDescriptorLoadResult struct {
 	Errors    []ProtocolExtensionDiscoveryError
 	Resources ResourceExtension
+	Loaded    []ProtocolExtensionSource
 }
 
 func LoadProtocolExtensionDescriptors(sources []ProtocolExtensionSource, runtime *ProtocolExtensionRuntime) protocolExtensionDescriptorLoadResult {
-	var result protocolExtensionDescriptorLoadResult
-	if runtime == nil {
-		runtime = NewDefaultProtocolExtensionRuntime()
-	}
-	toolSources := map[string]string{}
-	flagSources := map[string]string{}
-	for _, source := range sources {
-		descriptor, err := readProtocolExtensionDescriptor(source.Path)
-		if err != nil {
-			result.Errors = append(result.Errors, ProtocolExtensionDiscoveryError{Path: source.Path, Error: err.Error()})
-			continue
-		}
-		metadata := protocolDescriptorSourceInfo(source, descriptor.Gi.ID)
-		if descriptor.Gi.InitError != "" {
-			result.Errors = append(result.Errors, ProtocolExtensionDiscoveryError{Path: source.Path, Error: descriptor.Gi.InitError})
-			continue
-		}
-		context := &ProtocolExtensionContext{runtime: runtime, source: metadata}
-		result.Errors = append(result.Errors, applyProtocolExtensionDescriptor(context, descriptor.Gi, toolSources, flagSources)...)
-		result.Resources.SkillPaths = append(result.Resources.SkillPaths, protocolDescriptorResourcePaths(source, descriptor.Gi.Resources.Skills, metadata)...)
-		result.Resources.PromptPaths = append(result.Resources.PromptPaths, protocolDescriptorPromptPaths(source, descriptor.Gi.Resources.Prompts, metadata)...)
-		result.Resources.ThemePaths = append(result.Resources.ThemePaths, protocolDescriptorThemePaths(source, descriptor.Gi.Resources.Themes, metadata)...)
-	}
+	state := newProtocolExtensionLoadState(
+		newProtocolExtensionLoader(),
+		runtime,
+		"",
+		false,
+	)
+	result := state.loadExtensionsInternal(sources, "")
+	result.Errors = append(
+		result.Errors,
+		state.conflictDiagnostics(sources, "")...,
+	)
 	return result
 }
 
@@ -118,7 +107,7 @@ func readProtocolExtensionDescriptor(path string) (protocolExtensionDescriptor, 
 	return descriptor, nil
 }
 
-func applyProtocolExtensionDescriptor(ctx *ProtocolExtensionContext, descriptor *protocolExtensionDescriptorGI, toolSources, flagSources map[string]string) []ProtocolExtensionDiscoveryError {
+func applyProtocolExtensionDescriptor(ctx *ProtocolExtensionContext, descriptor *protocolExtensionDescriptorGI) []ProtocolExtensionDiscoveryError {
 	var errors []ProtocolExtensionDiscoveryError
 	for _, command := range descriptor.Commands {
 		if err := ctx.RegisterCommand(command.Name, ProtocolCommandDefinition{
@@ -133,11 +122,6 @@ func applyProtocolExtensionDescriptor(ctx *ProtocolExtensionContext, descriptor 
 		name := strings.TrimSpace(tool.Name)
 		if name == "" {
 			continue
-		}
-		if previous := toolSources[name]; previous != "" {
-			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: `Tool "` + name + `" conflicts with ` + previous})
-		} else {
-			toolSources[name] = ctx.source.Path
 		}
 		if err := ctx.RegisterTool(ProtocolToolDefinition{
 			Name:          name,
@@ -187,11 +171,6 @@ func applyProtocolExtensionDescriptor(ctx *ProtocolExtensionContext, descriptor 
 		name := normalizeProtocolFlagName(flag.Name)
 		if name == "" {
 			continue
-		}
-		if previous := flagSources[name]; previous != "" && previous != ctx.source.Path {
-			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: `Flag "--` + name + `" conflicts with ` + previous})
-		} else if previous == "" {
-			flagSources[name] = ctx.source.Path
 		}
 		if err := ctx.RegisterFlag(name, ProtocolFlagDefinition{Description: flag.Description, Type: flag.Type, Default: flag.Default}); err != nil {
 			errors = append(errors, ProtocolExtensionDiscoveryError{Path: ctx.source.Path, Error: err.Error()})

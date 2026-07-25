@@ -146,6 +146,12 @@ together with the theme and preference in a single settings transition.
 Gi gates project-local settings, packages, extensions, skills, prompts, themes,
 and project system-prompt files behind one runtime trust decision. Decisions are
 stored in `~/.gi/agent/trust.json` and inherit from parent directories.
+Before consulting a saved decision, Gi loads only global/user and explicit
+extensions; trusted in-process Go extensions may answer the `project_trust`
+event. A decisive answer can optionally be remembered. The final trusted or
+untrusted extension set is then completed on the same runtime, so bootstrap
+extensions initialize once and auto-discovered project code never runs before
+approval.
 Interactive startup asks when trust-requiring resources exist; non-interactive
 modes use the saved decision or global default, with `ask` safely resolving to
 untrusted when no UI is available.

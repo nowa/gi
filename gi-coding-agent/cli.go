@@ -33,6 +33,7 @@ type CLIOptions struct {
 	Responder              AgentSessionResponder
 	ProjectTrustPrompt     ProjectTrustPrompt
 	ProjectTrustOverride   *bool
+	ExtensionFactories     []ProtocolExtensionFactory
 	FirstTimeSetupTerminal gitui.Terminal
 }
 

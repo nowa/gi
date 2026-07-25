@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -286,10 +287,73 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	if err != nil {
 		return nil, err
 	}
-	settingsManager, projectTrusted, err := newCLIRuntimeSettingsManager(args, cwd, agentDir, options.ProjectTrustPrompt)
-	if err != nil {
-		return nil, err
+	settingsManager := NewSettingsManagerWithOptions(
+		cwd,
+		agentDir,
+		SettingsManagerOptions{ProjectTrusted: false},
+	)
+	loaderOptions := defaultResourceLoaderOptionsFromCLI(
+		args,
+		cwd,
+		agentDir,
+		settingsManager,
+	)
+	loaderOptions.ExtensionFactories = append(
+		[]ProtocolExtensionFactory(nil),
+		options.ExtensionFactories...,
+	)
+	resourceLoader := NewDefaultResourceLoader(loaderOptions)
+	var projectTrustWarnings []string
+	if args.ProjectTrustOverride != nil ||
+		!HasTrustRequiringProjectResources(cwd) {
+		trusted, err := ResolveProjectTrusted(ResolveProjectTrustOptions{
+			CWD:           cwd,
+			TrustStore:    NewProjectTrustStore(agentDir),
+			TrustOverride: args.ProjectTrustOverride,
+		})
+		if err != nil {
+			return nil, err
+		}
+		settingsManager.SetProjectTrusted(trusted)
+		if err := resourceLoader.ReloadWithOptions(
+			ResourceLoaderReloadOptions{},
+		); err != nil {
+			return nil, err
+		}
+	} else {
+		err := resourceLoader.ReloadWithOptions(ResourceLoaderReloadOptions{
+			ResolveProjectTrust: func(
+				input ResourceLoaderProjectTrustInput,
+			) (bool, error) {
+				return ResolveProjectTrusted(ResolveProjectTrustOptions{
+					CWD:                 cwd,
+					TrustStore:          NewProjectTrustStore(agentDir),
+					DefaultProjectTrust: settingsManager.GetDefaultProjectTrust(),
+					Prompt:              options.ProjectTrustPrompt,
+					ExtensionRuntime:    input.ExtensionsResult.Runtime,
+					ExtensionContext: cliProtocolProjectTrustContext(
+						args,
+						cwd,
+						options.ProjectTrustPrompt,
+					),
+					OnExtensionError: func(extensionError ProtocolExtensionError) {
+						projectTrustWarnings = append(
+							projectTrustWarnings,
+							fmt.Sprintf(
+								`Extension %q project_trust error: %s`,
+								extensionError.ExtensionPath,
+								extensionError.Error,
+							),
+						)
+					},
+				})
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
+	projectTrusted := settingsManager.IsProjectTrusted()
 	if _, err := providerRequestSettings(settingsManager); err != nil {
 		return nil, err
 	}
@@ -331,8 +395,6 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 		}
 	}
 	installTelemetryEnabled := IsInstallTelemetryEnabled(settingsManager)
-	resourceLoader := NewDefaultResourceLoader(defaultResourceLoaderOptionsFromCLI(args, cwd, agentDir, settingsManager))
-	resourceLoader.Reload()
 	extensions := resourceLoader.GetExtensions()
 	resourceLoader.ApplyExtensionFlagValues(args.UnknownFlags, cliAllowsDeferredExtensionFlags(args, extensions))
 	extensions = resourceLoader.GetExtensions()
@@ -378,6 +440,7 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 	host.extensionFlagValues = cloneMapAny(args.UnknownFlags)
 	host.processExtensions = extensions.ProcessExtensions
 	host.startupWarnings = startupWarningLines(resolvedModel.Warning)
+	host.startupWarnings = append(host.startupWarnings, projectTrustWarnings...)
 	if warning := projectTrustStartupWarning(cwd, projectTrusted); warning != "" {
 		host.startupWarnings = append(host.startupWarnings, warning)
 	}

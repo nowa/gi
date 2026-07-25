@@ -183,6 +183,85 @@ func TestCLIPrintModeUsesSelectedSessionCwdForRuntimeResourcesPiStyle(t *testing
 	}
 }
 
+func TestCLIPrintModeLetsBootstrapExtensionResolveProjectTrust(t *testing.T) {
+	cwd := t.TempDir()
+	agentDir := filepath.Join(t.TempDir(), "agent")
+	writeResourceSkill(
+		t,
+		filepath.Join(
+			cwd,
+			ConfigDirName,
+			"skills",
+			"extension-approved",
+			"SKILL.md",
+		),
+		"extension-approved",
+		"Extension approved skill",
+		"Approved by a bootstrap extension.",
+	)
+	factoryLoads := 0
+	handlerCalls := 0
+	prompted := false
+	host, err := newDefaultCLIPrintModeHost(Args{
+		Offline: true,
+		Print:   true,
+		Model:   "openai/gpt-4o-mini",
+	}, CLIOptions{
+		CWD:      cwd,
+		AgentDir: agentDir,
+		ProjectTrustPrompt: func(
+			string,
+			[]ProjectTrustOption,
+		) (*ProjectTrustOption, error) {
+			prompted = true
+			return nil, nil
+		},
+		ExtensionFactories: []ProtocolExtensionFactory{{
+			Path: "bootstrap-trust.go",
+			Factory: func(ctx *ProtocolExtensionContext) error {
+				factoryLoads++
+				return ctx.On(
+					ProtocolEventProjectTrust,
+					func(event ProtocolSessionEvent) (ProtocolEventResult, error) {
+						handlerCalls++
+						if event.ProjectTrustContext == nil ||
+							event.ProjectTrustContext.CWD != cwd ||
+							event.ProjectTrustContext.Mode != "print" ||
+							event.ProjectTrustContext.HasUI {
+							t.Fatalf("event = %#v", event)
+						}
+						return ProtocolEventResult{
+							ProjectTrust: &ProtocolProjectTrustResult{
+								Trusted: ProtocolProjectTrustYes,
+							},
+						}, nil
+					},
+				)
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeHost := host.(*agentSessionPrintModeHost)
+	if factoryLoads != 1 || handlerCalls != 1 || prompted ||
+		!runtimeHost.settingsManager.IsProjectTrusted() {
+		t.Fatalf(
+			"factory loads = %d, handler calls = %d, prompted = %t, trusted = %t",
+			factoryLoads,
+			handlerCalls,
+			prompted,
+			runtimeHost.settingsManager.IsProjectTrusted(),
+		)
+	}
+	if !strings.Contains(
+		runtimeHost.session.SystemPrompt,
+		"Approved by a bootstrap extension.",
+	) {
+		t.Fatalf("system prompt = %q", runtimeHost.session.SystemPrompt)
+	}
+}
+
 func TestCLIPrintModePassesResourceFlagsToLoaderPiStyle(t *testing.T) {
 	cwd := t.TempDir()
 	agentDir := filepath.Join(t.TempDir(), "agent")

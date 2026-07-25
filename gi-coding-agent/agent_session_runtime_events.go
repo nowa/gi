@@ -28,6 +28,7 @@ const (
 	ProtocolEventMessageUpdate         = "message_update"
 	ProtocolEventMessageEnd            = "message_end"
 	ProtocolEventUserBash              = "user_bash"
+	ProtocolEventProjectTrust          = "project_trust"
 	ProtocolEventResourcesDiscover     = "resources_discover"
 	ProtocolEventBeforeProviderRequest = "before_provider_request"
 	ProtocolEventBeforeProviderHeaders = "before_provider_headers"

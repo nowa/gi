@@ -151,3 +151,52 @@ func projectTrustStartupWarning(cwd string, trusted bool) string {
 	}
 	return fmt.Sprintf("This project is not trusted. Project %s resources and packages are ignored. Use --approve to trust them for this run.", ConfigDirName)
 }
+
+func cliProtocolProjectTrustContext(
+	args Args,
+	cwd string,
+	prompt ProjectTrustPrompt,
+) ProtocolProjectTrustContext {
+	mode := "print"
+	switch {
+	case args.Mode == ModeJSON:
+		mode = "json"
+	case args.Mode == ModeRPC:
+		mode = "rpc"
+	case !args.Print && prompt != nil:
+		mode = "interactive"
+	}
+	context := ProtocolProjectTrustContext{
+		CWD:   cwd,
+		Mode:  mode,
+		HasUI: mode == "interactive" && prompt != nil,
+	}
+	if !context.HasUI {
+		return context
+	}
+	context.Select = func(_ string, labels []string) (string, error) {
+		options := make([]ProjectTrustOption, 0, len(labels))
+		for _, label := range labels {
+			options = append(options, ProjectTrustOption{Label: label})
+		}
+		selected, err := prompt(cwd, options)
+		if err != nil || selected == nil {
+			return "", err
+		}
+		return selected.Label, nil
+	}
+	context.Confirm = func(message string) (bool, error) {
+		selected, err := context.Select(message, []string{"Yes", "No"})
+		return selected == "Yes", err
+	}
+	context.Input = func(string) (string, error) {
+		return "", ProtocolRuntimeError{
+			Code:    "ui_unavailable",
+			Message: "project trust text input is not available before TUI startup",
+		}
+	}
+	context.Notify = func(string) error {
+		return nil
+	}
+	return context
+}

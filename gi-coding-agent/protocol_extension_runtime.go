@@ -349,6 +349,7 @@ type ProtocolSessionEvent struct {
 	Payload               any
 	Status                int
 	Headers               map[string]string
+	ProjectTrustContext   *ProtocolProjectTrustContext
 }
 
 type ProtocolEventResult struct {
@@ -376,6 +377,7 @@ type ProtocolEventResult struct {
 	PayloadSet        bool
 	Resources         ResourceExtension
 	ResourcesSet      bool
+	ProjectTrust      *ProtocolProjectTrustResult
 }
 
 type ProtocolEventHandler func(ProtocolSessionEvent) (ProtocolEventResult, error)

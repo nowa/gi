@@ -46,6 +46,9 @@ type ResolveProjectTrustOptions struct {
 	TrustOverride       *bool
 	DefaultProjectTrust DefaultProjectTrust
 	Prompt              ProjectTrustPrompt
+	ExtensionRuntime    *ProtocolExtensionRuntime
+	ExtensionContext    ProtocolProjectTrustContext
+	OnExtensionError    func(ProtocolExtensionError)
 }
 
 type ProjectTrustStore struct {
@@ -186,6 +189,29 @@ func ResolveProjectTrusted(options ResolveProjectTrustOptions) (bool, error) {
 	}
 	if !HasTrustRequiringProjectResources(options.CWD) {
 		return true, nil
+	}
+	if options.ExtensionRuntime != nil {
+		context := options.ExtensionContext
+		if strings.TrimSpace(context.CWD) == "" {
+			context.CWD = options.CWD
+		}
+		result, extensionErrors := options.ExtensionRuntime.EmitProjectTrustEvent(
+			context,
+		)
+		for _, extensionError := range extensionErrors {
+			if options.OnExtensionError != nil {
+				options.OnExtensionError(extensionError)
+			}
+		}
+		if result != nil {
+			trusted := result.Trusted == ProtocolProjectTrustYes
+			if result.Remember && options.TrustStore != nil {
+				if err := options.TrustStore.Set(options.CWD, trusted); err != nil {
+					return false, err
+				}
+			}
+			return trusted, nil
+		}
 	}
 	if options.TrustStore != nil {
 		decision, found, err := options.TrustStore.Get(options.CWD)

@@ -36,6 +36,56 @@ func TestParseArgsProjectTrustOverridesPiStyle(t *testing.T) {
 	}
 }
 
+func TestCLIProtocolProjectTrustContextMatchesModeAndUIAvailability(
+	t *testing.T,
+) {
+	cwd := t.TempDir()
+	prompt := func(
+		_ string,
+		options []ProjectTrustOption,
+	) (*ProjectTrustOption, error) {
+		if len(options) < 2 {
+			return nil, nil
+		}
+		return &options[1], nil
+	}
+	interactive := cliProtocolProjectTrustContext(Args{}, cwd, prompt)
+	if interactive.CWD != cwd ||
+		interactive.Mode != "interactive" ||
+		!interactive.HasUI ||
+		interactive.Select == nil ||
+		interactive.Confirm == nil ||
+		interactive.Input == nil ||
+		interactive.Notify == nil {
+		t.Fatalf("interactive context = %#v", interactive)
+	}
+	selected, err := interactive.Select("Choose", []string{"first", "second"})
+	if err != nil || selected != "second" {
+		t.Fatalf("selected = %q, err = %v", selected, err)
+	}
+	confirmed, err := interactive.Confirm("Confirm")
+	if err != nil || confirmed {
+		t.Fatalf("confirmed = %t, err = %v", confirmed, err)
+	}
+	if _, err := interactive.Input("Input"); err == nil {
+		t.Fatal("pre-startup text input should report unavailable")
+	}
+	if err := interactive.Notify("notice"); err != nil {
+		t.Fatalf("notify err = %v", err)
+	}
+
+	printContext := cliProtocolProjectTrustContext(
+		Args{Print: true},
+		cwd,
+		prompt,
+	)
+	if printContext.Mode != "print" ||
+		printContext.HasUI ||
+		printContext.Select != nil {
+		t.Fatalf("print context = %#v", printContext)
+	}
+}
+
 func TestCLIPackageListHonorsProjectTrust(t *testing.T) {
 	root := t.TempDir()
 	cwd := filepath.Join(root, "project")

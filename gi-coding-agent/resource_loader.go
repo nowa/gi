@@ -31,6 +31,17 @@ type DefaultResourceLoaderOptions struct {
 	ExtensionFactories       []ProtocolExtensionFactory
 }
 
+// ResourceLoaderProjectTrustInput exposes the safe pre-trust extension
+// snapshot to the decision callback.
+type ResourceLoaderProjectTrustInput struct {
+	ExtensionsResult ResourceExtensionsResult
+}
+
+// ResourceLoaderReloadOptions configures one serialized reload transaction.
+type ResourceLoaderReloadOptions struct {
+	ResolveProjectTrust func(ResourceLoaderProjectTrustInput) (bool, error)
+}
+
 type ResourceExtensionsResult struct {
 	Extensions        []ProtocolExtensionSource
 	ProcessExtensions []ProtocolPackageProcessExtension
@@ -91,6 +102,9 @@ type ResourceExtension struct {
 }
 
 type DefaultResourceLoader struct {
+	// reloadMu serializes complete resource transactions while mu protects the
+	// published snapshot. Project-trust callbacks run without mu held.
+	reloadMu                 sync.Mutex
 	mu                       sync.RWMutex
 	cwd                      string
 	agentDir                 string
@@ -109,6 +123,7 @@ type DefaultResourceLoader struct {
 	skillsOverride           func() ResourceSkillsResult
 	systemPromptOverride     func() string
 	extensionFactories       []ProtocolExtensionFactory
+	extensionLoader          *protocolExtensionLoader
 
 	extensions       ResourceExtensionsResult
 	skills           ResourceSkillsResult
@@ -159,26 +174,77 @@ func NewDefaultResourceLoader(options DefaultResourceLoaderOptions) *DefaultReso
 		skillsOverride:           options.SkillsOverride,
 		systemPromptOverride:     options.SystemPromptOverride,
 		extensionFactories:       append([]ProtocolExtensionFactory(nil), options.ExtensionFactories...),
+		extensionLoader:          newProtocolExtensionLoader(),
 		extensions:               ResourceExtensionsResult{Runtime: NewDefaultProtocolExtensionRuntime()},
 	}
 }
 
 func (l *DefaultResourceLoader) Reload() {
+	_ = l.ReloadWithOptions(ResourceLoaderReloadOptions{})
+}
+
+// ReloadWithOptions reloads settings and resources as one transaction. When a
+// resolver is provided, global/user and explicit extensions load first; the
+// returned decision then selects the final resource set on the same runtime.
+func (l *DefaultResourceLoader) ReloadWithOptions(
+	options ResourceLoaderReloadOptions,
+) error {
 	if l == nil {
-		return
+		return nil
+	}
+	l.reloadMu.Lock()
+	defer l.reloadMu.Unlock()
+
+	if l.reloadCount > 0 {
+		l.extensionLoader.clearExtensionCache()
 	}
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	reason := "startup"
 	if l.reloadCount > 0 {
 		reason = "reload"
 	}
-	l.reloadCount++
+	var extensionState *protocolExtensionLoadState
+	var previousTrusted bool
+	previousPackageResources := l.packageResources
+	previousPackageLoadError := l.packageLoadError
+	if l.settingsManager != nil {
+		previousTrusted = l.settingsManager.IsProjectTrusted()
+	}
+	if options.ResolveProjectTrust != nil {
+		var preTrustExtensions ResourceExtensionsResult
+		extensionState, preTrustExtensions = l.loadProjectTrustExtensions()
+		l.mu.Unlock()
+		trusted, err := options.ResolveProjectTrust(
+			ResourceLoaderProjectTrustInput{
+				ExtensionsResult: cloneResourceExtensionsResult(
+					preTrustExtensions,
+				),
+			},
+		)
+		if err != nil {
+			if l.settingsManager != nil {
+				l.settingsManager.SetProjectTrusted(previousTrusted)
+				l.settingsManager.Reload()
+			}
+			l.extensionLoader.clearExtensionCache()
+			l.mu.Lock()
+			l.packageResources = previousPackageResources
+			l.packageLoadError = previousPackageLoadError
+			l.mu.Unlock()
+			return err
+		}
+		if l.settingsManager != nil {
+			l.settingsManager.SetProjectTrusted(trusted)
+		}
+		l.mu.Lock()
+	}
+	defer l.mu.Unlock()
+
 	if l.settingsManager != nil {
 		l.settingsManager.Reload()
 	}
 	l.packageResources, l.packageLoadError = l.loadPackageResources()
-	l.extensions = l.loadExtensions()
+	l.extensions = l.loadFinalExtensionSet(extensionState)
 	l.discoverRuntimeResources(reason)
 	l.skills = l.loadSkills()
 	l.prompts = ResourcePromptsResult{Prompts: l.loadPrompts()}
@@ -186,12 +252,16 @@ func (l *DefaultResourceLoader) Reload() {
 	l.agentsFiles = ResourceAgentsFilesResult{AgentsFiles: l.loadAgentsFiles()}
 	l.systemPrompt = l.loadSystemPrompt()
 	l.appendSystem = l.loadAppendSystemPrompt()
+	l.reloadCount++
+	return nil
 }
 
 func (l *DefaultResourceLoader) ExtendResources(resources ResourceExtension) {
 	if l == nil {
 		return
 	}
+	l.reloadMu.Lock()
+	defer l.reloadMu.Unlock()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.extendedExtPaths = append(l.extendedExtPaths, resources.ExtensionPaths...)
@@ -199,7 +269,8 @@ func (l *DefaultResourceLoader) ExtendResources(resources ResourceExtension) {
 	l.extendedPrompts = append(l.extendedPrompts, resources.PromptPaths...)
 	l.extendedThemes = append(l.extendedThemes, resources.ThemePaths...)
 	if len(resources.ExtensionPaths) > 0 {
-		l.extensions = l.loadExtensions()
+		l.extensionLoader.clearExtensionCache()
+		l.extensions = l.loadFinalExtensionSet(nil)
 		l.discoverRuntimeResources("reload")
 	}
 	l.skills = l.loadSkills()
@@ -351,7 +422,76 @@ func cloneResourceSkillsResult(result ResourceSkillsResult) ResourceSkillsResult
 	}
 }
 
-func (l *DefaultResourceLoader) loadExtensions() ResourceExtensionsResult {
+// LoadProjectTrustExtensions loads only global/user and explicitly requested
+// extensions. It intentionally leaves SettingsManager untrusted so the caller
+// can resolve trust before any project-local code or settings are observed.
+func (l *DefaultResourceLoader) LoadProjectTrustExtensions() ResourceExtensionsResult {
+	if l == nil {
+		return ResourceExtensionsResult{}
+	}
+	l.reloadMu.Lock()
+	defer l.reloadMu.Unlock()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.reloadCount > 0 {
+		l.extensionLoader.clearExtensionCache()
+	}
+	_, result := l.loadProjectTrustExtensions()
+	return cloneResourceExtensionsResult(result)
+}
+
+func (l *DefaultResourceLoader) loadProjectTrustExtensions() (
+	*protocolExtensionLoadState,
+	ResourceExtensionsResult,
+) {
+	if l.settingsManager != nil {
+		l.settingsManager.SetProjectTrusted(false)
+		l.settingsManager.Reload()
+	}
+	l.packageResources, l.packageLoadError = l.loadPackageResources()
+	return l.loadCurrentExtensionSet(nil, true)
+}
+
+func (l *DefaultResourceLoader) loadCurrentExtensionSet(
+	state *protocolExtensionLoadState,
+	includeInlineFactories bool,
+) (*protocolExtensionLoadState, ResourceExtensionsResult) {
+	combined := l.resolveCurrentExtensionSet()
+	extensions := dedupeProtocolExtensionSources(
+		filterProtocolExtensions(
+			combined.Extensions,
+			l.resourceFilters("extensions"),
+			l.cwd,
+			l.agentDir,
+		),
+	)
+	if state == nil {
+		state = newProtocolExtensionLoadState(
+			l.extensionLoader,
+			NewDefaultProtocolExtensionRuntime(),
+			l.cwd,
+			true,
+		)
+	}
+	state.errors = append(state.errors, combined.Errors...)
+	state.loadExtensionsInternal(extensions, l.cwd)
+	if includeInlineFactories {
+		state.loadFactories(l.extensionFactories)
+	}
+	result := ResourceExtensionsResult{
+		Extensions: state.orderedSources(extensions, l.cwd),
+		ProcessExtensions: append(
+			[]ProtocolPackageProcessExtension(nil),
+			l.packageResources.ProcessExtensions...,
+		),
+		Errors:  state.diagnostics(),
+		Runtime: state.runtime,
+	}
+	l.addExtensionConflictDiagnostics(&result, state, extensions)
+	return state, result
+}
+
+func (l *DefaultResourceLoader) resolveCurrentExtensionSet() ProtocolExtensionDiscoveryResult {
 	var combined ProtocolExtensionDiscoveryResult
 	for _, source := range l.extendedExtPaths {
 		combined.Extensions = append(combined.Extensions, ProtocolExtensionSource{Path: source.Path, BaseDir: filepath.Dir(source.Path), Metadata: source.Metadata})
@@ -385,24 +525,86 @@ func (l *DefaultResourceLoader) loadExtensions() ResourceExtensionsResult {
 			combined.Errors = append(combined.Errors, discovered.Errors...)
 		}
 	}
-	filtered := filterProtocolExtensions(combined.Extensions, l.resourceFilters("extensions"), l.cwd, l.agentDir)
-	extensions := dedupeProtocolExtensionSources(filtered)
-	runtime := NewDefaultProtocolExtensionRuntime()
-	loaded := LoadProtocolExtensionDescriptors(extensions, runtime)
-	if len(l.extensionFactories) > 0 {
-		if err := runtime.LoadFactories(l.extensionFactories); err != nil {
-			loaded.Errors = append(loaded.Errors, ProtocolExtensionDiscoveryError{Path: "extension factories", Error: err.Error()})
+	return combined
+}
+
+func (l *DefaultResourceLoader) resolveExtensionLoadPath(path string) string {
+	return resolveProtocolExtensionLoadPath(path, l.cwd)
+}
+
+func (l *DefaultResourceLoader) loadFinalExtensionSet(
+	state *protocolExtensionLoadState,
+) ResourceExtensionsResult {
+	combined := l.resolveCurrentExtensionSet()
+	extensions := dedupeProtocolExtensionSources(
+		filterProtocolExtensions(
+			combined.Extensions,
+			l.resourceFilters("extensions"),
+			l.cwd,
+			l.agentDir,
+		),
+	)
+	if state == nil {
+		state = newProtocolExtensionLoadState(
+			l.extensionLoader,
+			NewDefaultProtocolExtensionRuntime(),
+			l.cwd,
+			true,
+		)
+	} else {
+		state.retainSources(extensions, l.cwd)
+	}
+	state.errors = append(state.errors, combined.Errors...)
+	state.loadExtensionsInternal(extensions, l.cwd)
+	state.loadFactories(l.extensionFactories)
+	state.runtime.OrderSources(
+		state.orderedSourceInfo(extensions, l.cwd),
+	)
+	resources := state.orderedResources(extensions, l.cwd)
+	l.extensionSkills = resources.SkillPaths
+	l.extensionPrompts = resources.PromptPaths
+	l.extensionThemes = resources.ThemePaths
+	result := ResourceExtensionsResult{
+		Extensions: state.orderedSources(extensions, l.cwd),
+		ProcessExtensions: append(
+			[]ProtocolPackageProcessExtension(nil),
+			l.packageResources.ProcessExtensions...,
+		),
+		Errors:  state.diagnostics(),
+		Runtime: state.runtime,
+	}
+	l.addExtensionConflictDiagnostics(&result, state, extensions)
+	return result
+}
+
+// addExtensionConflictDiagnostics derives conflicts from the final ordered
+// source set, then collapses exact repeats from two-phase rediscovery.
+func (l *DefaultResourceLoader) addExtensionConflictDiagnostics(
+	result *ResourceExtensionsResult,
+	state *protocolExtensionLoadState,
+	sources []ProtocolExtensionSource,
+) {
+	if result == nil {
+		return
+	}
+	result.Errors = append(
+		result.Errors,
+		state.conflictDiagnostics(sources, l.cwd)...,
+	)
+	if len(result.Errors) < 2 {
+		return
+	}
+	seen := make(map[string]struct{}, len(result.Errors))
+	filtered := result.Errors[:0]
+	for _, diagnostic := range result.Errors {
+		key := diagnostic.Path + "\x00" + diagnostic.Error
+		if _, ok := seen[key]; ok {
+			continue
 		}
+		seen[key] = struct{}{}
+		filtered = append(filtered, diagnostic)
 	}
-	l.extensionSkills = loaded.Resources.SkillPaths
-	l.extensionPrompts = loaded.Resources.PromptPaths
-	l.extensionThemes = loaded.Resources.ThemePaths
-	return ResourceExtensionsResult{
-		Extensions:        extensions,
-		ProcessExtensions: append([]ProtocolPackageProcessExtension(nil), l.packageResources.ProcessExtensions...),
-		Errors:            append(combined.Errors, loaded.Errors...),
-		Runtime:           runtime,
-	}
+	result.Errors = filtered
 }
 
 func (l *DefaultResourceLoader) discoverRuntimeResources(reason string) {
