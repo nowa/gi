@@ -30,6 +30,7 @@ All Pi component names in this table are exact files under
 | `config-selector.ts` | Package resource configuration selector | `gi-coding-agent/cli_config.go`, `gi-coding-agent/resource_config.go`, `gi-coding-agent/resource_loader.go`, `gi-coding-agent/package_manager.go` | direct | Gi uses immutable global/effective-project projections, Tab write-scope switching, inherited-resource dimming, and project inherit/load/unload cycles. Package and top-level persistence stays behind the package manager. |
 | `countdown-timer.ts` | Timeout countdown display | `gi-coding-agent/status_indicator.go` `CountdownTimer`; dialog-specific timeout runners | direct | Retry status owns the reusable second-granularity timer and synchronously waits for disposal; dialog runners retain their dialog-local expiry actions. |
 | `custom-editor.ts` | Extension-provided editor surface | `gi-coding-agent/inprocess_components.go`, `gi-coding-agent/cli_interactive_editor_host.go`, `gi-coding-agent/cli_interactive_tui.go` custom editor wiring | protocol | Trusted in-process components and out-of-process ViewTree/editor flows replace Pi's TS extension component boundary. |
+| `custom-entry.ts` | Persisted extension entry renderer | `gi-coding-agent/custom_entry_component.go`, `protocol_extension_runtime.go`, `agent_session_runtime.go`, `cli_interactive_tui.go` | protocol | A trusted Go renderer receives an immutable entry plus expanded state. The component owns only presentation state, rejects stale concurrent rebuilds, contains renderer panics, and suppresses nil output. Entries enter the append-only session tree before publication and retain history/live transcript order. |
 | `custom-message.ts` | Extension-rendered custom message | `gi-coding-agent/cli_interactive_tui.go` `addRenderedCustomMessage`, `viewtree.go` | protocol | Message renderers are registered through Gi's extension protocol. |
 | `daxnuts.ts` | OpenCode Zen easter egg | `gi-coding-agent/cli_message_components.go` `newCLIDaxnutsComponent` | direct | Exact DAX image data, truecolor half-block render, scanline reveal, final attribution text, and link are represented. |
 | `diff.ts` | Diff rendering | `gi-coding-agent/diff_render.go`, `gi-coding-agent/file_tools.go`, `gi-coding-agent/tool_execution_component.go`, theme keys | direct | Edit diff rendering now matches Pi's line coloring, tab replacement, single-line intra-line inverse highlighting, multi-line replacement fallback, and tool-call/result integration. |
@@ -59,6 +60,38 @@ All Pi component names in this table are exact files under
 | `user-message-selector.ts` | User message picker | `gi-coding-agent/user_message_selector.go` | direct | User message list selection is represented. |
 | `user-message.ts` | User message boxed render | `gi-coding-agent/message_components.go`, `gi-coding-agent/cli_message_components.go` | direct | Box padding, user message background/text theme, and OSC 133 wrapping are represented. |
 | `visual-truncate.ts` | Visual-width truncation helper | `gi-coding-agent/bash_execution.go` `TruncateToVisualLines`, `gi-tui` text wrapping | direct | Gi mirrors Pi's helper shape: render through a temporary text component with caller-provided horizontal padding, keep the last N visual lines, and report skipped visual-line count. |
+
+## Custom Entry Data Flow
+
+```text
+trusted extension renderer registry
+               |
+               v
+SessionManager.AppendCustomEntry
+               |
+      recorded FileEntry
+               |
+               v
+ AgentSession entry_appended event
+               |
+               +---- initial history rebuild
+               |
+               +---- live append before streaming assistant
+                              |
+                              v
+                  CustomEntryComponent
+             (entry/expanded/generation state)
+                              |
+                     renderer callback
+                              |
+                   published TUI component
+```
+
+The append-only session tree is the publication boundary: an unavailable
+session manager emits no live entry. History rendering flushes adjacent message
+batches around each custom entry so session order is stable. Renderer callbacks
+execute outside component locks; a generation check prevents an older slow
+rebuild from replacing newer expanded state.
 
 ## Tree Selector Data Flow
 

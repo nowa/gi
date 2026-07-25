@@ -1609,10 +1609,10 @@ func (h *RPCSessionHost) appendCustomSessionEntry(params hostSessionAppendCustom
 	if customType == "" {
 		return "", errors.New("custom entry type is required")
 	}
-	return h.Session.SessionManager.AppendCustomEntry(customType, map[string]any{
+	return h.Session.AppendCustomEntry(customType, map[string]any{
 		"owner": owner,
 		"data":  params.Data,
-	}), nil
+	})
 }
 
 func hostActionRegisteredTools(session *AgentSession) []SDKTool {

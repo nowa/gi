@@ -1064,6 +1064,91 @@ func TestAgentSessionPrintModeProviderHeadersIncludeSessionState(
 	}
 }
 
+func TestAgentSessionPrintModeRunsExtensionAfterProviderHeadersAreAssembled(
+	t *testing.T,
+) {
+	tempDir := t.TempDir()
+	manager, err := InMemorySessionManager(tempDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.NewSession(NewSessionOptions{
+		ID: "header-hook-session",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	model := testAttributionModel(
+		"opencode",
+		"https://opencode.ai/zen/v1",
+	)
+	session, err := CreateAgentSession(AgentSessionOptions{
+		CWD:            tempDir,
+		AgentDir:       filepath.Join(tempDir, "agent"),
+		Model:          model,
+		SessionManager: manager,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := NewProtocolExtensionRuntime(CapabilityLifecycleEvents)
+	if err := runtime.LoadFactories([]ProtocolExtensionFactory{{
+		Path: "headers.gi.json",
+		Factory: func(ctx *ProtocolExtensionContext) error {
+			return ctx.On(
+				ProtocolEventBeforeProviderHeaders,
+				func(event ProtocolSessionEvent) (
+					ProtocolEventResult,
+					error,
+				) {
+					event.Headers["x-hook"] = strings.Join(
+						[]string{
+							event.Headers["x-opencode-session"],
+							event.Headers["x-explicit"],
+						},
+						":",
+					)
+					delete(event.Headers, "x-remove")
+					return ProtocolEventResult{}, nil
+				},
+			)
+		},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	runtime.BindSession(session)
+	host := &agentSessionPrintModeHost{
+		session:         session,
+		settingsManager: NewInMemorySettingsManager(nil),
+	}
+	t.Cleanup(host.requestRuntime.close)
+
+	options, err := host.modelRuntimeStreamOptions(
+		context.Background(),
+		model,
+		Args{},
+		true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers, err := options.TransformHeaders(
+		context.Background(),
+		map[string]string{
+			"x-explicit": "explicit",
+			"x-remove":   "remove-me",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if headers["x-hook"] != "header-hook-session:explicit" {
+		t.Fatalf("headers = %#v", headers)
+	}
+	if _, ok := headers["x-remove"]; ok {
+		t.Fatalf("removed header survived: %#v", headers)
+	}
+}
+
 func TestResolveCLIPrintModeModelClampsThinkingToModelCapabilities(t *testing.T) {
 	registry := resolverTestRegistry{
 		all:       resolverMockModels,

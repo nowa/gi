@@ -1818,6 +1818,11 @@ func (h *CLIInteractiveTUIHost) watchAgentSessionQueue() {
 		case "queue_update":
 			h.refreshPendingMessagesDisplay()
 			h.requestRender(false)
+		case "entry_appended":
+			if event.Entry != nil {
+				h.addCustomEntryToChat(*event.Entry)
+				h.requestRender(false)
+			}
 		case "agent_end":
 			h.handleAgentEnd()
 		case "turn_end":
@@ -2652,7 +2657,20 @@ func (h *CLIInteractiveTUIHost) renderSessionEntries(
 	populateHistory bool,
 ) {
 	items := make([]cliRenderSessionItem, 0, len(entries))
+	cacheMisses := h.sessionCacheMisses()
+	flush := func() {
+		if len(items) == 0 {
+			return
+		}
+		h.renderSessionItems(items, populateHistory, cacheMisses)
+		items = items[:0]
+	}
 	for _, entry := range entries {
+		if entry.Type == "custom" {
+			flush()
+			h.addCustomEntryToChat(entry)
+			continue
+		}
 		for _, message := range SessionEntryToContextMessages(entry) {
 			items = append(items, cliRenderSessionItem{
 				EntryID: entry.ID,
@@ -2660,7 +2678,7 @@ func (h *CLIInteractiveTUIHost) renderSessionEntries(
 			})
 		}
 	}
-	h.renderSessionItems(items, populateHistory, h.sessionCacheMisses())
+	flush()
 }
 
 func (h *CLIInteractiveTUIHost) renderSessionItems(
@@ -3239,6 +3257,36 @@ func (h *CLIInteractiveTUIHost) addRenderedCustomMessage(message llm.Message) bo
 	h.chat.AddChild(cliRenderedLinesComponent{render: func(width int) []string {
 		return renderer(message, map[string]any{"width": width, "expanded": h.toolOutputExpanded})
 	}})
+	return true
+}
+
+func (h *CLIInteractiveTUIHost) addCustomEntryToChat(entry FileEntry) bool {
+	if entry.Type != "custom" || strings.TrimSpace(entry.CustomType) == "" ||
+		h == nil || h.chat == nil {
+		return false
+	}
+	runtime := h.protocolRuntime()
+	if runtime == nil {
+		return false
+	}
+	renderer := runtime.GetEntryRenderer(entry.CustomType)
+	if renderer == nil {
+		return false
+	}
+	component := NewCustomEntryComponent(entry, renderer)
+	component.SetExpanded(h.toolOutputExpanded)
+	if !component.HasContent() {
+		return false
+	}
+	if _, streaming := h.liveState.streamingSnapshot(); streaming != nil {
+		for index, child := range h.chat.Children() {
+			if child == streaming {
+				h.chat.InsertChild(index, component)
+				return true
+			}
+		}
+	}
+	h.chat.AddChild(component)
 	return true
 }
 

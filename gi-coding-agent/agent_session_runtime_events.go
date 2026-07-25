@@ -30,6 +30,7 @@ const (
 	ProtocolEventUserBash              = "user_bash"
 	ProtocolEventResourcesDiscover     = "resources_discover"
 	ProtocolEventBeforeProviderRequest = "before_provider_request"
+	ProtocolEventBeforeProviderHeaders = "before_provider_headers"
 	ProtocolEventAfterProviderResponse = "after_provider_response"
 )
 

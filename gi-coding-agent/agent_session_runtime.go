@@ -38,6 +38,7 @@ type AgentSessionEvent struct {
 	ToolResult            *llm.Message                   `json:"toolResult,omitempty"`
 	PartialToolResult     *llm.Message                   `json:"partialToolResult,omitempty"`
 	Name                  string                         `json:"name,omitempty"`
+	Entry                 *FileEntry                     `json:"entry,omitempty"`
 }
 
 type AgentSessionEventListener func(AgentSessionEvent)
@@ -119,6 +120,24 @@ func (s *AgentSession) eventListenerSnapshot() []AgentSessionEventListener {
 		}
 	}
 	return listeners
+}
+
+// AppendCustomEntry persists the entry before publishing its presentation
+// event. Consumers therefore never observe an entry that is absent from the
+// append-only session tree.
+func (s *AgentSession) AppendCustomEntry(
+	customType string,
+	data any,
+) (string, error) {
+	if s == nil || s.SessionManager == nil {
+		return "", errors.New("session manager is required")
+	}
+	entryID := s.SessionManager.AppendCustomEntry(customType, data)
+	entry := s.SessionManager.GetEntry(entryID)
+	if entry != nil {
+		s.emit(AgentSessionEvent{Type: "entry_appended", Entry: entry})
+	}
+	return entryID, nil
 }
 
 func (s *AgentSession) Prompt(text string) error {
@@ -920,6 +939,17 @@ func (s *AgentSession) emitBeforeProviderRequest(ctx context.Context, payload an
 		return result.Payload, true, nil
 	}
 	return nil, false, nil
+}
+
+func (s *AgentSession) emitBeforeProviderHeaders(
+	ctx context.Context,
+	headers map[string]string,
+	model llm.Model,
+) map[string]string {
+	if s == nil || s.ExtensionRuntime == nil {
+		return cloneStringMap(headers)
+	}
+	return s.ExtensionRuntime.EmitBeforeProviderHeaders(ctx, headers, &model)
 }
 
 func (s *AgentSession) emitAfterProviderResponse(ctx context.Context, status int, headers map[string]string, model llm.Model) error {

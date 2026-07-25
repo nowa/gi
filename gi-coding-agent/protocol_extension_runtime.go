@@ -10,6 +10,7 @@ import (
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
 	llm "github.com/nowa/gi/gi-llm-provider"
+	gitui "github.com/nowa/gi/gi-tui"
 )
 
 const CapabilityCommandsRegister = "commands.register"
@@ -39,6 +40,11 @@ type ProtocolExtensionRuntime struct {
 	// Extension callbacks are always invoked after releasing the lock.
 	registryMu sync.RWMutex
 
+	// providerMu owns provider registrations, derived provider maps, pending
+	// registrations, and the current model binding. Calls into ModelRuntime,
+	// ModelRegistry, or AgentSession always happen after releasing this lock.
+	providerMu sync.RWMutex
+
 	capabilities              map[string]bool
 	commands                  []ProtocolCommandRegistration
 	handlers                  map[string][]protocolEventHandlerRegistration
@@ -54,6 +60,9 @@ type ProtocolExtensionRuntime struct {
 	messageRenderers          map[string]ProtocolMessageRenderer
 	messageSources            map[string]ProtocolSourceInfo
 	messageRegistrations      []ProtocolMessageRendererRegistration
+	entryRenderers            map[string]ProtocolEntryRenderer
+	entrySources              map[string]ProtocolSourceInfo
+	entryRegistrations        []ProtocolEntryRendererRegistration
 	messageRenderWatch        []protocolMessageRendererWatcher
 	toolRenderers             map[string]ProtocolToolRendererRegistration
 	toolRendererRegistrations []ProtocolToolRendererRegistration
@@ -160,6 +169,24 @@ type ProtocolMessageRendererRegistration struct {
 	CustomType string
 	SourceInfo ProtocolSourceInfo
 	Renderer   ProtocolMessageRenderer
+}
+
+type ProtocolEntryRenderOptions struct {
+	Expanded bool
+}
+
+// ProtocolEntryRenderer is a trusted in-process rendering boundary. Portable
+// process extensions use ViewTree nodes instead of passing component handles
+// across RPC.
+type ProtocolEntryRenderer func(
+	entry FileEntry,
+	options ProtocolEntryRenderOptions,
+) gitui.Component
+
+type ProtocolEntryRendererRegistration struct {
+	CustomType string
+	SourceInfo ProtocolSourceInfo
+	Renderer   ProtocolEntryRenderer
 }
 
 type ProtocolToolRendererDefinition struct {
@@ -492,6 +519,8 @@ func NewProtocolExtensionRuntime(capabilities ...string) *ProtocolExtensionRunti
 		providerSources:   map[string]ProtocolSourceInfo{},
 		messageRenderers:  map[string]ProtocolMessageRenderer{},
 		messageSources:    map[string]ProtocolSourceInfo{},
+		entryRenderers:    map[string]ProtocolEntryRenderer{},
+		entrySources:      map[string]ProtocolSourceInfo{},
 		toolRenderers:     map[string]ProtocolToolRendererRegistration{},
 		flagValues:        map[string]any{},
 		cliFlagValues:     map[string]any{},
@@ -521,8 +550,10 @@ func (r *ProtocolExtensionRuntime) BindModelRegistry(registry *ModelRegistry) {
 	if r == nil {
 		return
 	}
+	r.providerMu.Lock()
 	r.modelRuntime = nil
 	r.modelRegistry = registry
+	r.providerMu.Unlock()
 	r.bindPendingProviderRegistrations()
 }
 
@@ -534,19 +565,43 @@ func (r *ProtocolExtensionRuntime) BindModelRuntime(
 	if r == nil {
 		return
 	}
+	r.providerMu.Lock()
 	r.modelRuntime = runtime
 	r.modelRegistry = nil
 	if runtime != nil {
 		r.modelRegistry = runtime.ModelRegistry()
 	}
+	r.providerMu.Unlock()
 	r.bindPendingProviderRegistrations()
 }
 
+func (r *ProtocolExtensionRuntime) GetModelRegistry() *ModelRegistry {
+	if r == nil {
+		return nil
+	}
+	r.providerMu.RLock()
+	registry := r.modelRegistry
+	r.providerMu.RUnlock()
+	return registry
+}
+
 func (r *ProtocolExtensionRuntime) bindPendingProviderRegistrations() {
+	r.providerMu.Lock()
+	modelRuntime := r.modelRuntime
+	modelRegistry := r.modelRegistry
+	if modelRuntime == nil && modelRegistry == nil {
+		r.providerMu.Unlock()
+		return
+	}
 	pending := append([]protocolProviderRegistration(nil), r.pendingProviders...)
 	r.pendingProviders = nil
+	r.providerMu.Unlock()
 	for _, registration := range pending {
-		if err := r.applyProviderRegistration(registration); err != nil {
+		if err := applyProviderRegistrationTo(
+			registration,
+			modelRuntime,
+			modelRegistry,
+		); err != nil {
 			r.emitExtensionError(ProtocolExtensionError{
 				ExtensionPath: registration.source.Path,
 				Event:         "register_provider",
@@ -830,6 +885,58 @@ func (r *ProtocolExtensionRuntime) EmitSessionEvent(event ProtocolSessionEvent) 
 		}
 	}
 	return combined, nil
+}
+
+// EmitBeforeProviderHeaders runs after provider, model, and request headers
+// have been assembled. Every handler receives the same mutable map, so changes
+// flow to the next handler and then to the HTTP transport. A failing extension
+// is diagnosed and isolated instead of preventing later handlers from running.
+func (r *ProtocolExtensionRuntime) EmitBeforeProviderHeaders(
+	ctx context.Context,
+	headers map[string]string,
+	model *llm.Model,
+) map[string]string {
+	current := cloneStringMap(headers)
+	if current == nil {
+		current = map[string]string{}
+	}
+	if r == nil {
+		return current
+	}
+	r.registryMu.RLock()
+	handlers := append(
+		[]protocolEventHandlerRegistration(nil),
+		r.handlers[ProtocolEventBeforeProviderHeaders]...,
+	)
+	r.registryMu.RUnlock()
+	event := ProtocolSessionEvent{
+		Context: ctx,
+		Type:    ProtocolEventBeforeProviderHeaders,
+		Model:   model,
+		Headers: current,
+	}
+	for _, registration := range handlers {
+		if _, err := invokeProtocolEventHandler(registration.handler, event); err != nil {
+			r.emitExtensionError(ProtocolExtensionError{
+				ExtensionPath: registration.source.Path,
+				Event:         ProtocolEventBeforeProviderHeaders,
+				Error:         err.Error(),
+			})
+		}
+	}
+	return current
+}
+
+func invokeProtocolEventHandler(
+	handler ProtocolEventHandler,
+	event ProtocolSessionEvent,
+) (result ProtocolEventResult, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("extension handler panicked: %v", recovered)
+		}
+	}()
+	return handler(event)
 }
 
 func (r *ProtocolExtensionRuntime) applyEventResult(source ProtocolSourceInfo, event *ProtocolSessionEvent, result ProtocolEventResult, combined *ProtocolEventResult) error {
@@ -1139,7 +1246,7 @@ func (r *ProtocolExtensionRuntime) AppendCustomEntry(customType string, data any
 	if r == nil || r.boundSession == nil || r.boundSession.SessionManager == nil {
 		return "", ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime has no bound session"}
 	}
-	return r.boundSession.SessionManager.AppendCustomEntry(customType, data), nil
+	return r.boundSession.AppendCustomEntry(customType, data)
 }
 
 func (r *ProtocolExtensionRuntime) SessionEntries() []FileEntry {
@@ -1154,6 +1261,10 @@ func (r *ProtocolExtensionRuntime) ActiveToolNames() []string {
 		return nil
 	}
 	return r.boundSession.GetActiveToolNames()
+}
+
+func (r *ProtocolExtensionRuntime) GetActiveTools() []string {
+	return r.ActiveToolNames()
 }
 
 func (r *ProtocolExtensionRuntime) LoadFactories(factories []ProtocolExtensionFactory) error {
@@ -1229,22 +1340,34 @@ func (r *ProtocolExtensionRuntime) RemoveSource(source ProtocolSourceInfo) {
 		r.tools = filtered
 	}
 	r.registryMu.Unlock()
+	affectedProviders := map[string]bool{}
+	r.providerMu.Lock()
 	if len(r.providerRegistrations) > 0 {
-		affected := map[string]bool{}
 		filtered := r.providerRegistrations[:0]
 		for _, registration := range r.providerRegistrations {
 			if protocolSourceInfoEqual(registration.source, source) {
-				affected[registration.name] = true
+				affectedProviders[registration.name] = true
 				sessionChanged = true
 				continue
 			}
 			filtered = append(filtered, registration)
 		}
 		r.providerRegistrations = filtered
-		if len(affected) > 0 {
-			r.removePendingProviderSource(source)
-			r.rebuildProviderState(affected)
+		if len(affectedProviders) > 0 {
+			filteredPending := r.pendingProviders[:0]
+			for _, registration := range r.pendingProviders {
+				if protocolSourceInfoEqual(registration.source, source) {
+					continue
+				}
+				filteredPending = append(filteredPending, registration)
+			}
+			r.pendingProviders = filteredPending
+			r.rebuildProviderMapsLocked()
 		}
+	}
+	r.providerMu.Unlock()
+	if len(affectedProviders) > 0 {
+		r.rebuildProviderState(affectedProviders)
 	}
 
 	r.registryMu.Lock()
@@ -1261,6 +1384,22 @@ func (r *ProtocolExtensionRuntime) RemoveSource(source ProtocolSourceInfo) {
 		r.messageRegistrations = filtered
 		if messageRenderersChanged {
 			r.rebuildMessageRenderersLocked()
+		}
+	}
+	if len(r.entryRegistrations) > 0 {
+		filtered := r.entryRegistrations[:0]
+		entryRenderersChanged := false
+		for _, registration := range r.entryRegistrations {
+			if protocolSourceInfoEqual(registration.SourceInfo, source) {
+				entryRenderersChanged = true
+				continue
+			}
+			filtered = append(filtered, registration)
+		}
+		r.entryRegistrations = filtered
+		if entryRenderersChanged {
+			messageRenderersChanged = true
+			r.rebuildEntryRenderersLocked()
 		}
 	}
 
@@ -1451,14 +1590,23 @@ func (r *ProtocolExtensionRuntime) registerProvider(source ProtocolSourceInfo, p
 		name:   provider,
 		config: cloneProtocolProviderOverride(override),
 	}
+	r.providerMu.Lock()
 	r.providerRegistrations = append(r.providerRegistrations, registration)
-	r.rebuildProviderMaps()
-	if r.modelRuntime == nil && r.modelRegistry == nil {
+	r.rebuildProviderMapsLocked()
+	modelRuntime := r.modelRuntime
+	modelRegistry := r.modelRegistry
+	if modelRuntime == nil && modelRegistry == nil {
 		r.pendingProviders = append(r.pendingProviders, registration)
+		r.providerMu.Unlock()
 		r.ApplyToSession(r.boundSession)
 		return nil
 	}
-	if err := r.applyProviderRegistration(registration); err != nil {
+	r.providerMu.Unlock()
+	if err := applyProviderRegistrationTo(
+		registration,
+		modelRuntime,
+		modelRegistry,
+	); err != nil {
 		return err
 	}
 	r.ApplyToSession(r.boundSession)
@@ -1473,6 +1621,7 @@ func (r *ProtocolExtensionRuntime) unregisterProvider(provider string) {
 	if provider == "" {
 		return
 	}
+	r.providerMu.Lock()
 	filteredRegistrations := r.providerRegistrations[:0]
 	for _, registration := range r.providerRegistrations {
 		if registration.name != provider {
@@ -1487,49 +1636,50 @@ func (r *ProtocolExtensionRuntime) unregisterProvider(provider string) {
 		}
 	}
 	r.pendingProviders = filtered
-	r.rebuildProviderMaps()
-	if r.modelRuntime != nil {
-		r.modelRuntime.UnregisterProvider(provider)
-	} else if r.modelRegistry != nil {
-		r.modelRegistry.UnregisterProvider(provider)
+	r.rebuildProviderMapsLocked()
+	modelRuntime := r.modelRuntime
+	modelRegistry := r.modelRegistry
+	r.providerMu.Unlock()
+	if modelRuntime != nil {
+		modelRuntime.UnregisterProvider(provider)
+	} else if modelRegistry != nil {
+		modelRegistry.UnregisterProvider(provider)
 	}
 	r.ApplyToSession(r.boundSession)
-}
-
-func (r *ProtocolExtensionRuntime) removePendingProviderSource(source ProtocolSourceInfo) {
-	if r == nil || len(r.pendingProviders) == 0 {
-		return
-	}
-	filtered := r.pendingProviders[:0]
-	for _, registration := range r.pendingProviders {
-		if protocolSourceInfoEqual(registration.source, source) {
-			continue
-		}
-		filtered = append(filtered, registration)
-	}
-	r.pendingProviders = filtered
 }
 
 func (r *ProtocolExtensionRuntime) rebuildProviderState(affected map[string]bool) {
 	if r == nil {
 		return
 	}
-	r.rebuildProviderMaps()
-	if r.modelRuntime == nil && r.modelRegistry == nil {
+	r.providerMu.Lock()
+	r.rebuildProviderMapsLocked()
+	modelRuntime := r.modelRuntime
+	modelRegistry := r.modelRegistry
+	registrations := append(
+		[]protocolProviderRegistration(nil),
+		r.providerRegistrations...,
+	)
+	r.providerMu.Unlock()
+	if modelRuntime == nil && modelRegistry == nil {
 		return
 	}
 	names := sortedBoolMapKeys(affected)
 	for _, name := range names {
-		if r.modelRuntime != nil {
-			r.modelRuntime.UnregisterProvider(name)
+		if modelRuntime != nil {
+			modelRuntime.UnregisterProvider(name)
 		} else {
-			r.modelRegistry.UnregisterProvider(name)
+			modelRegistry.UnregisterProvider(name)
 		}
-		for _, registration := range r.providerRegistrations {
+		for _, registration := range registrations {
 			if registration.name != name {
 				continue
 			}
-			if err := r.applyProviderRegistration(registration); err != nil {
+			if err := applyProviderRegistrationTo(
+				registration,
+				modelRuntime,
+				modelRegistry,
+			); err != nil {
 				r.emitExtensionError(ProtocolExtensionError{
 					ExtensionPath: registration.source.Path,
 					Event:         "register_provider",
@@ -1540,7 +1690,7 @@ func (r *ProtocolExtensionRuntime) rebuildProviderState(affected map[string]bool
 	}
 }
 
-func (r *ProtocolExtensionRuntime) rebuildProviderMaps() {
+func (r *ProtocolExtensionRuntime) rebuildProviderMapsLocked() {
 	if r == nil {
 		return
 	}
@@ -1608,19 +1758,20 @@ func cloneProtocolProviderOverride(
 	return override
 }
 
-func (r *ProtocolExtensionRuntime) applyProviderRegistration(registration protocolProviderRegistration) error {
-	if r == nil {
-		return nil
-	}
+func applyProviderRegistrationTo(
+	registration protocolProviderRegistration,
+	modelRuntime *ModelRuntime,
+	modelRegistry *ModelRegistry,
+) error {
 	config := registration.config.toProviderConfigInput()
-	if r.modelRuntime != nil {
-		return r.modelRuntime.RegisterProvider(
+	if modelRuntime != nil {
+		return modelRuntime.RegisterProvider(
 			registration.name,
 			config,
 		)
 	}
-	if r.modelRegistry != nil {
-		return r.modelRegistry.RegisterProvider(
+	if modelRegistry != nil {
+		return modelRegistry.RegisterProvider(
 			registration.name,
 			config,
 		)
@@ -1685,6 +1836,8 @@ func (r *ProtocolExtensionRuntime) PendingProviderRegistrations() []ProtocolProv
 	if r == nil {
 		return nil
 	}
+	r.providerMu.RLock()
+	defer r.providerMu.RUnlock()
 	result := make([]ProtocolProviderRegistration, 0, len(r.pendingProviders))
 	for _, registration := range r.pendingProviders {
 		result = append(result, ProtocolProviderRegistration{
@@ -1765,6 +1918,40 @@ func (c *ProtocolExtensionContext) RegisterMessageRenderer(customType string, re
 		c.runtime.messageRegistrations = append(c.runtime.messageRegistrations, registration)
 	}
 	c.runtime.rebuildMessageRenderersLocked()
+	c.runtime.registryMu.Unlock()
+	c.runtime.notifyMessageRenderersChanged()
+	return nil
+}
+
+func (c *ProtocolExtensionContext) RegisterEntryRenderer(customType string, renderer ProtocolEntryRenderer) error {
+	if c == nil || c.runtime == nil {
+		return ProtocolRuntimeError{Code: "runtime_unavailable", Message: "extension runtime is unavailable"}
+	}
+	if !c.runtime.capabilities[CapabilityTUIMessageRenderer] {
+		return ProtocolRuntimeError{Code: "missing_capability", Message: CapabilityTUIMessageRenderer}
+	}
+	customType = strings.TrimSpace(customType)
+	if customType == "" || renderer == nil {
+		return nil
+	}
+	registration := ProtocolEntryRendererRegistration{
+		CustomType: customType,
+		SourceInfo: c.source,
+		Renderer:   renderer,
+	}
+	c.runtime.registryMu.Lock()
+	replaced := false
+	for index, existing := range c.runtime.entryRegistrations {
+		if existing.CustomType == customType && protocolSourceInfoEqual(existing.SourceInfo, c.source) {
+			c.runtime.entryRegistrations[index] = registration
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		c.runtime.entryRegistrations = append(c.runtime.entryRegistrations, registration)
+	}
+	c.runtime.rebuildEntryRenderersLocked()
 	c.runtime.registryMu.Unlock()
 	c.runtime.notifyMessageRenderersChanged()
 	return nil
@@ -2195,6 +2382,36 @@ func (r *ProtocolExtensionRuntime) GetMessageRenderer(customType string) Protoco
 	return r.messageRenderers[customType]
 }
 
+// rebuildEntryRenderersLocked rebuilds the visible renderer projection.
+// registryMu must be held for writing. Earlier extensions keep precedence,
+// matching message renderers and the extension load order.
+func (r *ProtocolExtensionRuntime) rebuildEntryRenderersLocked() {
+	if r == nil {
+		return
+	}
+	r.entryRenderers = map[string]ProtocolEntryRenderer{}
+	r.entrySources = map[string]ProtocolSourceInfo{}
+	for _, registration := range r.entryRegistrations {
+		if registration.CustomType == "" || registration.Renderer == nil {
+			continue
+		}
+		if _, exists := r.entryRenderers[registration.CustomType]; exists {
+			continue
+		}
+		r.entryRenderers[registration.CustomType] = registration.Renderer
+		r.entrySources[registration.CustomType] = registration.SourceInfo
+	}
+}
+
+func (r *ProtocolExtensionRuntime) GetEntryRenderer(customType string) ProtocolEntryRenderer {
+	if r == nil {
+		return nil
+	}
+	r.registryMu.RLock()
+	defer r.registryMu.RUnlock()
+	return r.entryRenderers[customType]
+}
+
 func (r *ProtocolExtensionRuntime) GetToolRenderer(toolName string) *ProtocolToolRendererRegistration {
 	if r == nil {
 		return nil
@@ -2458,9 +2675,9 @@ func (r *ProtocolExtensionRuntime) ApplyToSession(session *AgentSession) {
 	if r == nil || session == nil || session.Agent == nil {
 		return
 	}
-	r.registryMu.RLock()
+	r.providerMu.RLock()
 	override, ok := r.providerOverrides[session.Agent.State.Model.Provider]
-	r.registryMu.RUnlock()
+	r.providerMu.RUnlock()
 	if ok {
 		if override.BaseURL != "" {
 			session.Agent.State.Model.BaseURL = override.BaseURL

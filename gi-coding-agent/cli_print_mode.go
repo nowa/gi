@@ -896,15 +896,23 @@ func (h *agentSessionPrintModeHost) modelRuntimeStreamOptions(
 			},
 		},
 		TransformHeaders: func(
-			_ context.Context,
+			ctx context.Context,
 			headers map[string]string,
 		) (map[string]string, error) {
-			return MergeProviderAttributionHeaders(
+			assembled := MergeProviderAttributionHeaders(
 				model,
 				attributionContext,
 				headers,
 				nil,
-			), nil
+			)
+			if session != nil {
+				assembled = session.emitBeforeProviderHeaders(
+					ctx,
+					assembled,
+					model,
+				)
+			}
+			return assembled, nil
 		},
 	}
 	requestSnapshot.apply(&options.StreamOptions)
