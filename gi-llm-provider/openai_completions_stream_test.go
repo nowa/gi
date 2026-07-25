@@ -11,7 +11,7 @@ func TestProcessOpenAICompletionsChunksIgnoresNilAndCapturesResponseID(t *testin
 
 	response := ProcessOpenAICompletionsChunks(model, []*OpenAIChatCompletionChunk{
 		nil,
-		{ID: "chatcmpl-test", Choices: []OpenAIChatCompletionChoice{{Delta: OpenAIChatDelta{Content: "OK"}}}},
+		{ID: "chatcmpl-test", Model: "resolved/model", Choices: []OpenAIChatCompletionChoice{{Delta: OpenAIChatDelta{Content: "OK"}}}},
 		{ID: "chatcmpl-test", Choices: []OpenAIChatCompletionChoice{{FinishReason: &stop}}, Usage: &OpenAIChatUsage{PromptTokens: 3, CompletionTokens: 1}},
 	})
 
@@ -20,6 +20,9 @@ func TestProcessOpenAICompletionsChunksIgnoresNilAndCapturesResponseID(t *testin
 	}
 	if response.ResponseID != "chatcmpl-test" {
 		t.Fatalf("response id = %q", response.ResponseID)
+	}
+	if response.ResponseModel != "resolved/model" {
+		t.Fatalf("response model = %q", response.ResponseModel)
 	}
 	if len(response.Content) != 1 || response.Content[0].Text != "OK" {
 		t.Fatalf("content = %#v", response.Content)

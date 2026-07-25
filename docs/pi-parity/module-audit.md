@@ -69,7 +69,7 @@ gap.
 | `packages/coding-agent/src` | `cmd/gi/main.go`, `gi-coding-agent/cli.go`, `config.go`, mode dispatch files | split but consistent; Go separates binary entrypoint from reusable package logic. |
 | `packages/coding-agent/src/bun` | `internal/sandboxenv`, `restore_sandbox_env.go` facade; Bun bootstrap/provider files are excluded | Go-native; binary/runtime bootstrap does not apply to Gi, while sandbox environment restoration now lives behind a focused package. |
 | `packages/coding-agent/src/cli` | `gi-coding-agent/internal/cli`, `cli_api.go`, `file_arguments.go`, `list_models.go`, `cli_config.go`, resume/session selector files | consistent; argument parsing and initial-message assembly now have a focused Go subpackage with root-level compatibility wrappers. |
-| `packages/coding-agent/src/core` | `agent_session_*`, auth/settings/model/resource/system/footer/session manager files, `internal/authguide`, `internal/authwarning`, `internal/attribution`, `internal/modelresolver`, `internal/planmode`, `internal/sessioncwd`, `internal/telemetry` | consistent but still partly flattened; Go keeps tightly-coupled session/runtime pieces in one package to avoid artificial import cycles, while auth guidance/warnings, attribution headers, model-resolution, plan-mode, missing-session-cwd checks, and telemetry env parsing have focused subpackages. OAuth protocol ownership lives entirely in `gi-llm-provider`. |
+| `packages/coding-agent/src/core` | `agent_session_*`, `usage_totals.go`, `cache_stats.go`, auth/settings/model/resource/system/footer/session manager files, `internal/authguide`, `internal/authwarning`, `internal/attribution`, `internal/modelresolver`, `internal/planmode`, `internal/sessioncwd`, `internal/telemetry` | consistent but still partly flattened; Go keeps tightly-coupled session/runtime pieces in one package to avoid artificial import cycles. Billed usage, active context pressure, model attribution, and cache waste are pure projections from one locked session snapshot and flow through the canonical `llm.Usage` type. OAuth protocol ownership lives entirely in `gi-llm-provider`. |
 | `packages/coding-agent/src/core/compaction` | `gi-agent-core/harness` compaction plus `agent_session_compaction*.go` | split but consistent; reusable compaction lives in harness, session-trigger wiring lives in coding-agent. |
 | `packages/coding-agent/src/core/export-html` | `export_html.go` and export tests | partial; ANSI/session-data/custom-tool paths are mapped, while Pi's full static template/vendor asset pipeline remains a documented gap. |
 | `packages/coding-agent/src/core/export-html/vendor` | `ExportHTMLTemplateJS` safe DOM markdown/highlight helpers | partial; Gi intentionally does not embed Pi's `marked.min.js` and `highlight.min.js` assets yet, while keeping their browser-rendering responsibilities documented in the file map. |
@@ -150,7 +150,7 @@ The member-level source inventory currently reports:
 | LLM provider | 169 | 99 | 632 | 0 | 0 |
 | Agent core | 35 | 35 | 327 | 0 | 0 |
 | TUI | 28 | 32 | 449 | 0 | 0 |
-| Coding agent | 177 | 169 | 2115 | 27 | 394 |
+| Coding agent | 177 | 171 | 2115 | 25 | 386 |
 
 `docs/pi-parity/member-symbol-inventory.md` is the generated per-file detail.
 A mentioned symbol means its ownership or gap has been classified; it does not
@@ -174,7 +174,7 @@ The test-case inventory currently reports:
 | LLM provider | 111 | 1186 | 111 | 1186 | 0 | 0 |
 | Agent core | 16 | 212 | 16 | 212 | 0 | 0 |
 | TUI | 27 | 700 | 27 | 700 | 0 | 0 |
-| Coding agent | 181 | 1649 | 173 | 1597 | 8 | 52 |
+| Coding agent | 181 | 1649 | 173 | 1607 | 8 | 42 |
 
 Candidate matching is an audit lead, not proof. Behavioral parity still
 requires the mapped Go tests, implementation review, and the release gate in

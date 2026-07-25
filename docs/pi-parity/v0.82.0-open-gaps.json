@@ -30,13 +30,11 @@
       "module": "coding",
       "missingFiles": [
         "cli/startup-ui.ts",
-        "core/cache-stats.ts",
         "core/experimental.ts",
         "core/http-dispatcher.ts",
         "core/provider-attribution.ts",
         "core/provider-composer.ts",
         "core/remote-catalog-provider.ts",
-        "core/usage-totals.ts",
         "extensions/llama/client.ts",
         "extensions/llama/huggingface.ts",
         "extensions/llama/index.ts",
@@ -71,11 +69,6 @@
         "config.ts::getEntrypointPackageDir",
         "config.ts::getPathComparisonCandidates",
         "config.ts::normalizeSelfUpdatePackageTarget",
-        "core/cache-stats.ts::asPreviousRequest",
-        "core/cache-stats.ts::collectCacheMisses",
-        "core/cache-stats.ts::computeCacheWaste",
-        "core/cache-stats.ts::detectCacheMiss",
-        "core/cache-stats.ts::detectMiss",
         "core/compaction/compaction.ts::estimateTextAndImageContentChars",
         "core/compaction/compaction.ts::isCutPointMessage",
         "core/compaction/compaction.ts::isTurnStartEntry",
@@ -197,9 +190,6 @@
         "core/tools/render-utils.ts::linkPath",
         "core/tools/render-utils.ts::renderToolPath",
         "core/tools/truncate.ts::splitLinesForCounting",
-        "core/usage-totals.ts::addUsageToTotals",
-        "core/usage-totals.ts::createUsageTotals",
-        "core/usage-totals.ts::getUsageCostBreakdown",
         "extensions/llama/client.ts::LlamaClient",
         "extensions/llama/client.ts::LlamaClient.constructor",
         "extensions/llama/client.ts::LlamaClient.download",
@@ -507,41 +497,6 @@
       ],
       "noCandidateCases": [
         {
-          "file": "packages/coding-agent/test/cache-stats.test.ts",
-          "line": 60,
-          "name": "accumulates missed tokens and cost across turns"
-        },
-        {
-          "file": "packages/coding-agent/test/cache-stats.test.ts",
-          "line": 69,
-          "name": "counts nothing for healthy sessions"
-        },
-        {
-          "file": "packages/coding-agent/test/cache-stats.test.ts",
-          "line": 82,
-          "name": "counts misses caused by model switches"
-        },
-        {
-          "file": "packages/coding-agent/test/cache-stats.test.ts",
-          "line": 98,
-          "name": "maps counted misses to their assistant messages by reference"
-        },
-        {
-          "file": "packages/coding-agent/test/cache-stats.test.ts",
-          "line": 107,
-          "name": "detects a miss on a just-completed message with idle time"
-        },
-        {
-          "file": "packages/coding-agent/test/cache-stats.test.ts",
-          "line": 118,
-          "name": "flags model switches on detected misses"
-        },
-        {
-          "file": "packages/coding-agent/test/cache-stats.test.ts",
-          "line": 130,
-          "name": "returns undefined for healthy turns"
-        },
-        {
           "file": "packages/coding-agent/test/changelog.test.ts",
           "line": 30,
           "name": "canonicalizes old repository URLs without changing external links"
@@ -640,21 +595,6 @@
           "file": "packages/coding-agent/test/first-time-setup.test.ts",
           "line": 85,
           "name": "keeps the tracking identifier when toggling analytics"
-        },
-        {
-          "file": "packages/coding-agent/test/footer-width.test.ts",
-          "line": 154,
-          "name": "includes summary and tool result usage in the total cost"
-        },
-        {
-          "file": "packages/coding-agent/test/footer-width.test.ts",
-          "line": 192,
-          "name": "shows the latest cache hit rate when cache usage is present"
-        },
-        {
-          "file": "packages/coding-agent/test/footer-width.test.ts",
-          "line": 209,
-          "name": "marks Kimi Coding costs as subscription estimates"
         },
         {
           "file": "packages/coding-agent/test/git-merge-and-resolve-extension.test.ts",

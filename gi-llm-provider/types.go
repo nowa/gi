@@ -99,6 +99,7 @@ type Message struct {
 	API            string                       `json:"api,omitempty"`
 	Provider       string                       `json:"provider,omitempty"`
 	Model          string                       `json:"model,omitempty"`
+	ResponseModel  string                       `json:"responseModel,omitempty"`
 	Diagnostics    []AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
 	Usage          Usage                        `json:"usage,omitempty"`
 	StopReason     string                       `json:"stopReason,omitempty"`

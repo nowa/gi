@@ -94,7 +94,8 @@ not to the agent runtime.
 | `core/models-store.ts` | `FileModelsStore`, `FileModelsStore.constructor`, `FileModelsStore.parse`, `FileModelsStore.read`, `FileModelsStore.write`, `FileModelsStore.delete`, `InMemoryCodingAgentModelsStore`, `InMemoryCodingAgentModelsStore.read`, `InMemoryCodingAgentModelsStore.write`, `InMemoryCodingAgentModelsStore.delete` | `models_store.go` `FileModelsStore`, `NewFileModelsStore`, read/write/delete helpers; `gi-llm-provider/models_store.go` `InMemoryModelsStore` | direct | The file store preserves unrelated providers under a path-scoped lock and atomically replaces private JSON; the reusable provider package owns the in-memory clone-on-read/write store. |
 | `core/radius.ts` | `RADIUS_PROVIDER_ID` | `model_registry_dynamic.go` `RadiusProviderID` | direct | The identifier is centralized for `models.json` validation and provider composition. |
 | `core/event-bus.ts` | event fanout | `agent_session_runtime_events.go`, `rpc_session_host.go` | split | Go uses typed callbacks/channels and runtime event structs. |
-| `core/footer-data-provider.ts` | cwd/git/model/token footer data | `footer_data_provider.go`, `footer.go` | direct | Width and data-provider behavior is tested. |
+| `core/cache-stats.ts` | prompt-cache miss detection and cumulative waste | `cache_stats.go`, `usage_totals.go`, `sdk_session.go`, `cli_interactive_session.go` | direct | Pure scans derive miss state from one immutable session-entry snapshot; durable entry IDs replace JavaScript object identity, `time.Duration` represents idle time, and model pricing is accessed through a narrow interface satisfied by `ModelRuntime`. |
+| `core/footer-data-provider.ts` | cwd/git/model/token footer data | `footer_data_provider.go`, `footer.go`, `usage_totals.go` | direct | Footer state consumes the canonical `llm.Usage` snapshot instead of maintaining a second token/cost structure; width, provider, subscription, cache-hit, and data-provider behavior are tested. |
 | `core/messages.ts` | coding-agent session message helpers | `message_components.go`, `gi-agent-core/harness/messages.go`, session manager files | split | UI render and model-context projection are split by ownership. |
 | `core/output-guard.ts` | stdout guard | writer injection plus `stdout_cleanliness_test.go` | go-native | Gi does not monkey-patch global stdout. |
 | `core/package-manager.ts` | package source resolution, resource precedence, install/update/remove | `package_manager.go`, `protocol_package_resolver.go`, `official_packages.go` | protocol | Gi preserves resource/filter semantics but intentionally removes npm source support. |
@@ -103,6 +104,41 @@ not to the agent runtime.
 | `core/settings-manager.ts` | global/project settings, migrations, reload | `settings_manager.go` | direct | Settings reload and migration cases are covered. |
 | `core/slash-commands.ts` | command metadata | `cli_interactive_tui.go`, `prompt_templates.go`, protocol command registry | split | Built-ins, prompt templates, skills, and extension commands share the Go command registry. |
 | `core/source-info.ts`, `core/diagnostics.ts`, `core/timings.ts`, `core/telemetry.ts` | metadata, diagnostics, timing, telemetry | `resource_loader.go`, `diagnostics` structs, `internal/startuptiming`, `startup_timings.go` facade, `internal/telemetry`, `telemetry.go` facade | split | Gi-specific names are used where the product boundary differs from Pi, with timing and telemetry env parsing behind focused helper packages. |
+| `core/usage-totals.ts` | cumulative billed usage and cost attribution | `usage_totals.go`, `sdk_session.go`, `rpc_session_host.go`, `footer.go` | direct | `llm.Usage` is the single token/cost structure from provider output through persistence, session statistics, RPC projection, and footer rendering. Totals include assistant, tool-result, compaction, and branch-summary usage across the append-only session log. |
+
+### Usage And Cache Statistics Function Map
+
+| Pi file / surface | Pi functions | Gi equivalent | Status | Notes |
+| --- | --- | --- | --- | --- |
+| `core/usage-totals.ts` | `createUsageTotals`, `addUsageToTotals`, `getUsageCostBreakdown` | `usage_totals.go` `aggregateAgentSessionStats`, `addUsage`, `usageCostBreakdown` | direct | Go reuses `llm.Usage` rather than introducing a structurally identical totals type. Cost attribution uses `responseModel` when an OpenAI-compatible router reports a concrete model and sorts ties deterministically. |
+| `core/cache-stats.ts` | `asPreviousRequest`, `detectMiss`, `computeCacheWaste`, `collectCacheMisses`, `detectCacheMiss` | `cache_stats.go` `asPreviousCacheRequest`, `detectCacheMissFromPrevious`, `computeCacheWaste`, `collectCacheMisses`, `detectCacheMiss` | direct | The scan resets after compaction/branch summaries, preserves sticky cache-capability evidence, applies the 1,024-token noise floor, and derives re-billed cost from actual usage with catalog fallback pricing. |
+
+### Session Statistics State And Data Flow
+
+```text
+SessionManager append-only log
+          |
+          | one read lock
+          v
+ sessionStatsSnapshot {all entries, active branch, identity}
+          |
+          +--> aggregateAgentSessionStats --> llm.Usage + counts + latest cache hit
+          +--> usageCostBreakdown ---------> model/tool cost attribution
+          +--> computeCacheWaste ----------> immutable cache-waste totals
+          +--> contextUsageFromBranch -----> current context only
+                                      |
+                                      v
+                           AgentSessionStats snapshot
+                              /             \
+                             v               v
+                    RPC /session DTO      FooterState
+```
+
+Session-wide billed totals intentionally scan all persisted entries, including
+history no longer present in provider context after compaction. Current context
+usage intentionally scans only the active post-compaction branch. This keeps
+accounting and context pressure separate while every consumer observes one
+coherent session revision.
 
 ### Model Runtime State And Data Flow
 

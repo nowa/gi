@@ -7,16 +7,9 @@ import (
 	"strings"
 	"sync"
 
+	llm "github.com/nowa/gi/gi-llm-provider"
 	gitui "github.com/nowa/gi/gi-tui"
 )
-
-type FooterUsage struct {
-	Input      int
-	Output     int
-	CacheRead  int
-	CacheWrite int
-	CostTotal  float64
-}
 
 type FooterState struct {
 	CWD                    string
@@ -30,7 +23,8 @@ type FooterState struct {
 	ContextPercent         *float64
 	AvailableProviderCount int
 	UsingOAuth             bool
-	Usage                  []FooterUsage
+	Usage                  llm.Usage
+	LatestCacheHitRate     *float64
 	ExtensionStatuses      map[string]string
 }
 
@@ -71,15 +65,7 @@ func (f *FooterComponent) Render(width int) []string {
 		contextWindow = 0
 	}
 
-	totalInput, totalOutput, totalCacheRead, totalCacheWrite := 0, 0, 0, 0
-	totalCost := 0.0
-	for _, usage := range state.Usage {
-		totalInput += usage.Input
-		totalOutput += usage.Output
-		totalCacheRead += usage.CacheRead
-		totalCacheWrite += usage.CacheWrite
-		totalCost += usage.CostTotal
-	}
+	usage := state.Usage
 
 	pwd := state.CWD
 	if pwd == "" {
@@ -96,21 +82,25 @@ func (f *FooterComponent) Render(width int) []string {
 	}
 
 	statsParts := make([]string, 0, 6)
-	if totalInput > 0 {
-		statsParts = append(statsParts, "↑"+formatFooterTokens(totalInput))
+	if usage.Input > 0 {
+		statsParts = append(statsParts, "↑"+formatFooterTokens(usage.Input))
 	}
-	if totalOutput > 0 {
-		statsParts = append(statsParts, "↓"+formatFooterTokens(totalOutput))
+	if usage.Output > 0 {
+		statsParts = append(statsParts, "↓"+formatFooterTokens(usage.Output))
 	}
-	if totalCacheRead > 0 {
-		statsParts = append(statsParts, "R"+formatFooterTokens(totalCacheRead))
+	if usage.CacheRead > 0 {
+		statsParts = append(statsParts, "R"+formatFooterTokens(usage.CacheRead))
 	}
-	if totalCacheWrite > 0 {
-		statsParts = append(statsParts, "W"+formatFooterTokens(totalCacheWrite))
+	if usage.CacheWrite > 0 {
+		statsParts = append(statsParts, "W"+formatFooterTokens(usage.CacheWrite))
 	}
-	if totalCost > 0 || state.UsingOAuth {
-		cost := fmt.Sprintf("$%.3f", totalCost)
-		if state.UsingOAuth {
+	if (usage.CacheRead > 0 || usage.CacheWrite > 0) && state.LatestCacheHitRate != nil {
+		statsParts = append(statsParts, fmt.Sprintf("CH%.1f%%", *state.LatestCacheHitRate))
+	}
+	usingSubscription := state.UsingOAuth || state.Provider == "kimi-coding"
+	if usage.Cost.Total > 0 || usingSubscription {
+		cost := fmt.Sprintf("$%.3f", usage.Cost.Total)
+		if usingSubscription {
 			cost += " (sub)"
 		}
 		statsParts = append(statsParts, cost)
@@ -196,7 +186,10 @@ func tuiThemeFooterStatsLine(line, statsLeft string) string {
 }
 
 func cloneFooterState(state FooterState) FooterState {
-	state.Usage = append([]FooterUsage(nil), state.Usage...)
+	if state.LatestCacheHitRate != nil {
+		hitRate := *state.LatestCacheHitRate
+		state.LatestCacheHitRate = &hitRate
+	}
 	if state.ExtensionStatuses != nil {
 		statuses := make(map[string]string, len(state.ExtensionStatuses))
 		for key, value := range state.ExtensionStatuses {

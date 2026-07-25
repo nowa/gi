@@ -9,6 +9,7 @@ const StopReasonToolUse = "toolUse"
 
 type OpenAIChatCompletionChunk struct {
 	ID      string                       `json:"id"`
+	Model   string                       `json:"model,omitempty"`
 	Choices []OpenAIChatCompletionChoice `json:"choices"`
 	Usage   *OpenAIChatUsage             `json:"usage,omitempty"`
 }
@@ -138,6 +139,9 @@ func (p *OpenAICompletionsStreamProcessor) Process(chunk *OpenAIChatCompletionCh
 	}
 	if chunk.ID != "" {
 		p.output.ResponseID = chunk.ID
+	}
+	if chunk.Model != "" && p.output.ResponseModel == "" {
+		p.output.ResponseModel = chunk.Model
 	}
 	if chunk.Usage != nil {
 		p.output.Usage = ParseOpenAIChatUsage(*chunk.Usage, p.model)

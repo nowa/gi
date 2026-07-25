@@ -7561,6 +7561,17 @@ func TestRenderInteractiveSessionInfoUsesPiStyleSections(t *testing.T) {
 				Percent:       &percent,
 			},
 		},
+		AgentSessionStats{
+			UsageBreakdown: []UsageCostBreakdownEntry{
+				{Key: "Tools/summaries", Cost: 0.1, Tokens: 5000},
+				{Key: "openai/gpt-4o-mini", Cost: 0.0234, Tokens: 5000},
+			},
+			CacheWaste: CacheWasteTotals{
+				MissedTokens: 3000,
+				MissedCost:   0.012,
+				MissCount:    1,
+			},
+		},
 	)
 
 	for _, expected := range []string{
@@ -7575,13 +7586,16 @@ func TestRenderInteractiveSessionInfoUsesPiStyleSections(t *testing.T) {
 		tuiThemeDim("Tool Results:") + " 5",
 		tuiThemeDim("Total:") + " 14",
 		tuiThemeBold("Tokens"),
-		tuiThemeDim("Input:") + " 1,000",
+		tuiThemeDim("Input:") + " 8,000",
+		tuiThemeDim("Cached:") + " 3,000",
+		tuiThemeDim("Uncached:") + " 5,000",
+		"4,000 written to cache",
 		tuiThemeDim("Output:") + " 2,000",
-		tuiThemeDim("Cache Read:") + " 3,000",
-		tuiThemeDim("Cache Write:") + " 4,000",
 		tuiThemeDim("Total:") + " 10,000",
 		tuiThemeBold("Cost"),
-		tuiThemeDim("Total:") + " 0.1234",
+		tuiThemeDim("Total:") + " $0.123",
+		tuiThemeDim("Tools/summaries:") + " $0.100",
+		tuiThemeDim("Cache Re-billed:") + " $0.012",
 	} {
 		if !strings.Contains(info, expected) {
 			t.Fatalf("session info missing %q:\n%s", expected, info)

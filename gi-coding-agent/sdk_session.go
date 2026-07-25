@@ -91,8 +91,18 @@ type agentSessionQueueState struct {
 }
 
 type AgentSessionStats struct {
-	Tokens       llm.Usage          `json:"tokens"`
-	ContextUsage *AgentContextUsage `json:"contextUsage,omitempty"`
+	SessionFile        string                    `json:"sessionFile,omitempty"`
+	SessionID          string                    `json:"sessionId"`
+	UserMessages       int                       `json:"userMessages"`
+	AssistantMessages  int                       `json:"assistantMessages"`
+	ToolCalls          int                       `json:"toolCalls"`
+	ToolResults        int                       `json:"toolResults"`
+	TotalMessages      int                       `json:"totalMessages"`
+	Tokens             llm.Usage                 `json:"tokens"`
+	ContextUsage       *AgentContextUsage        `json:"contextUsage,omitempty"`
+	UsageBreakdown     []UsageCostBreakdownEntry `json:"usageBreakdown,omitempty"`
+	CacheWaste         CacheWasteTotals          `json:"cacheWaste"`
+	LatestCacheHitRate *float64                  `json:"latestCacheHitRate,omitempty"`
 }
 
 type AgentSessionPreflight func(model llm.Model) error
@@ -299,11 +309,23 @@ func (s *AgentSession) SetScopedModels(scopedModels []ScopedModel) {
 }
 
 func (s *AgentSession) GetSessionStats() AgentSessionStats {
-	branch := s.sessionBranch()
-	return AgentSessionStats{
-		Tokens:       aggregateSessionUsage(branch),
-		ContextUsage: s.contextUsageFromBranch(branch),
+	return s.sessionStats(true)
+}
+
+func (s *AgentSession) sessionStats(includeAnalysis bool) AgentSessionStats {
+	if s == nil || s.SessionManager == nil {
+		return AgentSessionStats{}
 	}
+	snapshot := s.SessionManager.sessionStatsSnapshot()
+	stats := aggregateAgentSessionStats(snapshot.entries)
+	stats.SessionFile = snapshot.sessionFile
+	stats.SessionID = snapshot.sessionID
+	stats.ContextUsage = s.contextUsageFromBranch(snapshot.branch)
+	if includeAnalysis {
+		stats.UsageBreakdown = usageCostBreakdown(snapshot.entries)
+		stats.CacheWaste = computeCacheWaste(snapshot.entries, s.ModelRuntime)
+	}
+	return stats
 }
 
 func (s *AgentSession) GetContextUsage() *AgentContextUsage {
@@ -754,32 +776,6 @@ func toSystemPromptSkills(skills []agentharness.Skill) []SystemPromptSkill {
 	return converted
 }
 
-func aggregateSessionUsage(branch []FileEntry) llm.Usage {
-	total := llm.EmptyUsage()
-	for _, entry := range branch {
-		if (entry.Type == "compaction" ||
-			entry.Type == "branch_summary") &&
-			entry.Usage != nil {
-			addUsage(&total, *entry.Usage)
-		}
-	}
-	startIndex := 0
-	if compactionIndex := lastSessionCompactionIndex(branch); compactionIndex >= 0 {
-		tokensBefore := branch[compactionIndex].TokensBefore
-		total.Input += tokensBefore
-		total.TotalTokens += tokensBefore
-		startIndex = compactionIndex + 1
-	}
-	for _, entry := range branch[startIndex:] {
-		usage, ok := assistantEntryUsage(entry)
-		if !ok {
-			continue
-		}
-		addUsage(&total, usage)
-	}
-	return total
-}
-
 func lastSessionCompactionIndex(branch []FileEntry) int {
 	for index := len(branch) - 1; index >= 0; index-- {
 		if branch[index].Type == "compaction" {
@@ -793,25 +789,11 @@ func assistantEntryUsage(entry FileEntry) (llm.Usage, bool) {
 	if entry.Type != "message" {
 		return llm.Usage{}, false
 	}
-	switch message := entry.Message.(type) {
-	case llm.Message:
-		if message.Role != llm.RoleAssistant || usageTokenTotal(message.Usage) == 0 {
-			return llm.Usage{}, false
-		}
-		return message.Usage, true
-	case map[string]any:
-		role, _ := message["role"].(string)
-		if role != llm.RoleAssistant {
-			return llm.Usage{}, false
-		}
-		usage, ok := usageFromSessionMessageValue(message["usage"])
-		if !ok || usageTokenTotal(usage) == 0 {
-			return llm.Usage{}, false
-		}
-		return usage, true
-	default:
+	message, ok := sessionMessageToLLM(entry.Message)
+	if !ok || message.Role != llm.RoleAssistant || !hasUsage(message.Usage) {
 		return llm.Usage{}, false
 	}
+	return message.Usage, true
 }
 
 func usageFromSessionMessageValue(value any) (llm.Usage, bool) {
@@ -820,11 +802,16 @@ func usageFromSessionMessageValue(value any) (llm.Usage, bool) {
 		return usage, true
 	case map[string]any:
 		result := llm.Usage{
-			Input:       intFromSessionUsageValue(usage["input"]),
-			Output:      intFromSessionUsageValue(usage["output"]),
-			CacheRead:   intFromSessionUsageValue(usage["cacheRead"]),
-			CacheWrite:  intFromSessionUsageValue(usage["cacheWrite"]),
-			TotalTokens: intFromSessionUsageValue(usage["totalTokens"]),
+			Input:        intFromSessionUsageValue(usage["input"]),
+			Output:       intFromSessionUsageValue(usage["output"]),
+			CacheRead:    intFromSessionUsageValue(usage["cacheRead"]),
+			CacheWrite:   intFromSessionUsageValue(usage["cacheWrite"]),
+			CacheWrite1h: intFromSessionUsageValue(usage["cacheWrite1h"]),
+			TotalTokens:  intFromSessionUsageValue(usage["totalTokens"]),
+		}
+		if value, exists := usage["reasoning"]; exists {
+			reasoning := intFromSessionUsageValue(value)
+			result.Reasoning = &reasoning
 		}
 		if cost, ok := usage["cost"].(map[string]any); ok {
 			result.Cost = llm.UsageCost{
@@ -835,7 +822,7 @@ func usageFromSessionMessageValue(value any) (llm.Usage, bool) {
 				Total:      floatFromSessionUsageValue(cost["total"]),
 			}
 		}
-		return result, usageTokenTotal(result) > 0
+		return result, hasUsage(result)
 	default:
 		return llm.Usage{}, false
 	}
@@ -869,19 +856,6 @@ func intFromSessionUsageValue(value any) int {
 	default:
 		return 0
 	}
-}
-
-func addUsage(total *llm.Usage, usage llm.Usage) {
-	total.Input += usage.Input
-	total.Output += usage.Output
-	total.CacheRead += usage.CacheRead
-	total.CacheWrite += usage.CacheWrite
-	total.TotalTokens += usageTokenTotal(usage)
-	total.Cost.Input += usage.Cost.Input
-	total.Cost.Output += usage.Cost.Output
-	total.Cost.CacheRead += usage.Cost.CacheRead
-	total.Cost.CacheWrite += usage.Cost.CacheWrite
-	total.Cost.Total += usage.Cost.Total
 }
 
 func usageTokenTotal(usage llm.Usage) int {

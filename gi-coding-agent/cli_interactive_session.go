@@ -37,19 +37,28 @@ func (h *CLIInteractiveTUIHost) handleNameSlashCommand(args string) error {
 }
 
 func (h *CLIInteractiveTUIHost) handleSessionSlashCommand() error {
+	session, err := h.currentAgentSession()
+	if err != nil {
+		return err
+	}
 	host, err := h.newRPCSessionHost()
 	if err != nil {
 		return err
 	}
 	state := host.GetState()
-	stats := host.GetSessionStats()
+	details := session.GetSessionStats()
+	stats := rpcSessionStatsFromAgentStats(details)
 	h.chat.AddChild(gitui.NewSpacer(1))
-	h.chat.AddChild(gitui.NewText(renderInteractiveSessionInfo(state, stats), 1, 0))
+	h.chat.AddChild(gitui.NewText(renderInteractiveSessionInfo(state, stats, details), 1, 0))
 	h.requestRender(false)
 	return nil
 }
 
-func renderInteractiveSessionInfo(state RPCSessionState, stats RPCSessionStats) string {
+func renderInteractiveSessionInfo(
+	state RPCSessionState,
+	stats RPCSessionStats,
+	details ...AgentSessionStats,
+) string {
 	label := func(text string) string {
 		return tuiThemeDim(text + ":")
 	}
@@ -74,18 +83,66 @@ func renderInteractiveSessionInfo(state RPCSessionState, stats RPCSessionStats) 
 	lines = append(lines,
 		"",
 		tuiThemeBold("Tokens"),
-		label("Input")+" "+formatSessionInfoInt(stats.Tokens.Input),
-		label("Output")+" "+formatSessionInfoInt(stats.Tokens.Output),
 	)
-	if stats.Tokens.CacheRead > 0 {
-		lines = append(lines, label("Cache Read")+" "+formatSessionInfoInt(stats.Tokens.CacheRead))
+	promptTokens := stats.Tokens.Input + stats.Tokens.CacheRead + stats.Tokens.CacheWrite
+	lines = append(lines, label("Input")+" "+formatSessionInfoInt(promptTokens))
+	if promptTokens > 0 && (stats.Tokens.CacheRead > 0 || stats.Tokens.CacheWrite > 0) {
+		hitRate := float64(stats.Tokens.CacheRead) / float64(promptTokens) * 100
+		lines = append(
+			lines,
+			"  "+label("Cached")+" "+
+				formatSessionInfoInt(stats.Tokens.CacheRead)+
+				" "+tuiThemeDim(fmt.Sprintf("(%.1f%%)", hitRate)),
+		)
+		written := ""
+		if stats.Tokens.CacheWrite > 0 {
+			written = " " + tuiThemeDim(
+				"("+formatSessionInfoInt(stats.Tokens.CacheWrite)+" written to cache)",
+			)
+		}
+		lines = append(
+			lines,
+			"  "+label("Uncached")+" "+
+				formatSessionInfoInt(stats.Tokens.Input+stats.Tokens.CacheWrite)+
+				written,
+		)
 	}
-	if stats.Tokens.CacheWrite > 0 {
-		lines = append(lines, label("Cache Write")+" "+formatSessionInfoInt(stats.Tokens.CacheWrite))
+	lines = append(
+		lines,
+		label("Output")+" "+formatSessionInfoInt(stats.Tokens.Output),
+		label("Total")+" "+formatSessionInfoInt(stats.Tokens.Total),
+	)
+
+	var usageBreakdown []UsageCostBreakdownEntry
+	var cacheWaste CacheWasteTotals
+	if len(details) > 0 {
+		usageBreakdown = details[0].UsageBreakdown
+		cacheWaste = details[0].CacheWaste
 	}
-	lines = append(lines, label("Total")+" "+formatSessionInfoInt(stats.Tokens.Total))
-	if stats.Cost > 0 {
-		lines = append(lines, "", tuiThemeBold("Cost"), label("Total")+" "+fmt.Sprintf("%.4f", stats.Cost))
+	if stats.Cost > 0 || cacheWaste.MissedTokens > 0 {
+		lines = append(lines, "", tuiThemeBold("Cost"), label("Total")+" $"+fmt.Sprintf("%.3f", stats.Cost))
+		if len(usageBreakdown) > 1 {
+			for _, entry := range usageBreakdown {
+				lines = append(
+					lines,
+					"  "+label(entry.Key)+" $"+fmt.Sprintf("%.3f", entry.Cost)+
+						" "+tuiThemeDim("("+formatFooterTokens(entry.Tokens)+" tokens)"),
+				)
+			}
+		}
+		if cacheWaste.MissedTokens > 0 {
+			missLabel := fmt.Sprintf("%d misses", cacheWaste.MissCount)
+			if cacheWaste.MissCount == 1 {
+				missLabel = "1 miss"
+			}
+			detail := formatSessionInfoInt(cacheWaste.MissedTokens) + " tokens, " + missLabel
+			value := detail
+			if cacheWaste.MissedCost >= 0.0001 {
+				value = "$" + fmt.Sprintf("%.3f", cacheWaste.MissedCost) +
+					" " + tuiThemeDim("("+detail+")")
+			}
+			lines = append(lines, label("Cache Re-billed")+" "+value)
+		}
 	}
 	lines = append(lines, "")
 	return strings.Join(lines, "\n")

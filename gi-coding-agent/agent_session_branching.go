@@ -244,11 +244,14 @@ func sessionMessageToLLM(message any) (llm.Message, bool) {
 			}
 		}
 		message := llm.Message{
-			Role:         role,
-			Content:      sessionMessageContentToLLM(typed["content"]),
-			API:          stringFromSessionMessageValue(typed["api"]),
-			Provider:     stringFromSessionMessageValue(typed["provider"]),
-			Model:        stringFromSessionMessageValue(typed["model"]),
+			Role:     role,
+			Content:  sessionMessageContentToLLM(typed["content"]),
+			API:      stringFromSessionMessageValue(typed["api"]),
+			Provider: stringFromSessionMessageValue(typed["provider"]),
+			Model:    stringFromSessionMessageValue(typed["model"]),
+			ResponseModel: stringFromSessionMessageValue(
+				typed["responseModel"],
+			),
 			StopReason:   stringFromSessionMessageValue(typed["stopReason"]),
 			ErrorMessage: stringFromSessionMessageValue(typed["errorMessage"]),
 			ToolCallID:   stringFromSessionMessageValue(typed["toolCallID"]),

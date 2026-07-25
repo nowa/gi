@@ -732,31 +732,22 @@ func (h *RPCSessionHost) Clone() (RPCCloneResult, error) {
 }
 
 func (h *RPCSessionHost) GetSessionStats() RPCSessionStats {
-	stats := h.Session.GetSessionStats()
-	result := RPCSessionStats{
-		SessionFile:  h.Session.SessionManager.GetSessionFile(),
-		SessionID:    h.Session.SessionManager.GetSessionID(),
-		Tokens:       rpcSessionTokens(stats.Tokens),
-		Cost:         stats.Tokens.Cost.Total,
-		ContextUsage: stats.ContextUsage,
+	return rpcSessionStatsFromAgentStats(h.Session.sessionStats(false))
+}
+
+func rpcSessionStatsFromAgentStats(stats AgentSessionStats) RPCSessionStats {
+	return RPCSessionStats{
+		SessionFile:       stats.SessionFile,
+		SessionID:         stats.SessionID,
+		UserMessages:      stats.UserMessages,
+		AssistantMessages: stats.AssistantMessages,
+		ToolCalls:         stats.ToolCalls,
+		ToolResults:       stats.ToolResults,
+		TotalMessages:     stats.TotalMessages,
+		Tokens:            rpcSessionTokens(stats.Tokens),
+		Cost:              stats.Tokens.Cost.Total,
+		ContextUsage:      stats.ContextUsage,
 	}
-	for _, message := range h.Session.Messages() {
-		result.TotalMessages++
-		switch message.Role {
-		case llm.RoleUser:
-			result.UserMessages++
-		case llm.RoleAssistant:
-			result.AssistantMessages++
-			for _, part := range message.Content {
-				if part.Type == llm.ContentToolCall {
-					result.ToolCalls++
-				}
-			}
-		case llm.RoleToolResult:
-			result.ToolResults++
-		}
-	}
-	return result
 }
 
 func rpcSessionTokens(usage llm.Usage) RPCSessionTokens {

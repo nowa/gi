@@ -3295,14 +3295,9 @@ func (h *CLIInteractiveTUIHost) refreshFooterState() {
 		state.Reasoning = model.Reasoning
 		state.ThinkingLevel = session.Agent.State.ThinkingLevel
 		state.ContextWindow = model.ContextWindow
-		stats := session.GetSessionStats()
-		state.Usage = []FooterUsage{{
-			Input:      stats.Tokens.Input,
-			Output:     stats.Tokens.Output,
-			CacheRead:  stats.Tokens.CacheRead,
-			CacheWrite: stats.Tokens.CacheWrite,
-			CostTotal:  stats.Tokens.Cost.Total,
-		}}
+		stats := session.sessionStats(false)
+		state.Usage = stats.Tokens
+		state.LatestCacheHitRate = stats.LatestCacheHitRate
 		if stats.ContextUsage != nil {
 			state.ContextWindow = stats.ContextUsage.ContextWindow
 			state.ContextPercent = stats.ContextUsage.Percent
@@ -3317,18 +3312,18 @@ func (h *CLIInteractiveTUIHost) refreshFooterState() {
 			runtime,
 		)
 		if session != nil && session.Agent != nil {
-			state.UsingOAuth = runtime.IsUsingOAuth(
-				session.Agent.State.Model.Provider,
-			)
+			providerID := session.Agent.State.Model.Provider
+			state.UsingOAuth = providerID == "kimi-coding" ||
+				runtime.IsUsingOAuth(providerID)
 		}
 	} else if registry := h.modelRegistry(); registry != nil {
 		state.AvailableProviderCount = footerAvailableProviderCount(
 			registry,
 		)
 		if session != nil && session.Agent != nil {
-			state.UsingOAuth = registry.IsUsingOAuth(
-				session.Agent.State.Model,
-			)
+			model := session.Agent.State.Model
+			state.UsingOAuth = model.Provider == "kimi-coding" ||
+				registry.IsUsingOAuth(model)
 		}
 	}
 	h.footer.SetState(state)

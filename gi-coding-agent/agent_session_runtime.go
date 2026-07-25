@@ -1575,6 +1575,9 @@ func sessionMessageValue(message llm.Message) map[string]any {
 		"usage":      sessionUsageValue(message.Usage),
 		"stopReason": message.StopReason,
 	}
+	if message.ResponseModel != "" {
+		value["responseModel"] = message.ResponseModel
+	}
 	if message.ErrorMessage != "" {
 		value["errorMessage"] = message.ErrorMessage
 	}
@@ -1600,7 +1603,7 @@ func sessionMessageValue(message llm.Message) map[string]any {
 }
 
 func sessionUsageValue(usage llm.Usage) map[string]any {
-	return map[string]any{
+	value := map[string]any{
 		"input":       usage.Input,
 		"output":      usage.Output,
 		"cacheRead":   usage.CacheRead,
@@ -1614,6 +1617,13 @@ func sessionUsageValue(usage llm.Usage) map[string]any {
 			"total":      usage.Cost.Total,
 		},
 	}
+	if usage.CacheWrite1h != 0 {
+		value["cacheWrite1h"] = usage.CacheWrite1h
+	}
+	if usage.Reasoning != nil {
+		value["reasoning"] = *usage.Reasoning
+	}
+	return value
 }
 
 func sortedMapKeys(values map[string]bool) []string {

@@ -56,6 +56,11 @@ func TestSessionMessageValuePreservesContentSignatures(t *testing.T) {
 	toolCall := llm.ToolCall("call_1", "read", map[string]any{"path": "README.md"})
 	toolCall.ThoughtSignature = `{"type":"reasoning.encrypted","id":"call_1","data":"opaque"}`
 	source := llm.AssistantMessage([]llm.ContentPart{text, thinking, toolCall}, llm.StopReasonToolUse, model)
+	source.ResponseModel = "resolved-model"
+	reasoningTokens := 7
+	source.Usage.CacheWrite = 11
+	source.Usage.CacheWrite1h = 5
+	source.Usage.Reasoning = &reasoningTokens
 
 	roundTrip, ok := sessionMessageToLLM(sessionMessageValue(source))
 	if !ok {
@@ -72,6 +77,14 @@ func TestSessionMessageValuePreservesContentSignatures(t *testing.T) {
 	}
 	if roundTrip.Content[2].ThoughtSignature != toolCall.ThoughtSignature {
 		t.Fatalf("tool call = %#v", roundTrip.Content[2])
+	}
+	if roundTrip.ResponseModel != "resolved-model" {
+		t.Fatalf("response model = %q", roundTrip.ResponseModel)
+	}
+	if roundTrip.Usage.CacheWrite1h != 5 ||
+		roundTrip.Usage.Reasoning == nil ||
+		*roundTrip.Usage.Reasoning != reasoningTokens {
+		t.Fatalf("usage metadata = %#v", roundTrip.Usage)
 	}
 }
 
