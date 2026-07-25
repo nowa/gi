@@ -148,7 +148,7 @@ The member-level source inventory currently reports:
 
 | Module | Pi source files | Gi production files | Pi symbols | Missing Pi files | Missing Pi symbols |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 169 | 90 | 632 | 13 | 26 |
+| LLM provider | 169 | 93 | 632 | 4 | 13 |
 | Agent core | 35 | 35 | 327 | 0 | 0 |
 | TUI | 28 | 32 | 449 | 0 | 0 |
 | Coding agent | 177 | 172 | 2115 | 27 | 398 |

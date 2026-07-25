@@ -222,7 +222,7 @@ autocomplete insertion, and tool renderer callbacks through the protocol host.
 | `packages/ai/test/google-thinking-signature.test.ts` | `gi-llm-provider/google_convert_test.go` |
 | `packages/ai/test/google-vertex-api-key-resolution.test.ts` | `gi-llm-provider/config_test.go`, `gi-llm-provider/google_vertex_provider_test.go` for registered Express/ADC request routing without live network access |
 | `packages/ai/test/github-copilot-anthropic.test.ts` | `gi-llm-provider/github_copilot_headers_test.go` |
-| `packages/ai/test/github-copilot-oauth.test.ts` | `gi-llm-provider/oauth_test.go`, `gi-llm-provider/builtin_providers_test.go` for authenticated account model filtering |
+| `packages/ai/test/github-copilot-oauth.test.ts` | `gi-llm-provider/github_copilot_oauth_test.go`, `gi-llm-provider/oauth_device_code_test.go`, `gi-llm-provider/builtin_providers_test.go` |
 | `packages/ai/test/image-tool-result.test.ts` | `gi-llm-provider/anthropic_payload_test.go`, `gi-llm-provider/google_convert_test.go`, `gi-llm-provider/openai_completions_convert_test.go`, `gi-llm-provider/openai_responses_convert_test.go` |
 | `packages/ai/test/interleaved-thinking.test.ts` | `gi-llm-provider/anthropic_payload_test.go`, `gi-llm-provider/bedrock_payload_test.go` |
 | `packages/ai/test/bedrock-thinking-payload.test.ts` | `gi-llm-provider/bedrock_payload_test.go` |

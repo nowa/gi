@@ -47,7 +47,10 @@ var builtinProviderSpecs = []builtinProviderSpec{
 		auth: func() ProviderAuth {
 			return ProviderAuth{
 				APIKey: EnvAPIKeyAuth("GitHub Copilot token", "COPILOT_GITHUB_TOKEN"),
-				OAuth:  registeredOAuthAuth("github-copilot", "GitHub Copilot", ""),
+				OAuth: registeredOrBuiltinOAuthAuth(
+					"github-copilot",
+					NewGitHubCopilotOAuth(GitHubCopilotOAuthOptions{}),
+				),
 			}
 		},
 		filter: filterGitHubCopilotModels,

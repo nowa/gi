@@ -12,11 +12,11 @@ The current debt snapshot is in `v0.82.0-open-gaps.json`.
 ## Why the debt snapshot exists
 
 The source, module-boundary, and test-case verifiers predate Pi v0.82.0. The
-baseline opened with 1,545 audit items; the current snapshot contains 509:
+baseline opened with 1,545 audit items; the current snapshot contains 502:
 
 | Module | Open items |
 | --- | ---: |
-| LLM provider | 24 |
+| LLM provider | 17 |
 | Agent core and harness | 0 |
 | TUI | 0 |
 | Coding agent | 485 |
