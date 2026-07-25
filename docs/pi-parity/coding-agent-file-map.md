@@ -476,6 +476,32 @@ trusted in-process Go component. The function-level parity target is therefore
 | `defineTool`, tool/result type guards | Go `ProtocolToolDefinition`, typed tool result structs, JSON schemas | Go does not need TS type guards at runtime; schema and typed structs carry the contract. |
 | `wrapRegisteredTool`, `wrapRegisteredTools` | `SDKTool`, `llmToolsFromSDKTools`, `ToolExecutionComponent` renderer lookup | Registered tools are adapted to LLM tool definitions and TUI renderers through Go structs. |
 
+## Bundled Llama Provider Core
+
+Gi keeps llama.cpp management and Hugging Face discovery in the focused
+`internal/llama` package. The management API is a typed boundary: HTTP and SSE
+payloads are decoded once, long-running load/download operations merge event
+progress with authoritative catalog polling through mutex-owned state, and the
+provider publishes detached model snapshots. Command registration and the
+interactive manager remain separate follow-ups so transport state does not
+depend on TUI component lifetimes.
+
+| Pi file | Pi surface / major functions | Gi equivalent | Status | Notes |
+| --- | --- | --- | --- | --- |
+| `extensions/llama/client.ts` | llama.cpp management requests, catalog validation, SSE events, load/download lifecycle and progress | `internal/llama/client.go` | go-native direct | Caller contexts own cancellation; bounded response/SSE readers and operation-local synchronized state keep catalog polling authoritative while retaining event progress. |
+| `extensions/llama/huggingface.ts` | GGUF search/details, gating, quantization/shard sizing, rate-limit and token discovery | `internal/llama/huggingface.go` | go-native direct | Typed detached results, bounded HTTP/token reads, deterministic quantization ordering, and standard Hugging Face environment/cache precedence replace Node filesystem helpers. |
+| `extensions/llama/provider.ts` | native provider creation, auth resolution, catalog refresh, llama model conversion | `internal/llama/provider.go` | go-native direct | A mutex-owned controller atomically replaces a deep-cloned loaded-model catalog; every provider read builds fresh model slices and compatibility pointers for alias-free concurrent refresh. |
+
+### Bundled Llama Provider Function Map
+
+| Pi function / surface | Gi equivalent | Parity shape |
+| --- | --- | --- |
+| `errorMessage`, `isModelInfo`, `linkSignal`, `sleep`, `parseLoadProgress`, `parseDownloadProgress`, `formatBytes`, `normalizeLlamaServerUrl`, `llamaInferenceUrl` | `llamaErrorMessage`, typed `LlamaModelInfo` decoding, caller `context.Context`, `sleepLlamaContext`, progress parsers, `FormatLlamaBytes`, `NormalizeLlamaServerURL`, `LlamaInferenceURL` | Go uses context cancellation and typed JSON decoding instead of linked abort signals and runtime type guards. |
+| `LlamaClient`, `LlamaClient.constructor`, `LlamaClient.request`, `LlamaClient.list`, `LlamaClient.load`, `LlamaClient.unload`, `LlamaClient.unloadAndWait`, `LlamaClient.download`, `LlamaClient.watch`, `LlamaClient.loadAndWait`, `LlamaClient.downloadAndWait` | `LlamaClient`, `NewLlamaClient`, `request`, `List`, `Load`, `Unload`, `UnloadAndWait`, `Download`, `Watch`, `LoadAndWait`, `DownloadAndWait` | Direct management-plane behavior with Go method naming, typed errors, bounded reads, and synchronized event/poll state. |
+| `payloadError`, `parseRateLimitDelay`, `readToken`, `findHuggingFaceToken` | `huggingFacePayloadError`, `parseHuggingFaceRateLimitDelay`, `readHuggingFaceToken`, `FindHuggingFaceToken` | Direct helper behavior with bounded credential-file reads and deterministic path precedence. |
+| `HuggingFaceClient`, `HuggingFaceClient.constructor`, `HuggingFaceClient.request`, `HuggingFaceClient.search`, `HuggingFaceClient.details` | `HuggingFaceClient`, `NewHuggingFaceClient`, `request`, `Search`, `Details` | Direct catalog behavior through an injected `HTTPDoer` and caller-owned contexts. |
+| `credentialServerUrl`, `resolveServerUrl`, `toPiModel`, `createLlamaProvider` | `llamaCredentialServerURL`, `resolveLlamaServerURL`, `llamaProviderModel`, `CreateLlamaProvider` | Direct provider behavior with immutable callback wiring and a controller-owned mutable catalog. |
+
 ## Core Compaction Files
 
 | Pi file | Pi surface / major functions | Gi equivalent | Status | Notes |

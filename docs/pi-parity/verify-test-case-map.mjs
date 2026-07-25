@@ -278,6 +278,9 @@ const modules = [
 				"gi-coding-agent/cli_interactive_tui_test.go",
 				"gi-coding-agent/pi_coding_agent_case_names_test.go",
 			],
+			"packages/coding-agent/test/llama-extension.test.ts": [
+				"gi-coding-agent/internal/llama/llama_test.go",
+			],
 			"packages/coding-agent/test/model-registry.test.ts": [
 				"gi-coding-agent/model_registry_test.go",
 				"gi-coding-agent/auth_storage_test.go",
