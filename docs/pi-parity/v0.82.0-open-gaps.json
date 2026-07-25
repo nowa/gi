@@ -59,7 +59,6 @@
         "main.ts::openSessionOrExit",
         "main.ts::validateSessionIdFlags",
         "modes/interactive/components/footer.ts::formatCwdForFooter",
-        "modes/interactive/interactive-mode.ts::InteractiveMode.handleClipboardPaste",
         "modes/interactive/interactive-mode.ts::createFuzzyAutocompleteItems",
         "modes/interactive/interactive-mode.ts::formatLoginProviderCompletionDescription",
         "modes/interactive/interactive-mode.ts::formatResumeCommand",
@@ -76,8 +75,6 @@
         "package-manager-cli.ts::reportProjectTrustWarnings",
         "utils/child-process.ts::spawnProcess",
         "utils/child-process.ts::spawnProcessSync",
-        "utils/clipboard-native.ts::loadClipboardNative",
-        "utils/clipboard.ts::readClipboardText",
         "utils/paths.ts::markPathIgnoredByCloudSync",
         "utils/shell.ts::getBashShellConfig",
         "utils/shell.ts::isLegacyWslBashPath"

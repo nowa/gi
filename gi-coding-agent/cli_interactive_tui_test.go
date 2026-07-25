@@ -5062,6 +5062,56 @@ func TestCLIInteractiveTUIHostCtrlVPastesClipboardImagePathPiStyle(t *testing.T)
 	}
 }
 
+func TestCLIInteractiveTUIHostCtrlVFallsBackToClipboardTextPiStyle(
+	t *testing.T,
+) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	terminal := gitui.NewVirtualTerminal(120, 24)
+	host, err := NewCLIInteractiveTUIHost(
+		CLIInteractiveTUIHostOptions{
+			RuntimeHost: runtimeHost,
+			Terminal:    terminal,
+			ClipboardImageRead: func() *ClipboardImage {
+				return nil
+			},
+			ClipboardTextRead: func(
+				context.Context,
+			) (string, bool) {
+				return "clipboard text", true
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	terminal.SendInput("\x16")
+	waitForCondition(
+		t,
+		func() bool {
+			return host.activeEditorText() ==
+				"clipboard text"
+		},
+		"clipboard text to reach the editor",
+	)
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
 func TestCLIInteractiveTUIHostHandlesBuiltinSlashCommands(t *testing.T) {
 	runtimeHost := newOfflineInteractiveRuntimeHost(t)
 	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)

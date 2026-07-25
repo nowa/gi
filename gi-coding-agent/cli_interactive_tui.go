@@ -27,6 +27,7 @@ type CLIInteractiveTUIHostOptions struct {
 	InProcessUI         *InProcessUIRegistry
 	ClipboardCopy       func(string) error
 	ClipboardImageRead  func() *ClipboardImage
+	ClipboardTextRead   func(context.Context) (string, bool)
 	ClipboardImageDir   string
 	ShareCreateGist     func(context.Context, string) (string, error)
 	Suspend             InteractiveSuspendOperations
@@ -99,6 +100,7 @@ type CLIInteractiveTUIHost struct {
 	inProcessUI         *InProcessUIRegistry
 	clipboardCopy       func(string) error
 	clipboardImageRead  func() *ClipboardImage
+	clipboardTextRead   func(context.Context) (string, bool)
 	clipboardImageDir   string
 	shareCreateGist     func(context.Context, string) (string, error)
 	suspend             InteractiveSuspendOperations
@@ -567,6 +569,7 @@ func NewCLIInteractiveTUIHost(options CLIInteractiveTUIHostOptions) (*CLIInterac
 		inProcessUI:         options.InProcessUI,
 		clipboardCopy:       options.ClipboardCopy,
 		clipboardImageRead:  options.ClipboardImageRead,
+		clipboardTextRead:   options.ClipboardTextRead,
 		clipboardImageDir:   options.ClipboardImageDir,
 		shareCreateGist:     options.ShareCreateGist,
 		suspend:             resolveInteractiveSuspendOperations(options.Suspend),
@@ -1602,7 +1605,7 @@ func (h *CLIInteractiveTUIHost) setActiveEditorText(text string) bool {
 	return true
 }
 
-func (h *CLIInteractiveTUIHost) handleClipboardImagePaste() {
+func (h *CLIInteractiveTUIHost) handleClipboardPaste() {
 	if h == nil {
 		return
 	}
@@ -1613,28 +1616,56 @@ func (h *CLIInteractiveTUIHost) handleClipboardImagePaste() {
 		}
 	}
 	image := readImage()
-	if image == nil || len(image.Bytes) == 0 {
+	if image != nil && len(image.Bytes) > 0 {
+		ext := ExtensionForImageMIMEType(image.MIMEType)
+		if ext == "" {
+			ext = "png"
+		}
+		file, err := os.CreateTemp(
+			h.clipboardImageDir,
+			"gi-clipboard-*."+ext,
+		)
+		if err != nil {
+			return
+		}
+		path := file.Name()
+		if _, err := file.Write(image.Bytes); err != nil {
+			_ = file.Close()
+			_ = os.Remove(path)
+			return
+		}
+		if err := file.Close(); err != nil {
+			_ = os.Remove(path)
+			return
+		}
+		h.InsertEditorText(path)
 		return
 	}
-	ext := ExtensionForImageMIMEType(image.MIMEType)
-	if ext == "" {
-		ext = "png"
+
+	readText := h.clipboardTextRead
+	if readText == nil {
+		readText = func(ctx context.Context) (string, bool) {
+			return ReadClipboardText(
+				ctx,
+				ClipboardTextReadOptions{},
+			)
+		}
 	}
-	file, err := os.CreateTemp(h.clipboardImageDir, "gi-clipboard-*."+ext)
-	if err != nil {
-		return
+	ctx, cancel := context.WithCancel(context.Background())
+	watchDone := make(chan struct{})
+	go func() {
+		select {
+		case <-h.done:
+			cancel()
+		case <-watchDone:
+		}
+	}()
+	text, ok := readText(ctx)
+	close(watchDone)
+	cancel()
+	if ok && text != "" {
+		h.InsertEditorText(text)
 	}
-	path := file.Name()
-	if _, err := file.Write(image.Bytes); err != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
-		return
-	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(path)
-		return
-	}
-	h.InsertEditorText(path)
 }
 
 func (h *CLIInteractiveTUIHost) cycleThinkingLevelFromKey() {

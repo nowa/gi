@@ -133,7 +133,7 @@ func (h *CLIInteractiveTUIHost) handleAppActionKey(data string, keybindings Keyb
 		return false
 	}
 	if h.focusedDefaultEditor() && matchesKeybindingAction(data, keybindings, "app.clipboard.pasteImage") {
-		go h.handleClipboardImagePaste()
+		go h.handleClipboardPaste()
 		return true
 	}
 	if h.activeEditorShowingAutocomplete() {
