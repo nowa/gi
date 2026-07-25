@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -51,5 +52,36 @@ func TestRunCLIRPCModeRejectsFileArguments(t *testing.T) {
 	}
 	if stdout.String() != "" || !strings.Contains(stderr.String(), "@file arguments are not supported in RPC mode") {
 		t.Fatalf("stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunCLIRPCModePropagatesOutputFailure(t *testing.T) {
+	tempDir := t.TempDir()
+	writeErr := errors.New("rpc stdout unavailable")
+	var stderr bytes.Buffer
+
+	code := RunCLI(CLIOptions{
+		Args: []string{
+			"--offline",
+			"--no-session",
+			"--model",
+			"openai/gpt-4o-mini",
+			"--mode",
+			"rpc",
+		},
+		Stdin: strings.NewReader(
+			`{"id":"state-1","type":"get_state"}` + "\n",
+		),
+		Stdout:   printModeErrorWriter{err: writeErr},
+		Stderr:   &stderr,
+		CWD:      tempDir,
+		AgentDir: filepath.Join(tempDir, "agent"),
+	})
+
+	if code != 1 {
+		t.Fatalf("code = %d", code)
+	}
+	if !strings.Contains(stderr.String(), writeErr.Error()) {
+		t.Fatalf("stderr = %q", stderr.String())
 	}
 }

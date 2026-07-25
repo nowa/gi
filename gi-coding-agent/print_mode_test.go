@@ -2,6 +2,7 @@ package gicodingagent
 
 import (
 	"bytes"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -74,6 +75,36 @@ func TestRunPrintModePiAssistantError(t *testing.T) {
 	}
 }
 
+func TestRunPrintModePropagatesOutputFailure(t *testing.T) {
+	host := newFakePrintModeHost(llm.Message{
+		Role:       llm.RoleAssistant,
+		Content:    []llm.ContentPart{llm.Text("done")},
+		StopReason: llm.StopReasonStop,
+	})
+	writeErr := errors.New("stdout unavailable")
+	var stderr bytes.Buffer
+
+	exitCode := RunPrintMode(host, PrintModeOptions{
+		Mode:   "text",
+		Stdout: printModeErrorWriter{err: writeErr},
+		Stderr: &stderr,
+	})
+
+	if exitCode != 1 {
+		t.Fatalf("exit code = %d", exitCode)
+	}
+	if stderr.String() != writeErr.Error()+"\n" {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	if host.shutdownEvents != 1 || host.shutdownReason != "quit" {
+		t.Fatalf(
+			"shutdown events = %d reason = %q",
+			host.shutdownEvents,
+			host.shutdownReason,
+		)
+	}
+}
+
 type fakePrintModeHost struct {
 	session        *fakePrintModeSession
 	shutdownEvents int
@@ -102,6 +133,14 @@ type fakePrintModeSession struct {
 type fakePrintModePrompt struct {
 	message string
 	options PrintModePromptOptions
+}
+
+type printModeErrorWriter struct {
+	err error
+}
+
+func (w printModeErrorWriter) Write([]byte) (int, error) {
+	return 0, w.err
 }
 
 func (s *fakePrintModeSession) Prompt(message string, options PrintModePromptOptions) error {

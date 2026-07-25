@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/nowa/gi/gi-coding-agent/internal/outputguard"
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
@@ -64,7 +65,14 @@ func RunPrintMode(host PrintModeRuntimeHost, options PrintModeOptions) (exitCode
 		return 1
 	}
 	if options.Stdout != nil {
-		writePrintModeOutput(options.Stdout, options.Mode, last)
+		if err := writePrintModeOutput(
+			options.Stdout,
+			options.Mode,
+			last,
+		); err != nil {
+			writePrintModeError(options.Stderr, err.Error())
+			return 1
+		}
 	}
 	return exitCode
 }
@@ -85,17 +93,29 @@ func writePrintModeError(writer io.Writer, message string) {
 	_, _ = fmt.Fprintln(writer, message)
 }
 
-func writePrintModeOutput(writer io.Writer, mode string, message llm.Message) {
+func writePrintModeOutput(
+	writer io.Writer,
+	mode string,
+	message llm.Message,
+) error {
+	output := outputguard.New(writer, outputguard.Options{})
 	if mode == "json" {
 		encoded, err := json.Marshal(message)
-		if err == nil {
-			_, _ = fmt.Fprintln(writer, string(encoded))
+		if err != nil {
+			return err
 		}
-		return
+		encoded = append(encoded, '\n')
+		if _, err := output.Write(encoded); err != nil {
+			return err
+		}
+		return output.Flush()
 	}
 	for _, part := range message.Content {
 		if part.Type == llm.ContentText {
-			_, _ = fmt.Fprint(writer, part.Text)
+			if _, err := output.WriteString(part.Text); err != nil {
+				return err
+			}
 		}
 	}
+	return output.Flush()
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nowa/gi/gi-coding-agent/internal/outputguard"
 	gitui "github.com/nowa/gi/gi-tui"
 )
 
@@ -458,42 +459,60 @@ func runCLIRPCMode(args Args, options CLIOptions) int {
 		writeCLIError(options.Stderr, "Error: @file arguments are not supported in RPC mode")
 		return 1
 	}
-	host, err := newDefaultCLIRPCSessionHost(args, options)
+	host, runtimeHost, err := newDefaultCLIRPCSessionHost(args, options)
 	if err != nil {
 		writeCLIError(options.Stderr, err.Error())
 		return 1
 	}
+	output := outputguard.New(
+		nonNilWriter(options.Stdout),
+		outputguard.Options{},
+	)
 	processor := RPCLineProcessor{
 		Host: host,
 		WriteLine: func(line string) {
-			_, _ = io.WriteString(nonNilWriter(options.Stdout), line)
+			_, _ = output.WriteString(line)
 		},
 	}
 	unsubscribe := host.SubscribeEvents(func(event AgentSessionEvent) {
 		processor.WriteEvent(event)
 	})
-	defer unsubscribe()
-	if err := AttachJSONLLineReader(nonNilReader(options.Stdin), func(line string) {
+	readErr := AttachJSONLLineReader(nonNilReader(options.Stdin), func(line string) {
+		if output.Err() != nil {
+			return
+		}
 		processor.HandleLine(context.Background(), line)
-	}); err != nil {
-		writeCLIError(options.Stderr, err.Error())
-		return 1
+	})
+	unsubscribe()
+	disposeErr := runtimeHost.Dispose()
+	flushErr := output.Flush()
+	for _, err := range []error{readErr, flushErr, disposeErr} {
+		if err != nil {
+			writeCLIError(options.Stderr, err.Error())
+			return 1
+		}
 	}
 	return 0
 }
 
-func newDefaultCLIRPCSessionHost(args Args, options CLIOptions) (*RPCSessionHost, error) {
+func newDefaultCLIRPCSessionHost(
+	args Args,
+	options CLIOptions,
+) (*RPCSessionHost, PrintModeRuntimeHost, error) {
 	host, err := newDefaultCLIPrintModeHost(args, options)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	printHost, ok := host.(*agentSessionPrintModeHost)
 	if !ok || printHost.session == nil {
-		return nil, fmt.Errorf("RPC mode requires an agent session host")
+		_ = host.Dispose()
+		return nil, nil, fmt.Errorf(
+			"RPC mode requires an agent session host",
+		)
 	}
 	rpcHost := NewRPCSessionHost(printHost.session)
 	rpcHost.Settings = printHost.settingsManager
-	return rpcHost, nil
+	return rpcHost, host, nil
 }
 
 func runPackageSubcommand(options CLIOptions) (int, bool) {

@@ -170,6 +170,5 @@ func (h *basicCLIInteractiveHost) Run() (runErr error) {
 		}
 		return errors.New("assistant response failed")
 	}
-	writePrintModeOutput(h.stdout, "text", last)
-	return nil
+	return writePrintModeOutput(h.stdout, "text", last)
 }
