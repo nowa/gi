@@ -13,19 +13,8 @@
   "source": [
     {
       "module": "llm",
-      "missingFiles": [
-        "auth/oauth/anthropic.ts",
-        "auth/oauth/openai-codex.ts"
-      ],
-      "missingSymbols": [
-        "auth/oauth/openai-codex.ts::exchangeAuthorizationCodeForCredentials",
-        "auth/oauth/openai-codex.ts::fetchWithLoginCancellation",
-        "auth/oauth/openai-codex.ts::loginOpenAICodexDeviceCode",
-        "auth/oauth/openai-codex.ts::pollOpenAICodexDeviceAuth",
-        "auth/oauth/openai-codex.ts::readTokenResponse",
-        "auth/oauth/openai-codex.ts::startOpenAICodexDeviceAuth",
-        "cli.ts::answerPrompt"
-      ]
+      "missingFiles": [],
+      "missingSymbols": []
     },
     {
       "module": "agent",

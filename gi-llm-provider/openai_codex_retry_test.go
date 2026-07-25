@@ -125,41 +125,53 @@ func TestOpenAICodexPostWithRetryUsesServerDelay(t *testing.T) {
 	}
 }
 
-func TestOpenAICodexPostWithRetryRejectsExcessiveServerDelay(t *testing.T) {
-	requests := 0
-	client := openAICodexRetryDoerFunc(func(request *http.Request) (*http.Response, error) {
-		requests++
-		return openAICodexRetryResponse(
-			request,
-			http.StatusServiceUnavailable,
-			http.Header{"retry-after": []string{"2"}},
-			`{"error":{"message":"retry later"}}`,
-		), nil
-	})
-	provider := NewOpenAICodexResponsesProvider(client)
-	options := SimpleStreamOptions{
-		MaxRetries:      1,
-		MaxRetryDelayMs: 1000,
-	}
-	execution, err := prepareOpenAICodexExecutionOptions(options)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = provider.postWithRetry(
-		context.Background(),
-		openAICodexRetryModel(),
-		options,
-		execution,
-		nil,
-		map[string]any{"input": []any{}},
-	)
-	var exceeded *OpenAICodexRetryDelayExceededError
-	if !errors.As(err, &exceeded) ||
-		err.Error() != "Server requested 2s retry delay (max: 1s)" {
-		t.Fatalf("error = %T %v", err, err)
-	}
-	if requests != 1 {
-		t.Fatalf("requests = %d, want 1", requests)
+func TestOpenAICodexFailsImmediatelyWhenRetryDelayExceedsLimit(
+	t *testing.T,
+) {
+	for _, status := range []int{
+		http.StatusTooManyRequests,
+		http.StatusServiceUnavailable,
+	} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			requests := 0
+			client := openAICodexRetryDoerFunc(func(
+				request *http.Request,
+			) (*http.Response, error) {
+				requests++
+				return openAICodexRetryResponse(
+					request,
+					status,
+					http.Header{"retry-after": []string{"2"}},
+					`{"error":{"message":"retry later"}}`,
+				), nil
+			})
+			provider := NewOpenAICodexResponsesProvider(client)
+			options := SimpleStreamOptions{
+				MaxRetries:      1,
+				MaxRetryDelayMs: 1000,
+			}
+			execution, err := prepareOpenAICodexExecutionOptions(options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = provider.postWithRetry(
+				context.Background(),
+				openAICodexRetryModel(),
+				options,
+				execution,
+				nil,
+				map[string]any{"input": []any{}},
+			)
+			var exceeded *OpenAICodexRetryDelayExceededError
+			if !errors.As(err, &exceeded) ||
+				err.Error() !=
+					"Server requested 2s retry delay (max: 1s)" {
+				t.Fatalf("error = %T %v", err, err)
+			}
+			if requests != 1 {
+				t.Fatalf("requests = %d, want 1", requests)
+			}
+		})
 	}
 }
 

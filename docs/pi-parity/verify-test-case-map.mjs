@@ -108,6 +108,11 @@ const modules = [
 					"gi-llm-provider/builtin_providers_test.go",
 				],
 			},
+			"packages/ai/test/openai-codex-stream.test.ts": {
+				"fails immediately when a %i retry delay exceeds the limit": [
+					"gi-llm-provider/openai_codex_retry_test.go",
+				],
+			},
 			"packages/ai/test/openai-completions-tool-choice.test.ts": {
 				"stores z.ai GLM-5.2 effort metadata": [
 					"gi-llm-provider/model_catalog_test.go",

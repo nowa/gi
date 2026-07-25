@@ -33,9 +33,9 @@ gap.
 | Pi directory | Gi ownership boundary | Abstraction status |
 | --- | --- | --- |
 | `packages/ai/src` | `gi-llm-provider` public package: model catalog, registry, stream entrypoints, base types, image API | consistent; Go keeps one provider package instead of TS root/barrel files. |
-| `packages/ai/src/api` | `gi-llm-provider` provider, payload, stream, registry, and transport files | partial; Go dispatches through typed provider interfaces rather than lazy TS modules. Implemented APIs remain in one package, while missing v0.82.0 transports are tracked by the LLM file/symbol/test inventories. |
-| `packages/ai/src/auth` | `auth.go`, `credential_store.go`, `models_runtime.go`, and provider-owned auth hooks | Go-native consistent for the credential store, request-scoped auth context, serialized OAuth refresh, and typed models errors; remaining provider-specific auth helpers are explicit LLM gaps. |
-| `packages/ai/src/auth/oauth` | `oauth.go`, provider OAuth files in `gi-coding-agent`, and `internal/oauthpage` | split and partial; reusable token/PKCE/callback primitives stay provider-level, interactive browser/device flows stay coding-agent-level, and unimplemented v0.82.0 providers remain explicit gaps. |
+| `packages/ai/src/api` | `gi-llm-provider` provider, payload, stream, registry, and transport files | Go-native consistent; eager Go linking replaces lazy TS modules, while typed provider interfaces preserve the transport boundary and request snapshot ownership. |
+| `packages/ai/src/auth` | `auth.go`, `credential_store.go`, `models_runtime.go`, and provider-owned auth hooks | Go-native consistent; one canonical credential shape, request-scoped auth context, serialized store mutation, and typed model errors cover provider login, refresh, request auth, and availability snapshots. |
+| `packages/ai/src/auth/oauth` | provider-owned `*_oauth.go` flows, shared `oauth_authorization_code.go`, `oauth_device_code.go`, `oauth_pkce.go`, and `internal/oauthpage` | Go-native consistent; provider packages own protocol state and token exchange, `context.Context` owns cancellation, and application `AuthInteraction` implementations own terminal/browser presentation. Legacy coding-agent protocol helpers remain migration adapters until the CLI is switched to the provider runtime. |
 | `packages/ai/src/compat` | `types.go` model compatibility metadata plus provider conversion/config helpers | consolidated; generated compatibility flags are typed model data in Go and consumed by the relevant protocol adapter. |
 | `packages/ai/src/providers` | `gi-llm-provider/*_provider.go`, `*_payload.go`, `*_stream.go`, `*_config.go` | consistent; provider files are split by protocol responsibility rather than nested directories. |
 | `packages/ai/src/providers/images` | `images.go`, `image_models.go`, `openrouter_images*.go` | consistent; image provider registry stays in the same Go package. |
@@ -148,7 +148,7 @@ The member-level source inventory currently reports:
 
 | Module | Pi source files | Gi production files | Pi symbols | Missing Pi files | Missing Pi symbols |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 169 | 93 | 632 | 4 | 13 |
+| LLM provider | 169 | 99 | 632 | 0 | 0 |
 | Agent core | 35 | 35 | 327 | 0 | 0 |
 | TUI | 28 | 32 | 449 | 0 | 0 |
 | Coding agent | 177 | 172 | 2115 | 27 | 398 |

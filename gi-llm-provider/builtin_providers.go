@@ -27,7 +27,10 @@ var builtinProviderSpecs = []builtinProviderSpec{
 	{id: "anthropic", name: "Anthropic", baseURL: "https://api.anthropic.com", auth: func() ProviderAuth {
 		return ProviderAuth{
 			APIKey: EnvAPIKeyAuth("Anthropic API key", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"),
-			OAuth:  registeredOAuthAuth("anthropic", "Anthropic (Claude Pro/Max)", ""),
+			OAuth: registeredOrBuiltinOAuthAuth(
+				"anthropic",
+				NewAnthropicOAuth(AnthropicOAuthOptions{}),
+			),
 		}
 	}},
 	envBuiltin("azure-openai-responses", "Azure OpenAI", "Azure OpenAI API key", "AZURE_OPENAI_API_KEY"),
@@ -84,10 +87,9 @@ var builtinProviderSpecs = []builtinProviderSpec{
 		extraAPIs: []string{"openai-codex-responses"},
 		auth: func() ProviderAuth {
 			return ProviderAuth{
-				OAuth: registeredOAuthAuth(
+				OAuth: registeredOrBuiltinOAuthAuth(
 					"openai-codex",
-					"OpenAI (ChatGPT Plus/Pro)",
-					"",
+					NewOpenAICodexOAuth(OpenAICodexOAuthOptions{}),
 				),
 			}
 		},
