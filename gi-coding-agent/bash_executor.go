@@ -13,6 +13,7 @@ import (
 	"time"
 
 	agentharness "github.com/nowa/gi/gi-agent-core/harness"
+	"github.com/nowa/gi/gi-coding-agent/internal/shellconfig"
 )
 
 const defaultBashExitStdioGrace = time.Second
@@ -40,7 +41,8 @@ type BashOperations struct {
 }
 
 type BashLocalOperationsOptions struct {
-	ShellPath string
+	ShellPath    string
+	resolveShell func(string) (shellconfig.Config, error)
 }
 
 type BashResult struct {
@@ -148,19 +150,30 @@ func execLocalBash(command, cwd string, localOptions BashLocalOperationsOptions,
 	if grace <= 0 {
 		grace = defaultBashExitStdioGrace
 	}
-	shell := "sh"
-	if strings.TrimSpace(localOptions.ShellPath) != "" {
-		shell = localOptions.ShellPath
-		if _, err := os.Stat(shell); err != nil {
-			if os.IsNotExist(err) {
-				return BashOperationResult{}, fmt.Errorf("Custom shell path not found: %s", shell)
-			}
-			return BashOperationResult{}, err
+	resolveShell := localOptions.resolveShell
+	if resolveShell == nil {
+		resolveShell = func(path string) (shellconfig.Config, error) {
+			return shellconfig.Resolve(
+				path,
+				shellconfig.ResolveOptions{},
+			)
 		}
 	}
+	config, err := resolveShell(localOptions.ShellPath)
+	if err != nil {
+		return BashOperationResult{}, err
+	}
+	invocation := config.Invocation(command)
 
-	cmd := exec.CommandContext(ctx, shell, "-c", command)
+	cmd := exec.CommandContext(
+		ctx,
+		invocation.Command,
+		invocation.Args...,
+	)
 	cmd.Dir = cwd
+	if invocation.UsesStdin {
+		cmd.Stdin = strings.NewReader(invocation.Stdin)
+	}
 	configureLocalBashCommand(cmd)
 	cmd.Cancel = func() error {
 		return cancelLocalBashCommand(cmd.Process)

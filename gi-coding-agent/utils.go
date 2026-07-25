@@ -1,6 +1,8 @@
 package gicodingagent
 
 import (
+	"context"
+
 	"github.com/nowa/gi/gi-coding-agent/internal/ansiutil"
 	"github.com/nowa/gi/gi-coding-agent/internal/frontmatter"
 	"github.com/nowa/gi/gi-coding-agent/internal/pathutil"
@@ -43,6 +45,14 @@ func GetCwdRelativePath(path, cwd string) (string, bool) {
 
 func IsLocalPath(value string) bool {
 	return pathutil.IsLocalPath(value)
+}
+
+func MarkPathIgnoredByCloudSync(path string) {
+	pathutil.MarkPathIgnoredByCloudSync(
+		context.Background(),
+		path,
+		pathutil.CloudSyncMarkOptions{},
+	)
 }
 
 func GetGiUserAgent(version string) string {

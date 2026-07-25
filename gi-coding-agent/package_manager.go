@@ -21,8 +21,9 @@ type PackageManagerOptions struct {
 }
 
 type PackageManagerOperations struct {
-	RunCommand        func(command string, args []string, options PackageCommandOptions) error
-	RunCommandCapture func(command string, args []string, options PackageCommandOptions) (string, error)
+	RunCommand                 func(command string, args []string, options PackageCommandOptions) error
+	RunCommandCapture          func(command string, args []string, options PackageCommandOptions) (string, error)
+	MarkPathIgnoredByCloudSync func(path string)
 }
 
 type PackageCommandOptions struct {
@@ -1013,7 +1014,10 @@ func (m *DefaultPackageManager) installGitPackage(source GitSource, project bool
 	} else if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if err := ensurePackageStoreGitIgnore(m.gitPackageInstallRoot(project)); err != nil {
+	if err := ensurePackageStoreGitIgnore(
+		m.gitPackageInstallRoot(project),
+		m.operations.MarkPathIgnoredByCloudSync,
+	); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(targetDir), 0o755); err != nil {
@@ -1094,6 +1098,10 @@ func normalizePackageManagerOperations(operations PackageManagerOperations) Pack
 	if operations.RunCommandCapture == nil {
 		operations.RunCommandCapture = runPackageCommandCapture
 	}
+	if operations.MarkPathIgnoredByCloudSync == nil {
+		operations.MarkPathIgnoredByCloudSync =
+			MarkPathIgnoredByCloudSync
+	}
 	return operations
 }
 
@@ -1117,12 +1125,18 @@ func runPackageCommandCapture(command string, args []string, options PackageComm
 	return strings.TrimSpace(string(output)), nil
 }
 
-func ensurePackageStoreGitIgnore(dir string) error {
+func ensurePackageStoreGitIgnore(
+	dir string,
+	markPathIgnoredByCloudSync func(string),
+) error {
 	if dir == "" {
 		return nil
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
+	}
+	if markPathIgnoredByCloudSync != nil {
+		markPathIgnoredByCloudSync(dir)
 	}
 	path := filepath.Join(dir, ".gitignore")
 	if _, err := os.Stat(path); err == nil {

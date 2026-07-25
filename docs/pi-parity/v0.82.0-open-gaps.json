@@ -36,9 +36,6 @@
         "config.ts::getEntrypointPackageDir",
         "config.ts::getPathComparisonCandidates",
         "config.ts::normalizeSelfUpdatePackageTarget",
-        "core/footer-data-provider.ts::isWindowsMountedRepoPath",
-        "core/footer-data-provider.ts::isWslEnvironment",
-        "core/footer-data-provider.ts::shouldPollGitHead",
         "core/model-resolver.ts::resolveModelScopeWithDiagnostics",
         "core/package-manager.ts::DefaultPackageManager.ensureGitRef",
         "core/package-manager.ts::DefaultPackageManager.getLegacyGlobalNpmInstallPath",
@@ -69,12 +66,7 @@
         "package-manager-cli.ts::printPnpmSelfUpdateMetadataHint",
         "package-manager-cli.ts::printSelfUpdateNote",
         "package-manager-cli.ts::refreshModelCatalogs",
-        "package-manager-cli.ts::reportProjectTrustWarnings",
-        "utils/child-process.ts::spawnProcess",
-        "utils/child-process.ts::spawnProcessSync",
-        "utils/paths.ts::markPathIgnoredByCloudSync",
-        "utils/shell.ts::getBashShellConfig",
-        "utils/shell.ts::isLegacyWslBashPath"
+        "package-manager-cli.ts::reportProjectTrustWarnings"
       ]
     }
   ],

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nowa/gi/gi-coding-agent/internal/shellconfig"
 )
 
 func TestExecuteBashResolvesAfterShellExitWithInheritedStdio(t *testing.T) {
@@ -91,6 +93,37 @@ func TestExecuteBashCancelKillsBackgroundProcessGroup(t *testing.T) {
 	waitUntil(t, func() bool {
 		return !bashProcessRunning(pid)
 	})
+}
+
+func TestExecuteBashUsesResolvedStdinTransport(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("/bin/cat is unavailable on Windows")
+	}
+	const command = `name='World'; echo "$name"`
+	operations := CreateLocalBashOperations(
+		BashLocalOperationsOptions{
+			resolveShell: func(string) (
+				shellconfig.Config,
+				error,
+			) {
+				return shellconfig.Config{
+					Shell:     "/bin/cat",
+					Transport: shellconfig.CommandStdin,
+				}, nil
+			},
+		},
+	)
+	result, err := ExecuteBashWithOperations(
+		command,
+		t.TempDir(),
+		operations,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ExitCode != 0 || result.Output != command {
+		t.Fatalf("result = %#v", result)
+	}
 }
 
 func TestSDKBashToolResolvesAfterShellExitWithInheritedStdio(t *testing.T) {

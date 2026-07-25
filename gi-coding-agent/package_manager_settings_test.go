@@ -188,6 +188,7 @@ func TestPackageManagerInstallGitPackageGiProtocolScope(t *testing.T) {
 	agentDir, projectDir := createPackageManagerSettingsDirs(t)
 	source := "git:github.com/example/protocol-package"
 	var cloneTarget string
+	var cloudSyncIgnoredPath string
 	manager := NewDefaultPackageManager(PackageManagerOptions{
 		CWD:      projectDir,
 		AgentDir: agentDir,
@@ -200,6 +201,9 @@ func TestPackageManagerInstallGitPackageGiProtocolScope(t *testing.T) {
 				writeGiProtocolExtensionDescriptor(t, filepath.Join(cloneTarget, "extensions", "index.gi.json"))
 				return nil
 			},
+			MarkPathIgnoredByCloudSync: func(path string) {
+				cloudSyncIgnoredPath = path
+			},
 		},
 	})
 
@@ -209,6 +213,18 @@ func TestPackageManagerInstallGitPackageGiProtocolScope(t *testing.T) {
 	wantTarget := filepath.Join(projectDir, ConfigDirName, "git", "github.com", "example", "protocol-package")
 	if cloneTarget != wantTarget {
 		t.Fatalf("clone target = %q, want %q", cloneTarget, wantTarget)
+	}
+	wantInstallRoot := filepath.Join(
+		projectDir,
+		ConfigDirName,
+		"git",
+	)
+	if cloudSyncIgnoredPath != wantInstallRoot {
+		t.Fatalf(
+			"cloud sync ignored path = %q, want %q",
+			cloudSyncIgnoredPath,
+			wantInstallRoot,
+		)
 	}
 	if packages := packageManagerSettingsPackages(t, filepath.Join(projectDir, ConfigDirName, "settings.json")); len(packages) != 1 || packages[0] != source {
 		t.Fatalf("project packages = %#v", packages)

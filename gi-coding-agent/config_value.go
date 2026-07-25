@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/nowa/gi/gi-coding-agent/internal/shellconfig"
 	llm "github.com/nowa/gi/gi-llm-provider"
 )
 
@@ -370,11 +370,21 @@ func executeConfigCommand(command string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
-	} else {
-		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	config, err := shellconfig.Resolve(
+		"",
+		shellconfig.ResolveOptions{},
+	)
+	if err != nil {
+		return "", false
+	}
+	invocation := config.Invocation(command)
+	cmd := exec.CommandContext(
+		ctx,
+		invocation.Command,
+		invocation.Args...,
+	)
+	if invocation.UsesStdin {
+		cmd.Stdin = strings.NewReader(invocation.Stdin)
 	}
 	output, err := cmd.Output()
 	if err != nil {
