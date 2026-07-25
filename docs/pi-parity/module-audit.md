@@ -150,7 +150,7 @@ The member-level source inventory currently reports:
 | LLM provider | 169 | 101 | 632 | 0 | 0 |
 | Agent core | 35 | 35 | 327 | 0 | 0 |
 | TUI | 28 | 32 | 449 | 0 | 0 |
-| Coding agent | 177 | 175 | 2115 | 21 | 324 |
+| Coding agent | 177 | 179 | 2115 | 18 | 307 |
 
 `docs/pi-parity/member-symbol-inventory.md` is the generated per-file detail.
 A mentioned symbol means its ownership or gap has been classified; it does not
@@ -174,7 +174,7 @@ The test-case inventory currently reports:
 | LLM provider | 111 | 1186 | 111 | 1186 | 0 | 0 |
 | Agent core | 16 | 212 | 16 | 212 | 0 | 0 |
 | TUI | 27 | 700 | 27 | 700 | 0 | 0 |
-| Coding agent | 181 | 1649 | 174 | 1612 | 7 | 37 |
+| Coding agent | 181 | 1649 | 177 | 1628 | 4 | 21 |
 
 Candidate matching is an audit lead, not proof. Behavioral parity still
 requires the mapped Go tests, implementation review, and the release gate in
@@ -497,7 +497,7 @@ Observed direct coverage:
   path helper boundary with `.gi` naming and covers legacy auth/session/commands,
   keybindings, managed tools, and deprecated extension directory migrations with
   tests.
-- Interactive mode is consolidated primarily into `cli_interactive_tui.go`, with editor/dialog/status/settings/model/auth/help host APIs split into `cli_interactive_editor_host.go`, `cli_interactive_dialog_host.go`, `cli_interactive_status.go`, `cli_interactive_settings.go`, `cli_interactive_model.go`, `cli_interactive_auth.go`, and `cli_interactive_help.go` plus focused component/helper files.
+- Interactive mode is consolidated primarily into `cli_interactive_tui.go`, with editor/dialog/status/settings/model/auth/help host APIs split into `cli_interactive_editor_host.go`, `cli_interactive_dialog_host.go`, `cli_interactive_status.go`, `cli_interactive_settings.go`, `cli_interactive_model.go`, `cli_interactive_auth.go`, and `cli_interactive_help.go` plus focused component/helper files. Experimental first-time setup has its own immutable eligibility boundary and one component-owned mutable state projection in `startup_ui.go` and `first_time_setup.go`; only the CLI coordinator persists the submitted theme, analytics preference, and stable tracking ID.
 - Pi `AssistantMessageComponent` / `UserMessageComponent` now map to Gi
   `message_components.go` and `cli_message_components.go`: both exported and
   internal paths share the same Pi-style Markdown/theme/OSC 133 rendering

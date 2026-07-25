@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	llm "github.com/nowa/gi/gi-llm-provider"
+	gitui "github.com/nowa/gi/gi-tui"
 )
 
 func TestTUIThemeForegroundTokensMatchPiDarkTheme(t *testing.T) {
@@ -268,9 +269,11 @@ func TestTUIThemeUsesPi256ColorFallbackForScreenTerm(t *testing.T) {
 	t.Setenv("WT_SESSION", "")
 	t.Setenv("TERM_PROGRAM", "")
 	t.Setenv("TERM", "screen-256color")
+	gitui.ResetCapabilitiesCache()
 	previous := tuiActiveThemeSnapshot()
 	t.Cleanup(func() {
 		tuiSetActiveThemePalette(previous)
+		gitui.ResetCapabilitiesCache()
 	})
 	if err := tuiSetActiveTheme("dark", nil); err != nil {
 		t.Fatal(err)
@@ -295,9 +298,11 @@ func TestTUIThemeTruecolorOverridesScreenTermLikePi(t *testing.T) {
 	t.Setenv("WT_SESSION", "")
 	t.Setenv("TERM_PROGRAM", "")
 	t.Setenv("TERM", "screen-256color")
+	gitui.ResetCapabilitiesCache()
 	previous := tuiActiveThemeSnapshot()
 	t.Cleanup(func() {
 		tuiSetActiveThemePalette(previous)
+		gitui.ResetCapabilitiesCache()
 	})
 	if err := tuiSetActiveTheme("light", nil); err != nil {
 		t.Fatal(err)
@@ -344,9 +349,11 @@ func setTUIThemeForTest(t *testing.T, name string, themes []TUIThemeInfo) {
 	t.Setenv("WT_SESSION", "")
 	t.Setenv("TERM_PROGRAM", "")
 	t.Setenv("TERM", "xterm-256color")
+	gitui.ResetCapabilitiesCache()
 	previous := tuiActiveThemeSnapshot()
 	t.Cleanup(func() {
 		tuiSetActiveThemePalette(previous)
+		gitui.ResetCapabilitiesCache()
 	})
 	if err := tuiSetActiveTheme(name, themes); err != nil {
 		t.Fatal(err)

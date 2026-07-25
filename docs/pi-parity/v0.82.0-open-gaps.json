@@ -29,15 +29,12 @@
     {
       "module": "coding",
       "missingFiles": [
-        "cli/startup-ui.ts",
-        "core/experimental.ts",
         "extensions/llama/client.ts",
         "extensions/llama/huggingface.ts",
         "extensions/llama/index.ts",
         "extensions/llama/provider.ts",
         "extensions/llama/ui.ts",
         "modes/interactive/components/custom-entry.ts",
-        "modes/interactive/components/first-time-setup.ts",
         "modes/interactive/components/status-indicator.ts",
         "modes/interactive/external-editor.ts",
         "modes/interactive/model-search.ts",
@@ -52,16 +49,9 @@
         "utils/windows-self-update.ts"
       ],
       "missingSymbols": [
-        "cli/startup-ui.ts::applyDetectedStartupTheme",
-        "cli/startup-ui.ts::clearStartupTui",
-        "cli/startup-ui.ts::createStartupTui",
-        "cli/startup-ui.ts::isOfficialDistribution",
         "cli/startup-ui.ts::loadStartupThemes",
-        "cli/startup-ui.ts::shouldRunFirstTimeSetup",
-        "cli/startup-ui.ts::showFirstTimeSetup",
         "cli/startup-ui.ts::showStartupInput",
         "cli/startup-ui.ts::showStartupSelector",
-        "cli/startup-ui.ts::startStartupTui",
         "config.ts::getEntrypointPackageDir",
         "config.ts::getPathComparisonCandidates",
         "config.ts::normalizeSelfUpdatePackageTarget",
@@ -69,7 +59,6 @@
         "core/compaction/compaction.ts::isCutPointMessage",
         "core/compaction/compaction.ts::isTurnStartEntry",
         "core/compaction/compaction.ts::isTurnStartMessage",
-        "core/experimental.ts::areExperimentalFeaturesEnabled",
         "core/extensions/loader.ts::clearExtensionCache",
         "core/extensions/loader.ts::isCurrentCacheToken",
         "core/extensions/loader.ts::loadExtensionsCached",
@@ -106,12 +95,9 @@
         "core/resource-loader.ts::DefaultResourceLoader.loadProjectTrustExtensions",
         "core/resource-loader.ts::DefaultResourceLoader.mapSkillPath",
         "core/resource-loader.ts::DefaultResourceLoader.resolveExtensionLoadPath",
-        "core/settings-manager.ts::SettingsManager.getEnableAnalytics",
         "core/settings-manager.ts::SettingsManager.getExternalEditorCommand",
         "core/settings-manager.ts::SettingsManager.getOutputPad",
         "core/settings-manager.ts::SettingsManager.getThemeSetting",
-        "core/settings-manager.ts::SettingsManager.getTrackingId",
-        "core/settings-manager.ts::SettingsManager.setEnableAnalytics",
         "core/settings-manager.ts::SettingsManager.setOutputPad",
         "core/settings-manager.ts::SettingsManager.updateProjectSettings",
         "core/timings.ts::printTimingGroup",
@@ -234,12 +220,6 @@
         "modes/interactive/components/custom-entry.ts::CustomEntryComponent.rebuild",
         "modes/interactive/components/custom-entry.ts::CustomEntryComponent.setExpanded",
         "modes/interactive/components/extension-editor.ts::ExtensionEditorComponent.handleOpenExternalEditor",
-        "modes/interactive/components/first-time-setup.ts::FirstTimeSetupComponent",
-        "modes/interactive/components/first-time-setup.ts::FirstTimeSetupComponent.addOptionList",
-        "modes/interactive/components/first-time-setup.ts::FirstTimeSetupComponent.constructor",
-        "modes/interactive/components/first-time-setup.ts::FirstTimeSetupComponent.handleInput",
-        "modes/interactive/components/first-time-setup.ts::FirstTimeSetupComponent.moveSelection",
-        "modes/interactive/components/first-time-setup.ts::FirstTimeSetupComponent.update",
         "modes/interactive/components/footer.ts::formatCwdForFooter",
         "modes/interactive/components/model-selector.ts::ModelSelectorComponent.close",
         "modes/interactive/components/model-selector.ts::ModelSelectorComponent.loadModelsFromSnapshot",
@@ -420,10 +400,7 @@
       "module": "coding",
       "undocumentedFiles": [],
       "noCandidateFiles": [
-        "packages/coding-agent/test/experimental.test.ts",
         "packages/coding-agent/test/external-editor.test.ts",
-        "packages/coding-agent/test/first-time-setup-fork.test.ts",
-        "packages/coding-agent/test/first-time-setup.test.ts",
         "packages/coding-agent/test/max-thinking.test.ts",
         "packages/coding-agent/test/suite/regressions/5661-uppercase-header-values.test.ts",
         "packages/coding-agent/test/suite/regressions/5724-sigterm-signal-exit.test.ts"
@@ -445,31 +422,6 @@
           "name": "leaves uppercase models.json API key and header values unchanged"
         },
         {
-          "file": "packages/coding-agent/test/experimental.test.ts",
-          "line": 15,
-          "name": "returns false when PI_EXPERIMENTAL is unset"
-        },
-        {
-          "file": "packages/coding-agent/test/experimental.test.ts",
-          "line": 21,
-          "name": "returns false when PI_EXPERIMENTAL is empty"
-        },
-        {
-          "file": "packages/coding-agent/test/experimental.test.ts",
-          "line": 27,
-          "name": "returns true when PI_EXPERIMENTAL is set to 1"
-        },
-        {
-          "file": "packages/coding-agent/test/experimental.test.ts",
-          "line": 33,
-          "name": "returns false when PI_EXPERIMENTAL is set to 0"
-        },
-        {
-          "file": "packages/coding-agent/test/experimental.test.ts",
-          "line": 39,
-          "name": "returns false when PI_EXPERIMENTAL is set to a non-1 value"
-        },
-        {
           "file": "packages/coding-agent/test/external-editor.test.ts",
           "line": 36,
           "name": "edits a prompt inside a private temporary directory"
@@ -483,51 +435,6 @@
           "file": "packages/coding-agent/test/external-editor.test.ts",
           "line": 58,
           "name": "returns empty content when the editor clears the prompt"
-        },
-        {
-          "file": "packages/coding-agent/test/first-time-setup-fork.test.ts",
-          "line": 36,
-          "name": "returns false for a forked package"
-        },
-        {
-          "file": "packages/coding-agent/test/first-time-setup.test.ts",
-          "line": 36,
-          "name": "returns true when experimental, default agent dir, and no settings.json"
-        },
-        {
-          "file": "packages/coding-agent/test/first-time-setup.test.ts",
-          "line": 40,
-          "name": "returns false when experimental features are disabled"
-        },
-        {
-          "file": "packages/coding-agent/test/first-time-setup.test.ts",
-          "line": 46,
-          "name": "returns false when a custom agent dir is set"
-        },
-        {
-          "file": "packages/coding-agent/test/first-time-setup.test.ts",
-          "line": 52,
-          "name": "returns false when settings.json already exists"
-        },
-        {
-          "file": "packages/coding-agent/test/first-time-setup.test.ts",
-          "line": 60,
-          "name": "defaults to disabled with no tracking identifier"
-        },
-        {
-          "file": "packages/coding-agent/test/first-time-setup.test.ts",
-          "line": 67,
-          "name": "generates a tracking identifier on opt-in"
-        },
-        {
-          "file": "packages/coding-agent/test/first-time-setup.test.ts",
-          "line": 76,
-          "name": "does not generate a tracking identifier on opt-out"
-        },
-        {
-          "file": "packages/coding-agent/test/first-time-setup.test.ts",
-          "line": 85,
-          "name": "keeps the tracking identifier when toggling analytics"
         },
         {
           "file": "packages/coding-agent/test/git-merge-and-resolve-extension.test.ts",
@@ -603,16 +510,6 @@
           "file": "packages/coding-agent/test/syntax-highlight.test.ts",
           "line": 62,
           "name": "colors diff additions and deletions in fenced diff blocks"
-        },
-        {
-          "file": "packages/coding-agent/test/theme-detection.test.ts",
-          "line": 83,
-          "name": "falls back to environment hints when the terminal query fails"
-        },
-        {
-          "file": "packages/coding-agent/test/theme-detection.test.ts",
-          "line": 103,
-          "name": "uses terminal capabilities"
         }
       ]
     }

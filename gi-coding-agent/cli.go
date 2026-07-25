@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	gitui "github.com/nowa/gi/gi-tui"
 )
 
 type CLIOptions struct {
@@ -31,6 +33,7 @@ type CLIOptions struct {
 	Responder              AgentSessionResponder
 	ProjectTrustPrompt     ProjectTrustPrompt
 	ProjectTrustOverride   *bool
+	FirstTimeSetupTerminal gitui.Terminal
 }
 
 func RunCLI(options CLIOptions) int {
@@ -88,6 +91,11 @@ func RunCLI(options CLIOptions) int {
 		timings.Mark("dispatch rpc")
 		return runCLIRPCMode(args, options)
 	}
+	if err := maybeRunCLIFirstTimeSetup(options); err != nil {
+		writeCLIError(options.Stderr, err.Error())
+		return 1
+	}
+	timings.Mark("first-time setup")
 	timings.Mark("dispatch interactive")
 	return runCLIInteractiveMode(args, options)
 }

@@ -3,6 +3,7 @@ package gicodingagent
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -522,6 +523,56 @@ func (s *SettingsManager) SetEnableInstallTelemetry(enabled bool) {
 	s.setGlobal("enableInstallTelemetry", enabled)
 }
 
+func (s *SettingsManager) GetEnableAnalytics() bool {
+	return settingsBool(s.mergedSnapshot(), "enableAnalytics", false)
+}
+
+func (s *SettingsManager) GetTrackingID() string {
+	return settingsString(s.mergedSnapshot(), "trackingId")
+}
+
+// SetEnableAnalytics updates the preference and its stable identifier as one
+// locked state transition. Disabling analytics intentionally retains the
+// identifier so a later opt-in resumes the same anonymous identity.
+func (s *SettingsManager) SetEnableAnalytics(enabled bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.setEnableAnalyticsLocked(enabled)
+	s.saveGlobal()
+}
+
+// ApplyFirstTimeSetup persists the complete onboarding result with one global
+// settings write, so theme and analytics cannot observe different setup runs.
+func (s *SettingsManager) ApplyFirstTimeSetup(result FirstTimeSetupResult) error {
+	if s == nil {
+		return errors.New("settings manager is required")
+	}
+	if result.Theme != TerminalThemeDark && result.Theme != TerminalThemeLight {
+		return fmt.Errorf("invalid first-time setup theme: %q", result.Theme)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.global["theme"] = string(result.Theme)
+	s.modifiedGlobal["theme"] = struct{}{}
+	s.setEnableAnalyticsLocked(result.ShareAnalytics)
+	return s.saveGlobal()
+}
+
+func (s *SettingsManager) setEnableAnalyticsLocked(enabled bool) {
+	s.global["enableAnalytics"] = enabled
+	s.modifiedGlobal["enableAnalytics"] = struct{}{}
+	if enabled && settingsString(s.global, "trackingId") == "" {
+		s.global["trackingId"] = agentharness.UUIDv7()
+		s.modifiedGlobal["trackingId"] = struct{}{}
+	}
+	s.refreshMerged()
+}
+
 func (s *SettingsManager) GetEnableSkillCommands() bool {
 	return settingsBool(s.mergedSnapshot(), "enableSkillCommands", true)
 }
@@ -843,19 +894,20 @@ func settingsStringsValue(values []string) []any {
 	return result
 }
 
-func (s *SettingsManager) saveGlobal() {
+func (s *SettingsManager) saveGlobal() error {
 	if s.inMemory {
 		clear(s.modifiedGlobal)
-		return
+		return nil
 	}
 	if s.globalLoadErr != nil {
-		return
+		return s.globalLoadErr
 	}
 	if err := saveModifiedSettings(s.globalPath, s.global, s.modifiedGlobal); err != nil {
 		s.errors = append(s.errors, SettingsError{Scope: "global", Err: err})
-		return
+		return err
 	}
 	clear(s.modifiedGlobal)
+	return nil
 }
 
 func (s *SettingsManager) saveProject() error {

@@ -206,16 +206,7 @@ func tuiLoadThemePalette(name string, available []TUIThemeInfo) (tuiThemePalette
 }
 
 func tuiDefaultThemeName() string {
-	colorfgbg := os.Getenv("COLORFGBG")
-	if colorfgbg != "" {
-		parts := strings.Split(colorfgbg, ";")
-		if len(parts) >= 2 {
-			if bg, err := strconv.Atoi(parts[1]); err == nil && bg >= 8 {
-				return "light"
-			}
-		}
-	}
-	return "dark"
+	return string(DetectTerminalBackgroundFromEnv(nil).Theme)
 }
 
 type tuiColorMode string
@@ -226,24 +217,10 @@ const (
 )
 
 func tuiDetectColorMode() tuiColorMode {
-	switch strings.ToLower(os.Getenv("COLORTERM")) {
-	case "truecolor", "24bit":
+	if gitui.GetCapabilities().TrueColor {
 		return tuiColorModeTruecolor
 	}
-	if os.Getenv("WT_SESSION") != "" {
-		return tuiColorModeTruecolor
-	}
-	term := os.Getenv("TERM")
-	switch {
-	case term == "" || term == "dumb" || term == "linux":
-		return tuiColorMode256
-	case os.Getenv("TERM_PROGRAM") == "Apple_Terminal":
-		return tuiColorMode256
-	case term == "screen" || strings.HasPrefix(term, "screen-") || strings.HasPrefix(term, "screen."):
-		return tuiColorMode256
-	default:
-		return tuiColorModeTruecolor
-	}
+	return tuiColorMode256
 }
 
 func tuiBuiltinThemePalette(name string, fg, bg map[string]string) tuiThemePalette {

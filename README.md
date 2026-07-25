@@ -18,7 +18,7 @@ port.
 | `github.com/nowa/gi/gi-agent-core` | Agent runtime with state management, tool calling, lifecycle events, queues, and turn orchestration. |
 | `github.com/nowa/gi/gi-agent-core/harness` | Session storage, prompt formatting, compaction, skills, local execution helpers, and test harness utilities. |
 | `github.com/nowa/gi/gi-tui` | Terminal UI library with components, editor/input behavior, overlays, key parsing, image fallbacks, and differential rendering. |
-| `github.com/nowa/gi/gi-coding-agent` | Coding-agent migration surface: CLI/config/settings, resources, session JSONL, tool helpers, protocol-backed packages/extensions, and interactive runtime pieces as they are ported. |
+| `github.com/nowa/gi/gi-coding-agent` | Coding-agent migration surface: CLI/config/settings, resources, session JSONL, tool helpers, protocol-backed packages/extensions, experimental first-time setup, and interactive runtime pieces as they are ported. |
 
 Internal subpackages mirror Pi boundaries where the Go dependency graph allows
 it without changing public APIs. Current examples include
@@ -127,6 +127,12 @@ when extended keyboard reporting is likely to break modified Enter keys. In
 non-TTY contexts it falls back to a basic single-turn host for
 `gi <message>` or piped stdin. The Pi-equivalent TUI workflow disposition is
 documented in `PI_CODING_AGENT_SOURCE_AUDIT.md`.
+
+For an official default installation with no settings file,
+`GI_EXPERIMENTAL=1` (or legacy `PI_EXPERIMENTAL=1`) enables Pi-compatible
+first-time theme and analytics setup before the interactive runtime is built.
+Analytics defaults to disabled; opting in stores one stable local tracking ID
+together with the theme and preference in a single settings transition.
 
 ### Project Trust
 

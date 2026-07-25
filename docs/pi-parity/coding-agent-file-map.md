@@ -78,6 +78,7 @@ not to the agent runtime.
 | `cli/initial-message.ts` | stdin plus positional message assembly | `initial_message.go` | direct | Stdin/message precedence and empty-input behavior are covered by tests. |
 | `cli/list-models.ts` | model table rows, thinking column, provider filtering | `list_models.go`, `model_registry.go` | direct | Model listing and provider/model metadata display are represented. |
 | `cli/session-picker.ts` | startup resume/session selection | `cli_resume_selector.go`, `session_selector.go`, `session_selector_search.go` | direct | `--resume` startup picker, cancel/noop behavior, and selected-session path handoff are represented. |
+| `cli/startup-ui.ts` | `isOfficialDistribution`, `createStartupTui`, `startStartupTui`, `applyDetectedStartupTheme`, `clearStartupTui`, `shouldRunFirstTimeSetup`, `showFirstTimeSetup` | `startup_ui.go` `IsOfficialDistribution`, `ShouldRunFirstTimeSetup`, `ShowFirstTimeSetup`; `terminal_theme.go`; `first_time_setup.go`; CLI dispatch | split | An immutable four-fact eligibility result gates setup before runtime construction. One coordinator owns terminal theme detection, TUI lifecycle, component callbacks, and the single settings mutation. Pi's generic startup theme/resource and input/select helpers remain represented only by specialized Gi dialogs and are still under source-level review. |
 
 ## Core Files
 
@@ -89,6 +90,7 @@ not to the agent runtime.
 | `core/runtime-credentials.ts` | `RuntimeCredentials`, `RuntimeCredentials.constructor`, `RuntimeCredentials.setRuntimeApiKey`, `RuntimeCredentials.removeRuntimeApiKey`, `RuntimeCredentials.hasRuntimeApiKey`, `RuntimeCredentials.read`, `RuntimeCredentials.list`, `RuntimeCredentials.modify`, `RuntimeCredentials.delete` | `runtime_credentials.go` synchronized `runtimeCredentialOverlay`; `auth_storage.go` default persistent store | go-native | `ModelRuntime` wraps any injected `llm.CredentialStore` once and retains that identity across provider rebuilds. Process-local API keys override reads and list metadata without mutating the base store; persistent modify delegates to the base, and delete clears both layers. `AuthStorage` remains the CLI default rather than a runtime requirement. |
 | `core/bash-executor.ts`, `core/exec.ts` | local process execution | `bash_executor.go`, `bash_process_*.go`, `host_process_*.go` | go-native | Go owns process spawning and cancellation. |
 | `core/defaults.ts`, `core/model-registry.ts`, `core/model-resolver.ts` | default model settings, scoped models, model lookup | `model_registry.go`, `model_resolver.go`, `internal/modelresolver/model_resolver.go`, `cli_model_registry.go` | direct | Scoped model and thinking-level tests cover this area; root `model_resolver.go` keeps the public compatibility facade while pure lookup/scope logic lives in `internal/modelresolver`. |
+| `core/experimental.ts` | `areExperimentalFeaturesEnabled` | `experimental.go` `AreExperimentalFeaturesEnabled` | direct | Experimental features require the exact value `1`; Gi prefers `GI_EXPERIMENTAL` and retains `PI_EXPERIMENTAL` as the migration fallback. |
 | `core/model-config.ts` | `deepFreeze`, `ModelConfig.constructor`, `ModelConfig.load`, `ModelConfig.getProvider`, `ModelConfig.getProviderIds`, `ModelConfig.getError` | `model_registry.go` private `modelsJSONProviderConfig`, `loadCustomModels`, `validateConfig`, and detached config flow | consolidated | Go decodes once into typed values, keeps declarative config separate from extension provider input, iterates provider maps deterministically, and does not expose the mutable parsed map outside registry composition. Radius is the only accepted string `oauth` value and requires `baseUrl`. |
 | `core/model-runtime.ts` | provider composition, dynamic catalog refresh, auth/availability snapshots, stream preparation; `ModelRuntime.configureRadiusProviders` | `model_runtime.go` instance `ModelRuntime`; `model_registry.go` typed config compatibility facade; `model_registry_dynamic.go` Radius composition; `gi-llm-provider/models_runtime.go` provider runtime | direct | `ModelRuntime` is the coding-agent owner for provider composition, immutable model/auth availability snapshots, coalesced refresh, request-scoped auth/header/environment preparation, native and configured provider registration, login/logout, and stream/complete dispatch. CLI model selection, preflight, list-models, extension registration/reload, provider hooks, RPC/TUI availability, and credential-change refresh now follow this instance path. |
 | `core/provider-composer.ts` | `modelFromJson`, `applyModelsJson`, `adaptOAuth`, `withConfiguredAuth`, `configuredApiKey`, `configuredHeaders`, `configContextEnv`, `composeApiKeyAuth`, `composeOAuthAuth`, `rawModelHeaders`, `validateExtensionProvider`, `composeModelProvider`, `resolveConfiguredModelHeaders`, `resolveCompatibilityRequestConfig`, `configuredRequestAuthStatus` | `provider_composer.go` typed composition helpers and synchronized `composedModelProviderState`; `model_registry.go` configured request/header/status facade | go-native | One provider state composes the built-in, `models.json`, extension, OAuth model projection, and topmost user override layers without reading credentials during construction. API-key and OAuth auth share configured header resolution; extension refresh results are structurally validated before publication, and callback-owned model projection is serialized for Go concurrency. |
@@ -106,6 +108,7 @@ not to the agent runtime.
 | `core/prompt-templates.ts`, `core/resource-loader.ts`, `core/skills.ts`, `core/system-prompt.ts` | resources and prompt assembly | `prompt_templates.go`, `resource_loader.go`, `system_prompt.go`, harness skill helpers | split | `.gi` resource discovery replaces `.pi` paths by design. |
 | `core/sdk.ts` | SDK session, attribution headers, and tool/provider registration | `sdk_session.go`, `internal/attribution`, `sdk_attribution.go` facade, protocol runtime | protocol | Go SDK shape is not a TS API clone; behaviors are covered through host/runtime tests, and attribution header merging now lives in a focused SDK metadata subpackage. |
 | `core/settings-manager.ts` | global/project settings, migrations, reload; `parseTimeoutSetting`, `SettingsManager.getHttpIdleTimeoutMs`, `SettingsManager.setHttpIdleTimeoutMs`, `SettingsManager.getWebSocketConnectTimeoutMs` | `settings_manager.go` `SettingsManager.HTTPIdleTimeout`, `SettingsManager.SetHTTPIdleTimeoutMS`, `SettingsManager.WebSocketConnectTimeout`; `http_runtime.go` `parseTimeoutSetting`, `providerRequestSettings` | direct | Settings reload and migration cases are covered, including the default-off `showCacheMissNotices` setting. Timeout values accept Pi's number/string/`disabled` forms, surface malformed persisted values, and preserve explicit zero through presence-aware `time.Duration` pointers. |
+| `core/settings-manager.ts` analytics members | `SettingsManager.getEnableAnalytics`, `SettingsManager.getTrackingId`, `SettingsManager.setEnableAnalytics` | `settings_manager.go` `SettingsManager.GetEnableAnalytics`, `SettingsManager.GetTrackingID`, `SettingsManager.SetEnableAnalytics`, `SettingsManager.ApplyFirstTimeSetup` | direct | Analytics defaults off. The settings owner generates one stable UUID on first opt-in, retains it across opt-out/re-opt-in, and applies the complete first-time result under one lock and one global settings write. |
 | `core/slash-commands.ts` | command metadata | `cli_interactive_tui.go`, `prompt_templates.go`, protocol command registry | split | Built-ins, prompt templates, skills, and extension commands share the Go command registry. |
 | `core/source-info.ts`, `core/diagnostics.ts`, `core/timings.ts`, `core/telemetry.ts` | metadata, diagnostics, timing, telemetry | `resource_loader.go`, `diagnostics` structs, `internal/startuptiming`, `startup_timings.go` facade, `internal/telemetry`, `telemetry.go` facade | split | Gi-specific names are used where the product boundary differs from Pi, with timing and telemetry env parsing behind focused helper packages. |
 | `core/usage-totals.ts` | cumulative billed usage and cost attribution | `usage_totals.go`, `sdk_session.go`, `rpc_session_host.go`, `footer.go` | direct | `llm.Usage` is the single token/cost structure from provider output through persistence, session statistics, RPC projection, and footer rendering. Totals include assistant, tool-result, compaction, and branch-summary usage across the append-only session log. |
@@ -176,6 +179,40 @@ SessionManager locked FileEntry snapshot
 The append-only session log is the sole durable state. Cache notices are pure
 projections: they are neither appended as custom messages nor included in model
 context.
+
+### First-Time Setup State And Data Flow
+
+```text
+distribution + experimental env + agent-dir override + settings existence
+                                   |
+                                   v
+                      FirstTimeSetupEligibility
+                                   |
+                        false -----+----- true
+                        |                  |
+                        v                  v
+                  normal startup   terminal theme detector
+                                           |
+                                           v
+                                FirstTimeSetupState
+                              (step, theme, analytics)
+                                           |
+                                           v
+                                FirstTimeSetupResult
+                                           |
+                                      one lock/write
+                                           v
+                                  SettingsManager
+                          (theme, enableAnalytics, trackingId)
+                                           |
+                                           v
+                                runtime construction
+```
+
+Environment and filesystem discovery end at the immutable eligibility value.
+The component never writes settings, and the coordinator never reconstructs
+selection state from rendered text. `SettingsManager` is the sole persistent
+owner and generates the tracking ID only on the first opt-in.
 
 ### Session Statistics State And Data Flow
 
@@ -605,6 +642,7 @@ RPC/ViewTree/package protocol rather than a TypeScript in-process API.
 - `modes/interactive/components/extension-editor.ts`: `ExtensionEditorComponent`
 - `modes/interactive/components/extension-input.ts`: `ExtensionInputComponent`, `ExtensionInputOptions`
 - `modes/interactive/components/extension-selector.ts`: `ExtensionSelectorComponent`, `ExtensionSelectorOptions`
+- `modes/interactive/components/first-time-setup.ts`: `FirstTimeSetupComponent`, `FirstTimeSetupOptions`, `FirstTimeSetupResult`
 - `modes/interactive/components/footer.ts`: `FooterComponent`
 - `modes/interactive/components/index.ts`: component re-exports, including `AssistantMessageComponent`
 - `modes/interactive/components/keybinding-hints.ts`: `KeyTextFormatOptions`, `formatKeyText`, `keyDisplayText`, `keyHint`, `keyText`, `rawKeyHint`
@@ -765,6 +803,7 @@ shape where Gi uses Go-native or protocol boundaries.
 | `modes/interactive/components/extension-editor.ts` `ExtensionEditorComponent` | `ExtensionEditorComponent.focused`, `ExtensionEditorComponent.constructor`, `ExtensionEditorComponent.handleInput`, `ExtensionEditorComponent.openExternalEditor` | `cli_interactive_tui.go` and focused component files | split | Interactive host and components are split into Go TUI/runtime files; detailed component parity remains screenshot/test driven. |
 | `modes/interactive/components/extension-input.ts` `ExtensionInputComponent` | `ExtensionInputComponent.focused`, `ExtensionInputComponent.constructor`, `ExtensionInputComponent.handleInput`, `ExtensionInputComponent.dispose` | `cli_interactive_tui.go` and focused component files | split | Interactive host and components are split into Go TUI/runtime files; detailed component parity remains screenshot/test driven. |
 | `modes/interactive/components/extension-selector.ts` `ExtensionSelectorComponent` | `ExtensionSelectorComponent.constructor`, `ExtensionSelectorComponent.updateList`, `ExtensionSelectorComponent.handleInput`, `ExtensionSelectorComponent.dispose` | `cli_interactive_tui.go` and focused component files | split | Interactive host and components are split into Go TUI/runtime files; detailed component parity remains screenshot/test driven. |
+| `modes/interactive/components/first-time-setup.ts` `FirstTimeSetupComponent` | `FirstTimeSetupComponent.constructor`, `FirstTimeSetupComponent.update`, `FirstTimeSetupComponent.addOptionList`, `FirstTimeSetupComponent.moveSelection`, `FirstTimeSetupComponent.handleInput` | `first_time_setup.go` `NewFirstTimeSetupComponent`, `FirstTimeSetupComponent.Render`, `FirstTimeSetupComponent.renderOptionList`, `FirstTimeSetupComponent.moveSelection`, `FirstTimeSetupComponent.HandleInput` | direct | One typed `FirstTimeSetupState` owns step, theme, and analytics choice; rendering and submission are projections, while persistence stays in the startup coordinator. |
 | `modes/interactive/components/footer.ts` `FooterComponent` | `FooterComponent.constructor`, `FooterComponent.setSession`, `FooterComponent.setAutoCompactEnabled`, `FooterComponent.invalidate`, `FooterComponent.dispose`, `FooterComponent.render` | `cli_interactive_tui.go` and focused component files | split | Interactive host and components are split into Go TUI/runtime files; detailed component parity remains screenshot/test driven. |
 | `modes/interactive/components/login-dialog.ts` `LoginDialogComponent` | `LoginDialogComponent.focused`, `LoginDialogComponent.constructor`, `LoginDialogComponent.signal`, `LoginDialogComponent.replaceInputWithSubmittedText`, `LoginDialogComponent.cancel`, `LoginDialogComponent.showAuth`, `LoginDialogComponent.showDeviceCode`, `LoginDialogComponent.showManualInput`, `LoginDialogComponent.showPrompt`, `LoginDialogComponent.showDetails`, `LoginDialogComponent.showInfo`, `LoginDialogComponent.showWaiting`, `LoginDialogComponent.showProgress`, `LoginDialogComponent.handleInput` | `login_dialog.go`, `cli_provider_auth_interaction.go`, `cli_interactive_auth.go` | split | The dialog is an ordered presentation state machine for typed provider prompts/events; `context.Context` replaces the JavaScript abort signal, submitted prompt history is retained, and runtime login owns persistence. |
 | `modes/interactive/components/model-selector.ts` `ModelSelectorComponent` | `ModelSelectorComponent.focused`, `ModelSelectorComponent.constructor`, `ModelSelectorComponent.loadModels`, `ModelSelectorComponent.sortModels`, `ModelSelectorComponent.getScopeText`, `ModelSelectorComponent.getScopeHintText`, `ModelSelectorComponent.setScope`, `ModelSelectorComponent.filterModels`, `ModelSelectorComponent.updateList`, `ModelSelectorComponent.handleInput`, `ModelSelectorComponent.handleSelect`, `ModelSelectorComponent.getSearchInput` | `cli_interactive_model.go` and focused component files | split | Interactive model host and components are split into Go TUI/runtime files; detailed component parity remains screenshot/test driven. |
