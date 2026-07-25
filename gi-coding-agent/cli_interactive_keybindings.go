@@ -168,6 +168,16 @@ func (h *CLIInteractiveTUIHost) handleAppActionKey(data string, keybindings Keyb
 		}
 		go h.openExternalEditor()
 		return true
+	case matchesKeybindingAction(data, keybindings, "app.message.copy"):
+		if !h.focusedDefaultEditor() {
+			return false
+		}
+		go func() {
+			if err := h.handleCopySlashCommand(); err != nil {
+				h.addStatus("Error: " + err.Error())
+			}
+		}()
+		return true
 	case matchesKeybindingAction(data, keybindings, "app.suspend"):
 		go h.handleSuspend()
 		return true

@@ -55,10 +55,40 @@ All Pi component names in this table are exact files under
 | `theme-selector.ts` | Theme picker | `gi-coding-agent/cli_interactive_theme_settings.go` settings theme submenu, `interactive_theme_controller.go`, `theme_export.go`, theme tests | consolidated | Pi's standalone component is exported but not mounted directly by interactive mode; the mounted SettingsSelector theme submenu delegates preview and restore to the same state owner used by terminal auto-sync, including current selection, automatic light/dark configuration, preview on selection change, restore on cancel, and Enter/Esc key flow. |
 | `thinking-selector.ts` | Thinking level picker | `gi-coding-agent/model_selector_component.go`, `cli_interactive_model.go`, `model_registry.go` | consolidated | Thinking level selection is integrated with model/scoped-model flows and footer state. |
 | `tool-execution.ts` | Tool call/result UI | `gi-coding-agent/tool_execution_component.go` | direct | Tool arguments, result, expansion, images, and errors are represented. |
-| `tree-selector.ts` | Tree/session branch selector | `gi-coding-agent/tree_selector.go` | direct | Tree navigation and selection behavior are represented. |
+| `tree-selector.ts` | Tree/session branch selector | `gi-coding-agent/tree_selector.go`, `gi-coding-agent/tree_selector_render.go`, `gi-coding-agent/cli_interactive_session.go` | direct | A typed state owns selection, filter, search, folds, and label-time visibility. The derived visible-tree projection owns branch geometry and viewport anchors. Full-content copy crosses the host clipboard boundary; label edits persist through the append-only session manager before the local projection changes. |
 | `user-message-selector.ts` | User message picker | `gi-coding-agent/user_message_selector.go` | direct | User message list selection is represented. |
 | `user-message.ts` | User message boxed render | `gi-coding-agent/message_components.go`, `gi-coding-agent/cli_message_components.go` | direct | Box padding, user message background/text theme, and OSC 133 wrapping are represented. |
 | `visual-truncate.ts` | Visual-width truncation helper | `gi-coding-agent/bash_execution.go` `TruncateToVisualLines`, `gi-tui` text wrapping | direct | Gi mirrors Pi's helper shape: render through a temporary text component with caller-provided horizontal padding, keep the last N visual lines, and report skipped visual-line count. |
+
+## Tree Selector Data Flow
+
+```text
+SessionManager.GetTree()
+          |
+          v
+ immutable node index + active-path order
+          |
+          v
+ treeSelectorState
+ (selection/filter/search/folds/label-time)
+          |
+          v
+ derived visible rows + parent/children indexes
+          |
+          v
+ vertical window + selected-anchor horizontal viewport
+
+copy  ------> host clipboard boundary
+label ------> SessionManager.AppendLabelChange
+                     |
+                     v
+              update local projection
+```
+
+Filtering never mutates the session tree. Empty filters retain the prior
+selection identity, and escaping an active search clears only the query before
+a second escape cancels the selector. Failed label persistence leaves both the
+editor and the rendered tree unchanged.
 
 ## Current UI Finding
 

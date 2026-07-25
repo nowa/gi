@@ -15,253 +15,316 @@ type TreeSelectorFilter string
 const (
 	TreeSelectorDefaultFilter TreeSelectorFilter = "default"
 	TreeSelectorNoToolsFilter TreeSelectorFilter = "no-tools"
-	TreeSelectorUserFilter    TreeSelectorFilter = "user"
-	TreeSelectorLabelFilter   TreeSelectorFilter = "label"
+	TreeSelectorUserFilter    TreeSelectorFilter = "user-only"
+	TreeSelectorLabelFilter   TreeSelectorFilter = "labeled-only"
 	TreeSelectorAllFilter     TreeSelectorFilter = "all"
 )
 
-type TreeSelectorComponent struct {
-	focus               gitui.FocusState
-	roots               []*SessionTreeNode
-	currentLeafID       string
+type treeSelectorState struct {
 	selectedID          string
 	filter              TreeSelectorFilter
-	keybindings         KeybindingsConfig
+	searchQuery         string
 	folded              map[string]bool
-	parent              map[string]string
-	nodes               map[string]*SessionTreeNode
-	activePath          map[string]bool
-	list                *TreeSelectorList
 	showLabelTimestamps bool
-	OnSelect            func(entryID string)
-	OnCancel            func()
+}
+
+type treeSelectorGutter struct {
+	position int
+	show     bool
+}
+
+type treeSelectorFlatNode struct {
+	node               *SessionTreeNode
+	indent             int
+	showConnector      bool
+	isLast             bool
+	gutters            []treeSelectorGutter
+	isVirtualRootChild bool
+}
+
+type treeSelectorViewportRow struct {
+	gutter     string
+	body       string
+	anchorCol  int
+	bodyWidth  int
+	isSelected bool
+}
+
+type treeSelectorLabelEditor struct {
+	entryID string
+	input   *gitui.Input
+}
+
+// TreeSelectorComponent owns the mutable presentation state for session-tree
+// navigation. Session persistence and clipboard I/O stay behind host callbacks.
+type TreeSelectorComponent struct {
+	focus           gitui.FocusState
+	roots           []*SessionTreeNode
+	currentLeafID   string
+	keybindings     KeybindingsConfig
+	maxVisibleLines int
+	parent          map[string]string
+	nodes           map[string]*SessionTreeNode
+	activePath      map[string]bool
+	orderedNodes    []*SessionTreeNode
+	visibleParent   map[string]string
+	visibleChildren map[string][]string
+	multipleRoots   bool
+	state           treeSelectorState
+	list            *TreeSelectorList
+	labelEditor     *treeSelectorLabelEditor
+	OnSelect        func(entryID string)
+	OnCancel        func()
+	OnCopy          func(text *string)
+	OnLabelChange   func(entryID, label string) error
+	OnError         func(error)
 }
 
 type TreeSelectorOptions struct {
-	Keybindings KeybindingsConfig
+	Keybindings     KeybindingsConfig
+	MaxVisibleLines int
 }
 
+// TreeSelectorList exposes the current derived tree projection to callers that
+// need selection, search, copy, or label operations.
 type TreeSelectorList struct {
 	selector *TreeSelectorComponent
-	flat     []*SessionTreeNode
+	flat     []*treeSelectorFlatNode
 	selected int
 }
 
 func NewTreeSelectorComponent(roots []*SessionTreeNode, currentLeafID string, options ...TreeSelectorOptions) *TreeSelectorComponent {
 	keybindings := DefaultProtocolKeybindings()
-	if len(options) > 0 && options[0].Keybindings != nil {
-		keybindings = cloneKeybindingsConfig(options[0].Keybindings)
+	maxVisibleLines := 12
+	if len(options) > 0 {
+		if options[0].Keybindings != nil {
+			keybindings = cloneKeybindingsConfig(options[0].Keybindings)
+		}
+		if options[0].MaxVisibleLines > 0 {
+			maxVisibleLines = max(5, options[0].MaxVisibleLines)
+		}
 	}
 	selector := &TreeSelectorComponent{
-		roots:         roots,
-		currentLeafID: currentLeafID,
-		selectedID:    currentLeafID,
-		filter:        TreeSelectorDefaultFilter,
-		keybindings:   keybindings,
-		folded:        map[string]bool{},
-		parent:        map[string]string{},
-		nodes:         map[string]*SessionTreeNode{},
-		activePath:    map[string]bool{},
+		roots:           roots,
+		currentLeafID:   currentLeafID,
+		keybindings:     keybindings,
+		maxVisibleLines: maxVisibleLines,
+		parent:          map[string]string{},
+		nodes:           map[string]*SessionTreeNode{},
+		activePath:      map[string]bool{},
+		visibleParent:   map[string]string{},
+		visibleChildren: map[string][]string{},
+		state: treeSelectorState{
+			selectedID: currentLeafID,
+			filter:     TreeSelectorDefaultFilter,
+			folded:     map[string]bool{},
+		},
 	}
-	selector.list = &TreeSelectorList{selector: selector}
+	selector.list = &TreeSelectorList{selector: selector, selected: -1}
 	selector.indexTree()
 	selector.rebuild()
 	return selector
 }
 
 func (s *TreeSelectorComponent) GetTreeList() *TreeSelectorList {
+	if s == nil {
+		return nil
+	}
 	return s.list
 }
 
 func (s *TreeSelectorComponent) SetFilter(filter TreeSelectorFilter) {
-	if s == nil {
+	if s != nil {
+		s.setFilter(filter)
+	}
+}
+
+// SetSelectedID moves selection to an entry or its nearest visible ancestor.
+func (s *TreeSelectorComponent) SetSelectedID(entryID string) {
+	if s == nil || strings.TrimSpace(entryID) == "" {
 		return
 	}
-	s.setFilter(filter)
+	s.state.selectedID = strings.TrimSpace(entryID)
+	s.rebuild()
 }
 
 func (s *TreeSelectorComponent) Focused() bool {
-	if s == nil {
-		return false
-	}
-	return s.focus.Focused()
+	return s != nil && s.focus.Focused()
 }
 
 func (s *TreeSelectorComponent) SetFocused(focused bool) {
-	if s != nil {
-		s.focus.SetFocused(focused)
+	if s == nil {
+		return
+	}
+	s.focus.SetFocused(focused)
+	if s.labelEditor != nil {
+		s.labelEditor.input.SetFocused(focused)
 	}
 }
 
 func (s *TreeSelectorComponent) Invalidate() {}
 
-func (s *TreeSelectorComponent) Render(width int) []string {
-	if s == nil {
-		return nil
-	}
-	width = max(24, width)
-	lines := []string{
-		"",
-		treeSelectorBorder(width),
-		gitui.TruncateToWidth(" "+tuiThemeBold("  Session Tree"), width, "", true),
-	}
-	for _, hint := range s.footerHints() {
-		lines = append(lines, gitui.TruncateToWidth(tuiThemeMuted(hint), width, "...", true))
-	}
-	lines = append(lines, gitui.TruncateToWidth("  "+tuiThemeMuted("Type to search:"), width, tuiThemeMuted("..."), true))
-	lines = append(lines,
-		treeSelectorBorder(width),
-		"",
-	)
-	lines = append(lines, s.list.Render(width)...)
-	lines = append(lines, "", treeSelectorBorder(width))
-	return lines
-}
-
-func (s *TreeSelectorComponent) footerHints() []string {
-	keybindings := DefaultProtocolKeybindings()
-	if s != nil && s.keybindings != nil {
-		keybindings = s.keybindings
-	}
-	fold := treeSelectorKeyText(keybindings, "app.tree.foldOrUp")
-	unfold := treeSelectorKeyText(keybindings, "app.tree.unfoldOrDown")
-	editLabel := treeSelectorKeyText(keybindings, "app.tree.editLabel")
-	defaultFilter := treeSelectorKeyText(keybindings, "app.tree.filter.default")
-	noTools := treeSelectorKeyText(keybindings, "app.tree.filter.noTools")
-	user := treeSelectorKeyText(keybindings, "app.tree.filter.userOnly")
-	labels := treeSelectorKeyText(keybindings, "app.tree.filter.labeledOnly")
-	all := treeSelectorKeyText(keybindings, "app.tree.filter.all")
-	cycleForward := treeSelectorKeyText(keybindings, "app.tree.filter.cycleForward")
-	cycleBackward := treeSelectorKeyText(keybindings, "app.tree.filter.cycleBackward")
-	timestamps := treeSelectorKeyText(keybindings, "app.tree.toggleLabelTimestamp")
-	filterKeys := strings.Join(nonEmptyStrings(defaultFilter, noTools, user, labels, all), "/")
-	cycleKeys := strings.Join(nonEmptyStrings(cycleForward, cycleBackward), "/")
-	return []string{
-		fmt.Sprintf("  ↑/↓: move. ←/→: page. %s/%s: fold/branch. %s: label. %s: filters (%s cycle). %s: label time",
-			firstNonEmptyString(fold, "ctrl+left/option+left"),
-			firstNonEmptyString(unfold, "ctrl+right/option+right"),
-			firstNonEmptyString(editLabel, "shift+l"),
-			firstNonEmptyString(filterKeys, "ctrl+d/ctrl+t/ctrl+u/ctrl+l/ctrl+a"),
-			firstNonEmptyString(cycleKeys, "ctrl+o/shift+ctrl+o"),
-			firstNonEmptyString(timestamps, "shift+t"),
-		),
-	}
-}
-
-func treeSelectorKeyText(keybindings KeybindingsConfig, action string) string {
-	return formatHotkeyKeys(keybindingValueKeys(keybindings[action]), false)
-}
-
-func nonEmptyStrings(values ...string) []string {
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			out = append(out, value)
-		}
-	}
-	return out
-}
-
 func (s *TreeSelectorComponent) HandleInput(input string) {
+	if s == nil {
+		return
+	}
+	if s.labelEditor != nil {
+		s.handleLabelEditorInput(input)
+		return
+	}
 	kb := gitui.GetKeybindings()
 	switch {
-	case kb.Matches(input, "tui.select.up") || input == "k":
+	case kb.Matches(input, "tui.select.up"):
 		s.move(-1)
-	case kb.Matches(input, "tui.select.down") || input == "j":
+	case kb.Matches(input, "tui.select.down"):
 		s.move(1)
-	case matchesKeybindingAction(input, s.keybindings, "app.tree.foldOrUp") || input == "\x1b[1;5D" || input == "\x1b[1;3D":
+	case matchesKeybindingAction(input, s.keybindings, "app.tree.foldOrUp"):
 		s.foldOrJumpLeft()
-	case matchesKeybindingAction(input, s.keybindings, "app.tree.unfoldOrDown") || input == "\x1b[1;5C" || input == "\x1b[1;3C":
+	case matchesKeybindingAction(input, s.keybindings, "app.tree.unfoldOrDown"):
 		s.unfoldOrJumpRight()
-	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.userOnly") || input == "\x15":
-		s.setFilter(TreeSelectorUserFilter)
-	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.default") || input == "\x04":
-		s.setFilter(TreeSelectorDefaultFilter)
-	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.noTools"):
-		s.setFilter(TreeSelectorNoToolsFilter)
-	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.labeledOnly") || input == "\x0c":
-		if s.filter == TreeSelectorLabelFilter {
-			s.setFilter(TreeSelectorDefaultFilter)
-		} else {
-			s.setFilter(TreeSelectorLabelFilter)
-		}
-	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.all"):
-		s.setFilter(TreeSelectorAllFilter)
-	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.cycleForward"):
-		s.cycleFilter(1)
-	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.cycleBackward"):
-		s.cycleFilter(-1)
-	case matchesKeybindingAction(input, s.keybindings, "app.tree.toggleLabelTimestamp") || input == "T":
-		s.showLabelTimestamps = !s.showLabelTimestamps
-		s.rebuild()
+	case kb.Matches(input, "tui.editor.cursorLeft") || kb.Matches(input, "tui.select.pageUp"):
+		s.movePage(-1)
+	case kb.Matches(input, "tui.editor.cursorRight") || kb.Matches(input, "tui.select.pageDown"):
+		s.movePage(1)
 	case kb.Matches(input, "tui.select.confirm"):
 		if node := s.list.GetSelectedNode(); node != nil && s.OnSelect != nil {
 			s.OnSelect(node.Entry.ID)
 		}
+	case matchesKeybindingAction(input, s.keybindings, "app.message.copy"):
+		s.list.CopySelected()
 	case kb.Matches(input, "tui.select.cancel"):
-		if s.OnCancel != nil {
+		if s.state.searchQuery != "" {
+			s.state.searchQuery = ""
+			s.clearFolds()
+			s.rebuild()
+		} else if s.OnCancel != nil {
 			s.OnCancel()
-			return
 		}
-		s.folded = map[string]bool{}
-		s.rebuild()
+	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.default"):
+		s.setFilter(TreeSelectorDefaultFilter)
+	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.noTools"):
+		s.toggleFilter(TreeSelectorNoToolsFilter)
+	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.userOnly"):
+		s.toggleFilter(TreeSelectorUserFilter)
+	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.labeledOnly"):
+		s.toggleFilter(TreeSelectorLabelFilter)
+	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.all"):
+		s.toggleFilter(TreeSelectorAllFilter)
+	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.cycleForward"):
+		s.cycleFilter(1)
+	case matchesKeybindingAction(input, s.keybindings, "app.tree.filter.cycleBackward"):
+		s.cycleFilter(-1)
+	case kb.Matches(input, "tui.editor.deleteCharBackward"):
+		runes := []rune(s.state.searchQuery)
+		if len(runes) > 0 {
+			s.state.searchQuery = string(runes[:len(runes)-1])
+			s.clearFolds()
+			s.rebuild()
+		}
+	case matchesKeybindingAction(input, s.keybindings, "app.tree.editLabel"):
+		s.showLabelEditor()
+	case matchesKeybindingAction(input, s.keybindings, "app.tree.toggleLabelTimestamp"):
+		s.state.showLabelTimestamps = !s.state.showLabelTimestamps
 	default:
 		if isTreeSelectorSearchInput(input) {
-			s.folded = map[string]bool{}
+			s.state.searchQuery += input
+			s.clearFolds()
 			s.rebuild()
 		}
 	}
+}
+
+func (s *TreeSelectorComponent) showLabelEditor() {
+	node := s.list.GetSelectedNode()
+	if node == nil {
+		return
+	}
+	input := gitui.NewInput()
+	input.SetText(node.Label)
+	input.SetFocused(s.Focused())
+	s.labelEditor = &treeSelectorLabelEditor{entryID: node.Entry.ID, input: input}
+}
+
+func (s *TreeSelectorComponent) handleLabelEditorInput(input string) {
+	if s == nil || s.labelEditor == nil {
+		return
+	}
+	kb := gitui.GetKeybindings()
+	switch {
+	case kb.Matches(input, "tui.select.confirm"):
+		editor := s.labelEditor
+		label := strings.TrimSpace(editor.input.GetValue())
+		if s.OnLabelChange != nil {
+			if err := s.OnLabelChange(editor.entryID, label); err != nil {
+				if s.OnError != nil {
+					s.OnError(err)
+				}
+				return
+			}
+		}
+		s.list.UpdateNodeLabel(editor.entryID, label)
+		s.hideLabelEditor()
+	case kb.Matches(input, "tui.select.cancel"):
+		s.hideLabelEditor()
+	default:
+		s.labelEditor.input.HandleInput(input)
+	}
+}
+
+func (s *TreeSelectorComponent) hideLabelEditor() {
+	if s != nil {
+		s.labelEditor = nil
+	}
+}
+
+func (l *TreeSelectorList) Invalidate() {}
+
+func (l *TreeSelectorList) GetSearchQuery() string {
+	if l == nil || l.selector == nil {
+		return ""
+	}
+	return l.selector.state.searchQuery
 }
 
 func (l *TreeSelectorList) GetSelectedNode() *SessionTreeNode {
 	if l == nil || l.selected < 0 || l.selected >= len(l.flat) {
 		return nil
 	}
-	return l.flat[l.selected]
+	return l.flat[l.selected].node
 }
 
-func (l *TreeSelectorList) Render(width int) []string {
-	if l == nil {
-		return nil
+func (l *TreeSelectorList) CopySelected() {
+	if l == nil || l.selector == nil || l.selector.OnCopy == nil {
+		return
 	}
-	lines := make([]string, 0, len(l.flat))
-	for _, node := range l.flat {
-		text := treeSelectorNodeText(node)
-		if node.Label != "" {
-			text += " [" + node.Label + "]"
-			if l.selector.showLabelTimestamps && node.LabelTimestamp != "" {
-				text += " " + formatTreeSelectorLabelTimestamp(node.LabelTimestamp) + " [+label time]"
-			}
-		}
-		cursor := "  "
-		if l.selected >= 0 && l.selected < len(l.flat) && l.flat[l.selected] == node {
-			cursor = tuiThemeAccent("› ")
-			text = tuiThemeBold(text)
-		}
-		pathMarker := ""
-		if l.selector != nil && l.selector.activePath[node.Entry.ID] {
-			pathMarker = tuiThemeAccent("• ")
-		}
-		line := cursor + pathMarker + text
-		if l.selected >= 0 && l.selected < len(l.flat) && l.flat[l.selected] == node {
-			line = tuiThemeBG("selectedBg", line)
-		}
-		lines = append(lines, gitui.TruncateToWidth(line, width, "", true))
+	text, ok := l.getEntryCopyText(l.GetSelectedNode())
+	if !ok {
+		l.selector.OnCopy(nil)
+		return
 	}
-	if len(l.flat) == 0 {
-		lines = append(lines, gitui.TruncateToWidth(tuiThemeMuted("  No entries found"), width, "", true))
+	l.selector.OnCopy(&text)
+}
+
+func (l *TreeSelectorList) UpdateNodeLabel(entryID, label string) {
+	if l == nil || l.selector == nil {
+		return
 	}
-	if l.selected >= 0 && len(l.flat) > 0 {
-		lines = append(lines, gitui.TruncateToWidth(tuiThemeMuted("  ("+fmt.Sprintf("%d/%d", l.selected+1, len(l.flat))+")"), width, "", true))
-	} else if len(l.flat) == 0 {
-		lines = append(lines, gitui.TruncateToWidth(tuiThemeMuted("  (0/0)"), width, "", true))
+	node := l.selector.nodes[entryID]
+	if node == nil {
+		return
 	}
-	return lines
+	node.Label = label
+	if label == "" {
+		node.LabelTimestamp = ""
+	} else {
+		node.LabelTimestamp = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	l.selector.rebuild()
 }
 
 func (s *TreeSelectorComponent) indexTree() {
-	var walk func(node *SessionTreeNode, parentID string)
-	walk = func(node *SessionTreeNode, parentID string) {
+	var index func(node *SessionTreeNode, parentID string)
+	index = func(node *SessionTreeNode, parentID string) {
 		if node == nil {
 			return
 		}
@@ -270,81 +333,241 @@ func (s *TreeSelectorComponent) indexTree() {
 			s.parent[node.Entry.ID] = parentID
 		}
 		for _, child := range node.Children {
-			walk(child, node.Entry.ID)
+			index(child, node.Entry.ID)
 		}
 	}
 	for _, root := range s.roots {
-		walk(root, "")
+		index(root, "")
 	}
 	for id := s.currentLeafID; id != ""; id = s.parent[id] {
 		s.activePath[id] = true
 	}
-}
-
-func (s *TreeSelectorComponent) rebuild() {
-	var flat []*SessionTreeNode
-	var walk func(node *SessionTreeNode, hidden bool)
-	walk = func(node *SessionTreeNode, hidden bool) {
-		if node == nil || hidden {
-			return
-		}
-		visible := s.nodeVisible(node)
-		if visible {
-			flat = append(flat, node)
-		}
-		childHidden := visible && s.folded[node.Entry.ID]
-		for _, child := range node.Children {
-			walk(child, childHidden)
-		}
-	}
-	for _, root := range s.roots {
-		walk(root, false)
-	}
-	s.list.flat = flat
-	s.list.selected = s.selectedIndex(flat)
-}
-
-func (s *TreeSelectorComponent) selectedIndex(flat []*SessionTreeNode) int {
-	if len(flat) == 0 {
-		return -1
-	}
-	for index, node := range flat {
-		if node.Entry.ID == s.selectedID {
-			return index
-		}
-	}
-	for id := s.selectedID; id != ""; id = s.parent[id] {
-		for index, node := range flat {
-			if node.Entry.ID == id {
-				s.selectedID = id
-				return index
+	var appendOrdered func(nodes []*SessionTreeNode)
+	appendOrdered = func(nodes []*SessionTreeNode) {
+		for _, active := range []bool{true, false} {
+			for _, node := range nodes {
+				if node == nil || s.activePath[node.Entry.ID] != active {
+					continue
+				}
+				s.orderedNodes = append(s.orderedNodes, node)
+				appendOrdered(node.Children)
 			}
 		}
 	}
-	return 0
+	appendOrdered(s.roots)
+}
+
+func (s *TreeSelectorComponent) rebuild() {
+	if s == nil || s.list == nil {
+		return
+	}
+	flat := make([]*treeSelectorFlatNode, 0, len(s.orderedNodes))
+	for _, node := range s.orderedNodes {
+		if !s.nodeVisible(node) || s.hiddenByFold(node.Entry.ID) {
+			continue
+		}
+		flat = append(flat, &treeSelectorFlatNode{node: node})
+	}
+	s.list.flat = flat
+	s.recalculateVisualStructure()
+	s.list.selected = s.selectedIndex(flat)
+	if s.list.selected >= 0 {
+		s.state.selectedID = flat[s.list.selected].node.Entry.ID
+	}
+}
+
+func (s *TreeSelectorComponent) selectedIndex(flat []*treeSelectorFlatNode) int {
+	if len(flat) == 0 {
+		return -1
+	}
+	indexByID := make(map[string]int, len(flat))
+	for index, node := range flat {
+		indexByID[node.node.Entry.ID] = index
+	}
+	for id := s.state.selectedID; id != ""; id = s.parent[id] {
+		if index, ok := indexByID[id]; ok {
+			return index
+		}
+	}
+	return len(flat) - 1
 }
 
 func (s *TreeSelectorComponent) nodeVisible(node *SessionTreeNode) bool {
 	if node == nil {
 		return false
 	}
-	switch s.filter {
+	entry := node.Entry
+	if entry.Type == "message" &&
+		sessionMessageRole(entry.Message) == llm.RoleAssistant &&
+		entry.ID != s.currentLeafID &&
+		!treeSelectorHasTextContent(entry.Message) {
+		stopReason := treeSelectorMessageStopReason(entry.Message)
+		if stopReason == "" || stopReason == llm.StopReasonStop || stopReason == llm.StopReasonToolUse {
+			return false
+		}
+	}
+	isSettingsEntry := entry.Type == "label" ||
+		entry.Type == "custom" ||
+		entry.Type == "model_change" ||
+		entry.Type == "thinking_level_change" ||
+		entry.Type == "session_info"
+	switch s.state.filter {
 	case TreeSelectorUserFilter:
-		return node.Entry.Type == "message" && sessionMessageRole(node.Entry.Message) == llm.RoleUser
+		if entry.Type != "message" || sessionMessageRole(entry.Message) != llm.RoleUser {
+			return false
+		}
 	case TreeSelectorLabelFilter:
-		return node.Label != ""
+		if node.Label == "" {
+			return false
+		}
+	case TreeSelectorNoToolsFilter:
+		if isSettingsEntry || (entry.Type == "message" && sessionMessageRole(entry.Message) == llm.RoleToolResult) {
+			return false
+		}
 	case TreeSelectorAllFilter:
-		return node.Entry.Type == "message" || node.Entry.Type == "custom_message" || node.Entry.Type == "branch_summary"
-	case TreeSelectorDefaultFilter, TreeSelectorNoToolsFilter:
-		if node.Entry.Type != "message" && node.Entry.Type != "custom_message" && node.Entry.Type != "branch_summary" {
-			return false
-		}
-		if node.Entry.Type == "message" && sessionMessageRole(node.Entry.Message) == llm.RoleAssistant && treeSelectorToolCallOnly(node.Entry.Message) {
-			return false
-		}
-		return true
 	default:
-		return node.Entry.Type == "message" || node.Entry.Type == "custom_message" || node.Entry.Type == "branch_summary"
+		if isSettingsEntry {
+			return false
+		}
+	}
+	tokens := strings.Fields(strings.ToLower(s.state.searchQuery))
+	if len(tokens) == 0 {
+		return true
+	}
+	searchable := strings.ToLower(s.searchableText(node))
+	for _, token := range tokens {
+		if !strings.Contains(searchable, token) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *TreeSelectorComponent) searchableText(node *SessionTreeNode) string {
+	if node == nil {
+		return ""
+	}
+	entry := node.Entry
+	parts := []string{node.Label}
+	switch entry.Type {
+	case "message":
+		parts = append(parts, sessionMessageRole(entry.Message), treeSelectorMessageContent(entry.Message, 1<<20))
+		if sessionMessageRole(entry.Message) == "bashExecution" {
+			parts = append(parts, treeSelectorBashCommand(entry.Message))
+		}
+	case "custom_message":
+		parts = append(parts, entry.CustomType, treeSelectorExtractFullContent(entry.Content))
+	case "compaction":
+		parts = append(parts, "compaction", entry.Summary)
+	case "branch_summary":
+		parts = append(parts, "branch summary", entry.Summary)
+	case "session_info":
+		parts = append(parts, "title", entry.Name)
+	case "model_change":
+		parts = append(parts, "model", entry.ModelID)
+	case "thinking_level_change":
+		parts = append(parts, "thinking", entry.ThinkingLevel)
+	case "custom":
+		parts = append(parts, "custom", entry.CustomType)
+	case "label":
+		parts = append(parts, "label", entry.Label)
+	}
+	return strings.Join(parts, " ")
+}
+
+func (s *TreeSelectorComponent) hiddenByFold(entryID string) bool {
+	for parentID := s.parent[entryID]; parentID != ""; parentID = s.parent[parentID] {
+		if s.state.folded[parentID] {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *TreeSelectorComponent) recalculateVisualStructure() {
+	s.visibleParent = map[string]string{}
+	s.visibleChildren = map[string][]string{"": {}}
+	visible := make(map[string]bool, len(s.list.flat))
+	byID := make(map[string]*treeSelectorFlatNode, len(s.list.flat))
+	for _, node := range s.list.flat {
+		id := node.node.Entry.ID
+		visible[id] = true
+		byID[id] = node
+	}
+	for _, node := range s.list.flat {
+		id := node.node.Entry.ID
+		parentID := s.parent[id]
+		for parentID != "" && !visible[parentID] {
+			parentID = s.parent[parentID]
+		}
+		s.visibleParent[id] = parentID
+		s.visibleChildren[parentID] = append(s.visibleChildren[parentID], id)
+	}
+	roots := s.visibleChildren[""]
+	s.multipleRoots = len(roots) > 1
+	type stackItem struct {
+		id                 string
+		indent             int
+		justBranched       bool
+		showConnector      bool
+		isLast             bool
+		gutters            []treeSelectorGutter
+		isVirtualRootChild bool
+	}
+	stack := make([]stackItem, 0, len(s.list.flat))
+	rootIndent := 0
+	if s.multipleRoots {
+		rootIndent = 1
+	}
+	for index := len(roots) - 1; index >= 0; index-- {
+		stack = append(stack, stackItem{
+			id:                 roots[index],
+			indent:             rootIndent,
+			justBranched:       s.multipleRoots,
+			showConnector:      s.multipleRoots,
+			isLast:             index == len(roots)-1,
+			isVirtualRootChild: s.multipleRoots,
+		})
+	}
+	for len(stack) > 0 {
+		item := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		node := byID[item.id]
+		if node == nil {
+			continue
+		}
+		node.indent = item.indent
+		node.showConnector = item.showConnector
+		node.isLast = item.isLast
+		node.gutters = append([]treeSelectorGutter(nil), item.gutters...)
+		node.isVirtualRootChild = item.isVirtualRootChild
+		children := s.visibleChildren[item.id]
+		multipleChildren := len(children) > 1
+		childIndent := item.indent
+		if multipleChildren || (item.justBranched && item.indent > 0) {
+			childIndent++
+		}
+		childGutters := item.gutters
+		if item.showConnector && !item.isVirtualRootChild {
+			displayIndent := item.indent
+			if s.multipleRoots {
+				displayIndent = max(0, displayIndent-1)
+			}
+			childGutters = append(append([]treeSelectorGutter(nil), item.gutters...), treeSelectorGutter{
+				position: max(0, displayIndent-1),
+				show:     !item.isLast,
+			})
+		}
+		for index := len(children) - 1; index >= 0; index-- {
+			stack = append(stack, stackItem{
+				id:            children[index],
+				indent:        childIndent,
+				justBranched:  multipleChildren,
+				showConnector: multipleChildren,
+				isLast:        index == len(children)-1,
+				gutters:       childGutters,
+			})
+		}
 	}
 }
 
@@ -354,13 +577,34 @@ func (s *TreeSelectorComponent) move(delta int) {
 	}
 	next := (s.list.selected + delta + len(s.list.flat)) % len(s.list.flat)
 	s.list.selected = next
-	s.selectedID = s.list.flat[next].Entry.ID
+	s.state.selectedID = s.list.flat[next].node.Entry.ID
+}
+
+func (s *TreeSelectorComponent) movePage(direction int) {
+	if len(s.list.flat) == 0 {
+		return
+	}
+	next := s.list.selected + direction*s.maxVisibleLines
+	next = max(0, min(next, len(s.list.flat)-1))
+	s.list.selected = next
+	s.state.selectedID = s.list.flat[next].node.Entry.ID
+}
+
+func (s *TreeSelectorComponent) clearFolds() {
+	s.state.folded = map[string]bool{}
 }
 
 func (s *TreeSelectorComponent) setFilter(filter TreeSelectorFilter) {
-	s.filter = filter
-	s.folded = map[string]bool{}
+	s.state.filter = filter
+	s.clearFolds()
 	s.rebuild()
+}
+
+func (s *TreeSelectorComponent) toggleFilter(filter TreeSelectorFilter) {
+	if s.state.filter == filter {
+		filter = TreeSelectorDefaultFilter
+	}
+	s.setFilter(filter)
 }
 
 func (s *TreeSelectorComponent) cycleFilter(delta int) {
@@ -373,13 +617,12 @@ func (s *TreeSelectorComponent) cycleFilter(delta int) {
 	}
 	index := 0
 	for candidateIndex, filter := range order {
-		if s.filter == filter {
+		if s.state.filter == filter {
 			index = candidateIndex
 			break
 		}
 	}
-	next := (index + delta + len(order)) % len(order)
-	s.setFilter(order[next])
+	s.setFilter(order[(index+delta+len(order))%len(order)])
 }
 
 func (s *TreeSelectorComponent) foldOrJumpLeft() {
@@ -387,20 +630,13 @@ func (s *TreeSelectorComponent) foldOrJumpLeft() {
 	if node == nil {
 		return
 	}
-	segment := s.segmentStart(node.Entry.ID)
-	if segment != "" && segment != node.Entry.ID {
-		s.selectID(segment)
-		return
-	}
-	if s.hasVisibleDescendant(node.Entry.ID) && !s.folded[node.Entry.ID] {
-		s.folded[node.Entry.ID] = true
+	id := node.Entry.ID
+	if s.isFoldable(id) && !s.state.folded[id] {
+		s.state.folded[id] = true
 		s.rebuild()
 		return
 	}
-	parent := s.parent[node.Entry.ID]
-	if parent != "" {
-		s.selectID(s.segmentStart(parent))
-	}
+	s.selectVisibleIndex(s.findBranchSegmentStart(-1))
 }
 
 func (s *TreeSelectorComponent) unfoldOrJumpRight() {
@@ -408,127 +644,172 @@ func (s *TreeSelectorComponent) unfoldOrJumpRight() {
 	if node == nil {
 		return
 	}
-	if s.folded[node.Entry.ID] {
-		delete(s.folded, node.Entry.ID)
+	id := node.Entry.ID
+	if s.state.folded[id] {
+		delete(s.state.folded, id)
 		s.rebuild()
 		return
 	}
-	s.selectID(s.deepestSegmentLeaf(node.Entry.ID))
+	s.selectVisibleIndex(s.findBranchSegmentStart(1))
 }
 
-func (s *TreeSelectorComponent) selectID(id string) {
-	if id == "" {
-		return
-	}
-	s.selectedID = id
-	s.rebuild()
-}
-
-func (s *TreeSelectorComponent) segmentStart(id string) string {
-	chain := s.ancestorChain(id)
-	if len(chain) == 0 {
-		return id
-	}
-	segment := chain[0]
-	for index := 1; index < len(chain); index++ {
-		parentID := chain[index-1]
-		if len(s.visibleChildSegments(parentID)) > 1 {
-			segment = chain[index]
-		}
-	}
-	for !s.nodeVisible(s.nodes[segment]) && segment != "" {
-		children := s.visibleChildSegments(segment)
-		if len(children) == 0 {
-			break
-		}
-		segment = children[0].Entry.ID
-	}
-	return segment
-}
-
-func (s *TreeSelectorComponent) deepestSegmentLeaf(id string) string {
-	current := id
-	for {
-		if s.folded[current] {
-			return current
-		}
-		children := s.visibleChildSegments(current)
-		if len(children) == 0 {
-			return current
-		}
-		next := children[0]
-		for _, child := range children {
-			if s.subtreeContainsActivePath(child) {
-				next = child
-				break
-			}
-		}
-		current = next.Entry.ID
-	}
-}
-
-func (s *TreeSelectorComponent) visibleChildSegments(id string) []*SessionTreeNode {
-	node := s.nodes[id]
-	if node == nil {
-		return nil
-	}
-	var result []*SessionTreeNode
-	var collect func(child *SessionTreeNode)
-	collect = func(child *SessionTreeNode) {
-		if child == nil {
-			return
-		}
-		if s.nodeVisible(child) {
-			result = append(result, child)
-			return
-		}
-		for _, grandchild := range child.Children {
-			collect(grandchild)
-		}
-	}
-	for _, child := range node.Children {
-		collect(child)
-	}
-	return result
-}
-
-func (s *TreeSelectorComponent) hasVisibleDescendant(id string) bool {
-	return len(s.visibleChildSegments(id)) > 0
-}
-
-func (s *TreeSelectorComponent) subtreeContainsActivePath(node *SessionTreeNode) bool {
-	if node == nil {
+func (s *TreeSelectorComponent) isFoldable(entryID string) bool {
+	children := s.visibleChildren[entryID]
+	if len(children) == 0 {
 		return false
 	}
-	if s.activePath[node.Entry.ID] {
-		return true
+	parentID := s.visibleParent[entryID]
+	return parentID == "" || len(s.visibleChildren[parentID]) > 1
+}
+
+func (s *TreeSelectorComponent) findBranchSegmentStart(direction int) int {
+	if s.list.selected < 0 || s.list.selected >= len(s.list.flat) {
+		return s.list.selected
 	}
-	for _, child := range node.Children {
-		if s.subtreeContainsActivePath(child) {
-			return true
+	indexByID := make(map[string]int, len(s.list.flat))
+	for index, node := range s.list.flat {
+		indexByID[node.node.Entry.ID] = index
+	}
+	currentID := s.list.flat[s.list.selected].node.Entry.ID
+	if direction > 0 {
+		for {
+			children := s.visibleChildren[currentID]
+			if len(children) == 0 {
+				return indexByID[currentID]
+			}
+			if len(children) > 1 {
+				return indexByID[children[0]]
+			}
+			currentID = children[0]
+		}
+	}
+	for {
+		parentID := s.visibleParent[currentID]
+		if parentID == "" {
+			return indexByID[currentID]
+		}
+		if len(s.visibleChildren[parentID]) > 1 {
+			index := indexByID[currentID]
+			if index < s.list.selected {
+				return index
+			}
+		}
+		currentID = parentID
+	}
+}
+
+func (s *TreeSelectorComponent) selectVisibleIndex(index int) {
+	if index < 0 || index >= len(s.list.flat) {
+		return
+	}
+	s.list.selected = index
+	s.state.selectedID = s.list.flat[index].node.Entry.ID
+}
+
+func isTreeSelectorSearchInput(input string) bool {
+	if input == "" {
+		return false
+	}
+	for _, char := range input {
+		if unicode.IsControl(char) {
+			return false
+		}
+	}
+	return true
+}
+
+func treeSelectorHasTextContent(message any) bool {
+	switch typed := message.(type) {
+	case llm.Message:
+		for _, part := range typed.Content {
+			if part.Type == llm.ContentText && strings.TrimSpace(part.Text) != "" {
+				return true
+			}
+		}
+	case map[string]any:
+		switch content := typed["content"].(type) {
+		case string:
+			return strings.TrimSpace(content) != ""
+		case []llm.ContentPart:
+			for _, part := range content {
+				if part.Type == llm.ContentText && strings.TrimSpace(part.Text) != "" {
+					return true
+				}
+			}
+		case []any:
+			for _, item := range content {
+				block, ok := item.(map[string]any)
+				if !ok || block["type"] != llm.ContentText {
+					continue
+				}
+				text, _ := block["text"].(string)
+				if strings.TrimSpace(text) != "" {
+					return true
+				}
+			}
 		}
 	}
 	return false
 }
 
-func (s *TreeSelectorComponent) ancestorChain(id string) []string {
-	if _, ok := s.nodes[id]; !ok {
-		return nil
+func treeSelectorExtractFullContent(content any) string {
+	switch typed := content.(type) {
+	case string:
+		return typed
+	case []llm.ContentPart:
+		var result strings.Builder
+		for _, part := range typed {
+			if part.Type == llm.ContentText {
+				result.WriteString(part.Text)
+			}
+		}
+		return result.String()
+	case []any:
+		var result strings.Builder
+		for _, item := range typed {
+			block, ok := item.(map[string]any)
+			if !ok || block["type"] != llm.ContentText {
+				continue
+			}
+			text, _ := block["text"].(string)
+			result.WriteString(text)
+		}
+		return result.String()
+	default:
+		return ""
 	}
-	var reverse []string
-	for current := id; current != ""; current = s.parent[current] {
-		reverse = append(reverse, current)
-	}
-	chain := make([]string, len(reverse))
-	for index := range reverse {
-		chain[len(reverse)-1-index] = reverse[index]
-	}
-	return chain
 }
 
-func isTreeSelectorSearchInput(input string) bool {
-	runes := []rune(input)
-	return len(runes) == 1 && unicode.IsPrint(runes[0]) && !unicode.IsControl(runes[0])
+func (l *TreeSelectorList) getEntryCopyText(node *SessionTreeNode) (string, bool) {
+	if node == nil {
+		return "", false
+	}
+	entry := node.Entry
+	var text string
+	switch entry.Type {
+	case "message":
+		if sessionMessageRole(entry.Message) == "bashExecution" {
+			text = treeSelectorBashCommand(entry.Message)
+			break
+		}
+		switch message := entry.Message.(type) {
+		case llm.Message:
+			text = treeSelectorExtractFullContent(message.Content)
+			if text == "" && message.Role == llm.RoleAssistant {
+				text = message.ErrorMessage
+			}
+		case map[string]any:
+			text = treeSelectorExtractFullContent(message["content"])
+			if text == "" && sessionMessageRole(message) == llm.RoleAssistant {
+				text, _ = message["errorMessage"].(string)
+			}
+		}
+	case "custom_message":
+		text = treeSelectorExtractFullContent(entry.Content)
+	case "compaction", "branch_summary":
+		text = entry.Summary
+	}
+	return text, strings.TrimSpace(text) != ""
 }
 
 func treeSelectorToolCallOnly(message any) bool {
@@ -763,11 +1044,23 @@ func extractBashCommandFromExecutionText(text string) string {
 }
 
 func formatTreeSelectorLabelTimestamp(value string) string {
+	return formatTreeSelectorLabelTimestampAt(value, time.Now())
+}
+
+func formatTreeSelectorLabelTimestampAt(value string, now time.Time) string {
 	parsed, err := time.Parse(time.RFC3339Nano, value)
 	if err != nil {
-		return fmt.Sprintf("%s", value)
+		return value
 	}
-	return parsed.Format("1/2 15:04")
+	parsed = parsed.In(time.Local)
+	now = now.In(time.Local)
+	if parsed.Year() == now.Year() && parsed.YearDay() == now.YearDay() {
+		return parsed.Format("15:04")
+	}
+	if parsed.Year() == now.Year() {
+		return parsed.Format("1/2 15:04")
+	}
+	return parsed.Format("06/1/2 15:04")
 }
 
 func treeSelectorBorder(width int) string {

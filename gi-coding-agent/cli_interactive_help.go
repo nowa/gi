@@ -76,6 +76,7 @@ func (h *CLIInteractiveTUIHost) hotkeysMarkdown() string {
 		"| " + hotkeyRef(appKeys("app.tools.expand")) + " | Toggle tool output expansion |",
 		"| " + hotkeyRef(appKeys("app.thinking.toggle")) + " | Toggle thinking block visibility |",
 		"| " + hotkeyRef(appKeys("app.editor.external")) + " | Edit message in external editor |",
+		"| " + hotkeyRef(appKeys("app.message.copy")) + " | Copy last assistant message |",
 		"| " + hotkeyRef(appKeys("app.message.followUp")) + " | Queue follow-up message |",
 		"| " + hotkeyRef(appKeys("app.message.dequeue")) + " | Restore queued messages |",
 		"| " + hotkeyRef(appKeys("app.clipboard.pasteImage")) + " | Paste image from clipboard |",

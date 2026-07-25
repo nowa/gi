@@ -4298,7 +4298,7 @@ func TestCLIInteractiveTUIHostDoubleEscapeOpensTreePiStyle(t *testing.T) {
 	terminal.SendInput("\x1b")
 	terminal.SendInput("\x1b")
 	waitForViewport(t, terminal, "Session Tree")
-	waitForViewport(t, terminal, "fold/branch")
+	waitForViewport(t, terminal, "ctrl+←/→ branch")
 
 	host.Stop()
 	select {
@@ -4903,6 +4903,55 @@ func TestCLIInteractiveTUIHostCtrlGUsesExternalEditorPiStyle(t *testing.T) {
 
 	terminal.SendInput("\x07")
 	waitForEditorText(t, host, "Edited externally")
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostCtrlXCopiesLastMessagePiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	mustPrompt(t, sessionHost.session, "copy keybinding")
+	copied := make(chan string, 1)
+	terminal := gitui.NewVirtualTerminal(120, 24)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+		ClipboardCopy: func(text string) error {
+			copied <- text
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	terminal.SendInput("\x18")
+	select {
+	case text := <-copied:
+		if text != "Response to: copy keybinding" {
+			t.Fatalf("copied = %q", text)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ctrl+x did not reach the clipboard boundary")
+	}
+	waitForViewport(t, terminal, "Copied last agent message to clipboard")
 
 	host.Stop()
 	select {
@@ -8239,12 +8288,80 @@ func TestCLIInteractiveTUIHostTreeSlashUsesTreeSelectorPiStyle(t *testing.T) {
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Session Tree")
 	waitForViewport(t, terminal, "tree second")
-	waitForViewport(t, terminal, "fold/branch")
-	terminal.SendInput("k")
+	waitForViewport(t, terminal, "ctrl+←/→ branch")
+	terminal.SendInput("\x1b[A")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Summarize branch?")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Navigated to selected point")
+
+	host.Stop()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunContext returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interactive TUI host did not stop")
+	}
+}
+
+func TestCLIInteractiveTUIHostTreeCopiesAndPersistsLabelsPiStyle(t *testing.T) {
+	runtimeHost := newOfflineInteractiveRuntimeHost(t)
+	sessionHost, ok := runtimeHost.(*agentSessionPrintModeHost)
+	if !ok {
+		t.Fatalf("runtime host = %T, want *agentSessionPrintModeHost", runtimeHost)
+	}
+	mustPrompt(t, sessionHost.session, "tree clipboard detail")
+	copied := make(chan string, 1)
+	terminal := gitui.NewVirtualTerminal(120, 32)
+	host, err := NewCLIInteractiveTUIHost(CLIInteractiveTUIHostOptions{
+		RuntimeHost: runtimeHost,
+		Terminal:    terminal,
+		ClipboardCopy: func(text string) error {
+			copied <- text
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- host.RunContext(context.Background())
+	}()
+	t.Cleanup(func() { host.Stop() })
+	waitForHostEditor(t, host)
+
+	host.editor.SetText("/tree")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Session Tree")
+	terminal.SendInput("\x18")
+	select {
+	case text := <-copied:
+		if text != "Response to: tree clipboard detail" {
+			t.Fatalf("copied = %q", text)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("tree copy did not reach the clipboard boundary")
+	}
+	terminal.SendInput("L")
+	waitForViewport(t, terminal, "Label (empty to remove):")
+	terminal.SendInput("checkpoint")
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "[checkpoint]")
+
+	var labels []FileEntry
+	for _, entry := range sessionHost.session.SessionManager.GetEntries() {
+		if entry.Type == "label" {
+			labels = append(labels, entry)
+		}
+	}
+	if len(labels) != 1 || labels[0].Label != "checkpoint" {
+		t.Fatalf("label entries = %#v", labels)
+	}
+	terminal.SendInput("\r")
+	waitForViewport(t, terminal, "Already at this point")
 
 	host.Stop()
 	select {
@@ -8399,7 +8516,7 @@ func TestCLIInteractiveTUIHostTreeSlashPromptsForBranchSummaryPiStyle(t *testing
 	host.editor.SetText("/tree")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Session Tree")
-	terminal.SendInput("k")
+	terminal.SendInput("\x1b[A")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Summarize branch?")
 	terminal.SendInput("\x1b[B")
@@ -8454,7 +8571,7 @@ func TestCLIInteractiveTUIHostTreeSlashUsesCustomBranchSummaryInstructionsPiStyl
 	host.editor.SetText("/tree")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Session Tree")
-	terminal.SendInput("k")
+	terminal.SendInput("\x1b[A")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Summarize branch?")
 	terminal.SendInput("\x1b[B")
@@ -8514,7 +8631,7 @@ func TestCLIInteractiveTUIHostTreeSlashEscAbortsBranchSummaryPiStyle(t *testing.
 	host.editor.SetText("/tree")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Session Tree")
-	terminal.SendInput("k")
+	terminal.SendInput("\x1b[A")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Summarize branch?")
 	terminal.SendInput("\x1b[B")
@@ -8574,7 +8691,7 @@ func TestCLIInteractiveTUIHostTreeSlashRespectsSkipSummaryPromptSetting(t *testi
 	host.editor.SetText("/tree")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Session Tree")
-	terminal.SendInput("k")
+	terminal.SendInput("\x1b[A")
 	terminal.SendInput("\r")
 	waitForViewport(t, terminal, "Navigated to selected point")
 

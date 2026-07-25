@@ -528,18 +528,22 @@ func (h *CLIInteractiveTUIHost) handleCopySlashCommand() error {
 		h.addStatus("Error: No agent messages to copy yet.")
 		return nil
 	}
+	if err := h.copyTextToClipboard(*text); err != nil {
+		h.addStatus("Error: " + err.Error())
+		return nil
+	}
+	h.addStatus("Copied last agent message to clipboard")
+	return nil
+}
+
+func (h *CLIInteractiveTUIHost) copyTextToClipboard(text string) error {
 	copyFn := h.clipboardCopy
 	if copyFn == nil {
 		copyFn = func(text string) error {
 			return CopyToClipboard(text, ClipboardCopyOptions{})
 		}
 	}
-	if err := copyFn(*text); err != nil {
-		h.addStatus("Error: " + err.Error())
-		return nil
-	}
-	h.addStatus("Copied last agent message to clipboard")
-	return nil
+	return copyFn(text)
 }
 
 func (h *CLIInteractiveTUIHost) handleCompactSlashCommand(args string) error {
@@ -716,10 +720,14 @@ func (h *CLIInteractiveTUIHost) handleTreeSlashCommand(args string) error {
 	initialSelectedID := entryID
 	for {
 		selectedFromTree := false
+		selectorLeafID := ""
 		if entryID == "" {
 			if h.exitAfterInitial {
 				h.addStatus("Usage: /tree <entry-id>")
 				return nil
+			}
+			if leafID := session.SessionManager.GetLeafID(); leafID != nil {
+				selectorLeafID = *leafID
 			}
 			selectedID, cancelled, err := h.selectTreeEntry(session, initialSelectedID)
 			if err != nil {
@@ -731,7 +739,7 @@ func (h *CLIInteractiveTUIHost) handleTreeSlashCommand(args string) error {
 			entryID = selectedID
 			selectedFromTree = true
 		}
-		if h.treeEntryIsCurrentLeaf(session, entryID) {
+		if (selectedFromTree && entryID == selectorLeafID) || h.treeEntryIsCurrentLeaf(session, entryID) {
 			h.addStatus("Already at this point")
 			return nil
 		}
@@ -854,10 +862,16 @@ func (h *CLIInteractiveTUIHost) selectTreeEntry(session *AgentSession, initialSe
 	if leafID := session.SessionManager.GetLeafID(); leafID != nil {
 		currentLeafID = *leafID
 	}
-	selector := NewTreeSelectorComponent(roots, currentLeafID, TreeSelectorOptions{Keybindings: h.effectiveKeybindings()})
+	maxVisibleLines := 12
+	if h.terminal != nil {
+		maxVisibleLines = max(5, h.terminal.Rows()/2)
+	}
+	selector := NewTreeSelectorComponent(roots, currentLeafID, TreeSelectorOptions{
+		Keybindings:     h.effectiveKeybindings(),
+		MaxVisibleLines: maxVisibleLines,
+	})
 	if len(initialSelectedID) > 0 && strings.TrimSpace(initialSelectedID[0]) != "" {
-		selector.selectedID = strings.TrimSpace(initialSelectedID[0])
-		selector.rebuild()
+		selector.SetSelectedID(initialSelectedID[0])
 	}
 	selector.SetFilter(h.treeSelectorInitialFilter())
 	if len(roots) > 0 && (selector.GetTreeList() == nil || selector.GetTreeList().GetSelectedNode() == nil) {
@@ -873,6 +887,30 @@ func (h *CLIInteractiveTUIHost) selectTreeEntry(session *AgentSession, initialSe
 	}
 	selector.OnCancel = func() {
 		finish(TUIDialogResult{Action: "cancelled"})
+	}
+	selector.OnCopy = func(text *string) {
+		if text == nil {
+			h.addStatus("Error: Selected entry has no text to copy")
+			return
+		}
+		copied := *text
+		go func() {
+			if err := h.copyTextToClipboard(copied); err != nil {
+				h.addStatus("Error: " + err.Error())
+				return
+			}
+			h.addStatus("Copied selected message to clipboard")
+		}()
+	}
+	selector.OnLabelChange = func(entryID, label string) error {
+		_, err := session.SessionManager.AppendLabelChange(entryID, label)
+		if err == nil {
+			h.requestRender(false)
+		}
+		return err
+	}
+	selector.OnError = func(err error) {
+		h.addStatus("Error: " + err.Error())
 	}
 	completion.installRestore(h.showEditorReplacement(selector, selector))
 	result := completion.wait(h.done)
