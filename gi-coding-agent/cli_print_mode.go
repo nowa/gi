@@ -351,6 +351,9 @@ func newDefaultCLIPrintModeHost(args Args, options CLIOptions) (PrintModeRuntime
 						args,
 						cwd,
 						options.ProjectTrustPrompt,
+						defaultProjectTrustInputPrompt(
+							settingsManager,
+						),
 					),
 					OnExtensionError: func(extensionError ProtocolExtensionError) {
 						projectTrustWarnings = append(

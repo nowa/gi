@@ -19,7 +19,8 @@ func newDefaultCLIInteractiveHost(args Args, options CLIOptions) (CLIInteractive
 	interactiveTTY := isCLIInteractiveStdin(options)
 	runtimeOptions := options
 	if interactiveTTY && runtimeOptions.ProjectTrustPrompt == nil {
-		runtimeOptions.ProjectTrustPrompt = defaultCLIProjectTrustPrompt
+		runtimeOptions.ProjectTrustPrompt =
+			defaultCLIProjectTrustPromptWithAgentDir(options.AgentDir)
 	}
 	promptArgs := args
 	stdinContent, err := readCLIPipedStdin(options)

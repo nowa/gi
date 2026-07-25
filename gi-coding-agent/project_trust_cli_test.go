@@ -49,13 +49,19 @@ func TestCLIProtocolProjectTrustContextMatchesModeAndUIAvailability(
 		}
 		return &options[1], nil
 	}
-	interactive := cliProtocolProjectTrustContext(Args{}, cwd, prompt)
+	interactive := cliProtocolProjectTrustContext(
+		Args{},
+		cwd,
+		prompt,
+		nil,
+	)
 	if interactive.CWD != cwd ||
 		interactive.Mode != "interactive" ||
 		!interactive.HasUI ||
 		interactive.Select == nil ||
 		interactive.Confirm == nil ||
 		interactive.Input == nil ||
+		interactive.InputWithPlaceholder == nil ||
 		interactive.Notify == nil {
 		t.Fatalf("interactive context = %#v", interactive)
 	}
@@ -78,11 +84,52 @@ func TestCLIProtocolProjectTrustContextMatchesModeAndUIAvailability(
 		Args{Print: true},
 		cwd,
 		prompt,
+		nil,
 	)
 	if printContext.Mode != "print" ||
 		printContext.HasUI ||
 		printContext.Select != nil {
 		t.Fatalf("print context = %#v", printContext)
+	}
+}
+
+func TestCLIProtocolProjectTrustContextProvidesStartupInputPiStyle(
+	t *testing.T,
+) {
+	var gotTitle string
+	var gotPlaceholder string
+	context := cliProtocolProjectTrustContext(
+		Args{},
+		t.TempDir(),
+		func(
+			_ string,
+			options []ProjectTrustOption,
+		) (*ProjectTrustOption, error) {
+			return &options[0], nil
+		},
+		func(
+			title string,
+			placeholder string,
+		) (string, bool, error) {
+			gotTitle = title
+			gotPlaceholder = placeholder
+			return "typed value", true, nil
+		},
+	)
+	value, err := context.InputWithPlaceholder(
+		"Extension input",
+		"enter value",
+	)
+	if err != nil || value != "typed value" {
+		t.Fatalf("startup input = %q, err = %v", value, err)
+	}
+	if gotTitle != "Extension input" ||
+		gotPlaceholder != "enter value" {
+		t.Fatalf(
+			"startup input request = %q/%q",
+			gotTitle,
+			gotPlaceholder,
+		)
 	}
 }
 

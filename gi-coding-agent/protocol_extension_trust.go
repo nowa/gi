@@ -30,7 +30,10 @@ type ProtocolProjectTrustContext struct {
 	Select  func(prompt string, options []string) (string, error)
 	Confirm func(prompt string) (bool, error)
 	Input   func(prompt string) (string, error)
-	Notify  func(message string) error
+	// InputWithPlaceholder preserves Pi's two-field startup input contract
+	// while Input remains the backward-compatible single-prompt form.
+	InputWithPlaceholder func(title, placeholder string) (string, error)
+	Notify               func(message string) error
 }
 
 // EmitProjectTrustEvent isolates handler failures and returns the first

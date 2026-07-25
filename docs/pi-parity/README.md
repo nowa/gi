@@ -12,19 +12,19 @@ The current debt snapshot is in `v0.82.0-open-gaps.json`.
 ## Why the debt snapshot exists
 
 The source, module-boundary, and test-case verifiers predate Pi v0.82.0. The
-baseline opened with 1,545 audit items; the current snapshot contains 36:
+baseline opened with 1,545 audit items; the current snapshot contains 33:
 
 | Module | Open items |
 | --- | ---: |
 | LLM provider | 0 |
 | Agent core and harness | 0 |
 | TUI | 0 |
-| Coding agent | 36 |
+| Coding agent | 33 |
 
 These are audit items, not 1,545 proven behavioral bugs. A source file, symbol,
 or test remains open until Gi either implements and verifies the behavior,
 records the Go-native equivalent, or makes an explicit product-scope decision.
-The current coding-agent balance is 24 member-level source symbols and 12
+The current coding-agent balance is 21 member-level source symbols and 12
 test-audit items.
 Refreshing the complete v0.82.0 test inventory closes only
 `test-undocumented-file` bookkeeping; it does not by itself claim behavioral

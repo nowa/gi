@@ -30,9 +30,6 @@
       "module": "coding",
       "missingFiles": [],
       "missingSymbols": [
-        "cli/startup-ui.ts::loadStartupThemes",
-        "cli/startup-ui.ts::showStartupInput",
-        "cli/startup-ui.ts::showStartupSelector",
         "config.ts::getEntrypointPackageDir",
         "config.ts::getPathComparisonCandidates",
         "config.ts::normalizeSelfUpdatePackageTarget",

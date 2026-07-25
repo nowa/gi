@@ -1,9 +1,8 @@
 package gicodingagent
 
 import (
+	"context"
 	"fmt"
-	"strconv"
-	"sync"
 
 	gitui "github.com/nowa/gi/gi-tui"
 )
@@ -12,6 +11,11 @@ type cliProjectTrustPromptResult struct {
 	Option   *ProjectTrustOption
 	Selected bool
 }
+
+type projectTrustInputPrompt func(
+	title string,
+	placeholder string,
+) (value string, submitted bool, err error)
 
 // Project trust has one state owner and a one-way startup flow:
 //
@@ -84,65 +88,100 @@ func cliProjectTrustPrompt(options CLIOptions) ProjectTrustPrompt {
 		return options.ProjectTrustPrompt
 	}
 	if isCLIInteractiveStdin(options) {
-		return defaultCLIProjectTrustPrompt
+		return defaultCLIProjectTrustPromptWithAgentDir(options.AgentDir)
 	}
 	return nil
 }
 
 func defaultCLIProjectTrustPrompt(cwd string, options []ProjectTrustOption) (*ProjectTrustOption, error) {
-	result, err := runCLIProjectTrustPrompt(cwd, options, gitui.NewProcessTerminal())
-	if err != nil || !result.Selected {
-		return nil, err
-	}
-	return result.Option, nil
+	return defaultCLIProjectTrustPromptWithAgentDir("")(cwd, options)
 }
 
-func runCLIProjectTrustPrompt(cwd string, options []ProjectTrustOption, terminal gitui.Terminal) (cliProjectTrustPromptResult, error) {
-	if terminal == nil {
-		terminal = gitui.NewProcessTerminal()
+func defaultCLIProjectTrustPromptWithAgentDir(
+	agentDir string,
+) ProjectTrustPrompt {
+	return func(
+		cwd string,
+		options []ProjectTrustOption,
+	) (*ProjectTrustOption, error) {
+		settings := NewSettingsManagerWithOptions(
+			cwd,
+			firstNonEmptyString(agentDir, GetAgentDir(cwd)),
+			SettingsManagerOptions{ProjectTrusted: false},
+		)
+		result, err := runCLIProjectTrustPromptWithSettings(
+			cwd,
+			options,
+			settings,
+			gitui.NewProcessTerminal(),
+		)
+		if err != nil || !result.Selected {
+			return nil, err
+		}
+		return result.Option, nil
 	}
-	resultCh := make(chan cliProjectTrustPromptResult, 1)
-	var finishOnce sync.Once
-	finish := func(result cliProjectTrustPromptResult) {
-		finishOnce.Do(func() {
-			resultCh <- result
-		})
-	}
+}
 
-	dialogOptions := make([]TUIDialogOption, 0, len(options))
-	for index, option := range options {
-		dialogOptions = append(dialogOptions, TUIDialogOption{
-			ID:    strconv.Itoa(index),
-			Label: option.Label,
-			Value: index,
-		})
-	}
-	component := newCLISelectDialog(
-		"Trust project folder?",
-		fmt.Sprintf("%s\n\nThis allows gi to load %s settings and resources, install missing project packages, and execute project extensions.", cwd, ConfigDirName),
-		dialogOptions,
-		0,
-		func(selected TUIDialogOption) {
-			index, err := strconv.Atoi(selected.ID)
-			if err != nil || index < 0 || index >= len(options) {
-				finish(cliProjectTrustPromptResult{})
-				return
-			}
-			option := options[index]
-			finish(cliProjectTrustPromptResult{Option: &option, Selected: true})
-		},
-		func() {
-			finish(cliProjectTrustPromptResult{})
-		},
+func runCLIProjectTrustPrompt(
+	cwd string,
+	options []ProjectTrustOption,
+	terminal gitui.Terminal,
+) (cliProjectTrustPromptResult, error) {
+	settings := NewSettingsManagerWithOptions(
+		cwd,
+		GetAgentDir(cwd),
+		SettingsManagerOptions{ProjectTrusted: false},
 	)
+	return runCLIProjectTrustPromptWithSettings(
+		cwd,
+		options,
+		settings,
+		terminal,
+	)
+}
 
-	ui := gitui.NewTUI(terminal)
-	ui.AddChild(component)
-	ui.SetFocus(component)
-	_ = terminal.ClearScreen()
-	ui.Start()
-	defer ui.Stop()
-	return <-resultCh, nil
+func runCLIProjectTrustPromptWithSettings(
+	cwd string,
+	options []ProjectTrustOption,
+	settings *SettingsManager,
+	terminal gitui.Terminal,
+) (cliProjectTrustPromptResult, error) {
+	selectorOptions := make(
+		[]startupSelectorOption[int],
+		0,
+		len(options),
+	)
+	for index, option := range options {
+		selectorOptions = append(
+			selectorOptions,
+			startupSelectorOption[int]{
+				label: option.Label,
+				value: index,
+			},
+		)
+	}
+	index, selected, err := showStartupSelector(
+		context.Background(),
+		settings,
+		fmt.Sprintf(
+			"Trust project folder?\n%s\n\nThis allows gi to load %s settings and resources, install missing project packages, and execute project extensions.",
+			cwd,
+			ConfigDirName,
+		),
+		selectorOptions,
+		startupTUIOptions{terminal: terminal},
+	)
+	if err != nil {
+		return cliProjectTrustPromptResult{}, err
+	}
+	if !selected || index < 0 || index >= len(options) {
+		return cliProjectTrustPromptResult{}, nil
+	}
+	option := options[index]
+	return cliProjectTrustPromptResult{
+		Option:   &option,
+		Selected: true,
+	}, nil
 }
 
 func projectTrustStartupWarning(cwd string, trusted bool) string {
@@ -156,6 +195,7 @@ func cliProtocolProjectTrustContext(
 	args Args,
 	cwd string,
 	prompt ProjectTrustPrompt,
+	inputPrompt projectTrustInputPrompt,
 ) ProtocolProjectTrustContext {
 	mode := "print"
 	switch {
@@ -189,14 +229,47 @@ func cliProtocolProjectTrustContext(
 		selected, err := context.Select(message, []string{"Yes", "No"})
 		return selected == "Yes", err
 	}
-	context.Input = func(string) (string, error) {
+	inputUnavailable := func() (string, error) {
 		return "", ProtocolRuntimeError{
 			Code:    "ui_unavailable",
 			Message: "project trust text input is not available before TUI startup",
 		}
 	}
+	context.InputWithPlaceholder = func(
+		title string,
+		placeholder string,
+	) (string, error) {
+		if inputPrompt == nil {
+			return inputUnavailable()
+		}
+		value, submitted, err := inputPrompt(title, placeholder)
+		if err != nil || !submitted {
+			return "", err
+		}
+		return value, nil
+	}
+	context.Input = func(title string) (string, error) {
+		return context.InputWithPlaceholder(title, "")
+	}
 	context.Notify = func(string) error {
 		return nil
 	}
 	return context
+}
+
+func defaultProjectTrustInputPrompt(
+	settings *SettingsManager,
+) projectTrustInputPrompt {
+	return func(
+		title string,
+		placeholder string,
+	) (string, bool, error) {
+		return showStartupInput(
+			context.Background(),
+			settings,
+			title,
+			placeholder,
+			startupTUIOptions{},
+		)
+	}
 }

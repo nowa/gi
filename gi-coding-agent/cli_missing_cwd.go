@@ -1,8 +1,8 @@
 package gicodingagent
 
 import (
+	"context"
 	"strings"
-	"sync"
 
 	gitui "github.com/nowa/gi/gi-tui"
 )
@@ -34,7 +34,11 @@ func resolveCLIInteractiveMissingSessionCWDWithTerminal(args Args, options CLIOp
 	if issue == nil {
 		return args, nil, nil
 	}
-	result, err := runCLIMissingSessionCWDPrompt(*issue, terminal)
+	result, err := runCLIMissingSessionCWDPromptWithSettings(
+		*issue,
+		settingsManager,
+		terminal,
+	)
 	if err != nil {
 		return args, nil, err
 	}
@@ -46,42 +50,33 @@ func resolveCLIInteractiveMissingSessionCWDWithTerminal(args Args, options CLIOp
 }
 
 func runCLIMissingSessionCWDPrompt(issue MissingSessionCwdIssue, terminal gitui.Terminal) (cliMissingCwdPromptResult, error) {
-	if terminal == nil {
-		terminal = gitui.NewProcessTerminal()
-	}
-	resultCh := make(chan cliMissingCwdPromptResult, 1)
-	var finishOnce sync.Once
-	finish := func(result cliMissingCwdPromptResult) {
-		finishOnce.Do(func() {
-			resultCh <- result
-		})
-	}
-
-	component := newCLISelectDialog(
-		"Session CWD missing",
-		formatMissingSessionCwdPrompt(issue),
-		[]TUIDialogOption{
-			{ID: "continue", Label: "Continue", Description: issue.FallbackCwd, Value: issue.FallbackCwd},
-			{ID: "cancel", Label: "Cancel", Value: ""},
-		},
-		0,
-		func(option TUIDialogOption) {
-			if option.ID != "continue" {
-				finish(cliMissingCwdPromptResult{})
-				return
-			}
-			finish(cliMissingCwdPromptResult{CWD: dialogStringValue(option.Value), Selected: true})
-		},
-		func() {
-			finish(cliMissingCwdPromptResult{})
-		},
+	return runCLIMissingSessionCWDPromptWithSettings(
+		issue,
+		NewInMemorySettingsManager(nil),
+		terminal,
 	)
+}
 
-	ui := gitui.NewTUI(terminal)
-	ui.AddChild(component)
-	ui.SetFocus(component)
-	_ = terminal.ClearScreen()
-	ui.Start()
-	defer ui.Stop()
-	return <-resultCh, nil
+func runCLIMissingSessionCWDPromptWithSettings(
+	issue MissingSessionCwdIssue,
+	settings *SettingsManager,
+	terminal gitui.Terminal,
+) (cliMissingCwdPromptResult, error) {
+	cwd, selected, err := showStartupSelector(
+		context.Background(),
+		settings,
+		"Session CWD missing\n"+formatMissingSessionCwdPrompt(issue),
+		[]startupSelectorOption[string]{
+			{label: "Continue", value: issue.FallbackCwd},
+			{label: "Cancel"},
+		},
+		startupTUIOptions{terminal: terminal},
+	)
+	if err != nil || !selected || strings.TrimSpace(cwd) == "" {
+		return cliMissingCwdPromptResult{}, err
+	}
+	return cliMissingCwdPromptResult{
+		CWD:      cwd,
+		Selected: true,
+	}, nil
 }
