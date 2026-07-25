@@ -78,6 +78,28 @@ func RegisterOAuthAuthLoader(providerID string, loader OAuthAuthLoader) {
 	oauthAuthLoaders.values[providerID] = loader
 }
 
+// RegisterBundledOAuthFlowLoaders atomically installs a set of statically
+// linked OAuth implementations. A nil loader removes that provider, matching
+// RegisterOAuthAuthLoader while avoiding a partially visible batch.
+func RegisterBundledOAuthFlowLoaders(loaders map[string]OAuthAuthLoader) {
+	if len(loaders) == 0 {
+		return
+	}
+	oauthAuthLoaders.Lock()
+	defer oauthAuthLoaders.Unlock()
+	for providerID, loader := range loaders {
+		providerID = strings.TrimSpace(providerID)
+		if providerID == "" {
+			continue
+		}
+		if loader == nil {
+			delete(oauthAuthLoaders.values, providerID)
+			continue
+		}
+		oauthAuthLoaders.values[providerID] = loader
+	}
+}
+
 // UnregisterOAuthAuthLoader removes one provider's lazy OAuth implementation.
 func UnregisterOAuthAuthLoader(providerID string) {
 	RegisterOAuthAuthLoader(providerID, nil)

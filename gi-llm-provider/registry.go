@@ -172,6 +172,7 @@ func Stream(model Model, llmContext Context, options StreamOptions) (*AssistantM
 		default:
 		}
 	}
+	options = withEnvAPIKey(model, options)
 	provider := GetAPIProvider(model.API)
 	if provider == nil {
 		return nil, fmt.Errorf("no API provider registered for api: %s", model.API)
@@ -205,6 +206,7 @@ func StreamSimple(model Model, llmContext Context, options SimpleStreamOptions) 
 		default:
 		}
 	}
+	options = withEnvAPIKey(model, options)
 	provider := GetAPIProvider(model.API)
 	if provider == nil {
 		return nil, fmt.Errorf("no API provider registered for api: %s", model.API)

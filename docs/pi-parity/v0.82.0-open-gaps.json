@@ -18,13 +18,7 @@
         "api/bedrock-converse-stream.ts",
         "auth/oauth/anthropic.ts",
         "auth/oauth/github-copilot.ts",
-        "auth/oauth/load.ts",
-        "auth/oauth/oauth-page.ts",
-        "auth/oauth/openai-codex.ts",
-        "bun-oauth.ts",
-        "compat.ts",
-        "compat/extension-oauth-types.ts",
-        "legacy-api-aliases.ts"
+        "auth/oauth/openai-codex.ts"
       ],
       "missingSymbols": [
         "api/bedrock-converse-stream.ts::addCustomHeadersMiddleware",
@@ -39,19 +33,13 @@
         "auth/oauth/github-copilot.ts::isSelectableCopilotModel",
         "auth/oauth/github-copilot.ts::parseAvailableCopilotModelIds",
         "auth/oauth/github-copilot.ts::refreshGitHubCopilotAccessToken",
-        "auth/oauth/load.ts::registerBundledOAuthFlowLoaders",
         "auth/oauth/openai-codex.ts::exchangeAuthorizationCodeForCredentials",
         "auth/oauth/openai-codex.ts::fetchWithLoginCancellation",
         "auth/oauth/openai-codex.ts::loginOpenAICodexDeviceCode",
         "auth/oauth/openai-codex.ts::pollOpenAICodexDeviceAuth",
         "auth/oauth/openai-codex.ts::readTokenResponse",
         "auth/oauth/openai-codex.ts::startOpenAICodexDeviceAuth",
-        "bun-oauth.ts::registerBunOAuthFlows",
-        "cli.ts::answerPrompt",
-        "compat.ts::getBuiltinProviderForModel",
-        "compat.ts::hasExplicitApiKey",
-        "compat.ts::hasResolvedCloudflareAuth",
-        "compat.ts::withEnvApiKey"
+        "cli.ts::answerPrompt"
       ]
     },
     {
