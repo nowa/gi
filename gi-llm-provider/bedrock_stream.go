@@ -254,13 +254,13 @@ func streamBedrockConverseEvents(ctx context.Context, model Model, events <-chan
 						stream.Push(AssistantMessageEvent{
 							Type:   "error",
 							Reason: output.StopReason,
-							Error:  output,
+							Error:  cloneMessageState(output),
 						})
 					} else {
 						stream.Push(AssistantMessageEvent{
 							Type:    "done",
 							Reason:  output.StopReason,
-							Message: output,
+							Message: cloneMessageState(output),
 						})
 					}
 				}
@@ -300,6 +300,24 @@ func NewBedrockConverseStreamProcessor(model Model, output *Message) *BedrockCon
 }
 
 func (p *BedrockConverseStreamProcessor) Process(event BedrockConverseStreamEvent) []AssistantMessageEvent {
+	events := p.process(event)
+	for index := range events {
+		switch events[index].Type {
+		case "done":
+			events[index].Message = cloneMessageState(events[index].Message)
+		case "error":
+			events[index].Error = cloneMessageState(events[index].Error)
+		default:
+			events[index].Partial = cloneMessageState(*p.output)
+			events[index].ToolCall = cloneContentPartState(
+				events[index].ToolCall,
+			)
+		}
+	}
+	return events
+}
+
+func (p *BedrockConverseStreamProcessor) process(event BedrockConverseStreamEvent) []AssistantMessageEvent {
 	if event.Error != nil {
 		p.output.StopReason = StopReasonError
 		p.output.ErrorMessage = formatBedrockStreamError(event.Error)

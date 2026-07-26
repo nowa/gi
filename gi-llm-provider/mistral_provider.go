@@ -109,11 +109,14 @@ func firstInt(values ...*int) int {
 }
 
 type mistralStreamProcessor struct {
-	model     Model
-	output    *Message
-	textIndex int
-	toolIndex map[string]int
-	toolArgs  map[string]string
+	model        Model
+	output       *Message
+	currentIndex int
+	currentType  string
+	toolIndex    map[string]int
+	toolArgs     map[string]string
+	toolOrder    []string
+	finished     bool
 }
 
 func NewMistralProvider(client HTTPDoer) MistralProvider {
@@ -185,7 +188,10 @@ func (p MistralProvider) stream(model Model, llmContext Context, options StreamO
 
 func streamMistralBody(model Model, body io.ReadCloser, stream *AssistantMessageEventStream) {
 	output := AssistantMessage(nil, StopReasonStop, model)
-	stream.Push(AssistantMessageEvent{Type: "start", Partial: output})
+	stream.Push(AssistantMessageEvent{
+		Type:    "start",
+		Partial: cloneMessageState(output),
+	})
 	processor := newMistralStreamProcessor(model, &output)
 	terminal := false
 	err := dispatchSSEUntil(body, func(data string) (bool, error) {
@@ -198,6 +204,9 @@ func streamMistralBody(model Model, body io.ReadCloser, stream *AssistantMessage
 			stream.Push(event)
 		}
 		if hasMistralFinishReason(chunk) {
+			for _, event := range processor.Finish() {
+				stream.Push(event)
+			}
 			terminal = true
 			message := processor.Result()
 			if message.StopReason == StopReasonError {
@@ -210,10 +219,19 @@ func streamMistralBody(model Model, body io.ReadCloser, stream *AssistantMessage
 		return false, nil
 	})
 	if err != nil {
-		stream.Push(AssistantMessageEvent{Type: "error", Reason: StopReasonError, Error: AssistantErrorMessage(err.Error(), model, false)})
+		output.StopReason = StopReasonError
+		output.ErrorMessage = err.Error()
+		stream.Push(AssistantMessageEvent{
+			Type:   "error",
+			Reason: StopReasonError,
+			Error:  cloneMessageState(output),
+		})
 		return
 	}
 	if !terminal {
+		for _, event := range processor.Finish() {
+			stream.Push(event)
+		}
 		message := processor.Result()
 		if message.StopReason == StopReasonError {
 			stream.Push(AssistantMessageEvent{Type: "error", Reason: message.StopReason, Error: message})
@@ -225,16 +243,16 @@ func streamMistralBody(model Model, body io.ReadCloser, stream *AssistantMessage
 
 func newMistralStreamProcessor(model Model, output *Message) *mistralStreamProcessor {
 	return &mistralStreamProcessor{
-		model:     model,
-		output:    output,
-		textIndex: -1,
-		toolIndex: map[string]int{},
-		toolArgs:  map[string]string{},
+		model:        model,
+		output:       output,
+		currentIndex: -1,
+		toolIndex:    map[string]int{},
+		toolArgs:     map[string]string{},
 	}
 }
 
 func (p *mistralStreamProcessor) Process(chunk MistralCompletionChunk) []AssistantMessageEvent {
-	if chunk.ID != "" {
+	if chunk.ID != "" && p.output.ResponseID == "" {
 		p.output.ResponseID = chunk.ID
 	}
 	if chunk.Usage != nil {
@@ -252,16 +270,11 @@ func (p *mistralStreamProcessor) Process(chunk MistralCompletionChunk) []Assista
 			p.output.StopReason = mapMistralFinishReason(choice.FinishReason)
 		}
 	}
-	return events
+	return snapshotPartialEvents(events, *p.output)
 }
 
 func (p *mistralStreamProcessor) Result() Message {
-	for key, index := range p.toolIndex {
-		if index >= 0 && index < len(p.output.Content) {
-			p.output.Content[index].Arguments = parseStreamingJSONObject(p.toolArgs[key])
-		}
-	}
-	return *p.output
+	return cloneMessageState(*p.output)
 }
 
 func (p *mistralStreamProcessor) appendContent(raw json.RawMessage) []AssistantMessageEvent {
@@ -292,22 +305,49 @@ func (p *mistralStreamProcessor) appendContent(raw json.RawMessage) []AssistantM
 }
 
 func (p *mistralStreamProcessor) appendText(delta string) []AssistantMessageEvent {
-	if p.textIndex < 0 || p.textIndex >= len(p.output.Content) || p.output.Content[p.textIndex].Type != ContentText {
+	var events []AssistantMessageEvent
+	if p.currentIndex < 0 || p.currentType != ContentText {
+		events = append(events, p.closeCurrent()...)
 		p.output.Content = append(p.output.Content, Text(""))
-		p.textIndex = len(p.output.Content) - 1
+		p.currentIndex = len(p.output.Content) - 1
+		p.currentType = ContentText
+		events = append(events, AssistantMessageEvent{
+			Type:         "text_start",
+			ContentIndex: p.currentIndex,
+		})
 	}
-	p.output.Content[p.textIndex].Text += SanitizeSurrogates(delta)
-	return []AssistantMessageEvent{{Type: "text_delta", Partial: *p.output}}
+	delta = SanitizeSurrogates(delta)
+	p.output.Content[p.currentIndex].Text += delta
+	return append(events, AssistantMessageEvent{
+		Type:         "text_delta",
+		ContentIndex: p.currentIndex,
+		Delta:        delta,
+	})
 }
 
 func (p *mistralStreamProcessor) appendThinking(delta string) []AssistantMessageEvent {
-	part := Thinking(SanitizeSurrogates(delta))
-	part.ThinkingSignature = "mistral_thinking"
-	p.output.Content = append(p.output.Content, part)
-	return []AssistantMessageEvent{{Type: "thinking_delta", Partial: *p.output}}
+	var events []AssistantMessageEvent
+	if p.currentIndex < 0 || p.currentType != ContentThinking {
+		events = append(events, p.closeCurrent()...)
+		p.output.Content = append(p.output.Content, Thinking(""))
+		p.currentIndex = len(p.output.Content) - 1
+		p.currentType = ContentThinking
+		events = append(events, AssistantMessageEvent{
+			Type:         "thinking_start",
+			ContentIndex: p.currentIndex,
+		})
+	}
+	delta = SanitizeSurrogates(delta)
+	p.output.Content[p.currentIndex].Thinking += delta
+	return append(events, AssistantMessageEvent{
+		Type:         "thinking_delta",
+		ContentIndex: p.currentIndex,
+		Delta:        delta,
+	})
 }
 
 func (p *mistralStreamProcessor) appendToolCall(call MistralStreamToolCall) []AssistantMessageEvent {
+	events := p.closeCurrent()
 	key := mistralToolCallKey(call)
 	index, ok := p.toolIndex[key]
 	if !ok {
@@ -318,13 +358,71 @@ func (p *mistralStreamProcessor) appendToolCall(call MistralStreamToolCall) []As
 		p.output.Content = append(p.output.Content, ToolCall(id, call.Function.Name, nil))
 		index = len(p.output.Content) - 1
 		p.toolIndex[key] = index
+		p.toolOrder = append(p.toolOrder, key)
+		events = append(events, AssistantMessageEvent{
+			Type:         "toolcall_start",
+			ContentIndex: index,
+		})
 	}
 	p.toolArgs[key] += call.Function.Arguments
 	p.output.Content[index].Arguments = parseStreamingJSONObject(p.toolArgs[key])
 	if p.output.Content[index].Name == "" && call.Function.Name != "" {
 		p.output.Content[index].Name = call.Function.Name
 	}
-	return []AssistantMessageEvent{{Type: "toolcall_delta", Partial: *p.output}}
+	return append(events, AssistantMessageEvent{
+		Type:         "toolcall_delta",
+		ContentIndex: index,
+		Delta:        call.Function.Arguments,
+	})
+}
+
+func (p *mistralStreamProcessor) Finish() []AssistantMessageEvent {
+	if p.finished {
+		return nil
+	}
+	p.finished = true
+	events := p.closeCurrent()
+	for _, key := range p.toolOrder {
+		index := p.toolIndex[key]
+		if index < 0 || index >= len(p.output.Content) {
+			continue
+		}
+		p.output.Content[index].Arguments = parseStreamingJSONObject(
+			p.toolArgs[key],
+		)
+		events = append(events, AssistantMessageEvent{
+			Type:         "toolcall_end",
+			ContentIndex: index,
+			ToolCall:     cloneContentPartState(p.output.Content[index]),
+		})
+	}
+	return snapshotPartialEvents(events, *p.output)
+}
+
+func (p *mistralStreamProcessor) closeCurrent() []AssistantMessageEvent {
+	if p.currentIndex < 0 || p.currentIndex >= len(p.output.Content) {
+		return nil
+	}
+	index := p.currentIndex
+	part := p.output.Content[index]
+	p.currentIndex = -1
+	p.currentType = ""
+	switch part.Type {
+	case ContentText:
+		return []AssistantMessageEvent{{
+			Type:         "text_end",
+			ContentIndex: index,
+			Content:      part.Text,
+		}}
+	case ContentThinking:
+		return []AssistantMessageEvent{{
+			Type:         "thinking_end",
+			ContentIndex: index,
+			Content:      part.Thinking,
+		}}
+	default:
+		return nil
+	}
 }
 
 func DecodeMistralCompletionChunk(data []byte) (MistralCompletionChunk, error) {

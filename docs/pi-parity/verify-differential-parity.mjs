@@ -221,7 +221,7 @@ function outputText(report) {
 	const lines = [
 		`Pi differential parity: ${report.ok ? "PASS" : "FAIL"}`,
 		`baseline: ${report.baseline.tag} @ ${report.baseline.commit}`,
-		`fixed cases: ${report.counts.fixed} (${report.counts.payload} payload, ${report.counts.fixedCost} cost)`,
+		`fixed cases: ${report.counts.fixed} (${report.counts.payload} payload, ${report.counts.stream} stream, ${report.counts.fixedCost} cost)`,
 		`generated cost cases: ${report.counts.randomCost} (seed ${report.seed})`,
 		`fixture matches: ${report.fixtureComparison.matched}/${report.fixtureComparison.expected}`,
 		`Gi matches Pi: ${report.giComparison.matched}/${report.giComparison.expected}`,
@@ -303,6 +303,7 @@ function main() {
 		counts: {
 			fixed: fixedCases.length,
 			payload: fixedCases.filter((entry) => entry.kind === "payload").length,
+			stream: fixedCases.filter((entry) => entry.kind === "stream").length,
 			fixedCost: fixedCases.filter((entry) => entry.kind === "cost").length,
 			randomCost: randomCases.length,
 			total: allCases.length,

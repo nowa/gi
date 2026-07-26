@@ -161,6 +161,62 @@ function canonicalPayload(api, payload) {
 	}
 }
 
+function removeVolatileFields(value) {
+	if (Array.isArray(value)) {
+		return value.map(removeVolatileFields);
+	}
+	if (value !== null && typeof value === "object") {
+		const contentState =
+			["text", "thinking", "toolCall"].includes(value.type) &&
+			("index" in value || "partialJson" in value);
+		return Object.fromEntries(
+			Object.entries(value)
+				.filter(
+					([key, child]) =>
+						key !== "timestamp" &&
+						!(key === "cacheWrite1h" && child === 0) &&
+						!(contentState && (key === "index" || key === "partialJson")),
+				)
+				.map(([key, child]) => [key, removeVolatileFields(child)]),
+		);
+	}
+	return value;
+}
+
+function chunkedResponse(input) {
+	const bytes = new TextEncoder().encode(input.body ?? "");
+	const pattern = input.chunkPattern?.length ? input.chunkPattern : [bytes.length || 1];
+	for (const size of pattern) {
+		if (!Number.isSafeInteger(size) || size <= 0) {
+			throw new Error(`chunkPattern values must be positive safe integers, got ${JSON.stringify(size)}`);
+		}
+	}
+	let offset = 0;
+	let index = 0;
+	const body = new ReadableStream({
+		pull(controller) {
+			if (offset >= bytes.length) {
+				controller.close();
+				return;
+			}
+			const size = pattern[index % pattern.length];
+			index += 1;
+			const end = Math.min(bytes.length, offset + size);
+			controller.enqueue(bytes.slice(offset, end));
+			offset = end;
+		},
+	});
+	const response = new Response(body, {
+		status: 200,
+		statusText: "OK",
+		headers: { "content-type": "text/event-stream" },
+	});
+	Object.defineProperty(response, "url", {
+		value: input.model?.baseUrl ?? "https://example.invalid",
+	});
+	return response;
+}
+
 function withTimeout(promise, milliseconds, label) {
 	let timeout;
 	const deadline = new Promise((_, reject) => {
@@ -224,6 +280,68 @@ class PiOracle {
 		return withTimeout(captured, 5_000, `${input.api} payload`);
 	}
 
+	async stream(input) {
+		const source = PAYLOAD_MODULES[input.api];
+		if (!source) {
+			throw new Error(`no Pi stream adapter for API ${JSON.stringify(input.api)}`);
+		}
+		const implementation = await this.module(path.join("api", source));
+		if (typeof implementation.streamSimple !== "function") {
+			throw new Error(`${source} does not export streamSimple`);
+		}
+
+		const originalFetch = globalThis.fetch;
+		let restoreBedrock;
+		if (input.api === "bedrock-converse-stream") {
+			const aws = await import("@aws-sdk/client-bedrock-runtime");
+			const originalSend = aws.BedrockRuntimeClient.prototype.send;
+			aws.BedrockRuntimeClient.prototype.send = async () => ({
+				$metadata: { httpStatusCode: 200, requestId: "pi-parity" },
+				stream: {
+					async *[Symbol.asyncIterator]() {
+						for (const event of input.events ?? []) {
+							yield structuredClone(event);
+							// Real AWS event-stream frames arrive on separate I/O
+							// turns. Preserve that boundary so event snapshots do
+							// not depend on microtask scheduling in this oracle.
+							await new Promise((resolve) => setImmediate(resolve));
+						}
+					},
+				},
+			});
+			restoreBedrock = () => {
+				aws.BedrockRuntimeClient.prototype.send = originalSend;
+			};
+		}
+		globalThis.fetch = async () => chunkedResponse(input);
+		try {
+			const options = {
+				...(input.options ?? {}),
+				apiKey: fakeAPIKey(input.api),
+				env:
+					input.api === "bedrock-converse-stream"
+						? { ...(input.options?.env ?? {}), AWS_BEDROCK_SKIP_AUTH: "1" }
+						: input.options?.env,
+			};
+			const stream = implementation.streamSimple(input.model, input.context, options);
+			const events = [];
+			await withTimeout(
+				(async () => {
+					for await (const event of stream) {
+						events.push(removeVolatileFields(jsonValue(event)));
+					}
+				})(),
+				5_000,
+				`${input.api} events`,
+			);
+			const result = await withTimeout(stream.result(), 1_000, `${input.api} result`);
+			return removeVolatileFields(jsonValue({ events, result }));
+		} finally {
+			restoreBedrock?.();
+			globalThis.fetch = originalFetch;
+		}
+	}
+
 	async execute(request) {
 		const result = {
 			schemaVersion: SCHEMA_VERSION,
@@ -240,6 +358,9 @@ class PiOracle {
 					break;
 				case "payload":
 					result.output = await this.payload(request.input);
+					break;
+				case "stream":
+					result.output = await this.stream(request.input);
 					break;
 				default:
 					throw new Error(`unsupported conformance kind ${JSON.stringify(request.kind)}`);

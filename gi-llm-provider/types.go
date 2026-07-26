@@ -74,6 +74,58 @@ type ContentPart struct {
 	ThoughtSignature  string         `json:"thoughtSignature,omitempty"`
 }
 
+// MarshalJSON projects the unified content state onto Pi's discriminated
+// content union, retaining required empty values at stream-start boundaries.
+func (p ContentPart) MarshalJSON() ([]byte, error) {
+	switch p.Type {
+	case ContentText:
+		return json.Marshal(struct {
+			Type          string `json:"type"`
+			Text          string `json:"text"`
+			TextSignature string `json:"textSignature,omitempty"`
+		}{Type: p.Type, Text: p.Text, TextSignature: p.TextSignature})
+	case ContentThinking:
+		return json.Marshal(struct {
+			Type              string `json:"type"`
+			Thinking          string `json:"thinking"`
+			ThinkingSignature string `json:"thinkingSignature,omitempty"`
+			Redacted          bool   `json:"redacted,omitempty"`
+		}{
+			Type:              p.Type,
+			Thinking:          p.Thinking,
+			ThinkingSignature: p.ThinkingSignature,
+			Redacted:          p.Redacted,
+		})
+	case ContentImage:
+		return json.Marshal(struct {
+			Type     string `json:"type"`
+			Data     string `json:"data"`
+			MIMEType string `json:"mimeType"`
+		}{Type: p.Type, Data: p.Data, MIMEType: p.MIMEType})
+	case ContentToolCall:
+		arguments := p.Arguments
+		if arguments == nil {
+			arguments = map[string]any{}
+		}
+		return json.Marshal(struct {
+			Type             string         `json:"type"`
+			ID               string         `json:"id"`
+			Name             string         `json:"name"`
+			Arguments        map[string]any `json:"arguments"`
+			ThoughtSignature string         `json:"thoughtSignature,omitempty"`
+		}{
+			Type:             p.Type,
+			ID:               p.ID,
+			Name:             p.Name,
+			Arguments:        arguments,
+			ThoughtSignature: p.ThoughtSignature,
+		})
+	default:
+		type contentJSON ContentPart
+		return json.Marshal(contentJSON(p))
+	}
+}
+
 func Text(text string) ContentPart {
 	return ContentPart{Type: ContentText, Text: text}
 }
@@ -106,7 +158,7 @@ type Message struct {
 	StopReason     string                       `json:"stopReason,omitempty"`
 	ErrorMessage   string                       `json:"errorMessage,omitempty"`
 	ResponseID     string                       `json:"responseId,omitempty"`
-	ToolCallID     string                       `json:"toolCallID,omitempty"`
+	ToolCallID     string                       `json:"toolCallId,omitempty"`
 	ToolName       string                       `json:"toolName,omitempty"`
 	CustomType     string                       `json:"customType,omitempty"`
 	Display        *bool                        `json:"display,omitempty"`
@@ -120,23 +172,75 @@ type Message struct {
 // required even when empty; user messages never carry usage; tool results
 // carry it only when present.
 func (m Message) MarshalJSON() ([]byte, error) {
-	type messageJSON Message
-
-	var usage *Usage
-	switch {
-	case m.Role == RoleAssistant:
-		usage = &m.Usage
-	case m.Role != RoleUser && m.Usage != (Usage{}):
-		usage = &m.Usage
+	content := m.Content
+	if content == nil {
+		content = []ContentPart{}
 	}
-
-	return json.Marshal(struct {
-		messageJSON
-		Usage *Usage `json:"usage,omitempty"`
-	}{
-		messageJSON: messageJSON(m),
-		Usage:       usage,
-	})
+	switch m.Role {
+	case RoleUser:
+		return json.Marshal(struct {
+			Role      string        `json:"role"`
+			Content   []ContentPart `json:"content"`
+			Timestamp int64         `json:"timestamp"`
+		}{Role: m.Role, Content: content, Timestamp: m.Timestamp})
+	case RoleAssistant:
+		return json.Marshal(struct {
+			Role          string                       `json:"role"`
+			Content       []ContentPart                `json:"content"`
+			API           string                       `json:"api"`
+			Provider      string                       `json:"provider"`
+			Model         string                       `json:"model"`
+			ResponseModel string                       `json:"responseModel,omitempty"`
+			ResponseID    string                       `json:"responseId,omitempty"`
+			Diagnostics   []AssistantMessageDiagnostic `json:"diagnostics,omitempty"`
+			Usage         Usage                        `json:"usage"`
+			StopReason    string                       `json:"stopReason"`
+			ErrorMessage  string                       `json:"errorMessage,omitempty"`
+			Timestamp     int64                        `json:"timestamp"`
+		}{
+			Role:          m.Role,
+			Content:       content,
+			API:           m.API,
+			Provider:      m.Provider,
+			Model:         m.Model,
+			ResponseModel: m.ResponseModel,
+			ResponseID:    m.ResponseID,
+			Diagnostics:   m.Diagnostics,
+			Usage:         m.Usage,
+			StopReason:    m.StopReason,
+			ErrorMessage:  m.ErrorMessage,
+			Timestamp:     m.Timestamp,
+		})
+	case RoleToolResult:
+		var usage *Usage
+		if m.Usage != (Usage{}) {
+			usage = &m.Usage
+		}
+		return json.Marshal(struct {
+			Role           string        `json:"role"`
+			ToolCallID     string        `json:"toolCallId"`
+			ToolName       string        `json:"toolName"`
+			Content        []ContentPart `json:"content"`
+			Details        any           `json:"details,omitempty"`
+			Usage          *Usage        `json:"usage,omitempty"`
+			AddedToolNames []string      `json:"addedToolNames,omitempty"`
+			IsError        bool          `json:"isError"`
+			Timestamp      int64         `json:"timestamp"`
+		}{
+			Role:           m.Role,
+			ToolCallID:     m.ToolCallID,
+			ToolName:       m.ToolName,
+			Content:        content,
+			Details:        m.Details,
+			Usage:          usage,
+			AddedToolNames: m.AddedToolNames,
+			IsError:        m.IsError,
+			Timestamp:      m.Timestamp,
+		})
+	default:
+		type messageJSON Message
+		return json.Marshal(messageJSON(m))
+	}
 }
 
 func NowMillis() int64 {
@@ -309,15 +413,121 @@ type StreamOptions struct {
 type SimpleStreamOptions = StreamOptions
 
 type AssistantMessageEvent struct {
-	Type         string      `json:"type"`
-	Partial      Message     `json:"partial,omitempty"`
-	Message      Message     `json:"message,omitempty"`
-	Error        Message     `json:"error,omitempty"`
-	Reason       string      `json:"reason,omitempty"`
-	ContentIndex int         `json:"contentIndex,omitempty"`
-	Delta        string      `json:"delta,omitempty"`
-	Content      string      `json:"content,omitempty"`
-	ToolCall     ContentPart `json:"toolCall,omitempty"`
+	Type             string      `json:"type"`
+	Partial          Message     `json:"partial,omitempty"`
+	Message          Message     `json:"message,omitempty"`
+	Error            Message     `json:"error,omitempty"`
+	Reason           string      `json:"reason,omitempty"`
+	ContentIndex     int         `json:"contentIndex,omitempty"`
+	Delta            string      `json:"delta,omitempty"`
+	Content          string      `json:"content,omitempty"`
+	ContentSignature string      `json:"contentSignature,omitempty"`
+	Redacted         *bool       `json:"redacted,omitempty"`
+	ID               string      `json:"id,omitempty"`
+	ToolName         string      `json:"toolName,omitempty"`
+	ToolCall         ContentPart `json:"toolCall,omitempty"`
+}
+
+// MarshalJSON projects the unified Go event state onto Pi's discriminated
+// event union. In particular, contentIndex must remain present when it is zero,
+// while inactive message fields must not leak onto another event variant.
+func (e AssistantMessageEvent) MarshalJSON() ([]byte, error) {
+	switch e.Type {
+	case "start":
+		return json.Marshal(struct {
+			Type    string  `json:"type"`
+			Partial Message `json:"partial"`
+		}{Type: e.Type, Partial: e.Partial})
+	case "text_start", "thinking_start":
+		return json.Marshal(struct {
+			Type         string  `json:"type"`
+			ContentIndex int     `json:"contentIndex"`
+			Partial      Message `json:"partial"`
+		}{Type: e.Type, ContentIndex: e.ContentIndex, Partial: e.Partial})
+	case "toolcall_start":
+		return json.Marshal(struct {
+			Type         string  `json:"type"`
+			ContentIndex int     `json:"contentIndex"`
+			ID           string  `json:"id,omitempty"`
+			ToolName     string  `json:"toolName,omitempty"`
+			Partial      Message `json:"partial"`
+		}{
+			Type:         e.Type,
+			ContentIndex: e.ContentIndex,
+			ID:           e.ID,
+			ToolName:     e.ToolName,
+			Partial:      e.Partial,
+		})
+	case "text_delta", "thinking_delta", "toolcall_delta":
+		return json.Marshal(struct {
+			Type         string  `json:"type"`
+			ContentIndex int     `json:"contentIndex"`
+			Delta        string  `json:"delta"`
+			Partial      Message `json:"partial"`
+		}{
+			Type:         e.Type,
+			ContentIndex: e.ContentIndex,
+			Delta:        e.Delta,
+			Partial:      e.Partial,
+		})
+	case "text_end":
+		return json.Marshal(struct {
+			Type             string  `json:"type"`
+			ContentIndex     int     `json:"contentIndex"`
+			Content          string  `json:"content"`
+			ContentSignature string  `json:"contentSignature,omitempty"`
+			Partial          Message `json:"partial"`
+		}{
+			Type:             e.Type,
+			ContentIndex:     e.ContentIndex,
+			Content:          e.Content,
+			ContentSignature: e.ContentSignature,
+			Partial:          e.Partial,
+		})
+	case "thinking_end":
+		return json.Marshal(struct {
+			Type             string  `json:"type"`
+			ContentIndex     int     `json:"contentIndex"`
+			Content          string  `json:"content"`
+			ContentSignature string  `json:"contentSignature,omitempty"`
+			Redacted         *bool   `json:"redacted,omitempty"`
+			Partial          Message `json:"partial"`
+		}{
+			Type:             e.Type,
+			ContentIndex:     e.ContentIndex,
+			Content:          e.Content,
+			ContentSignature: e.ContentSignature,
+			Redacted:         e.Redacted,
+			Partial:          e.Partial,
+		})
+	case "toolcall_end":
+		return json.Marshal(struct {
+			Type         string      `json:"type"`
+			ContentIndex int         `json:"contentIndex"`
+			ToolCall     ContentPart `json:"toolCall"`
+			Partial      Message     `json:"partial"`
+		}{
+			Type:         e.Type,
+			ContentIndex: e.ContentIndex,
+			ToolCall:     e.ToolCall,
+			Partial:      e.Partial,
+		})
+	case "done":
+		return json.Marshal(struct {
+			Type    string  `json:"type"`
+			Reason  string  `json:"reason"`
+			Message Message `json:"message"`
+		}{Type: e.Type, Reason: e.Reason, Message: e.Message})
+	case "error":
+		return json.Marshal(struct {
+			Type   string  `json:"type"`
+			Reason string  `json:"reason"`
+			Error  Message `json:"error"`
+		}{Type: e.Type, Reason: e.Reason, Error: e.Error})
+	default:
+		type eventJSON AssistantMessageEvent
+		return json.Marshal(eventJSON(e))
+	}
 }
 
 type ConstrainedSamplingType string

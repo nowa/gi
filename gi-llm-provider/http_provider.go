@@ -1,7 +1,6 @@
 package gillmprovider
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -11,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/nowa/gi/gi-llm-provider/internal/sse"
 )
 
 type HTTPDoer interface {
@@ -132,69 +133,71 @@ func streamError(model Model, format string, args ...any) *AssistantMessageEvent
 }
 
 func dispatchSSE(body io.ReadCloser, handle func(data string) error) error {
-	return dispatchNamedSSE(body, func(_ string, data string) error {
+	return dispatchNamedSSEWithEOF(body, false, func(_ string, data string) error {
 		return handle(data)
 	})
 }
 
 func dispatchSSEUntil(body io.ReadCloser, handle func(data string) (bool, error)) error {
-	return dispatchNamedSSEUntil(body, func(_ string, data string) (bool, error) {
+	return dispatchNamedSSEUntilWithEOF(body, false, func(_ string, data string) (bool, error) {
+		return handle(data)
+	})
+}
+
+func dispatchSSEUntilEOF(body io.ReadCloser, handle func(data string) (bool, error)) error {
+	return dispatchNamedSSEUntilWithEOF(body, true, func(_ string, data string) (bool, error) {
 		return handle(data)
 	})
 }
 
 func dispatchNamedSSE(body io.ReadCloser, handle func(event, data string) error) error {
-	return dispatchNamedSSEUntil(body, func(event, data string) (bool, error) {
+	return dispatchNamedSSEWithEOF(body, true, handle)
+}
+
+func dispatchNamedSSEWithEOF(
+	body io.ReadCloser,
+	flushOnEOF bool,
+	handle func(event, data string) error,
+) error {
+	return dispatchNamedSSEUntilWithEOF(body, flushOnEOF, func(event, data string) (bool, error) {
 		err := handle(event, data)
 		return false, err
 	})
 }
 
 func dispatchNamedSSEUntil(body io.ReadCloser, handle func(event, data string) (bool, error)) error {
+	return dispatchNamedSSEUntilWithEOF(body, true, handle)
+}
+
+func dispatchNamedSSEUntilWithEOF(
+	body io.ReadCloser,
+	flushOnEOF bool,
+	handle func(event, data string) (bool, error),
+) error {
 	defer body.Close()
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	var dataLines []string
-	eventName := ""
-	flush := func() (bool, error) {
-		if len(dataLines) == 0 {
-			eventName = ""
-			return false, nil
+	decoder := sse.NewDecoderWithOptions(body, sse.Options{
+		MaxEventBytes: sse.DefaultMaxEventBytes,
+		FlushOnEOF:    flushOnEOF,
+	})
+	for {
+		event, err := decoder.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
 		}
-		data := strings.Join(dataLines, "\n")
-		dataLines = nil
-		event := eventName
-		eventName = ""
-		if strings.TrimSpace(data) == "[DONE]" {
-			return false, nil
+		if err != nil {
+			return err
 		}
-		return handle(event, data)
-	}
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			stop, err := flush()
-			if err != nil {
-				return err
-			}
-			if stop {
-				return nil
-			}
+		if strings.TrimSpace(event.Data) == "[DONE]" {
 			continue
 		}
-		if strings.HasPrefix(line, "data:") {
-			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-			continue
+		stop, err := handle(event.Name, event.Data)
+		if err != nil {
+			return err
 		}
-		if strings.HasPrefix(line, "event:") {
-			eventName = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+		if stop {
+			return nil
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-	_, err := flush()
-	return err
 }
 
 func responseHeaders(headers http.Header) map[string]string {

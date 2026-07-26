@@ -166,7 +166,7 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 				Type:         "text_delta",
 				ContentIndex: slot.index,
 				Delta:        event.Delta,
-				Partial:      *p.output,
+				Partial:      cloneMessageState(*p.output),
 			}}
 		}
 	case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
@@ -180,7 +180,7 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 				Type:         "thinking_delta",
 				ContentIndex: slot.index,
 				Delta:        event.Delta,
-				Partial:      *p.output,
+				Partial:      cloneMessageState(*p.output),
 			}}
 		}
 	case "response.reasoning_summary_part.added":
@@ -199,7 +199,7 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 				Type:         "thinking_delta",
 				ContentIndex: slot.index,
 				Delta:        "\n\n",
-				Partial:      *p.output,
+				Partial:      cloneMessageState(*p.output),
 			}}
 		}
 	case "response.function_call_arguments.delta":
@@ -211,7 +211,7 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 				Type:         "toolcall_delta",
 				ContentIndex: slot.index,
 				Delta:        event.Delta,
-				Partial:      *p.output,
+				Partial:      cloneMessageState(*p.output),
 			}}
 		}
 	case "response.function_call_arguments.done":
@@ -227,7 +227,7 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 						Type:         "toolcall_delta",
 						ContentIndex: slot.index,
 						Delta:        delta,
-						Partial:      *p.output,
+						Partial:      cloneMessageState(*p.output),
 					}}
 				}
 			}
@@ -269,7 +269,7 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 			return append(emitted, AssistantMessageEvent{
 				Type:         "thinking_end",
 				ContentIndex: slot.index,
-				Partial:      *p.output,
+				Partial:      cloneMessageState(*p.output),
 				Content:      p.output.Content[slot.index].Thinking,
 			})
 		}
@@ -287,7 +287,7 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 				Type:         "text_end",
 				ContentIndex: slot.index,
 				Content:      p.output.Content[slot.index].Text,
-				Partial:      *p.output,
+				Partial:      cloneMessageState(*p.output),
 			})
 		}
 		if event.Item.Type == "function_call" {
@@ -307,7 +307,7 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 				Type:         "toolcall_end",
 				ContentIndex: slot.index,
 				ToolCall:     toolCall,
-				Partial:      *p.output,
+				Partial:      cloneMessageState(*p.output),
 			})
 		}
 		if event.Item.Type == "custom_tool_call" {
@@ -329,7 +329,7 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 				Type:         "toolcall_end",
 				ContentIndex: slot.index,
 				ToolCall:     toolCall,
-				Partial:      *p.output,
+				Partial:      cloneMessageState(*p.output),
 			})
 		}
 	case "response.completed", "response.incomplete", "response.failed":
@@ -408,7 +408,7 @@ func (p *OpenAIResponsesStreamProcessor) createOutputSlot(
 	return slot, []AssistantMessageEvent{{
 		Type:         eventType,
 		ContentIndex: slot.index,
-		Partial:      *p.output,
+		Partial:      cloneMessageState(*p.output),
 	}}
 }
 
@@ -472,7 +472,7 @@ func (p *OpenAIResponsesStreamProcessor) appendCustomToolInput(
 		Type:         "toolcall_delta",
 		ContentIndex: slot.index,
 		Delta:        delta,
-		Partial:      *p.output,
+		Partial:      cloneMessageState(*p.output),
 	}}
 }
 

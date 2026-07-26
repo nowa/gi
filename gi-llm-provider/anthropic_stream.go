@@ -27,14 +27,21 @@ type rawAnthropicEvent struct {
 		Data  string         `json:"data"`
 	} `json:"content_block"`
 	Delta struct {
-		Type        string `json:"type"`
-		Text        string `json:"text"`
-		Thinking    string `json:"thinking"`
-		Signature   string `json:"signature"`
-		PartialJSON string `json:"partial_json"`
-		StopReason  string `json:"stop_reason"`
+		Type        string                `json:"type"`
+		Text        string                `json:"text"`
+		Thinking    string                `json:"thinking"`
+		Signature   string                `json:"signature"`
+		PartialJSON string                `json:"partial_json"`
+		StopReason  string                `json:"stop_reason"`
+		StopDetails *anthropicStopDetails `json:"stop_details"`
 	} `json:"delta"`
 	Usage *anthropicWireUsage `json:"usage"`
+}
+
+type anthropicStopDetails struct {
+	Type        string `json:"type"`
+	Category    string `json:"category"`
+	Explanation string `json:"explanation"`
 }
 
 type AnthropicRawUsage struct {
@@ -74,82 +81,208 @@ type anthropicWireOutputTokensDetails struct {
 }
 
 func ProcessAnthropicSSEEvents(model Model, events []AnthropicSSEEvent) (Message, error) {
-	output := AssistantMessage(nil, StopReasonStop, model)
-	partialJSONByIndex := map[int]string{}
-	contentIndexByEventIndex := map[int]int{}
-	stopped := false
+	processor := NewAnthropicStreamProcessor(model)
 	for _, sse := range events {
-		if stopped {
-			continue
-		}
-		if sse.Event == "message_stop" {
-			stopped = true
-			continue
-		}
-		if sse.Event == "done" || sse.Data == "[DONE]" || !isAnthropicMessageSSEEvent(sse.Event) {
-			continue
-		}
-		var event rawAnthropicEvent
-		if err := UnmarshalJSONWithRepair([]byte(sse.Data), &event); err != nil {
-			return output, err
-		}
-		switch event.Type {
-		case "message_start":
-			output.ResponseID = event.Message.ID
-			output.Usage = mergeAnthropicWireUsage(output.Usage, event.Message.Usage, model)
-		case "content_block_start":
-			switch event.ContentBlock.Type {
-			case "text":
-				output.Content = append(output.Content, Text(event.ContentBlock.Text))
-				contentIndexByEventIndex[event.Index] = len(output.Content) - 1
-			case "thinking":
-				output.Content = append(output.Content, Thinking(""))
-				contentIndexByEventIndex[event.Index] = len(output.Content) - 1
-			case "redacted_thinking":
-				output.Content = append(output.Content, ContentPart{
-					Type:              ContentThinking,
-					Thinking:          "[Reasoning redacted]",
-					ThinkingSignature: event.ContentBlock.Data,
-					Redacted:          true,
-				})
-				contentIndexByEventIndex[event.Index] = len(output.Content) - 1
-			case "tool_use":
-				output.Content = append(output.Content, ToolCall(event.ContentBlock.ID, event.ContentBlock.Name, event.ContentBlock.Input))
-				contentIndexByEventIndex[event.Index] = len(output.Content) - 1
-				partialJSONByIndex[event.Index] = ""
-			}
-		case "content_block_delta":
-			contentIndex, ok := contentIndexByEventIndex[event.Index]
-			if !ok || contentIndex < 0 || contentIndex >= len(output.Content) {
-				continue
-			}
-			block := &output.Content[contentIndex]
-			switch event.Delta.Type {
-			case "text_delta":
-				block.Text += SanitizeSurrogates(event.Delta.Text)
-			case "thinking_delta":
-				block.Thinking += SanitizeSurrogates(event.Delta.Thinking)
-			case "signature_delta":
-				block.ThinkingSignature += event.Delta.Signature
-			case "input_json_delta":
-				partialJSONByIndex[event.Index] += event.Delta.PartialJSON
-				block.Arguments = parseJSONRepairObject(partialJSONByIndex[event.Index])
-			}
-		case "content_block_stop":
-			contentIndex, ok := contentIndexByEventIndex[event.Index]
-			if ok && contentIndex >= 0 && contentIndex < len(output.Content) {
-				if partial := partialJSONByIndex[event.Index]; partial != "" {
-					output.Content[contentIndex].Arguments = parseJSONRepairObject(partial)
-				}
-			}
-		case "message_delta":
-			if event.Delta.StopReason != "" {
-				output.StopReason = mapAnthropicStopReason(event.Delta.StopReason)
-			}
-			output.Usage = mergeAnthropicWireUsage(output.Usage, event.Usage, model)
+		if _, err := processor.Process(sse); err != nil {
+			return processor.Message(), err
 		}
 	}
-	return output, nil
+	return processor.Finish()
+}
+
+// AnthropicStreamProcessor owns the single mutable partial-message state used
+// for both incremental events and the terminal result.
+type AnthropicStreamProcessor struct {
+	model                    Model
+	output                   Message
+	partialJSONByEventIndex  map[int]string
+	contentIndexByEventIndex map[int]int
+	sawMessageStart          bool
+	sawMessageStop           bool
+}
+
+func NewAnthropicStreamProcessor(model Model) *AnthropicStreamProcessor {
+	return &AnthropicStreamProcessor{
+		model:                    model,
+		output:                   AssistantMessage([]ContentPart{}, StopReasonStop, model),
+		partialJSONByEventIndex:  map[int]string{},
+		contentIndexByEventIndex: map[int]int{},
+	}
+}
+
+func (p *AnthropicStreamProcessor) Message() Message {
+	return cloneMessageState(p.output)
+}
+
+func (p *AnthropicStreamProcessor) Process(sse AnthropicSSEEvent) ([]AssistantMessageEvent, error) {
+	if sse.Event == "error" {
+		return nil, errors.New(sse.Data)
+	}
+	if sse.Event == "done" || sse.Data == "[DONE]" || !isAnthropicMessageSSEEvent(sse.Event) {
+		return nil, nil
+	}
+
+	var event rawAnthropicEvent
+	if err := UnmarshalJSONWithRepair([]byte(sse.Data), &event); err != nil {
+		return nil, err
+	}
+	switch event.Type {
+	case "message_start":
+		p.sawMessageStart = true
+		p.output.ResponseID = event.Message.ID
+		p.output.Usage = mergeAnthropicWireUsage(p.output.Usage, event.Message.Usage, p.model)
+	case "message_stop":
+		p.sawMessageStop = true
+	case "content_block_start":
+		return p.startContentBlock(event), nil
+	case "content_block_delta":
+		return p.applyContentBlockDelta(event), nil
+	case "content_block_stop":
+		return p.stopContentBlock(event), nil
+	case "message_delta":
+		if event.Delta.StopReason != "" {
+			stopReason, errorMessage, err := mapAnthropicStopReason(
+				event.Delta.StopReason,
+				event.Delta.StopDetails,
+			)
+			if err != nil {
+				return nil, err
+			}
+			p.output.StopReason = stopReason
+			p.output.ErrorMessage = errorMessage
+		}
+		p.output.Usage = mergeAnthropicWireUsage(p.output.Usage, event.Usage, p.model)
+	}
+	return nil, nil
+}
+
+func (p *AnthropicStreamProcessor) startContentBlock(event rawAnthropicEvent) []AssistantMessageEvent {
+	var eventType string
+	switch event.ContentBlock.Type {
+	case "text":
+		p.output.Content = append(p.output.Content, Text(""))
+		eventType = "text_start"
+	case "thinking":
+		p.output.Content = append(p.output.Content, Thinking(""))
+		eventType = "thinking_start"
+	case "redacted_thinking":
+		p.output.Content = append(p.output.Content, ContentPart{
+			Type:              ContentThinking,
+			Thinking:          "[Reasoning redacted]",
+			ThinkingSignature: event.ContentBlock.Data,
+			Redacted:          true,
+		})
+		eventType = "thinking_start"
+	case "tool_use":
+		p.output.Content = append(
+			p.output.Content,
+			ToolCall(event.ContentBlock.ID, event.ContentBlock.Name, event.ContentBlock.Input),
+		)
+		p.partialJSONByEventIndex[event.Index] = ""
+		eventType = "toolcall_start"
+	default:
+		return nil
+	}
+	contentIndex := len(p.output.Content) - 1
+	p.contentIndexByEventIndex[event.Index] = contentIndex
+	return []AssistantMessageEvent{{
+		Type:         eventType,
+		ContentIndex: contentIndex,
+		Partial:      cloneMessageState(p.output),
+	}}
+}
+
+func (p *AnthropicStreamProcessor) applyContentBlockDelta(event rawAnthropicEvent) []AssistantMessageEvent {
+	contentIndex, ok := p.contentIndexByEventIndex[event.Index]
+	if !ok || contentIndex < 0 || contentIndex >= len(p.output.Content) {
+		return nil
+	}
+	block := &p.output.Content[contentIndex]
+	switch event.Delta.Type {
+	case "text_delta":
+		delta := SanitizeSurrogates(event.Delta.Text)
+		block.Text += delta
+		return []AssistantMessageEvent{{
+			Type:         "text_delta",
+			ContentIndex: contentIndex,
+			Delta:        delta,
+			Partial:      cloneMessageState(p.output),
+		}}
+	case "thinking_delta":
+		delta := SanitizeSurrogates(event.Delta.Thinking)
+		block.Thinking += delta
+		return []AssistantMessageEvent{{
+			Type:         "thinking_delta",
+			ContentIndex: contentIndex,
+			Delta:        delta,
+			Partial:      cloneMessageState(p.output),
+		}}
+	case "signature_delta":
+		block.ThinkingSignature += event.Delta.Signature
+	case "input_json_delta":
+		p.partialJSONByEventIndex[event.Index] += event.Delta.PartialJSON
+		block.Arguments = parseJSONRepairObject(p.partialJSONByEventIndex[event.Index])
+		return []AssistantMessageEvent{{
+			Type:         "toolcall_delta",
+			ContentIndex: contentIndex,
+			Delta:        event.Delta.PartialJSON,
+			Partial:      cloneMessageState(p.output),
+		}}
+	}
+	return nil
+}
+
+func (p *AnthropicStreamProcessor) stopContentBlock(event rawAnthropicEvent) []AssistantMessageEvent {
+	contentIndex, ok := p.contentIndexByEventIndex[event.Index]
+	if !ok || contentIndex < 0 || contentIndex >= len(p.output.Content) {
+		return nil
+	}
+	block := &p.output.Content[contentIndex]
+	switch block.Type {
+	case ContentText:
+		return []AssistantMessageEvent{{
+			Type:         "text_end",
+			ContentIndex: contentIndex,
+			Content:      block.Text,
+			Partial:      cloneMessageState(p.output),
+		}}
+	case ContentThinking:
+		return []AssistantMessageEvent{{
+			Type:         "thinking_end",
+			ContentIndex: contentIndex,
+			Content:      block.Thinking,
+			Partial:      cloneMessageState(p.output),
+		}}
+	case ContentToolCall:
+		if partial := p.partialJSONByEventIndex[event.Index]; partial != "" {
+			block.Arguments = parseJSONRepairObject(partial)
+		}
+		delete(p.partialJSONByEventIndex, event.Index)
+		return []AssistantMessageEvent{{
+			Type:         "toolcall_end",
+			ContentIndex: contentIndex,
+			ToolCall:     *block,
+			Partial:      cloneMessageState(p.output),
+		}}
+	default:
+		return nil
+	}
+}
+
+func (p *AnthropicStreamProcessor) Finish() (Message, error) {
+	if p.sawMessageStart && !p.sawMessageStop {
+		return cloneMessageState(p.output), errors.New("Anthropic stream ended before message_stop")
+	}
+	return cloneMessageState(p.output), nil
+}
+
+func (p *AnthropicStreamProcessor) Fail(err error, aborted bool) Message {
+	p.output.StopReason = StopReasonError
+	if aborted {
+		p.output.StopReason = StopReasonAborted
+	}
+	p.output.ErrorMessage = err.Error()
+	return cloneMessageState(p.output)
 }
 
 func UnmarshalJSONWithRepair(data []byte, target any) error {
@@ -247,19 +380,29 @@ func isAnthropicMessageSSEEvent(event string) bool {
 	}
 }
 
-func mapAnthropicStopReason(reason string) string {
+func mapAnthropicStopReason(
+	reason string,
+	details *anthropicStopDetails,
+) (stopReason, errorMessage string, err error) {
 	switch reason {
 	case "end_turn", "stop_sequence":
-		return StopReasonStop
+		return StopReasonStop, "", nil
 	case "max_tokens":
-		return StopReasonLength
+		return StopReasonLength, "", nil
 	case "tool_use":
-		return StopReasonToolUse
-	default:
-		if reason == "" {
-			return StopReasonStop
+		return StopReasonToolUse, "", nil
+	case "pause_turn":
+		return StopReasonStop, "", nil
+	case "refusal":
+		message := "The model refused to complete the request"
+		if details != nil && details.Explanation != "" {
+			message = details.Explanation
 		}
-		return StopReasonError
+		return StopReasonError, message, nil
+	case "sensitive":
+		return StopReasonError, "", nil
+	default:
+		return "", "", errors.New("Unhandled stop reason: " + reason)
 	}
 }
 

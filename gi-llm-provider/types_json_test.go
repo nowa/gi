@@ -80,3 +80,97 @@ func TestMessageMarshalJSONUsesRoleSpecificUsageContract(t *testing.T) {
 		})
 	}
 }
+
+func TestAssistantMessageEventMarshalJSONUsesVariantContract(t *testing.T) {
+	model := Model{ID: "model", API: "api", Provider: "provider"}
+	message := AssistantMessage([]ContentPart{Text("hello")}, StopReasonStop, model)
+	tests := []struct {
+		name      string
+		event     AssistantMessageEvent
+		wantKeys  []string
+		rejectKey string
+	}{
+		{
+			name:      "zero content index remains present",
+			event:     AssistantMessageEvent{Type: "text_start", ContentIndex: 0, Partial: message},
+			wantKeys:  []string{"type", "contentIndex", "partial"},
+			rejectKey: "message",
+		},
+		{
+			name:      "done carries only final message",
+			event:     AssistantMessageEvent{Type: "done", Reason: StopReasonStop, Message: message},
+			wantKeys:  []string{"type", "reason", "message"},
+			rejectKey: "partial",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			encoded, err := json.Marshal(test.event)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var object map[string]json.RawMessage
+			if err := json.Unmarshal(encoded, &object); err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range test.wantKeys {
+				if _, ok := object[key]; !ok {
+					t.Fatalf("%s missing from %s", key, encoded)
+				}
+			}
+			if _, ok := object[test.rejectKey]; ok {
+				t.Fatalf("%s unexpectedly present in %s", test.rejectKey, encoded)
+			}
+		})
+	}
+}
+
+func TestPiMessagesEventMarshalJSONUsesVariantContract(t *testing.T) {
+	tests := []struct {
+		name      string
+		event     PiMessagesEvent
+		wantKeys  []string
+		rejectKey string
+	}{
+		{
+			name:      "start omits inactive zero-value state",
+			event:     PiMessagesEvent{Type: "start"},
+			wantKeys:  []string{"type"},
+			rejectKey: "usage",
+		},
+		{
+			name:      "zero content index remains present",
+			event:     PiMessagesEvent{Type: "text_start", ContentIndex: 0},
+			wantKeys:  []string{"type", "contentIndex"},
+			rejectKey: "usage",
+		},
+		{
+			name:      "done always carries usage",
+			event:     PiMessagesEvent{Type: "done", Reason: StopReasonStop, Usage: EmptyUsage()},
+			wantKeys:  []string{"type", "reason", "usage"},
+			rejectKey: "delta",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			encoded, err := json.Marshal(test.event)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var object map[string]json.RawMessage
+			if err := json.Unmarshal(encoded, &object); err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range test.wantKeys {
+				if _, ok := object[key]; !ok {
+					t.Fatalf("%s missing from %s", key, encoded)
+				}
+			}
+			if _, ok := object[test.rejectKey]; ok {
+				t.Fatalf("%s unexpectedly present in %s", test.rejectKey, encoded)
+			}
+		})
+	}
+}

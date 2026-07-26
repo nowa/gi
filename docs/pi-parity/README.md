@@ -111,7 +111,7 @@ inventory for a deeper audit. The authoritative named mappings live in
 automatic parity failures because Go and TypeScript necessarily use different
 runtime scaffolding.
 
-## Differential payload and cost parity
+## Differential payload, stream, and cost parity
 
 `verify-differential-parity.mjs` executes the exact Pi source and Gi against one
 versioned JSONL protocol. It currently covers:
@@ -119,6 +119,13 @@ versioned JSONL protocol. It currently covers:
 - every registered Pi LLM API's `streamSimple` payload boundary;
 - contexts with system prompts, messages, tools, reasoning, cache, session, and
   provider-supported simple options;
+- every registered Pi LLM API's stream/result boundary, including Anthropic,
+  OpenAI Responses/Completions/Codex, Azure, Gemini, Vertex, Mistral,
+  pi-messages, and native Bedrock ConverseStream events;
+- byte-level UTF-8 splits, LF/CRLF/lone-CR records, comments, multi-line data,
+  terminal delimiters, and protocol-specific EOF behavior;
+- event-time message snapshots across mutable content, usage, reasoning,
+  signatures, tool arguments, and terminal state;
 - fixed cost cases for zero rates, cache writes, exact tier boundaries, and
   unsorted tiers;
 - 512 deterministic generated cost cases, compared through the last
@@ -138,9 +145,17 @@ Fixed Pi results are committed in
 the live exact Pi checkout, then checks Gi against Pi. This prevents either a
 stale oracle snapshot or coincident Gi/Pi drift from passing silently.
 
+Normalization is intentionally narrow: timestamps, an absent-equivalent
+zero-valued optional cache-write breakdown, and Pi's private streaming scratch
+fields are removed. Public event fields, event order, partial state, terminal
+messages, usage, and cost remain exact comparison inputs. Bedrock uses injected
+AWS event objects with an I/O turn between frames; all other stream cases use
+the same adversarial byte chunk schedule on both runtimes.
+
 The fixture is also exercised by
 `gi-llm-provider/internal/cmd/conformance/main_test.go`, so `go test ./...`
-retains payload and fixed-cost coverage without requiring Node, Pi, network
-access, or credentials. The JSONL inputs intentionally target the common
-`streamSimple` contract; provider-specific full-stream options belong in
-separately identified cases rather than being silently mixed into this matrix.
+retains payload, stream, and fixed-cost coverage without requiring Node, Pi,
+network access, or credentials. The JSONL inputs intentionally target the
+common `streamSimple` contract; provider-specific full-stream options belong
+in separately identified cases rather than being silently mixed into this
+matrix.

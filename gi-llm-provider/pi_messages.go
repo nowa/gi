@@ -35,7 +35,7 @@ type PiMessagesEvent struct {
 	Delta            string                   `json:"delta,omitempty"`
 	Content          string                   `json:"content,omitempty"`
 	ContentSignature string                   `json:"contentSignature,omitempty"`
-	Redacted         bool                     `json:"redacted,omitempty"`
+	Redacted         *bool                    `json:"redacted,omitempty"`
 	ID               string                   `json:"id,omitempty"`
 	ToolName         string                   `json:"toolName,omitempty"`
 	ToolCall         ContentPart              `json:"toolCall,omitempty"`
@@ -44,6 +44,105 @@ type PiMessagesEvent struct {
 	ErrorMessage     string                   `json:"errorMessage,omitempty"`
 	ResponseID       string                   `json:"responseId,omitempty"`
 	Rewrite          *PiMessagesRewriteImpact `json:"rewrite,omitempty"`
+}
+
+// MarshalJSON keeps the internal event state unified while emitting the exact
+// pi-messages discriminated union expected on the wire.
+func (e PiMessagesEvent) MarshalJSON() ([]byte, error) {
+	switch e.Type {
+	case "start":
+		return json.Marshal(struct {
+			Type string `json:"type"`
+		}{Type: e.Type})
+	case "text_start", "thinking_start":
+		return json.Marshal(struct {
+			Type         string `json:"type"`
+			ContentIndex int    `json:"contentIndex"`
+		}{Type: e.Type, ContentIndex: e.ContentIndex})
+	case "text_delta", "thinking_delta", "toolcall_delta":
+		return json.Marshal(struct {
+			Type         string `json:"type"`
+			ContentIndex int    `json:"contentIndex"`
+			Delta        string `json:"delta"`
+		}{Type: e.Type, ContentIndex: e.ContentIndex, Delta: e.Delta})
+	case "text_end":
+		return json.Marshal(struct {
+			Type             string `json:"type"`
+			ContentIndex     int    `json:"contentIndex"`
+			Content          string `json:"content"`
+			ContentSignature string `json:"contentSignature,omitempty"`
+		}{
+			Type:             e.Type,
+			ContentIndex:     e.ContentIndex,
+			Content:          e.Content,
+			ContentSignature: e.ContentSignature,
+		})
+	case "thinking_end":
+		return json.Marshal(struct {
+			Type             string `json:"type"`
+			ContentIndex     int    `json:"contentIndex"`
+			Content          string `json:"content"`
+			ContentSignature string `json:"contentSignature,omitempty"`
+			Redacted         *bool  `json:"redacted,omitempty"`
+		}{
+			Type:             e.Type,
+			ContentIndex:     e.ContentIndex,
+			Content:          e.Content,
+			ContentSignature: e.ContentSignature,
+			Redacted:         e.Redacted,
+		})
+	case "toolcall_start":
+		return json.Marshal(struct {
+			Type         string `json:"type"`
+			ContentIndex int    `json:"contentIndex"`
+			ID           string `json:"id"`
+			ToolName     string `json:"toolName"`
+		}{
+			Type:         e.Type,
+			ContentIndex: e.ContentIndex,
+			ID:           e.ID,
+			ToolName:     e.ToolName,
+		})
+	case "toolcall_end":
+		return json.Marshal(struct {
+			Type         string      `json:"type"`
+			ContentIndex int         `json:"contentIndex"`
+			ToolCall     ContentPart `json:"toolCall"`
+		}{Type: e.Type, ContentIndex: e.ContentIndex, ToolCall: e.ToolCall})
+	case "done":
+		return json.Marshal(struct {
+			Type       string                   `json:"type"`
+			Reason     string                   `json:"reason"`
+			Usage      Usage                    `json:"usage"`
+			ResponseID string                   `json:"responseId,omitempty"`
+			Rewrite    *PiMessagesRewriteImpact `json:"rewrite,omitempty"`
+		}{
+			Type:       e.Type,
+			Reason:     e.Reason,
+			Usage:      e.Usage,
+			ResponseID: e.ResponseID,
+			Rewrite:    e.Rewrite,
+		})
+	case "error":
+		return json.Marshal(struct {
+			Type         string                   `json:"type"`
+			Reason       string                   `json:"reason"`
+			Usage        Usage                    `json:"usage"`
+			ErrorMessage string                   `json:"errorMessage,omitempty"`
+			ResponseID   string                   `json:"responseId,omitempty"`
+			Rewrite      *PiMessagesRewriteImpact `json:"rewrite,omitempty"`
+		}{
+			Type:         e.Type,
+			Reason:       e.Reason,
+			Usage:        e.Usage,
+			ErrorMessage: e.ErrorMessage,
+			ResponseID:   e.ResponseID,
+			Rewrite:      e.Rewrite,
+		})
+	default:
+		type eventJSON PiMessagesEvent
+		return json.Marshal(eventJSON(e))
+	}
 }
 
 // PiMessagesRequest is the wire request accepted by Radius and compatible
@@ -203,7 +302,7 @@ func (p PiMessagesProvider) stream(
 
 	converter := newPiMessagesEventConverter(model)
 	terminal := false
-	err = dispatchSSEUntil(response.Body, func(data string) (bool, error) {
+	err = dispatchSSEUntilEOF(response.Body, func(data string) (bool, error) {
 		var wireEvent PiMessagesEvent
 		if err := json.Unmarshal([]byte(data), &wireEvent); err != nil {
 			return false, fmt.Errorf("decode pi-messages event: %w", err)
@@ -451,7 +550,9 @@ func (c *piMessagesEventConverter) convert(
 		}
 		part.Thinking = wire.Content
 		part.ThinkingSignature = wire.ContentSignature
-		part.Redacted = wire.Redacted
+		if wire.Redacted != nil {
+			part.Redacted = *wire.Redacted
+		}
 	case "toolcall_start":
 		if err := c.setContent(
 			wire.ContentIndex,
@@ -490,11 +591,15 @@ func (c *piMessagesEventConverter) convert(
 	}
 
 	return AssistantMessageEvent{
-		Type:         wire.Type,
-		ContentIndex: wire.ContentIndex,
-		Delta:        wire.Delta,
-		Content:      wire.Content,
-		Partial:      clonePiMessagesMessage(c.partial),
+		Type:             wire.Type,
+		ContentIndex:     wire.ContentIndex,
+		Delta:            wire.Delta,
+		Content:          wire.Content,
+		ContentSignature: wire.ContentSignature,
+		Redacted:         wire.Redacted,
+		ID:               wire.ID,
+		ToolName:         wire.ToolName,
+		Partial:          clonePiMessagesMessage(c.partial),
 	}, nil
 }
 

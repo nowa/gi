@@ -188,7 +188,10 @@ func BuildGooglePayloadChecked(
 
 func streamGoogleBody(model Model, body io.ReadCloser, stream *AssistantMessageEventStream) {
 	output := AssistantMessage(nil, StopReasonStop, model)
-	stream.Push(AssistantMessageEvent{Type: "start", Partial: output})
+	stream.Push(AssistantMessageEvent{
+		Type:    "start",
+		Partial: cloneMessageState(output),
+	})
 	processor := newGoogleStreamProcessor(model, &output)
 	terminal := false
 	err := dispatchSSEUntil(body, func(data string) (bool, error) {
@@ -200,8 +203,11 @@ func streamGoogleBody(model Model, body io.ReadCloser, stream *AssistantMessageE
 			stream.Push(event)
 		}
 		if hasGoogleFinishReason(chunk) {
+			for _, event := range processor.Finish() {
+				stream.Push(event)
+			}
 			terminal = true
-			message := output
+			message := cloneMessageState(output)
 			if message.StopReason == StopReasonError {
 				stream.Push(AssistantMessageEvent{Type: "error", Reason: message.StopReason, Error: message})
 			} else {
@@ -212,11 +218,24 @@ func streamGoogleBody(model Model, body io.ReadCloser, stream *AssistantMessageE
 		return false, nil
 	})
 	if err != nil {
-		stream.Push(AssistantMessageEvent{Type: "error", Reason: StopReasonError, Error: AssistantErrorMessage(err.Error(), model, false)})
+		output.StopReason = StopReasonError
+		output.ErrorMessage = err.Error()
+		stream.Push(AssistantMessageEvent{
+			Type:   "error",
+			Reason: StopReasonError,
+			Error:  cloneMessageState(output),
+		})
 		return
 	}
 	if !terminal {
-		stream.Push(AssistantMessageEvent{Type: "done", Reason: output.StopReason, Message: output})
+		for _, event := range processor.Finish() {
+			stream.Push(event)
+		}
+		stream.Push(AssistantMessageEvent{
+			Type:    "done",
+			Reason:  output.StopReason,
+			Message: cloneMessageState(output),
+		})
 	}
 }
 
@@ -252,32 +271,63 @@ func (p *googleStreamProcessor) Process(chunk GoogleStreamChunk) []AssistantMess
 			}
 		}
 	}
-	return events
+	return snapshotPartialEvents(events, *p.output)
 }
 
 func (p *googleStreamProcessor) appendText(part GooglePart) []AssistantMessageEvent {
+	var events []AssistantMessageEvent
 	if p.currentIndex < 0 || p.currentType != ContentText {
+		events = append(events, p.closeCurrent()...)
 		p.output.Content = append(p.output.Content, Text(""))
 		p.currentIndex = len(p.output.Content) - 1
 		p.currentType = ContentText
+		events = append(events, AssistantMessageEvent{
+			Type:         "text_start",
+			ContentIndex: p.currentIndex,
+		})
 	}
-	p.output.Content[p.currentIndex].Text += SanitizeSurrogates(part.Text)
-	p.output.Content[p.currentIndex].TextSignature = RetainGoogleThoughtSignature(p.output.Content[p.currentIndex].TextSignature, part.ThoughtSignature)
-	return []AssistantMessageEvent{{Type: "text_delta", Partial: *p.output}}
+	delta := SanitizeSurrogates(part.Text)
+	current := &p.output.Content[p.currentIndex]
+	current.Text += delta
+	current.TextSignature = RetainGoogleThoughtSignature(
+		current.TextSignature,
+		part.ThoughtSignature,
+	)
+	return append(events, AssistantMessageEvent{
+		Type:         "text_delta",
+		ContentIndex: p.currentIndex,
+		Delta:        delta,
+	})
 }
 
 func (p *googleStreamProcessor) appendThinking(part GooglePart) []AssistantMessageEvent {
+	var events []AssistantMessageEvent
 	if p.currentIndex < 0 || p.currentType != ContentThinking {
+		events = append(events, p.closeCurrent()...)
 		p.output.Content = append(p.output.Content, Thinking(""))
 		p.currentIndex = len(p.output.Content) - 1
 		p.currentType = ContentThinking
+		events = append(events, AssistantMessageEvent{
+			Type:         "thinking_start",
+			ContentIndex: p.currentIndex,
+		})
 	}
-	p.output.Content[p.currentIndex].Thinking += SanitizeSurrogates(part.Text)
-	p.output.Content[p.currentIndex].ThinkingSignature = RetainGoogleThoughtSignature(p.output.Content[p.currentIndex].ThinkingSignature, part.ThoughtSignature)
-	return []AssistantMessageEvent{{Type: "thinking_delta", Partial: *p.output}}
+	delta := SanitizeSurrogates(part.Text)
+	current := &p.output.Content[p.currentIndex]
+	current.Thinking += delta
+	current.ThinkingSignature = RetainGoogleThoughtSignature(
+		current.ThinkingSignature,
+		part.ThoughtSignature,
+	)
+	return append(events, AssistantMessageEvent{
+		Type:         "thinking_delta",
+		ContentIndex: p.currentIndex,
+		Delta:        delta,
+	})
 }
 
 func (p *googleStreamProcessor) appendToolCall(part GooglePart) []AssistantMessageEvent {
+	events := p.closeCurrent()
 	call := part.FunctionCall
 	id := call.ID
 	if id == "" || hasContentPartID(p.output.Content, id) {
@@ -287,12 +337,56 @@ func (p *googleStreamProcessor) appendToolCall(part GooglePart) []AssistantMessa
 	toolCall := ToolCall(id, call.Name, call.Args)
 	toolCall.ThoughtSignature = part.ThoughtSignature
 	p.output.Content = append(p.output.Content, toolCall)
+	index := len(p.output.Content) - 1
 	p.currentIndex = -1
 	p.currentType = ""
-	return []AssistantMessageEvent{
-		{Type: "toolcall_start", Partial: *p.output},
-		{Type: "toolcall_delta", Partial: *p.output},
-		{Type: "toolcall_end", Partial: *p.output, Message: Message{Content: []ContentPart{toolCall}}},
+	arguments, _ := json.Marshal(toolCall.Arguments)
+	return append(events,
+		AssistantMessageEvent{
+			Type:         "toolcall_start",
+			ContentIndex: index,
+		},
+		AssistantMessageEvent{
+			Type:         "toolcall_delta",
+			ContentIndex: index,
+			Delta:        string(arguments),
+		},
+		AssistantMessageEvent{
+			Type:         "toolcall_end",
+			ContentIndex: index,
+			ToolCall:     cloneContentPartState(toolCall),
+		},
+	)
+}
+
+// Finish closes the active text or thinking block exactly once.
+func (p *googleStreamProcessor) Finish() []AssistantMessageEvent {
+	return snapshotPartialEvents(p.closeCurrent(), *p.output)
+}
+
+func (p *googleStreamProcessor) closeCurrent() []AssistantMessageEvent {
+	if p.currentIndex < 0 || p.currentIndex >= len(p.output.Content) {
+		return nil
+	}
+	index := p.currentIndex
+	part := p.output.Content[index]
+	p.currentIndex = -1
+	p.currentType = ""
+	switch part.Type {
+	case ContentText:
+		return []AssistantMessageEvent{{
+			Type:         "text_end",
+			ContentIndex: index,
+			Content:      part.Text,
+		}}
+	case ContentThinking:
+		return []AssistantMessageEvent{{
+			Type:         "thinking_end",
+			ContentIndex: index,
+			Content:      part.Thinking,
+		}}
+	default:
+		return nil
 	}
 }
 
@@ -318,6 +412,7 @@ func ParseGoogleUsage(raw GoogleUsageMetadata, model Model) Usage {
 		Input:       input,
 		Output:      output,
 		CacheRead:   raw.CachedContentTokenCount,
+		Reasoning:   ptrInt(raw.ThoughtsTokenCount),
 		TotalTokens: total,
 	}
 	usage.Cost = CalculateCost(model, usage)

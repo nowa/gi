@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -52,6 +54,7 @@ type payloadInput struct {
 type conformanceStreamOptions struct {
 	Temperature     *float64                  `json:"temperature,omitempty"`
 	MaxTokens       int                       `json:"maxTokens,omitempty"`
+	Transport       string                    `json:"transport,omitempty"`
 	CacheRetention  string                    `json:"cacheRetention,omitempty"`
 	SessionID       string                    `json:"sessionId,omitempty"`
 	Reasoning       string                    `json:"reasoning,omitempty"`
@@ -60,6 +63,47 @@ type conformanceStreamOptions struct {
 	Headers         map[string]string         `json:"headers,omitempty"`
 	Env             gillmprovider.ProviderEnv `json:"env,omitempty"`
 	Metadata        map[string]any            `json:"metadata,omitempty"`
+}
+
+type streamInput struct {
+	API          string                   `json:"api"`
+	Model        gillmprovider.Model      `json:"model"`
+	Context      gillmprovider.Context    `json:"context"`
+	Options      conformanceStreamOptions `json:"options"`
+	Body         string                   `json:"body"`
+	ChunkPattern []int                    `json:"chunkPattern,omitempty"`
+	Events       []bedrockFixtureEvent    `json:"events,omitempty"`
+}
+
+type bedrockFixtureEvent struct {
+	MessageStart      *gillmprovider.BedrockMessageStartEvent `json:"messageStart,omitempty"`
+	ContentBlockStart *struct {
+		ContentBlockIndex int `json:"contentBlockIndex"`
+		Start             *struct {
+			ToolUse *gillmprovider.BedrockToolUseBlock `json:"toolUse,omitempty"`
+		} `json:"start,omitempty"`
+	} `json:"contentBlockStart,omitempty"`
+	ContentBlockDelta *struct {
+		ContentBlockIndex int `json:"contentBlockIndex"`
+		Delta             *struct {
+			Text    string `json:"text,omitempty"`
+			ToolUse *struct {
+				Input string `json:"input,omitempty"`
+			} `json:"toolUse,omitempty"`
+			ReasoningContent *gillmprovider.BedrockReasoningContent `json:"reasoningContent,omitempty"`
+		} `json:"delta,omitempty"`
+	} `json:"contentBlockDelta,omitempty"`
+	ContentBlockStop *gillmprovider.BedrockContentBlockStopEvent `json:"contentBlockStop,omitempty"`
+	MessageStop      *gillmprovider.BedrockMessageStopEvent      `json:"messageStop,omitempty"`
+	Metadata         *struct {
+		Usage *struct {
+			InputTokens           int `json:"inputTokens"`
+			OutputTokens          int `json:"outputTokens"`
+			CacheReadInputTokens  int `json:"cacheReadInputTokens"`
+			CacheWriteInputTokens int `json:"cacheWriteInputTokens"`
+			TotalTokens           int `json:"totalTokens"`
+		} `json:"usage,omitempty"`
+	} `json:"metadata,omitempty"`
 }
 
 func main() {
@@ -123,6 +167,8 @@ func execute(request envelope) (result resultEnvelope) {
 		result.Output, err = executeCost(request.Input)
 	case "payload":
 		result.Output, err = executePayload(request.Input)
+	case "stream":
+		result.Output, err = executeStream(request.Input)
 	default:
 		err = fmt.Errorf("unsupported conformance kind %q", request.Kind)
 	}
@@ -166,6 +212,7 @@ func executePayload(raw json.RawMessage) (any, error) {
 		Temperature:     input.Options.Temperature,
 		MaxTokens:       input.Options.MaxTokens,
 		APIKey:          conformanceAPIKey(input.API),
+		Transport:       input.Options.Transport,
 		CacheRetention:  input.Options.CacheRetention,
 		SessionID:       input.Options.SessionID,
 		Reasoning:       input.Options.Reasoning,
@@ -197,6 +244,240 @@ func executePayload(raw json.RawMessage) (any, error) {
 		}
 		return nil, errors.New("timed out waiting for payload capture")
 	}
+}
+
+func executeStream(raw json.RawMessage) (any, error) {
+	var input streamInput
+	if err := json.Unmarshal(raw, &input); err != nil {
+		return nil, fmt.Errorf("decode stream input: %w", err)
+	}
+	if input.API == "" {
+		input.API = input.Model.API
+	}
+	if input.Model.API == "" {
+		input.Model.API = input.API
+	}
+	implementation := streamImplementation(input)
+	if implementation == nil {
+		return nil, fmt.Errorf("no Gi provider registered for API %q", input.API)
+	}
+	for _, size := range input.ChunkPattern {
+		if size <= 0 {
+			return nil, fmt.Errorf("chunkPattern values must be positive, got %d", size)
+		}
+	}
+
+	env := input.Options.Env
+	if input.API == "bedrock-converse-stream" {
+		env = cloneProviderEnv(env)
+		env["AWS_BEDROCK_SKIP_AUTH"] = "1"
+	}
+	options := gillmprovider.SimpleStreamOptions{
+		Context:         context.Background(),
+		Temperature:     input.Options.Temperature,
+		MaxTokens:       input.Options.MaxTokens,
+		APIKey:          conformanceAPIKey(input.API),
+		Transport:       input.Options.Transport,
+		CacheRetention:  input.Options.CacheRetention,
+		SessionID:       input.Options.SessionID,
+		Reasoning:       input.Options.Reasoning,
+		ToolChoice:      input.Options.ToolChoice,
+		ThinkingBudgets: input.Options.ThinkingBudgets,
+		Headers:         input.Options.Headers,
+		Env:             env,
+		Metadata:        input.Options.Metadata,
+		HTTPClient: &fixtureHTTPClient{
+			body:         []byte(input.Body),
+			chunkPattern: append([]int(nil), input.ChunkPattern...),
+		},
+	}
+	stream, streamErr := implementation.StreamSimple(input.Model, input.Context, options)
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	if stream == nil {
+		return nil, errors.New("Gi provider returned a nil stream")
+	}
+
+	type collection struct {
+		events []any
+		err    error
+	}
+	eventsCh := make(chan collection, 1)
+	go func() {
+		var events []any
+		for event := range stream.Events() {
+			value, err := toJSONValue(event)
+			if err != nil {
+				eventsCh <- collection{err: err}
+				return
+			}
+			events = append(events, removeVolatileFields(value))
+		}
+		eventsCh <- collection{events: events}
+	}()
+
+	var events []any
+	select {
+	case collected := <-eventsCh:
+		if collected.err != nil {
+			return nil, collected.err
+		}
+		events = collected.events
+	case <-time.After(5 * time.Second):
+		return nil, errors.New("timed out collecting Gi stream events")
+	}
+	resultContext, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	message, err := stream.Result(resultContext)
+	if err != nil {
+		return nil, err
+	}
+	output, err := toJSONValue(map[string]any{
+		"events": events,
+		"result": message,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return removeVolatileFields(output), nil
+}
+
+func streamImplementation(input streamInput) gillmprovider.APIProvider {
+	if input.API != "bedrock-converse-stream" {
+		return gillmprovider.GetAPIProvider(input.API)
+	}
+	events := append([]bedrockFixtureEvent(nil), input.Events...)
+	return gillmprovider.NewBedrockConverseStreamProvider(
+		func(
+			context.Context,
+			gillmprovider.BedrockConverseStreamRequest,
+		) (<-chan gillmprovider.BedrockConverseStreamEvent, error) {
+			stream := make(
+				chan gillmprovider.BedrockConverseStreamEvent,
+				len(events),
+			)
+			for _, event := range events {
+				stream <- event.providerEvent()
+			}
+			close(stream)
+			return stream, nil
+		},
+	)
+}
+
+func (event bedrockFixtureEvent) providerEvent() gillmprovider.BedrockConverseStreamEvent {
+	result := gillmprovider.BedrockConverseStreamEvent{
+		MessageStart:     event.MessageStart,
+		ContentBlockStop: event.ContentBlockStop,
+		MessageStop:      event.MessageStop,
+	}
+	if event.ContentBlockStart != nil {
+		result.ContentBlockStart = &gillmprovider.BedrockContentBlockStartEvent{
+			ContentBlockIndex: event.ContentBlockStart.ContentBlockIndex,
+		}
+		if event.ContentBlockStart.Start != nil {
+			result.ContentBlockStart.ToolUse =
+				event.ContentBlockStart.Start.ToolUse
+		}
+	}
+	if event.ContentBlockDelta != nil {
+		result.ContentBlockDelta = &gillmprovider.BedrockContentBlockDeltaEvent{
+			ContentBlockIndex: event.ContentBlockDelta.ContentBlockIndex,
+		}
+		if event.ContentBlockDelta.Delta != nil {
+			result.ContentBlockDelta.Text =
+				event.ContentBlockDelta.Delta.Text
+			result.ContentBlockDelta.ReasoningContent =
+				event.ContentBlockDelta.Delta.ReasoningContent
+			if event.ContentBlockDelta.Delta.ToolUse != nil {
+				result.ContentBlockDelta.ToolUseInput =
+					event.ContentBlockDelta.Delta.ToolUse.Input
+			}
+		}
+	}
+	if event.Metadata != nil && event.Metadata.Usage != nil {
+		usage := event.Metadata.Usage
+		result.Metadata = &gillmprovider.BedrockMetadataEvent{
+			Usage: gillmprovider.BedrockUsage{
+				InputTokens:          usage.InputTokens,
+				OutputTokens:         usage.OutputTokens,
+				CacheReadInputTokens: usage.CacheReadInputTokens,
+				CacheWriteTokens:     usage.CacheWriteInputTokens,
+				TotalTokens:          usage.TotalTokens,
+			},
+		}
+	}
+	return result
+}
+
+func cloneProviderEnv(env gillmprovider.ProviderEnv) gillmprovider.ProviderEnv {
+	cloned := make(gillmprovider.ProviderEnv, len(env)+1)
+	for key, value := range env {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+type fixtureHTTPClient struct {
+	body         []byte
+	chunkPattern []int
+}
+
+func (c *fixtureHTTPClient) Do(request *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode:    http.StatusOK,
+		Status:        "200 OK",
+		Header:        http.Header{"content-type": []string{"text/event-stream"}},
+		Body:          &patternReadCloser{remaining: append([]byte(nil), c.body...), pattern: c.chunkPattern},
+		ContentLength: -1,
+		Request:       request,
+	}, nil
+}
+
+type patternReadCloser struct {
+	remaining []byte
+	pattern   []int
+	next      int
+	closed    bool
+}
+
+func (r *patternReadCloser) Read(target []byte) (int, error) {
+	if r.closed || len(r.remaining) == 0 {
+		return 0, io.EOF
+	}
+	size := len(r.remaining)
+	if len(r.pattern) > 0 {
+		size = min(size, r.pattern[r.next%len(r.pattern)])
+		r.next++
+	}
+	size = min(size, len(target))
+	copy(target, r.remaining[:size])
+	r.remaining = r.remaining[size:]
+	return size, nil
+}
+
+func (r *patternReadCloser) Close() error {
+	r.closed = true
+	return nil
+}
+
+func removeVolatileFields(value any) any {
+	switch typed := value.(type) {
+	case []any:
+		for index, child := range typed {
+			typed[index] = removeVolatileFields(child)
+		}
+	case map[string]any:
+		delete(typed, "timestamp")
+		if typed["cacheWrite1h"] == float64(0) {
+			delete(typed, "cacheWrite1h")
+		}
+		for key, child := range typed {
+			typed[key] = removeVolatileFields(child)
+		}
+	}
+	return value
 }
 
 func conformanceAPIKey(api string) string {

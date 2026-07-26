@@ -153,7 +153,9 @@ func streamOpenAIResponsesBody(
 		return
 	}
 	if !terminal {
-		stream.Push(AssistantMessageEvent{Type: "done", Reason: output.StopReason, Message: output})
+		output.StopReason = StopReasonError
+		output.ErrorMessage = "OpenAI Responses stream ended before a terminal response event"
+		stream.Push(AssistantMessageEvent{Type: "error", Reason: output.StopReason, Error: output})
 	}
 }
 

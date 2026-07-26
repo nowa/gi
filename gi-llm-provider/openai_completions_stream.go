@@ -168,6 +168,14 @@ func (p *OpenAICompletionsStreamProcessor) Process(chunk *OpenAIChatCompletionCh
 			events = append(events, p.finishOpenContentBlocks()...)
 		}
 	}
+	// Pi emits all events derived from one provider chunk synchronously. Each
+	// event therefore observes the state after that whole chunk, but must not be
+	// mutated by a later chunk.
+	for index := range events {
+		if events[index].Partial.Role != "" {
+			events[index].Partial = cloneMessageState(*p.output)
+		}
+	}
 	return events
 }
 
@@ -257,10 +265,10 @@ func (p *OpenAICompletionsStreamProcessor) appendText(delta string) []AssistantM
 		p.output.Content = append(p.output.Content, Text(""))
 		p.textIndex = len(p.output.Content) - 1
 		p.textEnded = false
-		events = append(events, AssistantMessageEvent{Type: "text_start", ContentIndex: p.textIndex, Partial: *p.output})
+		events = append(events, AssistantMessageEvent{Type: "text_start", ContentIndex: p.textIndex, Partial: cloneMessageState(*p.output)})
 	}
 	p.output.Content[p.textIndex].Text += SanitizeSurrogates(delta)
-	events = append(events, AssistantMessageEvent{Type: "text_delta", ContentIndex: p.textIndex, Delta: delta, Partial: *p.output})
+	events = append(events, AssistantMessageEvent{Type: "text_delta", ContentIndex: p.textIndex, Delta: delta, Partial: cloneMessageState(*p.output)})
 	return events
 }
 
@@ -285,10 +293,10 @@ func (p *OpenAICompletionsStreamProcessor) appendThinking(signature, delta strin
 		p.output.Content = append(p.output.Content, part)
 		p.thinkIndex = len(p.output.Content) - 1
 		p.thinkEnded = false
-		events = append(events, AssistantMessageEvent{Type: "thinking_start", ContentIndex: p.thinkIndex, Partial: *p.output})
+		events = append(events, AssistantMessageEvent{Type: "thinking_start", ContentIndex: p.thinkIndex, Partial: cloneMessageState(*p.output)})
 	}
 	p.output.Content[p.thinkIndex].Thinking += SanitizeSurrogates(delta)
-	events = append(events, AssistantMessageEvent{Type: "thinking_delta", ContentIndex: p.thinkIndex, Delta: delta, Partial: *p.output})
+	events = append(events, AssistantMessageEvent{Type: "thinking_delta", ContentIndex: p.thinkIndex, Delta: delta, Partial: cloneMessageState(*p.output)})
 	return events
 }
 
@@ -317,7 +325,7 @@ func (p *OpenAICompletionsStreamProcessor) appendToolCall(delta OpenAIChatToolCa
 			p.configureOpenAIChatCustomInput(acc)
 		}
 		p.registerOpenAIChatToolCallID(acc, delta.ID)
-		events = append(events, AssistantMessageEvent{Type: "toolcall_start", ContentIndex: acc.contentIndex, Partial: *p.output})
+		events = append(events, AssistantMessageEvent{Type: "toolcall_start", ContentIndex: acc.contentIndex, Partial: cloneMessageState(*p.output)})
 	} else if !acc.hasProviderID && delta.ID != "" {
 		acc.id = delta.ID
 		acc.hasProviderID = true
@@ -354,7 +362,7 @@ func (p *OpenAICompletionsStreamProcessor) appendToolCall(delta OpenAIChatToolCa
 		Type:         "toolcall_delta",
 		ContentIndex: acc.contentIndex,
 		Delta:        emittedDelta,
-		Partial:      *p.output,
+		Partial:      cloneMessageState(*p.output),
 	})
 	return events
 }
@@ -486,7 +494,7 @@ func (p *OpenAICompletionsStreamProcessor) finishOpenContentBlocks() []Assistant
 					Type:         "text_end",
 					ContentIndex: index,
 					Content:      p.output.Content[index].Text,
-					Partial:      *p.output,
+					Partial:      cloneMessageState(*p.output),
 				})
 			}
 		case ContentThinking:
@@ -496,7 +504,7 @@ func (p *OpenAICompletionsStreamProcessor) finishOpenContentBlocks() []Assistant
 					Type:         "thinking_end",
 					ContentIndex: index,
 					Content:      p.output.Content[index].Thinking,
-					Partial:      *p.output,
+					Partial:      cloneMessageState(*p.output),
 				})
 			}
 		case ContentToolCall:
@@ -520,7 +528,7 @@ func (p *OpenAICompletionsStreamProcessor) finishOpenContentBlocks() []Assistant
 						Type:         "toolcall_delta",
 						ContentIndex: index,
 						Delta:        delta,
-						Partial:      *p.output,
+						Partial:      cloneMessageState(*p.output),
 					})
 				}
 			} else {
@@ -530,7 +538,7 @@ func (p *OpenAICompletionsStreamProcessor) finishOpenContentBlocks() []Assistant
 				Type:         "toolcall_end",
 				ContentIndex: index,
 				ToolCall:     p.output.Content[index],
-				Partial:      *p.output,
+				Partial:      cloneMessageState(*p.output),
 			})
 		}
 	}

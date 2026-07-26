@@ -147,38 +147,37 @@ func (p AnthropicMessagesProvider) stream(
 }
 
 func streamAnthropicMessagesBody(model Model, body io.ReadCloser, stream *AssistantMessageEventStream) {
-	output := AssistantMessage(nil, StopReasonStop, model)
-	stream.Push(AssistantMessageEvent{Type: "start", Partial: output})
-	var events []AnthropicSSEEvent
-	terminal := false
+	processor := NewAnthropicStreamProcessor(model)
+	stream.Push(AssistantMessageEvent{Type: "start", Partial: processor.Message()})
 	err := dispatchNamedSSE(body, func(eventName, data string) error {
-		events = append(events, AnthropicSSEEvent{Event: eventName, Data: data})
-		if eventName == "message_stop" {
-			message, err := ProcessAnthropicSSEEvents(model, events)
-			if err != nil {
-				return err
-			}
-			terminal = true
-			if message.StopReason == StopReasonError {
-				stream.Push(AssistantMessageEvent{Type: "error", Reason: message.StopReason, Error: message})
-			} else {
-				stream.Push(AssistantMessageEvent{Type: "done", Reason: message.StopReason, Message: message})
-			}
+		events, err := processor.Process(AnthropicSSEEvent{Event: eventName, Data: data})
+		if err != nil {
+			return err
+		}
+		for _, event := range events {
+			stream.Push(event)
 		}
 		return nil
 	})
 	if err != nil {
-		stream.Push(AssistantMessageEvent{Type: "error", Reason: StopReasonError, Error: AssistantErrorMessage(err.Error(), model, false)})
+		message := processor.Fail(err, false)
+		stream.Push(AssistantMessageEvent{Type: "error", Reason: message.StopReason, Error: message})
 		return
 	}
-	if !terminal {
-		message, err := ProcessAnthropicSSEEvents(model, events)
-		if err != nil {
-			stream.Push(AssistantMessageEvent{Type: "error", Reason: StopReasonError, Error: AssistantErrorMessage(err.Error(), model, false)})
-			return
-		}
-		stream.Push(AssistantMessageEvent{Type: "done", Reason: message.StopReason, Message: message})
+	message, err := processor.Finish()
+	if err != nil {
+		message = processor.Fail(err, false)
+		stream.Push(AssistantMessageEvent{Type: "error", Reason: message.StopReason, Error: message})
+		return
 	}
+	if message.StopReason == StopReasonError || message.StopReason == StopReasonAborted {
+		if message.ErrorMessage == "" {
+			message.ErrorMessage = "An unknown error occurred"
+		}
+		stream.Push(AssistantMessageEvent{Type: "error", Reason: message.StopReason, Error: message})
+		return
+	}
+	stream.Push(AssistantMessageEvent{Type: "done", Reason: message.StopReason, Message: message})
 }
 
 func anthropicMessagesEndpoint(baseURL string) string {
