@@ -28,8 +28,8 @@ type LlamaProviderController struct {
 	mu sync.RWMutex
 
 	provider      *llm.Provider
-	catalog       []LlamaModelInfo
-	serverURL     string
+	models        []llm.Model
+	initialized   bool
 	clientOptions LlamaClientOptions
 }
 
@@ -98,7 +98,7 @@ func (c *LlamaProviderController) SetCatalog(
 	if err != nil {
 		return err
 	}
-	loaded := make([]LlamaModelInfo, 0, len(catalog))
+	models := make([]llm.Model, 0, len(catalog))
 	for _, entry := range catalog {
 		if entry.Status.Value != LlamaModelLoaded {
 			continue
@@ -106,14 +106,15 @@ func (c *LlamaProviderController) SetCatalog(
 		if strings.TrimSpace(entry.ID) == "" {
 			return errors.New("llama.cpp model ID is required")
 		}
-		if _, err := llamaProviderModel(entry, normalized); err != nil {
+		model, err := llamaProviderModel(entry, normalized)
+		if err != nil {
 			return err
 		}
-		loaded = append(loaded, cloneLlamaModelInfo(entry))
+		models = append(models, model)
 	}
 	c.mu.Lock()
-	c.catalog = loaded
-	c.serverURL = normalized
+	c.models = cloneLlamaProviderModels(models)
+	c.initialized = true
 	c.mu.Unlock()
 	return nil
 }
@@ -123,18 +124,34 @@ func (c *LlamaProviderController) modelSnapshot() ([]llm.Model, error) {
 		return nil, nil
 	}
 	c.mu.RLock()
-	catalog := cloneLlamaModelCatalog(c.catalog)
-	serverURL := c.serverURL
+	models := cloneLlamaProviderModels(c.models)
 	c.mu.RUnlock()
-	models := make([]llm.Model, 0, len(catalog))
-	for _, entry := range catalog {
-		model, err := llamaProviderModel(entry, serverURL)
-		if err != nil {
-			return nil, err
-		}
-		models = append(models, model)
-	}
 	return models, nil
+}
+
+// restoreModels publishes a persisted standard-model snapshot only until the
+// controller has acquired fresher in-process state. This keeps an explicit
+// management update, including an empty catalog after unloading all models,
+// from being replaced by stale disk state during a later cache-only refresh.
+func (c *LlamaProviderController) restoreModels(models []llm.Model) {
+	if c == nil {
+		return
+	}
+	restored := make([]llm.Model, 0, len(models))
+	for _, model := range models {
+		if model.Provider != LlamaProviderID ||
+			model.API != "openai-completions" ||
+			strings.TrimSpace(model.ID) == "" {
+			continue
+		}
+		restored = append(restored, model.Clone())
+	}
+	c.mu.Lock()
+	if !c.initialized {
+		c.models = restored
+		c.initialized = true
+	}
+	c.mu.Unlock()
 }
 
 func (c *LlamaProviderController) apiKeyAuth() *llm.APIKeyAuth {
@@ -286,6 +303,15 @@ func (c *LlamaProviderController) refreshModels(
 	input llm.RefreshModelsContext,
 ) error {
 	ctx = llamaContext(ctx)
+	if input.Store != nil {
+		stored, exists, err := input.Store.ReadModels(ctx)
+		if err != nil {
+			return err
+		}
+		if exists {
+			c.restoreModels(stored.Models)
+		}
+	}
 	if !input.AllowNetwork ||
 		input.Credential == nil ||
 		input.Credential.Type != llm.CredentialTypeAPIKey {
@@ -307,7 +333,23 @@ func (c *LlamaProviderController) refreshModels(
 	if err != nil {
 		return err
 	}
-	return c.SetCatalog(catalog, serverURL)
+	if err := c.SetCatalog(catalog, serverURL); err != nil {
+		return err
+	}
+	if input.Store == nil {
+		return nil
+	}
+	models, err := c.modelSnapshot()
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return input.Store.WriteModels(ctx, llm.ModelsStoreEntry{
+		Models:    models,
+		CheckedAt: time.Now().UnixMilli(),
+	})
 }
 
 func llamaCredentialServerURL(
@@ -408,48 +450,13 @@ func llamaBoolPointer(value bool) *bool {
 	return &value
 }
 
-func cloneLlamaModelCatalog(
-	catalog []LlamaModelInfo,
-) []LlamaModelInfo {
-	if catalog == nil {
+func cloneLlamaProviderModels(models []llm.Model) []llm.Model {
+	if models == nil {
 		return nil
 	}
-	cloned := make([]LlamaModelInfo, len(catalog))
-	for index, model := range catalog {
-		cloned[index] = cloneLlamaModelInfo(model)
+	cloned := make([]llm.Model, len(models))
+	for index, model := range models {
+		cloned[index] = model.Clone()
 	}
 	return cloned
-}
-
-func cloneLlamaModelInfo(model LlamaModelInfo) LlamaModelInfo {
-	model.Aliases = append([]string(nil), model.Aliases...)
-	model.Status.Args = append([]string(nil), model.Status.Args...)
-	if model.Status.ExitCode != nil {
-		exitCode := *model.Status.ExitCode
-		model.Status.ExitCode = &exitCode
-	}
-	model.Status.Progress = cloneLlamaTransferProgress(
-		model.Status.Progress,
-	)
-	model.Architecture.InputModalities = append(
-		[]string(nil),
-		model.Architecture.InputModalities...,
-	)
-	model.Architecture.OutputModalities = append(
-		[]string(nil),
-		model.Architecture.OutputModalities...,
-	)
-	if model.Meta.ContextWindow != nil {
-		contextWindow := *model.Meta.ContextWindow
-		model.Meta.ContextWindow = &contextWindow
-	}
-	if model.Meta.TrainingContext != nil {
-		trainingContext := *model.Meta.TrainingContext
-		model.Meta.TrainingContext = &trainingContext
-	}
-	if model.Meta.Size != nil {
-		size := *model.Meta.Size
-		model.Meta.Size = &size
-	}
-	return model
 }

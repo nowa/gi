@@ -10,6 +10,9 @@ type ModelsStoreEntry struct {
 	Models       []Model `json:"models"`
 	LastModified *int64  `json:"lastModified,omitempty"`
 	CheckedAt    int64   `json:"checkedAt,omitempty"`
+	// ETag is the opaque remote validator, including any quotes, echoed back
+	// verbatim as If-None-Match when Models contains the cached response body.
+	ETag string `json:"etag,omitempty"`
 }
 
 // ModelsStore persists dynamic model catalogs by provider ID.
@@ -137,10 +140,94 @@ func cloneModel(model Model) Model {
 			cloned.ThinkingLevelMap[level] = &value
 		}
 	}
-	cloned.Compat.OpenRouterRouting = cloneCredentialMetadata(model.Compat.OpenRouterRouting)
-	cloned.Compat.VercelGatewayRouting = cloneCredentialMetadata(model.Compat.VercelGatewayRouting)
-	cloned.Compat.ChatTemplateKwargs = cloneCredentialMetadata(model.Compat.ChatTemplateKwargs)
+	cloned.Compat = cloneModelCompat(model.Compat)
 	return cloned
+}
+
+func cloneModelCompat(compat ModelCompat) ModelCompat {
+	compat.SupportsStore = clonePointer(compat.SupportsStore)
+	compat.SupportsDeveloperRole = clonePointer(
+		compat.SupportsDeveloperRole,
+	)
+	compat.SupportsReasoningEffort = clonePointer(
+		compat.SupportsReasoningEffort,
+	)
+	compat.SupportsUsageInStreaming = clonePointer(
+		compat.SupportsUsageInStreaming,
+	)
+	compat.SupportsStrictMode = clonePointer(compat.SupportsStrictMode)
+	compat.SupportsOpenAIGrammarTools = clonePointer(
+		compat.SupportsOpenAIGrammarTools,
+	)
+	compat.SupportsLongCacheRetention = clonePointer(
+		compat.SupportsLongCacheRetention,
+	)
+	compat.SupportsEagerToolInputStreaming = clonePointer(
+		compat.SupportsEagerToolInputStreaming,
+	)
+	compat.SupportsCacheControlOnTools = clonePointer(
+		compat.SupportsCacheControlOnTools,
+	)
+	compat.SupportsExplicitPromptCacheMode = clonePointer(
+		compat.SupportsExplicitPromptCacheMode,
+	)
+	compat.SupportsTemperature = clonePointer(
+		compat.SupportsTemperature,
+	)
+	compat.SupportsStrictTools = clonePointer(compat.SupportsStrictTools)
+	compat.SupportsToolReferences = clonePointer(
+		compat.SupportsToolReferences,
+	)
+	compat.SupportsToolSearch = clonePointer(compat.SupportsToolSearch)
+	compat.ForceAdaptiveThinking = clonePointer(
+		compat.ForceAdaptiveThinking,
+	)
+	compat.AllowEmptySignature = clonePointer(
+		compat.AllowEmptySignature,
+	)
+	compat.SendSessionAffinityHeaders = clonePointer(
+		compat.SendSessionAffinityHeaders,
+	)
+	compat.SendSessionIDHeader = clonePointer(
+		compat.SendSessionIDHeader,
+	)
+	compat.RequiresToolResultName = clonePointer(
+		compat.RequiresToolResultName,
+	)
+	compat.RequiresAssistantAfterToolResult = clonePointer(
+		compat.RequiresAssistantAfterToolResult,
+	)
+	compat.RequiresThinkingAsText = clonePointer(
+		compat.RequiresThinkingAsText,
+	)
+	compat.RequiresReasoningContentOnAssistantMessages = clonePointer(
+		compat.RequiresReasoningContentOnAssistantMessages,
+	)
+	compat.RequiresReasoningContentOnAssistantTurns = clonePointer(
+		compat.RequiresReasoningContentOnAssistantTurns,
+	)
+	compat.RequiresReasoningContentOnAssistantEvents = clonePointer(
+		compat.RequiresReasoningContentOnAssistantEvents,
+	)
+	compat.ZAIToolStream = clonePointer(compat.ZAIToolStream)
+	compat.OpenRouterRouting = cloneCredentialMetadata(
+		compat.OpenRouterRouting,
+	)
+	compat.VercelGatewayRouting = cloneCredentialMetadata(
+		compat.VercelGatewayRouting,
+	)
+	compat.ChatTemplateKwargs = cloneCredentialMetadata(
+		compat.ChatTemplateKwargs,
+	)
+	return compat
+}
+
+func clonePointer[T any](value *T) *T {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func cloneStringMap(values map[string]string) map[string]string {

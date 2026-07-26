@@ -194,6 +194,11 @@ type Model struct {
 	ThinkingLevelMap map[string]*string `json:"thinkingLevelMap,omitempty"`
 }
 
+// Clone returns a detached copy of the model and all mutable nested values.
+func (m Model) Clone() Model {
+	return cloneModel(m)
+}
+
 type ModelCompat struct {
 	SupportsStore                               *bool          `json:"supportsStore,omitempty"`
 	SupportsDeveloperRole                       *bool          `json:"supportsDeveloperRole,omitempty"`

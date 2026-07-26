@@ -194,6 +194,180 @@ func TestWithRemoteCatalogRefreshLifecycle(t *testing.T) {
 	})
 }
 
+func TestWithRemoteCatalogETagLifecycle(t *testing.T) {
+	t.Run("revalidates a stored catalog with its etag and keeps the overlay on 304", func(t *testing.T) {
+		responses := []*http.Response{
+			remoteCatalogHTTPResponse(
+				http.StatusOK,
+				`{"dynamic":{"id":"dynamic","name":"Dynamic","api":"openai-completions","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}}`,
+				http.Header{"Etag": []string{`"catalog-1"`}},
+			),
+			remoteCatalogHTTPResponse(
+				http.StatusNotModified,
+				"",
+				http.Header{"Etag": []string{`"catalog-1"`}},
+			),
+		}
+		var requestHeaders []http.Header
+		client := remoteCatalogHTTPDoerFunc(func(
+			request *http.Request,
+		) (*http.Response, error) {
+			requestHeaders = append(requestHeaders, request.Header.Clone())
+			response := responses[0]
+			responses = responses[1:]
+			return response, nil
+		})
+		provider := newRemoteCatalogTestProvider(t, client, time.Time{})
+		store := NewInMemoryModelsStore()
+		refresh := RefreshModelsContext{
+			Store:        remoteCatalogScopedStore{store, provider.ID},
+			AllowNetwork: true,
+		}
+
+		if err := provider.RefreshModels(context.Background(), refresh); err != nil {
+			t.Fatal(err)
+		}
+		if got := requestHeaders[0].Get("If-None-Match"); got != "" {
+			t.Fatalf("initial If-None-Match = %q", got)
+		}
+		stored, _, _ := store.ReadModels(context.Background(), provider.ID)
+		if stored.ETag != `"catalog-1"` {
+			t.Fatalf("initial ETag = %q", stored.ETag)
+		}
+		checkedAt := stored.CheckedAt
+
+		refresh.Force = true
+		if err := provider.RefreshModels(context.Background(), refresh); err != nil {
+			t.Fatal(err)
+		}
+		if got := requestHeaders[1].Get("If-None-Match"); got != `"catalog-1"` {
+			t.Fatalf("revalidation If-None-Match = %q", got)
+		}
+		if got := remoteCatalogModelIDs(t, provider); !reflect.DeepEqual(
+			got,
+			[]string{"static", "dynamic"},
+		) {
+			t.Fatalf("model IDs = %#v", got)
+		}
+		stored, _, _ = store.ReadModels(context.Background(), provider.ID)
+		if len(stored.Models) != 1 ||
+			stored.Models[0].ID != "dynamic" ||
+			stored.ETag != `"catalog-1"` ||
+			stored.CheckedAt < checkedAt {
+			t.Fatalf("revalidated entry = %#v", stored)
+		}
+	})
+
+	t.Run("drops a stale etag when the overlay becomes unavailable", func(t *testing.T) {
+		responses := []*http.Response{
+			remoteCatalogHTTPResponse(
+				http.StatusOK,
+				`{"dynamic":{"id":"dynamic","name":"Dynamic","api":"openai-completions","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}}`,
+				http.Header{"Etag": []string{`"catalog-1"`}},
+			),
+			remoteCatalogHTTPResponse(
+				http.StatusNotImplemented,
+				"not implemented",
+				nil,
+			),
+		}
+		client := remoteCatalogHTTPDoerFunc(func(
+			_ *http.Request,
+		) (*http.Response, error) {
+			response := responses[0]
+			responses = responses[1:]
+			return response, nil
+		})
+		provider := newRemoteCatalogTestProvider(t, client, time.Time{})
+		store := NewInMemoryModelsStore()
+		refresh := RefreshModelsContext{
+			Store:        remoteCatalogScopedStore{store, provider.ID},
+			AllowNetwork: true,
+		}
+
+		if err := provider.RefreshModels(context.Background(), refresh); err != nil {
+			t.Fatal(err)
+		}
+		refresh.Force = true
+		if err := provider.RefreshModels(context.Background(), refresh); err != nil {
+			t.Fatal(err)
+		}
+		stored, _, _ := store.ReadModels(context.Background(), provider.ID)
+		if stored.ETag != "" {
+			t.Fatalf("unavailable ETag = %q", stored.ETag)
+		}
+	})
+
+	t.Run("keeps the etag and overlay after a transient failure", func(t *testing.T) {
+		responses := []*http.Response{
+			remoteCatalogHTTPResponse(
+				http.StatusOK,
+				`{"dynamic":{"id":"dynamic","name":"Dynamic","api":"openai-completions","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}}`,
+				http.Header{"Etag": []string{`"catalog-1"`}},
+			),
+			remoteCatalogHTTPResponse(
+				http.StatusTooManyRequests,
+				"rate limited",
+				nil,
+			),
+			remoteCatalogHTTPResponse(
+				http.StatusNotModified,
+				"",
+				http.Header{"Etag": []string{`"catalog-1"`}},
+			),
+		}
+		var validators []string
+		client := remoteCatalogHTTPDoerFunc(func(
+			request *http.Request,
+		) (*http.Response, error) {
+			validators = append(
+				validators,
+				request.Header.Get("If-None-Match"),
+			)
+			response := responses[0]
+			responses = responses[1:]
+			return response, nil
+		})
+		provider := newRemoteCatalogTestProvider(t, client, time.Time{})
+		store := NewInMemoryModelsStore()
+		refresh := RefreshModelsContext{
+			Store:        remoteCatalogScopedStore{store, provider.ID},
+			AllowNetwork: true,
+		}
+
+		if err := provider.RefreshModels(context.Background(), refresh); err != nil {
+			t.Fatal(err)
+		}
+		refresh.Force = true
+		err := provider.RefreshModels(context.Background(), refresh)
+		if err == nil || !strings.Contains(err.Error(), "429") {
+			t.Fatalf("transient refresh error = %v", err)
+		}
+		stored, _, _ := store.ReadModels(context.Background(), provider.ID)
+		if stored.ETag != `"catalog-1"` ||
+			len(stored.Models) != 1 ||
+			stored.Models[0].ID != "dynamic" {
+			t.Fatalf("entry after transient failure = %#v", stored)
+		}
+
+		if err := provider.RefreshModels(context.Background(), refresh); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(
+			validators,
+			[]string{"", `"catalog-1"`, `"catalog-1"`},
+		) {
+			t.Fatalf("If-None-Match values = %#v", validators)
+		}
+		if got := remoteCatalogModelIDs(t, provider); !reflect.DeepEqual(
+			got,
+			[]string{"static", "dynamic"},
+		) {
+			t.Fatalf("model IDs = %#v", got)
+		}
+	})
+}
+
 func TestModelsStoreEntryPreservesLastModifiedPresence(t *testing.T) {
 	zero := int64(0)
 	withZero, err := json.Marshal(ModelsStoreEntry{

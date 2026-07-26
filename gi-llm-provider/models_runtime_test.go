@@ -873,6 +873,7 @@ func TestInMemoryModelsStoreClonesEntries(t *testing.T) {
 		Models:       []Model{runtimeTestModel("provider", "model")},
 		LastModified: ptrInt64(10),
 		CheckedAt:    20,
+		ETag:         `"catalog-1"`,
 	}
 	entry.Models[0].Headers = map[string]string{"X-Test": "original"}
 	if err := store.WriteModels(context.Background(), "provider", entry); err != nil {
@@ -888,6 +889,9 @@ func TestInMemoryModelsStoreClonesEntries(t *testing.T) {
 	again, _, _ := store.ReadModels(context.Background(), "provider")
 	if again.Models[0].Headers["X-Test"] != "original" {
 		t.Fatalf("read shared mutable state: %#v", again)
+	}
+	if again.ETag != `"catalog-1"` {
+		t.Fatalf("read ETag = %q", again.ETag)
 	}
 	if read.LastModified == entry.LastModified ||
 		read.LastModified == again.LastModified {

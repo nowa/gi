@@ -1399,25 +1399,7 @@ func cloneRuntimeModels(models []llm.Model) []llm.Model {
 }
 
 func cloneRuntimeModel(model llm.Model) llm.Model {
-	model.Headers = cloneStringMap(model.Headers)
-	model.Input = append([]string(nil), model.Input...)
-	model.Cost.Tiers = append(
-		[]llm.ModelCostTier(nil),
-		model.Cost.Tiers...,
-	)
-	model.ThinkingLevelMap = cloneThinkingLevelMap(
-		model.ThinkingLevelMap,
-	)
-	model.Compat.OpenRouterRouting = cloneRuntimeAnyMap(
-		model.Compat.OpenRouterRouting,
-	)
-	model.Compat.VercelGatewayRouting = cloneRuntimeAnyMap(
-		model.Compat.VercelGatewayRouting,
-	)
-	model.Compat.ChatTemplateKwargs = cloneRuntimeAnyMap(
-		model.Compat.ChatTemplateKwargs,
-	)
-	return model
+	return model.Clone()
 }
 
 func cloneRuntimeAnyMap(values map[string]any) map[string]any {

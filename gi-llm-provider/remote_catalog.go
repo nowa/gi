@@ -161,6 +161,11 @@ func (s *remoteCatalogState) refresh(
 	if s.userAgent != "" {
 		request.Header.Set("User-Agent", s.userAgent)
 	}
+	// A validator is only useful together with its cached representation:
+	// accepting a 304 without a body to restore would publish an empty overlay.
+	if len(stored.Models) > 0 && stored.ETag != "" {
+		request.Header.Set("If-None-Match", stored.ETag)
+	}
 	response, err := s.client.Do(request)
 	if err != nil {
 		return fmt.Errorf(
@@ -176,6 +181,11 @@ func (s *remoteCatalogState) refresh(
 
 	checkedAt := s.now().UnixMilli()
 	switch response.StatusCode {
+	case http.StatusNotModified:
+		if exists {
+			stored.CheckedAt = checkedAt
+			return input.Store.WriteModels(ctx, stored)
+		}
 	case http.StatusNotFound, http.StatusNotImplemented:
 		entry := stored
 		if !exists {
@@ -183,6 +193,7 @@ func (s *remoteCatalogState) refresh(
 		}
 		entry.CheckedAt = checkedAt
 		entry.LastModified = int64Pointer(0)
+		entry.ETag = ""
 		return input.Store.WriteModels(ctx, entry)
 	}
 	if response.StatusCode < http.StatusOK ||
@@ -227,6 +238,7 @@ func (s *remoteCatalogState) refresh(
 		Models:       refreshed,
 		LastModified: &lastModified,
 		CheckedAt:    checkedAt,
+		ETag:         response.Header.Get("ETag"),
 	}
 	dynamic := remoteCatalogModels(
 		entry,

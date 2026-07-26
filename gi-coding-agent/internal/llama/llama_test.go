@@ -256,6 +256,138 @@ func TestLlamaProviderPublishesLoadedCatalogAndResolvesAuth(
 	}
 }
 
+func TestLlamaProviderPersistsAndRestoresLoadedModelsForCacheOnlyStartupRefreshes(
+	t *testing.T,
+) {
+	var networkCalls atomic.Int32
+	client := llamaTestHTTPDoerFunc(
+		func(_ *http.Request) (*http.Response, error) {
+			networkCalls.Add(1)
+			return llamaTestJSONResponse(http.StatusOK, map[string]any{
+				"data": []map[string]any{
+					{
+						"id": "loaded",
+						"status": map[string]any{
+							"value": "loaded",
+						},
+						"meta": map[string]any{
+							"n_ctx": 32768,
+						},
+					},
+					{
+						"id": "unloaded",
+						"status": map[string]any{
+							"value": "unloaded",
+						},
+					},
+				},
+			}), nil
+		},
+	)
+	store := &llamaTestProviderModelsStore{
+		store:      llm.NewInMemoryModelsStore(),
+		providerID: LlamaProviderID,
+	}
+	credential := &llm.Credential{
+		Type: llm.CredentialTypeAPIKey,
+		Key:  "local",
+		Env: llm.ProviderEnv{
+			"LLAMA_BASE_URL": "http://llama.test",
+		},
+	}
+
+	first, err := CreateLlamaProvider(LlamaProviderOptions{
+		HTTPClient: client,
+		Timeout:    time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Provider().RefreshModels(
+		context.Background(),
+		llm.RefreshModelsContext{
+			Credential:   credential,
+			Store:        store,
+			AllowNetwork: true,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	firstModels, err := first.Provider().GetModels()
+	if err != nil ||
+		len(firstModels) != 1 ||
+		firstModels[0].ID != "loaded" {
+		t.Fatalf("first models = %#v, %v", firstModels, err)
+	}
+	cached, exists, err := store.ReadModels(context.Background())
+	if err != nil || !exists ||
+		cached.CheckedAt == 0 ||
+		len(cached.Models) != 1 ||
+		cached.Models[0].ID != "loaded" {
+		t.Fatalf("cached entry = %#v, %v, %v", cached, exists, err)
+	}
+
+	second, err := CreateLlamaProvider(LlamaProviderOptions{
+		HTTPClient: llamaTestHTTPDoerFunc(
+			func(*http.Request) (*http.Response, error) {
+				return nil, errors.New(
+					"cache-only refresh performed a network request",
+				)
+			},
+		),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := second.Provider().RefreshModels(
+		context.Background(),
+		llm.RefreshModelsContext{
+			Credential:   credential,
+			Store:        store,
+			AllowNetwork: false,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	secondModels, err := second.Provider().GetModels()
+	if err != nil ||
+		len(secondModels) != 1 ||
+		secondModels[0].ID != "loaded" ||
+		secondModels[0].BaseURL != "http://llama.test/v1" ||
+		secondModels[0].ContextWindow != 32768 {
+		t.Fatalf("restored models = %#v, %v", secondModels, err)
+	}
+	if networkCalls.Load() != 1 {
+		t.Fatalf("network calls = %d, want 1", networkCalls.Load())
+	}
+
+	// Explicit in-process state is newer than the persisted snapshot. An empty
+	// loaded catalog after unloading the model must not resurrect stale cache.
+	if err := second.SetCatalog(
+		[]LlamaModelInfo{{
+			ID:     "loaded",
+			Status: LlamaModelStatus{Value: LlamaModelUnloaded},
+		}},
+		"http://llama.test",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := second.Provider().RefreshModels(
+		context.Background(),
+		llm.RefreshModelsContext{
+			Credential:   credential,
+			Store:        store,
+			AllowNetwork: false,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	secondModels, err = second.Provider().GetModels()
+	if err != nil || len(secondModels) != 0 {
+		t.Fatalf("stale cache replaced explicit catalog: %#v, %v", secondModels, err)
+	}
+}
+
 func TestHuggingFaceClientSearchDetailsAndRateLimit(
 	t *testing.T,
 ) {
@@ -533,6 +665,30 @@ func (f llamaTestHTTPDoerFunc) Do(
 	request *http.Request,
 ) (*http.Response, error) {
 	return f(request)
+}
+
+type llamaTestProviderModelsStore struct {
+	store      llm.ModelsStore
+	providerID string
+}
+
+func (s *llamaTestProviderModelsStore) ReadModels(
+	ctx context.Context,
+) (llm.ModelsStoreEntry, bool, error) {
+	return s.store.ReadModels(ctx, s.providerID)
+}
+
+func (s *llamaTestProviderModelsStore) WriteModels(
+	ctx context.Context,
+	entry llm.ModelsStoreEntry,
+) error {
+	return s.store.WriteModels(ctx, s.providerID, entry)
+}
+
+func (s *llamaTestProviderModelsStore) DeleteModels(
+	ctx context.Context,
+) error {
+	return s.store.DeleteModels(ctx, s.providerID)
 }
 
 type llamaTestRouter struct {
