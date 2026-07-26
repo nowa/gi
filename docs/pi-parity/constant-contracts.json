@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "scope": {
+    "piRoot": "packages/ai/src",
+    "piExclusions": [
+      ".models.ts",
+      ".generated.ts"
+    ],
+    "giPaths": [
+      "gi-llm-provider"
+    ]
+  },
+  "numeric": [
+    {
+      "id": "provider-retry-max-delay",
+      "pi": {
+        "file": "packages/ai/src/utils/provider-retry.ts",
+        "symbol": "DEFAULT_MAX_RETRY_DELAY_MS",
+        "unit": "milliseconds"
+      },
+      "gi": {
+        "file": "gi-llm-provider/retry.go",
+        "symbol": "DefaultMaxProviderRetryDelay",
+        "unit": "nanoseconds"
+      }
+    },
+    {
+      "id": "provider-error-body-cap",
+      "pi": {
+        "file": "packages/ai/src/utils/error-body.ts",
+        "symbol": "MAX_PROVIDER_ERROR_BODY_CHARS"
+      },
+      "gi": {
+        "file": "gi-llm-provider/provider_error.go",
+        "symbol": "MaxProviderErrorBodyChars"
+      }
+    },
+    {
+      "id": "prompt-cache-key-cap",
+      "pi": {
+        "file": "packages/ai/src/api/openai-prompt-cache.ts",
+        "symbol": "OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH"
+      },
+      "gi": {
+        "file": "gi-llm-provider/openai_prompt_cache.go",
+        "symbol": "OpenAIPromptCacheKeyMaxLength"
+      }
+    },
+    {
+      "id": "context-safety-tokens",
+      "pi": {
+        "file": "packages/ai/src/api/simple-options.ts",
+        "symbol": "CONTEXT_SAFETY_TOKENS"
+      },
+      "gi": {
+        "file": "gi-llm-provider/simple_options.go",
+        "symbol": "contextSafetyTokens"
+      }
+    },
+    {
+      "id": "minimum-max-tokens",
+      "pi": {
+        "file": "packages/ai/src/api/simple-options.ts",
+        "symbol": "MIN_MAX_TOKENS"
+      },
+      "gi": {
+        "file": "gi-llm-provider/simple_options.go",
+        "symbol": "minimumMaxTokens"
+      }
+    },
+    {
+      "id": "minimum-thinking-output",
+      "pi": {
+        "file": "packages/ai/src/api/simple-options.ts",
+        "symbol": "minOutputTokens"
+      },
+      "gi": {
+        "file": "gi-llm-provider/simple_options.go",
+        "symbol": "minimumThinkingOutputSize"
+      }
+    },
+    {
+      "id": "minimal-thinking-budget",
+      "pi": {
+        "file": "packages/ai/src/api/simple-options.ts",
+        "symbol": "defaultBudgets",
+        "path": [
+          "minimal"
+        ]
+      },
+      "gi": {
+        "file": "gi-llm-provider/simple_options.go",
+        "symbol": "minimalThinkingBudget"
+      }
+    },
+    {
+      "id": "low-thinking-budget",
+      "pi": {
+        "file": "packages/ai/src/api/simple-options.ts",
+        "symbol": "defaultBudgets",
+        "path": [
+          "low"
+        ]
+      },
+      "gi": {
+        "file": "gi-llm-provider/simple_options.go",
+        "symbol": "lowThinkingBudget"
+      }
+    },
+    {
+      "id": "medium-thinking-budget",
+      "pi": {
+        "file": "packages/ai/src/api/simple-options.ts",
+        "symbol": "defaultBudgets",
+        "path": [
+          "medium"
+        ]
+      },
+      "gi": {
+        "file": "gi-llm-provider/simple_options.go",
+        "symbol": "mediumThinkingBudget"
+      }
+    },
+    {
+      "id": "high-thinking-budget",
+      "pi": {
+        "file": "packages/ai/src/api/simple-options.ts",
+        "symbol": "defaultBudgets",
+        "path": [
+          "high"
+        ]
+      },
+      "gi": {
+        "file": "gi-llm-provider/simple_options.go",
+        "symbol": "highThinkingBudget"
+      }
+    },
+    {
+      "id": "estimated-characters-per-token",
+      "pi": {
+        "file": "packages/ai/src/utils/estimate.ts",
+        "symbol": "CHARS_PER_TOKEN"
+      },
+      "gi": {
+        "file": "gi-llm-provider/estimate.go",
+        "symbol": "estimatedCharactersPerToken"
+      }
+    },
+    {
+      "id": "estimated-image-characters",
+      "pi": {
+        "file": "packages/ai/src/utils/estimate.ts",
+        "symbol": "ESTIMATED_IMAGE_CHARS"
+      },
+      "gi": {
+        "file": "gi-llm-provider/estimate.go",
+        "symbol": "estimatedImageCharacters"
+      }
+    },
+    {
+      "id": "openai-responses-min-output",
+      "pi": {
+        "file": "packages/ai/src/api/openai-responses.ts",
+        "symbol": "OPENAI_RESPONSES_MIN_OUTPUT_TOKENS"
+      },
+      "gi": {
+        "file": "gi-llm-provider/openai_responses_payload.go",
+        "symbol": "openAIResponsesMinimumOutputTokens"
+      }
+    }
+  ],
+  "patterns": [
+    {
+      "id": "assistant-non-retryable-limits",
+      "pi": {
+        "file": "packages/ai/src/utils/retry.ts",
+        "symbol": "NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN"
+      },
+      "gi": {
+        "file": "gi-llm-provider/retry.go",
+        "symbol": "nonRetryableProviderLimitErrorPattern",
+        "transform": "case-insensitive-alternatives"
+      }
+    },
+    {
+      "id": "assistant-retryable-errors",
+      "pi": {
+        "file": "packages/ai/src/utils/retry.ts",
+        "symbol": "RETRYABLE_PROVIDER_ERROR_PATTERN"
+      },
+      "gi": {
+        "file": "gi-llm-provider/retry.go",
+        "symbol": "retryableProviderErrorPattern",
+        "transform": "case-insensitive-alternatives"
+      }
+    },
+    {
+      "id": "context-overflow-errors",
+      "pi": {
+        "file": "packages/ai/src/utils/overflow.ts",
+        "symbol": "OVERFLOW_PATTERNS"
+      },
+      "gi": {
+        "file": "gi-llm-provider/overflow.go",
+        "symbol": "overflowPatterns",
+        "transform": "case-insensitive-regexp-array"
+      }
+    },
+    {
+      "id": "context-overflow-exclusions",
+      "pi": {
+        "file": "packages/ai/src/utils/overflow.ts",
+        "symbol": "NON_OVERFLOW_PATTERNS"
+      },
+      "gi": {
+        "file": "gi-llm-provider/overflow.go",
+        "symbol": "nonOverflowPatterns",
+        "transform": "case-insensitive-regexp-array"
+      }
+    }
+  ]
+}

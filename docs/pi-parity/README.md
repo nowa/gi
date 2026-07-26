@@ -81,3 +81,32 @@ node docs/pi-parity/verify-parity-baseline.mjs \
 
 The verifiers inspect Pi source and tests as data. They do not install or
 execute Pi dependencies.
+
+## Constant and pattern parity
+
+`verify-constant-parity.mjs` adds two complementary checks for the handwritten
+`packages/ai` surface:
+
+- a non-gating AST inventory of numeric, string, and regular-expression
+  literals, used to identify cheap audit candidates;
+- gating contracts for values whose drift changes behavior, including retry
+  limits, provider-error truncation, context/token budgets, prompt-cache caps,
+  and the retry/overflow pattern sets.
+
+The Pi checkout used as the source oracle must still be the clean, exact
+baseline. TypeScript is only a parser dependency and may come from a separate
+runtime checkout; no source is imported from that checkout:
+
+```sh
+node docs/pi-parity/verify-constant-parity.mjs \
+  --pi-root /private/tmp/pi-v0.82.1 \
+  --pi-runtime-root ~/Projects/agents/pi
+```
+
+For automation, pass the compiler entry point directly with
+`--typescript /path/to/typescript/lib/typescript.js` or set
+`PI_TYPESCRIPT_PATH`. Use `--format json` to retain the complete literal
+inventory for a deeper audit. The authoritative named mappings live in
+`constant-contracts.json`; unmatched global literals are leads rather than
+automatic parity failures because Go and TypeScript necessarily use different
+runtime scaffolding.

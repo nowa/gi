@@ -4,6 +4,10 @@ const (
 	contextSafetyTokens       = 4096
 	minimumMaxTokens          = 1
 	minimumThinkingOutputSize = 1024
+	minimalThinkingBudget     = 1024
+	lowThinkingBudget         = 2048
+	mediumThinkingBudget      = 8192
+	highThinkingBudget        = 16384
 )
 
 // ThinkingTokenAllocation keeps the total output cap and the reasoning-token
@@ -97,12 +101,12 @@ func normalizeThinkingBudgetLevel(level string) string {
 func defaultThinkingBudget(level string) int {
 	switch level {
 	case "low":
-		return 2048
+		return lowThinkingBudget
 	case "medium":
-		return 8192
+		return mediumThinkingBudget
 	case "high":
-		return 16384
+		return highThinkingBudget
 	default:
-		return 1024
+		return minimalThinkingBudget
 	}
 }
