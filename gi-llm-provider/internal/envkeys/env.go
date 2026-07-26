@@ -2,77 +2,104 @@ package envkeys
 
 import "os"
 
-func apiKeyEnvVars(provider string) []string {
+const (
+	AnthropicAuthTokenEnv  = "ANTHROPIC_AUTH_TOKEN"
+	AnthropicOAuthTokenEnv = "ANTHROPIC_OAUTH_TOKEN"
+	AnthropicAPIKeyEnv     = "ANTHROPIC_API_KEY"
+)
+
+// providerEnvKeys keeps status-facing environment discovery separate from
+// values that can safely be passed to an SDK as an API key. Most providers use
+// the same ordered list for both. Anthropic's bearer token is intentionally
+// discoverable but must remain a request header.
+type providerEnvKeys struct {
+	discovery []string
+	apiKeys   []string
+}
+
+func envKeysForProvider(provider string) providerEnvKeys {
+	if provider == "anthropic" {
+		return providerEnvKeys{
+			discovery: []string{
+				AnthropicAuthTokenEnv,
+				AnthropicOAuthTokenEnv,
+				AnthropicAPIKeyEnv,
+			},
+			apiKeys: []string{
+				AnthropicOAuthTokenEnv,
+				AnthropicAPIKeyEnv,
+			},
+		}
+	}
+
+	var apiKeys []string
 	switch provider {
 	case "ant-ling":
-		return []string{"ANT_LING_API_KEY"}
+		apiKeys = []string{"ANT_LING_API_KEY"}
 	case "github-copilot":
-		return []string{"COPILOT_GITHUB_TOKEN"}
-	case "anthropic":
-		return []string{"ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"}
+		apiKeys = []string{"COPILOT_GITHUB_TOKEN"}
 	case "openai":
-		return []string{"OPENAI_API_KEY"}
+		apiKeys = []string{"OPENAI_API_KEY"}
 	case "azure-openai-responses":
-		return []string{"AZURE_OPENAI_API_KEY"}
+		apiKeys = []string{"AZURE_OPENAI_API_KEY"}
 	case "nvidia":
-		return []string{"NVIDIA_API_KEY"}
+		apiKeys = []string{"NVIDIA_API_KEY"}
 	case "deepseek":
-		return []string{"DEEPSEEK_API_KEY"}
+		apiKeys = []string{"DEEPSEEK_API_KEY"}
 	case "google":
-		return []string{"GEMINI_API_KEY"}
+		apiKeys = []string{"GEMINI_API_KEY"}
 	case "google-vertex":
-		return []string{"GOOGLE_CLOUD_API_KEY"}
+		apiKeys = []string{"GOOGLE_CLOUD_API_KEY"}
 	case "groq":
-		return []string{"GROQ_API_KEY"}
+		apiKeys = []string{"GROQ_API_KEY"}
 	case "cerebras":
-		return []string{"CEREBRAS_API_KEY"}
+		apiKeys = []string{"CEREBRAS_API_KEY"}
 	case "xai":
-		return []string{"XAI_API_KEY"}
+		apiKeys = []string{"XAI_API_KEY"}
 	case "openrouter":
-		return []string{"OPENROUTER_API_KEY"}
+		apiKeys = []string{"OPENROUTER_API_KEY"}
 	case "vercel-ai-gateway":
-		return []string{"AI_GATEWAY_API_KEY"}
+		apiKeys = []string{"AI_GATEWAY_API_KEY"}
 	case "zai":
-		return []string{"ZAI_API_KEY"}
+		apiKeys = []string{"ZAI_API_KEY"}
 	case "zai-coding-cn":
-		return []string{"ZAI_CODING_CN_API_KEY"}
+		apiKeys = []string{"ZAI_CODING_CN_API_KEY"}
 	case "mistral":
-		return []string{"MISTRAL_API_KEY"}
+		apiKeys = []string{"MISTRAL_API_KEY"}
 	case "minimax":
-		return []string{"MINIMAX_API_KEY"}
+		apiKeys = []string{"MINIMAX_API_KEY"}
 	case "minimax-cn":
-		return []string{"MINIMAX_CN_API_KEY"}
+		apiKeys = []string{"MINIMAX_CN_API_KEY"}
 	case "moonshotai", "moonshotai-cn":
-		return []string{"MOONSHOT_API_KEY"}
+		apiKeys = []string{"MOONSHOT_API_KEY"}
 	case "huggingface":
-		return []string{"HF_TOKEN"}
+		apiKeys = []string{"HF_TOKEN"}
 	case "fireworks":
-		return []string{"FIREWORKS_API_KEY"}
+		apiKeys = []string{"FIREWORKS_API_KEY"}
 	case "together":
-		return []string{"TOGETHER_API_KEY"}
+		apiKeys = []string{"TOGETHER_API_KEY"}
 	case "opencode", "opencode-go":
-		return []string{"OPENCODE_API_KEY"}
+		apiKeys = []string{"OPENCODE_API_KEY"}
 	case "kimi-coding":
-		return []string{"KIMI_API_KEY"}
+		apiKeys = []string{"KIMI_API_KEY"}
 	case "qwen-token-plan":
-		return []string{"QWEN_TOKEN_PLAN_API_KEY"}
+		apiKeys = []string{"QWEN_TOKEN_PLAN_API_KEY"}
 	case "qwen-token-plan-cn":
-		return []string{"QWEN_TOKEN_PLAN_CN_API_KEY"}
+		apiKeys = []string{"QWEN_TOKEN_PLAN_CN_API_KEY"}
 	case "radius":
-		return []string{"RADIUS_API_KEY"}
+		apiKeys = []string{"RADIUS_API_KEY"}
 	case "cloudflare-workers-ai", "cloudflare-ai-gateway":
-		return []string{"CLOUDFLARE_API_KEY"}
+		apiKeys = []string{"CLOUDFLARE_API_KEY"}
 	case "xiaomi":
-		return []string{"XIAOMI_API_KEY"}
+		apiKeys = []string{"XIAOMI_API_KEY"}
 	case "xiaomi-token-plan-cn":
-		return []string{"XIAOMI_TOKEN_PLAN_CN_API_KEY"}
+		apiKeys = []string{"XIAOMI_TOKEN_PLAN_CN_API_KEY"}
 	case "xiaomi-token-plan-ams":
-		return []string{"XIAOMI_TOKEN_PLAN_AMS_API_KEY"}
+		apiKeys = []string{"XIAOMI_TOKEN_PLAN_AMS_API_KEY"}
 	case "xiaomi-token-plan-sgp":
-		return []string{"XIAOMI_TOKEN_PLAN_SGP_API_KEY"}
-	default:
-		return nil
+		apiKeys = []string{"XIAOMI_TOKEN_PLAN_SGP_API_KEY"}
 	}
+	return providerEnvKeys{discovery: apiKeys, apiKeys: apiKeys}
 }
 
 func FindEnvKeys(provider string) []string {
@@ -86,7 +113,7 @@ func FindEnvKeysWithLookup(provider string, lookup func(string) string) []string
 		lookup = os.Getenv
 	}
 	var found []string
-	for _, key := range apiKeyEnvVars(provider) {
+	for _, key := range envKeysForProvider(provider).discovery {
 		if lookup(key) != "" {
 			found = append(found, key)
 		}
@@ -107,9 +134,10 @@ func ResolveAPIKey(provider string, lookup func(string) string) string {
 	if lookup == nil {
 		lookup = os.Getenv
 	}
-	keys := FindEnvKeysWithLookup(provider, lookup)
-	if len(keys) > 0 {
-		return lookup(keys[0])
+	for _, key := range envKeysForProvider(provider).apiKeys {
+		if value := lookup(key); value != "" {
+			return value
+		}
 	}
 	if provider == "amazon-bedrock" {
 		if lookup("AWS_PROFILE") != "" ||

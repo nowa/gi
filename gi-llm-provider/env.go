@@ -6,6 +6,16 @@ import (
 	"github.com/nowa/gi/gi-llm-provider/internal/envkeys"
 )
 
+const (
+	// AnthropicAuthTokenEnv is reported as configured authentication but is
+	// resolved into an Authorization bearer header, never an SDK API key.
+	AnthropicAuthTokenEnv = envkeys.AnthropicAuthTokenEnv
+	// AnthropicOAuthTokenEnv contains Claude subscription OAuth tokens.
+	AnthropicOAuthTokenEnv = envkeys.AnthropicOAuthTokenEnv
+	// AnthropicAPIKeyEnv contains conventional Anthropic API keys.
+	AnthropicAPIKeyEnv = envkeys.AnthropicAPIKeyEnv
+)
+
 func FindEnvKeys(provider string) []string {
 	return envkeys.FindEnvKeys(provider)
 }

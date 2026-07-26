@@ -19,14 +19,16 @@ func resolveProviderRequestAuth(
 	headers map[string]string,
 	acceptedHeaderNames ...string,
 ) providerRequestAuth {
-	apiKey := apiKeyOrEnv(provider, explicitAPIKey, env)
-	if apiKey != "" {
-		return providerRequestAuth{APIKey: apiKey}
+	if explicitAPIKey != "" {
+		return providerRequestAuth{APIKey: explicitAPIKey}
 	}
 	for _, name := range acceptedHeaderNames {
 		if hasNonBlankHeaderCaseInsensitive(headers, name) {
 			return providerRequestAuth{HeaderOnly: true}
 		}
+	}
+	if apiKey := apiKeyOrEnv(provider, "", env); apiKey != "" {
+		return providerRequestAuth{APIKey: apiKey}
 	}
 	return providerRequestAuth{}
 }

@@ -26,7 +26,7 @@ var builtinProviderSpecs = []builtinProviderSpec{
 	envBuiltin("ant-ling", "Ant Ling", "Ant Ling API key", "ANT_LING_API_KEY"),
 	{id: "anthropic", name: "Anthropic", baseURL: "https://api.anthropic.com", auth: func() ProviderAuth {
 		return ProviderAuth{
-			APIKey: EnvAPIKeyAuth("Anthropic API key", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"),
+			APIKey: anthropicAPIKeyAuth(),
 			OAuth: registeredOrBuiltinOAuthAuth(
 				"anthropic",
 				NewAnthropicOAuth(AnthropicOAuthOptions{}),

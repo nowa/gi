@@ -18,34 +18,30 @@ const (
 )
 
 type radiusOAuthConfig struct {
-	Issuer                            string `json:"issuer"`
-	AuthorizationEndpoint             string `json:"authorizationEndpoint"`
-	TokenEndpoint                     string `json:"tokenEndpoint"`
-	DeviceAuthorizationEndpoint       string `json:"deviceAuthorizationEndpoint"`
-	DeviceAuthorizationEventsEndpoint string `json:"deviceAuthorizationEventsEndpoint"`
-	VerificationEndpoint              string `json:"verificationEndpoint"`
-	ClientID                          string `json:"clientId"`
-	Scope                             string `json:"scope"`
-	DeviceCodeGrantType               string `json:"deviceCodeGrantType"`
+	AuthorizationEndpoint       string
+	TokenEndpoint               string
+	DeviceAuthorizationEndpoint string
+	ClientID                    string
+	Scope                       string
+	DeviceCodeGrantType         string
 }
 
 type radiusDeviceAuthorization struct {
-	DeviceCode              string `json:"device_code"`
-	UserCode                string `json:"user_code"`
-	VerificationURI         string `json:"verification_uri"`
-	VerificationURIComplete string `json:"verification_uri_complete"`
-	ExpiresIn               int    `json:"expires_in"`
-	Interval                int    `json:"interval"`
+	DeviceCode      string `json:"device_code"`
+	UserCode        string `json:"user_code"`
+	VerificationURI string `json:"verification_uri"`
+	ExpiresIn       int    `json:"expires_in"`
+	Interval        int    `json:"interval"`
 }
 
-func loadRadiusOAuthConfig(
+func loadRadiusOAuthDiscovery(
 	ctx context.Context,
 	client HTTPDoer,
 	gateway string,
-) (radiusOAuthConfig, error) {
+) (string, error) {
 	endpoint, err := radiusOAuthEndpoint(gateway)
 	if err != nil {
-		return radiusOAuthConfig{}, err
+		return "", err
 	}
 	request, err := http.NewRequestWithContext(
 		contextOrBackground(ctx),
@@ -54,22 +50,22 @@ func loadRadiusOAuthConfig(
 		nil,
 	)
 	if err != nil {
-		return radiusOAuthConfig{}, err
+		return "", err
 	}
 	request.Header.Set("accept", "application/json")
 	response, err := httpClientOrDefault(client).Do(request)
 	if err != nil {
 		if contextError(ctx) != nil {
-			return radiusOAuthConfig{}, oauthLoginContextError(ctx)
+			return "", oauthLoginContextError(ctx)
 		}
-		return radiusOAuthConfig{}, fmt.Errorf(
+		return "", fmt.Errorf(
 			"could not load Radius OAuth config from %s: %w",
 			gateway,
 			err,
 		)
 	}
 	if response.Body == nil {
-		return radiusOAuthConfig{}, fmt.Errorf(
+		return "", fmt.Errorf(
 			"could not load Radius OAuth config from %s: response has no body",
 			gateway,
 		)
@@ -82,7 +78,7 @@ func loadRadiusOAuthConfig(
 			maxOAuthErrorBodyBytes,
 		))
 		if readErr != nil {
-			return radiusOAuthConfig{}, fmt.Errorf(
+			return "", fmt.Errorf(
 				"could not load Radius OAuth config from %s: %d: %w",
 				gateway,
 				response.StatusCode,
@@ -97,37 +93,41 @@ func loadRadiusOAuthConfig(
 		if detail := truncateOAuthErrorText(string(body)); detail != "" {
 			message += " " + detail
 		}
-		return radiusOAuthConfig{}, errors.New(message)
+		return "", errors.New(message)
 	}
 
 	body, err := readBoundedRadiusOAuthBody(response.Body)
 	if err != nil {
-		return radiusOAuthConfig{}, fmt.Errorf(
+		return "", fmt.Errorf(
 			"could not load Radius OAuth config from %s: %w",
 			gateway,
 			err,
 		)
 	}
-	var config radiusOAuthConfig
-	if err := json.Unmarshal(body, &config); err != nil {
-		return radiusOAuthConfig{}, fmt.Errorf(
+	var discovery struct {
+		AuthorizationEndpoint string `json:"authorizationEndpoint"`
+	}
+	if err := json.Unmarshal(body, &discovery); err != nil {
+		return "", fmt.Errorf(
 			"could not load Radius OAuth config from %s: %w",
 			gateway,
 			err,
 		)
 	}
-	if strings.TrimSpace(config.ClientID) == "" {
-		return radiusOAuthConfig{}, errors.New(
-			"Radius OAuth config is missing clientId",
-		)
-	}
+	authorizationEndpoint := strings.TrimSpace(
+		discovery.AuthorizationEndpoint,
+	)
 	if _, err := parseRadiusOAuthHTTPURL(
-		config.TokenEndpoint,
-		"tokenEndpoint",
+		authorizationEndpoint,
+		"authorizationEndpoint",
 	); err != nil {
-		return radiusOAuthConfig{}, err
+		return "", fmt.Errorf(
+			"invalid Radius OAuth config from %s: %w",
+			gateway,
+			err,
+		)
 	}
-	return config, nil
+	return authorizationEndpoint, nil
 }
 
 func requestRadiusDeviceAuthorization(
@@ -198,6 +198,7 @@ func requestRadiusDeviceAuthorization(
 	}
 	if strings.TrimSpace(device.DeviceCode) == "" ||
 		strings.TrimSpace(device.UserCode) == "" ||
+		strings.TrimSpace(device.VerificationURI) == "" ||
 		device.ExpiresIn <= 0 {
 		return radiusDeviceAuthorization{}, errors.New(
 			"Radius OAuth device authorization response is missing required fields",
@@ -358,6 +359,13 @@ func parseRadiusOAuthHTTPURL(
 }
 
 func radiusOAuthEndpoint(gateway string) (*url.URL, error) {
+	return radiusOAuthGatewayEndpoint(gateway, "/v1/oauth")
+}
+
+func radiusOAuthGatewayEndpoint(
+	gateway string,
+	path string,
+) (*url.URL, error) {
 	base, err := url.Parse(gateway)
 	if err != nil {
 		return nil, fmt.Errorf("parse Radius gateway %q: %w", gateway, err)
@@ -366,5 +374,5 @@ func radiusOAuthEndpoint(gateway string) (*url.URL, error) {
 		base.Host == "" {
 		return nil, fmt.Errorf("invalid Radius gateway URL %q", gateway)
 	}
-	return base.ResolveReference(&url.URL{Path: "/v1/oauth"}), nil
+	return base.ResolveReference(&url.URL{Path: path}), nil
 }

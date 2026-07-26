@@ -13,6 +13,9 @@ import (
 const (
 	radiusLoginMethodBrowser    = "browser"
 	radiusLoginMethodDeviceCode = "device-code"
+	radiusOAuthClientID         = "pi-gateway"
+	radiusOAuthScope            = "gateway offline_access"
+	radiusOAuthDeviceGrantType  = "urn:ietf:params:oauth:grant-type:device_code"
 )
 
 // RadiusOAuthOptions configures OAuth discovery and token exchange for one
@@ -71,7 +74,8 @@ func newRadiusOAuth(
 		gateway = DefaultRadiusGateway
 	}
 	gateway = NormalizeRadiusGatewayURL(gateway)
-	if _, err := radiusOAuthEndpoint(gateway); err != nil {
+	config, err := radiusOAuthGatewayConfig(gateway)
+	if err != nil {
 		return nil, err
 	}
 	runtime = normalizeRadiusOAuthRuntime(runtime)
@@ -88,10 +92,6 @@ func newRadiusOAuth(
 				return Credential{}, errors.New(
 					"Radius OAuth auth interaction is required",
 				)
-			}
-			config, err := loadRadiusOAuthConfig(ctx, client, gateway)
-			if err != nil {
-				return Credential{}, err
 			}
 			method, err := interaction.Prompt(ctx, AuthPrompt{
 				Type:    AuthPromptSelect,
@@ -113,10 +113,18 @@ func newRadiusOAuth(
 			}
 			switch method {
 			case radiusLoginMethodBrowser:
+				authorizationEndpoint, err :=
+					loadRadiusOAuthDiscovery(ctx, client, gateway)
+				if err != nil {
+					return Credential{}, err
+				}
+				browserConfig := config
+				browserConfig.AuthorizationEndpoint =
+					authorizationEndpoint
 				return loginRadiusWithBrowser(
 					ctx,
 					client,
-					config,
+					browserConfig,
 					interaction,
 					runtime,
 				)
@@ -146,10 +154,6 @@ func newRadiusOAuth(
 				return Credential{}, errors.New(
 					"Radius OAuth credential has no refresh token",
 				)
-			}
-			config, err := loadRadiusOAuthConfig(ctx, client, gateway)
-			if err != nil {
-				return Credential{}, err
 			}
 			refreshed, err := requestRadiusOAuthToken(
 				ctx,
@@ -185,6 +189,30 @@ func newRadiusOAuth(
 			}
 			return ModelAuth{APIKey: credential.Access}, nil
 		},
+	}, nil
+}
+
+func radiusOAuthGatewayConfig(gateway string) (radiusOAuthConfig, error) {
+	tokenEndpoint, err := radiusOAuthGatewayEndpoint(
+		gateway,
+		"/v1/oauth/token",
+	)
+	if err != nil {
+		return radiusOAuthConfig{}, err
+	}
+	deviceEndpoint, err := radiusOAuthGatewayEndpoint(
+		gateway,
+		"/v1/oauth/device",
+	)
+	if err != nil {
+		return radiusOAuthConfig{}, err
+	}
+	return radiusOAuthConfig{
+		TokenEndpoint:               tokenEndpoint.String(),
+		DeviceAuthorizationEndpoint: deviceEndpoint.String(),
+		ClientID:                    radiusOAuthClientID,
+		Scope:                       radiusOAuthScope,
+		DeviceCodeGrantType:         radiusOAuthDeviceGrantType,
 	}, nil
 }
 
@@ -319,14 +347,10 @@ func loginRadiusWithDeviceCode(
 	if err != nil {
 		return Credential{}, err
 	}
-	verificationURI := strings.TrimSpace(device.VerificationURI)
-	if verificationURI == "" {
-		verificationURI = strings.TrimSpace(config.VerificationEndpoint)
-	}
 	interaction.Notify(AuthEvent{
 		Type:             AuthEventDeviceCode,
 		UserCode:         device.UserCode,
-		VerificationURI:  verificationURI,
+		VerificationURI:  strings.TrimSpace(device.VerificationURI),
 		IntervalSeconds:  device.Interval,
 		ExpiresInSeconds: device.ExpiresIn,
 	})

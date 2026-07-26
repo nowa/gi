@@ -309,6 +309,7 @@ func SupportsBedrockAdaptiveThinking(model Model) bool {
 		if strings.Contains(candidate, "opus-4-6") ||
 			strings.Contains(candidate, "opus-4-7") ||
 			strings.Contains(candidate, "opus-4-8") ||
+			strings.Contains(candidate, "opus-5") ||
 			strings.Contains(candidate, "sonnet-4-6") ||
 			strings.Contains(candidate, "sonnet-5") ||
 			strings.Contains(candidate, "fable-5") {
@@ -333,6 +334,7 @@ func SupportsBedrockPromptCaching(model Model, force bool) bool {
 	for _, candidate := range candidates {
 		if strings.Contains(candidate, "sonnet-5") ||
 			strings.Contains(candidate, "fable-5") ||
+			strings.Contains(candidate, "opus-5") ||
 			strings.Contains(candidate, "-4-") ||
 			strings.Contains(candidate, "claude-3-7-sonnet") ||
 			strings.Contains(candidate, "claude-3-5-haiku") {
@@ -354,6 +356,7 @@ func MapBedrockThinkingEffort(model Model, level string) string {
 		for _, candidate := range bedrockModelCandidates(model) {
 			if strings.Contains(candidate, "opus-4-7") ||
 				strings.Contains(candidate, "opus-4-8") ||
+				strings.Contains(candidate, "opus-5") ||
 				strings.Contains(candidate, "sonnet-5") ||
 				strings.Contains(candidate, "fable-5") {
 				return "xhigh"

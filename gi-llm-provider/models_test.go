@@ -76,6 +76,7 @@ func TestSupportedThinkingLevelsPiCaseNames(t *testing.T) {
 	}{
 		{"includes max but not xhigh for Anthropic Opus 4.6 on anthropic-messages API", "anthropic", "claude-opus-4-6", []string{"off", "minimal", "low", "medium", "high", "max"}},
 		{"includes xhigh and max for Anthropic Opus 4.8 on anthropic-messages API", "anthropic", "claude-opus-4-8", []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}},
+		{"includes xhigh and max for Anthropic Opus 5 on anthropic-messages API", "anthropic", "claude-opus-5", []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}},
 		{"includes max but not xhigh for Anthropic Sonnet 4.6 on anthropic-messages API", "anthropic", "claude-sonnet-4-6", []string{"off", "minimal", "low", "medium", "high", "max"}},
 		{"includes xhigh and max for Anthropic Sonnet 5 on anthropic-messages API", "anthropic", "claude-sonnet-5", []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}},
 		{"includes xhigh and max but not off for Anthropic Claude Fable 5 on anthropic-messages API", "anthropic", "claude-fable-5", []string{"minimal", "low", "medium", "high", "xhigh", "max"}},
@@ -90,6 +91,7 @@ func TestSupportedThinkingLevelsPiCaseNames(t *testing.T) {
 		{"includes only high/xhigh plus off for DeepSeek V4 Flash on OpenRouter", "openrouter", "deepseek/deepseek-v4-flash", []string{"off", "high", "xhigh"}},
 		{"includes max but not xhigh for OpenRouter Opus 4.6 (openai-completions API)", "openrouter", "anthropic/claude-opus-4.6", []string{"off", "minimal", "low", "medium", "high", "max"}},
 		{"includes xhigh and max but not off for Bedrock Claude Fable 5", "amazon-bedrock", "global.anthropic.claude-fable-5", []string{"minimal", "low", "medium", "high", "xhigh", "max"}},
+		{"includes xhigh and max for Bedrock Claude Opus 5", "amazon-bedrock", "global.anthropic.claude-opus-5", []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {

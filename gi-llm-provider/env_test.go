@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -54,6 +55,47 @@ func TestEnvironmentAPIKeysCoverPiV082Providers(t *testing.T) {
 				t.Fatalf("GetEnvAPIKey(%s) = %q, want test-key", providerID, got)
 			}
 		})
+	}
+}
+
+func TestEnvironmentAPIKeysSeparatesAnthropicBearerFromAPIKeys(t *testing.T) {
+	t.Setenv(AnthropicAuthTokenEnv, "auth-token")
+	t.Setenv(AnthropicOAuthTokenEnv, "oauth-token")
+	t.Setenv(AnthropicAPIKeyEnv, "api-key")
+
+	if got := FindEnvKeys("anthropic"); !reflect.DeepEqual(got, []string{
+		AnthropicAuthTokenEnv,
+		AnthropicOAuthTokenEnv,
+		AnthropicAPIKeyEnv,
+	}) {
+		t.Fatalf("FindEnvKeys(anthropic) = %#v", got)
+	}
+	if got := GetEnvAPIKey("anthropic"); got != "oauth-token" {
+		t.Fatalf("GetEnvAPIKey(anthropic) = %q, want OAuth token", got)
+	}
+
+	t.Setenv(AnthropicOAuthTokenEnv, "")
+	t.Setenv(AnthropicAPIKeyEnv, "")
+	if got := FindEnvKeys("anthropic"); !reflect.DeepEqual(
+		got,
+		[]string{AnthropicAuthTokenEnv},
+	) {
+		t.Fatalf("bearer-only FindEnvKeys(anthropic) = %#v", got)
+	}
+	if got := GetEnvAPIKey("anthropic"); got != "" {
+		t.Fatalf("bearer-only GetEnvAPIKey(anthropic) = %q", got)
+	}
+
+	t.Setenv(AnthropicAuthTokenEnv, "")
+	t.Setenv(AnthropicOAuthTokenEnv, "oauth-token")
+	if got := GetEnvAPIKey("anthropic"); got != "oauth-token" {
+		t.Fatalf("OAuth GetEnvAPIKey(anthropic) = %q", got)
+	}
+
+	t.Setenv(AnthropicOAuthTokenEnv, "")
+	t.Setenv(AnthropicAPIKeyEnv, "api-key")
+	if got := GetEnvAPIKey("anthropic"); got != "api-key" {
+		t.Fatalf("API-key GetEnvAPIKey(anthropic) = %q", got)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -20,14 +21,16 @@ func TestRadiusOAuthBrowserLogin(t *testing.T) {
 		code:        "authorization-code",
 	}
 	var tokenForm url.Values
+	var requestPaths []string
 	client := radiusHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
+		requestPaths = append(requestPaths, request.URL.Path)
 		switch request.URL.Path {
 		case "/v1/oauth":
 			return radiusOAuthJSONResponse(
 				http.StatusOK,
 				radiusOAuthTestConfig(),
 			), nil
-		case "/token":
+		case "/v1/oauth/token":
 			tokenForm = readRadiusOAuthForm(t, request)
 			return radiusOAuthJSONResponse(http.StatusOK, map[string]any{
 				"access_token":  "access-token",
@@ -82,7 +85,7 @@ func TestRadiusOAuthBrowserLogin(t *testing.T) {
 		t.Fatalf("callback close count = %d", callback.closed)
 	}
 	if tokenForm.Get("grant_type") != "authorization_code" ||
-		tokenForm.Get("client_id") != "radius-client" ||
+		tokenForm.Get("client_id") != radiusOAuthClientID ||
 		tokenForm.Get("redirect_uri") != callback.redirectURI ||
 		tokenForm.Get("code") != "authorization-code" ||
 		tokenForm.Get("code_verifier") != "verifier" {
@@ -98,14 +101,21 @@ func TestRadiusOAuthBrowserLogin(t *testing.T) {
 		interaction.events[1].Type != AuthEventURL {
 		t.Fatalf("events = %#v", interaction.events)
 	}
+	if !reflect.DeepEqual(requestPaths, []string{
+		"/v1/oauth",
+		"/v1/oauth/token",
+	}) {
+		t.Fatalf("browser request paths = %#v", requestPaths)
+	}
 	authorizeURL, err := url.Parse(interaction.events[1].URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	query := authorizeURL.Query()
 	if authorizeURL.String() == "" ||
-		query.Get("client_id") != "radius-client" ||
+		query.Get("client_id") != radiusOAuthClientID ||
 		query.Get("redirect_uri") != callback.redirectURI ||
+		query.Get("scope") != radiusOAuthScope ||
 		query.Get("code_challenge") != "challenge" ||
 		query.Get("code_challenge_method") != "S256" ||
 		query.Get("handoff") != "url" ||
@@ -119,14 +129,11 @@ func TestRadiusOAuthDeviceCodeLogin(t *testing.T) {
 	clock := newOAuthTestClock(now)
 	tokenPolls := 0
 	var deviceForm url.Values
+	var requestPaths []string
 	client := radiusHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
+		requestPaths = append(requestPaths, request.URL.Path)
 		switch request.URL.Path {
-		case "/v1/oauth":
-			return radiusOAuthJSONResponse(
-				http.StatusOK,
-				radiusOAuthTestConfig(),
-			), nil
-		case "/device":
+		case "/v1/oauth/device":
 			deviceForm = readRadiusOAuthForm(t, request)
 			return radiusOAuthJSONResponse(http.StatusOK, map[string]any{
 				"device_code":      "device-code",
@@ -135,10 +142,11 @@ func TestRadiusOAuthDeviceCodeLogin(t *testing.T) {
 				"expires_in":       900,
 				"interval":         2,
 			}), nil
-		case "/token":
+		case "/v1/oauth/token":
 			tokenPolls++
 			form := readRadiusOAuthForm(t, request)
-			if form.Get("grant_type") != "urn:radius:device-code" ||
+			if form.Get("grant_type") != radiusOAuthDeviceGrantType ||
+				form.Get("client_id") != radiusOAuthClientID ||
 				form.Get("device_code") != "device-code" {
 				t.Fatalf("token form = %v", form)
 			}
@@ -196,9 +204,16 @@ func TestRadiusOAuthDeviceCodeLogin(t *testing.T) {
 		tokenPolls != 2 {
 		t.Fatalf("credential=%#v polls=%d", credential, tokenPolls)
 	}
-	if deviceForm.Get("client_id") != "radius-client" ||
-		deviceForm.Get("scope") != "models:read messages:write" {
+	if deviceForm.Get("client_id") != radiusOAuthClientID ||
+		deviceForm.Get("scope") != radiusOAuthScope {
 		t.Fatalf("device form = %v", deviceForm)
+	}
+	if !reflect.DeepEqual(requestPaths, []string{
+		"/v1/oauth/device",
+		"/v1/oauth/token",
+		"/v1/oauth/token",
+	}) {
+		t.Fatalf("device request paths = %#v", requestPaths)
 	}
 	if len(interaction.events) != 1 {
 		t.Fatalf("events = %#v", interaction.events)
@@ -216,14 +231,11 @@ func TestRadiusOAuthDeviceCodeLogin(t *testing.T) {
 func TestRadiusOAuthRefreshPreservesProviderMetadata(t *testing.T) {
 	now := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
 	var tokenForm url.Values
+	var requestPaths []string
 	client := radiusHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
+		requestPaths = append(requestPaths, request.URL.Path)
 		switch request.URL.Path {
-		case "/v1/oauth":
-			return radiusOAuthJSONResponse(
-				http.StatusOK,
-				radiusOAuthTestConfig(),
-			), nil
-		case "/token":
+		case "/v1/oauth/token":
 			tokenForm = readRadiusOAuthForm(t, request)
 			return radiusOAuthJSONResponse(http.StatusOK, map[string]any{
 				"access_token": "new-access",
@@ -269,8 +281,12 @@ func TestRadiusOAuthRefreshPreservesProviderMetadata(t *testing.T) {
 		t.Fatalf("credential = %#v", credential)
 	}
 	if tokenForm.Get("grant_type") != "refresh_token" ||
+		tokenForm.Get("client_id") != radiusOAuthClientID ||
 		tokenForm.Get("refresh_token") != "old-refresh" {
 		t.Fatalf("token form = %v", tokenForm)
+	}
+	if !reflect.DeepEqual(requestPaths, []string{"/v1/oauth/token"}) {
+		t.Fatalf("refresh request paths = %#v", requestPaths)
 	}
 	resolved, err := auth.ToAuth(context.Background(), credential)
 	if err != nil || resolved.APIKey != "new-access" {
@@ -281,12 +297,7 @@ func TestRadiusOAuthRefreshPreservesProviderMetadata(t *testing.T) {
 func TestRadiusOAuthResponseErrorsRemainTyped(t *testing.T) {
 	client := radiusHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
 		switch request.URL.Path {
-		case "/v1/oauth":
-			return radiusOAuthJSONResponse(
-				http.StatusOK,
-				radiusOAuthTestConfig(),
-			), nil
-		case "/token":
+		case "/v1/oauth/token":
 			return radiusOAuthJSONResponse(
 				http.StatusBadRequest,
 				map[string]any{
@@ -322,18 +333,14 @@ func TestRadiusOAuthResponseErrorsRemainTyped(t *testing.T) {
 func TestRadiusProviderUsesBuiltinOAuthWithoutLoader(t *testing.T) {
 	client := radiusHTTPDoerFunc(func(request *http.Request) (*http.Response, error) {
 		switch request.URL.Path {
-		case "/v1/oauth":
-			return radiusOAuthJSONResponse(
-				http.StatusOK,
-				radiusOAuthTestConfig(),
-			), nil
-		case "/device":
+		case "/v1/oauth/device":
 			return radiusOAuthJSONResponse(http.StatusOK, map[string]any{
-				"device_code": "device-code",
-				"user_code":   "ABCD-1234",
-				"expires_in":  60,
+				"device_code":      "device-code",
+				"user_code":        "ABCD-1234",
+				"verification_uri": "https://radius.test/verify",
+				"expires_in":       60,
 			}), nil
-		case "/token":
+		case "/v1/oauth/token":
 			return radiusOAuthJSONResponse(http.StatusOK, map[string]any{
 				"access_token":  "access",
 				"refresh_token": "refresh",
@@ -549,10 +556,7 @@ func TestRadiusOAuthConfigValidation(t *testing.T) {
 	}
 
 	client := radiusHTTPDoerFunc(func(*http.Request) (*http.Response, error) {
-		return radiusOAuthJSONResponse(http.StatusOK, map[string]any{
-			"clientId":      "client",
-			"tokenEndpoint": "file:///tmp/token",
-		}), nil
+		return radiusOAuthJSONResponse(http.StatusOK, map[string]any{}), nil
 	})
 	auth, err := NewRadiusOAuth(RadiusOAuthOptions{
 		Gateway: "https://radius.test",
@@ -565,22 +569,14 @@ func TestRadiusOAuthConfigValidation(t *testing.T) {
 		context.Background(),
 		&queuedProviderAuthInteraction{answers: []string{radiusLoginMethodBrowser}},
 	)
-	if err == nil || !strings.Contains(err.Error(), "invalid tokenEndpoint") {
+	if err == nil || !strings.Contains(err.Error(), "invalid Radius OAuth config") {
 		t.Fatalf("error = %v", err)
 	}
 }
 
 func radiusOAuthTestConfig() map[string]any {
 	return map[string]any{
-		"issuer":                            "https://radius.test",
-		"authorizationEndpoint":             "https://radius.test/authorize",
-		"tokenEndpoint":                     "https://radius.test/token",
-		"deviceAuthorizationEndpoint":       "https://radius.test/device",
-		"deviceAuthorizationEventsEndpoint": "https://radius.test/device/events",
-		"verificationEndpoint":              "https://radius.test/verify",
-		"clientId":                          "radius-client",
-		"scope":                             "models:read messages:write",
-		"deviceCodeGrantType":               "urn:radius:device-code",
+		"authorizationEndpoint": "https://radius.test/authorize",
 	}
 }
 

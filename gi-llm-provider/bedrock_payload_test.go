@@ -11,6 +11,10 @@ func TestBuildBedrockAdditionalModelRequestFieldsThinking(t *testing.T) {
 	opus47 := base
 	opus47.ID = "global.anthropic.claude-opus-4-7-v1"
 	opus47.Name = "Claude Opus 4.7 (Global)"
+	opus5 := MustGetModel(
+		"amazon-bedrock",
+		"global.anthropic.claude-opus-5",
+	)
 
 	tests := []struct {
 		name         string
@@ -34,6 +38,22 @@ func TestBuildBedrockAdditionalModelRequestFieldsThinking(t *testing.T) {
 		{
 			name:        "adaptive opus 4.7 xhigh",
 			model:       opus47,
+			options:     BedrockPayloadOptions{Reasoning: "xhigh"},
+			wantType:    "adaptive",
+			wantDisplay: true,
+			wantEffort:  "xhigh",
+		},
+		{
+			name:        "adaptive opus 5 high",
+			model:       opus5,
+			options:     BedrockPayloadOptions{Reasoning: "high"},
+			wantType:    "adaptive",
+			wantDisplay: true,
+			wantEffort:  "high",
+		},
+		{
+			name:        "adaptive opus 5 xhigh",
+			model:       opus5,
 			options:     BedrockPayloadOptions{Reasoning: "xhigh"},
 			wantType:    "adaptive",
 			wantDisplay: true,
@@ -93,6 +113,23 @@ func TestBuildBedrockAdditionalModelRequestFieldsThinking(t *testing.T) {
 				t.Fatalf("anthropic beta presence = %v, want %v", hasBeta, tc.wantBeta)
 			}
 		})
+	}
+}
+
+func TestBedrockCatalogExposesOpus5ThroughInferenceProfileOnly(
+	t *testing.T,
+) {
+	if _, ok := GetModel(
+		"amazon-bedrock",
+		"global.anthropic.claude-opus-5",
+	); !ok {
+		t.Fatal("global Claude Opus 5 inference profile is missing")
+	}
+	if _, ok := GetModel(
+		"amazon-bedrock",
+		"anthropic.claude-opus-5",
+	); ok {
+		t.Fatal("Claude Opus 5 base model must not be exposed")
 	}
 }
 

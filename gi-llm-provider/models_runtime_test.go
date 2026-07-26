@@ -538,6 +538,9 @@ func TestModelsRuntime(t *testing.T) {
 		if !errors.As(err, &modelsErr) || modelsErr.Code != ModelsErrorOAuth {
 			t.Fatalf("error = %v, want code %q", err, ModelsErrorOAuth)
 		}
+		if got := err.Error(); got != "OAuth refresh failed for p1: invalid_grant" {
+			t.Fatalf("error text = %q", got)
+		}
 		persisted, _, _ := credentials.ReadCredential(context.Background(), "p1")
 		if persisted.Access != "old" {
 			t.Fatalf("failed refresh changed credential: %#v", persisted)

@@ -78,7 +78,7 @@ func TestBuiltinProviderPiContracts(t *testing.T) {
 		if got := requireBuiltinModel(t, "openai", "gpt-4o"); got.Input[0] == "caller mutation" {
 			t.Fatal("compiled catalog returned shared mutable state")
 		}
-		wantGeneratedAt := time.Date(2026, time.July, 24, 6, 8, 59, 429000000, time.UTC)
+		wantGeneratedAt := time.Date(2026, time.July, 25, 12, 44, 19, 521000000, time.UTC)
 		if got := GetBuiltinModelDataGeneratedAt(); !got.Equal(wantGeneratedAt) {
 			t.Fatalf("catalog generated at = %s, want %s", got, wantGeneratedAt)
 		}
@@ -126,10 +126,35 @@ func TestBuiltinProviderPiContracts(t *testing.T) {
 		}
 	})
 
-	t.Run("resolves anthropic auth from env with OAuth token precedence", func(t *testing.T) {
+	t.Run("resolves Anthropic bearer auth from env with auth token precedence", func(t *testing.T) {
 		models := NewModels(ModelsOptions{AuthContext: providerAuthContext(map[string]string{
-			"ANTHROPIC_API_KEY":     "key",
-			"ANTHROPIC_OAUTH_TOKEN": "oauth-token",
+			AnthropicAuthTokenEnv:  "auth-token",
+			AnthropicOAuthTokenEnv: "oauth-token",
+			AnthropicAPIKeyEnv:     "key",
+		})})
+		provider, err := NewAnthropicProvider()
+		if err != nil {
+			t.Fatal(err)
+		}
+		mustSetBuiltinProvider(t, models, provider)
+
+		result, err := models.GetAuth(context.Background(), "anthropic", AuthResolutionOverrides{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result == nil ||
+			!reflect.DeepEqual(result.Auth, ModelAuth{Headers: map[string]string{
+				"Authorization": "Bearer auth-token",
+			}}) ||
+			result.Source != AnthropicAuthTokenEnv {
+			t.Fatalf("anthropic bearer auth = %#v", result)
+		}
+	})
+
+	t.Run("preserves Anthropic OAuth token precedence over API key", func(t *testing.T) {
+		models := NewModels(ModelsOptions{AuthContext: providerAuthContext(map[string]string{
+			AnthropicAPIKeyEnv:     "key",
+			AnthropicOAuthTokenEnv: "oauth-token",
 		})})
 		provider, err := NewAnthropicProvider()
 		if err != nil {

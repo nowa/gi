@@ -30,7 +30,7 @@ func TestOpenAIResponsesReasoningReplaySkipsAbortedReasoningOnlyHistory(t *testi
 
 func TestOpenAIResponsesReasoningReplaySameProviderDifferentModelHandoff(t *testing.T) {
 	modelA := MustGetModel("openai", "gpt-5-mini")
-	modelB := MustGetModel("openai", "gpt-5.2-codex")
+	modelB := MustGetModel("openai", "gpt-5.5")
 	userMessage := UserMessageText("Use the double_number tool to double 21.")
 	assistant := AssistantMessage([]ContentPart{
 		{Type: ContentThinking, Thinking: "Need to call the tool.", ThinkingSignature: `{"type":"reasoning","id":"rs_pair"}`},
@@ -87,7 +87,7 @@ func TestOpenAIResponsesTextReplayPreservesTextSignaturePiStyle(t *testing.T) {
 
 func TestOpenAIResponsesReasoningReplayCrossProviderHandoff(t *testing.T) {
 	anthropic := MustGetModel("anthropic", "claude-sonnet-4-5")
-	codex := MustGetModel("openai", "gpt-5.2-codex")
+	codex := MustGetModel("openai", "gpt-5.5")
 	userMessage := UserMessageText("Use the double_number tool to double 21.")
 	assistant := AssistantMessage([]ContentPart{
 		Thinking("Need to call the tool."),

@@ -259,7 +259,18 @@ func (e *ModelsError) Error() string {
 	if e == nil {
 		return ""
 	}
-	return e.Msg
+	message := strings.TrimSpace(e.Msg)
+	if e.Err == nil {
+		return message
+	}
+	detail := strings.TrimSpace(e.Err.Error())
+	if detail == "" || strings.Contains(message, detail) {
+		return message
+	}
+	if message == "" {
+		return detail
+	}
+	return message + ": " + detail
 }
 
 func (e *ModelsError) Unwrap() error {

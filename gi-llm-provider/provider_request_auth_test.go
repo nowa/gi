@@ -39,6 +39,22 @@ func TestResolveProviderRequestAuth(t *testing.T) {
 		}
 	})
 
+	t.Run("header auth wins over ambient API keys", func(t *testing.T) {
+		auth := resolveProviderRequestAuth(
+			"anthropic",
+			"",
+			ProviderEnv{AnthropicAPIKeyEnv: "ambient-api-key"},
+			map[string]string{
+				"Authorization": "Bearer header-token",
+			},
+			"authorization",
+			"x-api-key",
+		)
+		if !auth.Configured() || auth.APIKey != "" || !auth.HeaderOnly {
+			t.Fatalf("auth = %#v", auth)
+		}
+	})
+
 	t.Run("rejects blank authentication headers", func(t *testing.T) {
 		auth := resolveProviderRequestAuth(
 			"custom-provider",

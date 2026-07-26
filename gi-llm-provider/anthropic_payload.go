@@ -507,13 +507,8 @@ func FromClaudeCodeToolName(name string, tools []Tool) string {
 }
 
 func SupportsAnthropicAdaptiveThinking(model Model) bool {
-	id := strings.ToLower(model.ID)
-	return strings.Contains(id, "opus-4-6") ||
-		strings.Contains(id, "opus-4.6") ||
-		strings.Contains(id, "opus-4-7") ||
-		strings.Contains(id, "opus-4.7") ||
-		strings.Contains(id, "sonnet-4-6") ||
-		strings.Contains(id, "sonnet-4.6")
+	return model.Compat.ForceAdaptiveThinking != nil &&
+		*model.Compat.ForceAdaptiveThinking
 }
 
 func MapAnthropicThinkingEffort(model Model, level string) string {
