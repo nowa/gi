@@ -420,10 +420,7 @@ func (h *RPCSessionHost) AcceptPrompt(command RPCCommand) error {
 	if err := h.runPromptPreflight(command); err != nil {
 		return err
 	}
-	go func() {
-		_ = session.PromptWithImages(command.Message, command.Images)
-	}()
-	return nil
+	return session.startPromptWithImages(command.Message, command.Images)
 }
 
 func (h *RPCSessionHost) runPromptPreflight(command RPCCommand) error {

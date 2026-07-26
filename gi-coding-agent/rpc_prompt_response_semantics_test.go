@@ -31,7 +31,7 @@ func TestRPCPromptResponseSemanticsPreflightFailureOnce(t *testing.T) {
 }
 
 func TestRPCPromptResponseSemanticsSuccessOnce(t *testing.T) {
-	host, _, _ := createRPCSessionHostForTest(t)
+	host, session, _ := createRPCSessionHostForTest(t)
 	var output []string
 	processor := &RPCLineProcessor{Host: host, WriteLine: func(line string) { output = append(output, line) }}
 
@@ -43,6 +43,56 @@ func TestRPCPromptResponseSemanticsSuccessOnce(t *testing.T) {
 	}
 	if !responses[0].Success {
 		t.Fatalf("success response = %#v", responses[0])
+	}
+	waitForRPCSessionIdle(t, session)
+}
+
+func TestRPCAcceptPromptReservesLifecycleAndDisposeWaits(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	host, session, _ := createRPCSessionHostForTest(t, func(options *AgentSessionOptions) {
+		options.Responder = func(string, []llm.Message, llm.Model) (llm.Message, error) {
+			close(started)
+			<-release
+			return llm.Message{
+				Role:    llm.RoleAssistant,
+				Content: []llm.ContentPart{llm.Text("done")},
+			}, nil
+		}
+	})
+	releasePrompt := func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}
+	t.Cleanup(releasePrompt)
+
+	if err := host.AcceptPrompt(RPCCommand{Type: RPCCommandPrompt, Message: "Hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if !session.IsStreaming() {
+		t.Fatal("accepted RPC prompt must reserve the streaming lifecycle before returning")
+	}
+	<-started
+
+	disposed := make(chan struct{})
+	go func() {
+		session.Dispose()
+		close(disposed)
+	}()
+	select {
+	case <-disposed:
+		t.Fatal("Dispose returned while the accepted prompt was still running")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	releasePrompt()
+	select {
+	case <-disposed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Dispose did not wait for the accepted prompt to settle")
 	}
 }
 
@@ -216,12 +266,9 @@ func promptResponsesByID(t *testing.T, lines []string, id string) []RPCResponse 
 
 func waitForRPCSessionIdle(t *testing.T, session *AgentSession) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if session == nil || !session.IsStreaming() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := session.WaitForIdle(ctx); err != nil {
+		t.Fatalf("waiting for RPC session idle: %v", err)
 	}
-	t.Fatal("timed out waiting for RPC session to become idle")
 }

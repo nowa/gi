@@ -1,6 +1,7 @@
 package gicodingagent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -298,7 +299,11 @@ func CreateAgentSession(options AgentSessionOptions) (*AgentSession, error) {
 }
 
 func (s *AgentSession) Dispose() {
+	if s == nil {
+		return
+	}
 	_ = s.Abort()
+	_ = s.WaitForIdle(context.Background())
 }
 
 func (s *AgentSession) SetScopedModels(scopedModels []ScopedModel) {

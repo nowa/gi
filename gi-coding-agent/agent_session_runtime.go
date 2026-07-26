@@ -144,36 +144,64 @@ func (s *AgentSession) Prompt(text string) error {
 	return s.PromptWithImages(text, nil)
 }
 
-func (s *AgentSession) PromptWithImages(text string, images []llm.ContentPart) (returnErr error) {
+type agentSessionPrompt struct {
+	text   string
+	images []llm.ContentPart
+}
+
+func (s *AgentSession) PromptWithImages(text string, images []llm.ContentPart) error {
+	prompt, err := s.beginPrompt(text, images)
+	if err != nil || prompt == nil {
+		return err
+	}
+	return s.runPreparedPrompt(*prompt)
+}
+
+// startPromptWithImages performs all prompt validation and reserves the
+// streaming lifecycle before returning. RPC callers can therefore acknowledge
+// an accepted prompt without exposing a window where the session still appears
+// idle or can be disposed while its goroutine has not started.
+func (s *AgentSession) startPromptWithImages(text string, images []llm.ContentPart) error {
+	prompt, err := s.beginPrompt(text, images)
+	if err != nil || prompt == nil {
+		return err
+	}
+	go func() {
+		_ = s.runPreparedPrompt(*prompt)
+	}()
+	return nil
+}
+
+func (s *AgentSession) beginPrompt(text string, images []llm.ContentPart) (*agentSessionPrompt, error) {
 	if s == nil || s.SessionManager == nil {
-		return errors.New("session manager is required")
+		return nil, errors.New("session manager is required")
 	}
 	s.SyncRuntimeSettings()
 	prompt := strings.TrimSpace(text)
 	if prompt == "" {
-		return errors.New("prompt is required")
+		return nil, errors.New("prompt is required")
 	}
 	if strings.HasPrefix(prompt, "/") && s.ExtensionRuntime != nil {
 		name, args, ok := parseSlashCommandInvocation(prompt)
 		if !ok {
-			return errors.New("prompt is required")
+			return nil, errors.New("prompt is required")
 		}
 		if command := s.ExtensionRuntime.GetCommand(name); command != nil && (command.Handler != nil || command.HandlerWithContext != nil) {
 			if command.HandlerWithContext != nil {
-				return command.HandlerWithContext(args, s.ExtensionRuntime.CreateCommandContext())
+				return nil, command.HandlerWithContext(args, s.ExtensionRuntime.CreateCommandContext())
 			}
-			return command.Handler(args)
+			return nil, command.Handler(args)
 		}
 	}
 	if s.IsStreaming() {
-		return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")
+		return nil, errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")
 	}
 	promptImages := normalizePromptImages(images)
 	if s.ExtensionRuntime != nil {
 		inputResult := s.ExtensionRuntime.EmitInput(prompt, promptImages, "interactive")
 		switch inputResult.Action {
 		case "handled":
-			return nil
+			return nil, nil
 		case "transform":
 			prompt = strings.TrimSpace(inputResult.Text)
 			if inputResult.ImagesSet {
@@ -183,23 +211,27 @@ func (s *AgentSession) PromptWithImages(text string, images []llm.ContentPart) (
 	}
 	expandedPrompt := s.expandPromptCommands(prompt)
 	if s.Agent == nil || strings.TrimSpace(s.Agent.State.Model.ID) == "" {
-		return errors.New(formatNoModelSelectedMessage())
+		return nil, errors.New(formatNoModelSelectedMessage())
 	}
 	if s.Preflight != nil {
 		if err := s.Preflight(s.Agent.State.Model); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if !s.lifecycle.tryStartStreaming() {
-		return errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")
+		return nil, errors.New("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")
 	}
 	s.lifecycle.resetAbort()
+	return &agentSessionPrompt{text: expandedPrompt, images: promptImages}, nil
+}
+
+func (s *AgentSession) runPreparedPrompt(prompt agentSessionPrompt) (returnErr error) {
 	defer func() {
 		returnErr = errors.Join(returnErr, s.settleAgentRun())
 	}()
 	s.flushPendingBashMessages()
-	content := []llm.ContentPart{llm.Text(expandedPrompt)}
-	content = append(content, promptImages...)
+	content := []llm.ContentPart{llm.Text(prompt.text)}
+	content = append(content, prompt.images...)
 	if err := s.emitAgentLifecycleEvent(AgentSessionEvent{Type: "agent_start"}); err != nil {
 		return err
 	}
@@ -222,10 +254,10 @@ func (s *AgentSession) PromptWithImages(text string, images []llm.ContentPart) (
 			return err
 		}
 	}
-	if err := s.applyBeforeAgentStart(expandedPrompt, promptImages); err != nil {
+	if err := s.applyBeforeAgentStart(prompt.text, prompt.images); err != nil {
 		return err
 	}
-	return s.runPromptLoop(expandedPrompt)
+	return s.runPromptLoop(prompt.text)
 }
 
 func parseSlashCommandInvocation(text string) (string, string, bool) {
