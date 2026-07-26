@@ -56,6 +56,7 @@ func (p OpenAICompletionsProvider) stream(model Model, llmContext Context, optio
 		CacheRetention: options.CacheRetention,
 		SessionID:      options.SessionID,
 		Reasoning:      reasoning,
+		ToolChoice:     options.ToolChoice,
 		Headers:        options.Headers,
 	})
 	if err != nil {

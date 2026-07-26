@@ -2,6 +2,7 @@ package gillmprovider
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -112,6 +113,30 @@ type Message struct {
 	Details        any                          `json:"details,omitempty"`
 	IsError        bool                         `json:"isError,omitempty"`
 	AddedToolNames []string                     `json:"addedToolNames,omitempty"`
+}
+
+// MarshalJSON preserves Pi's role-discriminated message wire shape while
+// retaining one Go value type for state management. Assistant usage is
+// required even when empty; user messages never carry usage; tool results
+// carry it only when present.
+func (m Message) MarshalJSON() ([]byte, error) {
+	type messageJSON Message
+
+	var usage *Usage
+	switch {
+	case m.Role == RoleAssistant:
+		usage = &m.Usage
+	case m.Role != RoleUser && m.Usage != (Usage{}):
+		usage = &m.Usage
+	}
+
+	return json.Marshal(struct {
+		messageJSON
+		Usage *Usage `json:"usage,omitempty"`
+	}{
+		messageJSON: messageJSON(m),
+		Usage:       usage,
+	})
 }
 
 func NowMillis() int64 {

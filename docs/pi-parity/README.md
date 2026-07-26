@@ -110,3 +110,37 @@ inventory for a deeper audit. The authoritative named mappings live in
 `constant-contracts.json`; unmatched global literals are leads rather than
 automatic parity failures because Go and TypeScript necessarily use different
 runtime scaffolding.
+
+## Differential payload and cost parity
+
+`verify-differential-parity.mjs` executes the exact Pi source and Gi against one
+versioned JSONL protocol. It currently covers:
+
+- every registered Pi LLM API's `streamSimple` payload boundary;
+- contexts with system prompts, messages, tools, reasoning, cache, session, and
+  provider-supported simple options;
+- fixed cost cases for zero rates, cache writes, exact tier boundaries, and
+  unsorted tiers;
+- 512 deterministic generated cost cases, compared through the last
+  IEEE-754-representable digit.
+
+The source oracle remains the clean v0.82.1 checkout. A second checkout may
+provide `node_modules`; its TypeScript sources are never imported:
+
+```sh
+node docs/pi-parity/verify-differential-parity.mjs \
+  --pi-root /private/tmp/pi-v0.82.1 \
+  --pi-runtime-root ~/Projects/agents/pi
+```
+
+Fixed Pi results are committed in
+`differential/pi-v0.82.1.jsonl`. The verifier first checks that fixture against
+the live exact Pi checkout, then checks Gi against Pi. This prevents either a
+stale oracle snapshot or coincident Gi/Pi drift from passing silently.
+
+The fixture is also exercised by
+`gi-llm-provider/internal/cmd/conformance/main_test.go`, so `go test ./...`
+retains payload and fixed-cost coverage without requiring Node, Pi, network
+access, or credentials. The JSONL inputs intentionally target the common
+`streamSimple` contract; provider-specific full-stream options belong in
+separately identified cases rather than being silently mixed into this matrix.

@@ -112,13 +112,53 @@ func CalculateCost(model Model, usage Usage) UsageCost {
 
 	longCacheWrite := usage.CacheWrite1h
 	shortCacheWrite := usage.CacheWrite - longCacheWrite
-	usage.Cost.Input = rates.Input / 1_000_000 * float64(usage.Input)
-	usage.Cost.Output = rates.Output / 1_000_000 * float64(usage.Output)
-	usage.Cost.CacheRead = rates.CacheRead / 1_000_000 * float64(usage.CacheRead)
-	usage.Cost.CacheWrite = (rates.CacheWrite*float64(shortCacheWrite) +
-		rates.Input*2*float64(longCacheWrite)) / 1_000_000
-	usage.Cost.Total = usage.Cost.Input + usage.Cost.Output + usage.Cost.CacheRead + usage.Cost.CacheWrite
+	usage.Cost.Input = multiplyCostFloat(
+		divideCostFloat(rates.Input, 1_000_000),
+		float64(usage.Input),
+	)
+	usage.Cost.Output = multiplyCostFloat(
+		divideCostFloat(rates.Output, 1_000_000),
+		float64(usage.Output),
+	)
+	usage.Cost.CacheRead = multiplyCostFloat(
+		divideCostFloat(rates.CacheRead, 1_000_000),
+		float64(usage.CacheRead),
+	)
+	shortWriteCost := multiplyCostFloat(rates.CacheWrite, float64(shortCacheWrite))
+	longWriteRate := multiplyCostFloat(rates.Input, 2)
+	longWriteCost := multiplyCostFloat(longWriteRate, float64(longCacheWrite))
+	usage.Cost.CacheWrite = divideCostFloat(
+		addCostFloat(shortWriteCost, longWriteCost),
+		1_000_000,
+	)
+	usage.Cost.Total = addCostFloat(
+		addCostFloat(
+			addCostFloat(usage.Cost.Input, usage.Cost.Output),
+			usage.Cost.CacheRead,
+		),
+		usage.Cost.CacheWrite,
+	)
 	return usage.Cost
+}
+
+// The Pi wire contract exposes JavaScript Number results. Keep each operation
+// behind a call boundary so the Go compiler cannot fuse or reassociate it and
+// change the final IEEE-754 bit. These helpers intentionally mirror Pi's
+// left-to-right calculateCost expression tree.
+//
+//go:noinline
+func addCostFloat(left, right float64) float64 {
+	return left + right
+}
+
+//go:noinline
+func multiplyCostFloat(left, right float64) float64 {
+	return left * right
+}
+
+//go:noinline
+func divideCostFloat(left, right float64) float64 {
+	return left / right
 }
 
 func GetSupportedThinkingLevels(model Model) []string {

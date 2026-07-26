@@ -26,7 +26,10 @@ func TestOpenAICompletionsProviderStreamsFromHTTP(t *testing.T) {
 	defer server.Close()
 
 	model := Model{ID: "gpt-4o-mini", Provider: "openai", API: "openai-completions", BaseURL: server.URL + "/v1", Input: []string{"text"}}
-	stream, err := NewOpenAICompletionsProvider(server.Client()).StreamSimple(model, Context{Messages: []Message{UserMessageText("hi")}}, SimpleStreamOptions{APIKey: "openai-key"})
+	stream, err := NewOpenAICompletionsProvider(server.Client()).StreamSimple(model, Context{Messages: []Message{UserMessageText("hi")}}, SimpleStreamOptions{
+		APIKey:     "openai-key",
+		ToolChoice: "required",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,6 +44,9 @@ func TestOpenAICompletionsProviderStreamsFromHTTP(t *testing.T) {
 	}
 	if payload.Model != "gpt-4o-mini" || !payload.Stream || len(payload.Messages) != 1 {
 		t.Fatalf("payload = %#v", payload)
+	}
+	if payload.ToolChoice != "required" {
+		t.Fatalf("tool choice = %#v", payload.ToolChoice)
 	}
 	if !containsAssistantEvent(events, "start") || !containsAssistantEvent(events, "text_delta") || !containsAssistantEvent(events, "done") {
 		t.Fatalf("events = %#v", events)
