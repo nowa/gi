@@ -11,8 +11,6 @@ jobs:
   parity:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      PI_ROOT: ${{ runner.temp }}/pi-baseline
     steps:
       - name: Check out Gi
         uses: actions/checkout@v7
@@ -24,7 +22,9 @@ jobs:
 
       - name: Check out the pinned Pi release
         run: |
-          PI_TAG="$(node -p "require('./docs/pi-parity/baseline.json').upstream.tag")"
+          PI_ROOT="$RUNNER_TEMP/pi-baseline"
+          PI_TAG="$(node -p 'require("./docs/pi-parity/baseline.json").upstream.tag')"
+          echo "PI_ROOT=$PI_ROOT" >> "$GITHUB_ENV"
           git clone --branch "$PI_TAG" --depth 1 https://github.com/earendil-works/pi.git "$PI_ROOT"
 
       - name: Verify the Pi tag, commit, and package versions
