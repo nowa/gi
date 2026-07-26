@@ -1,6 +1,7 @@
 package gicodingagent
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +33,100 @@ func TestAgentSessionCompactManual(t *testing.T) {
 	}
 	if messages[0].Role != "compactionSummary" {
 		t.Fatalf("first role = %q, want compactionSummary", messages[0].Role)
+	}
+}
+
+func TestAgentSessionCompactManualWithProviderResolvedBearerAuth(t *testing.T) {
+	session, _ := createCompactionTestSession(t, false)
+	defer session.Dispose()
+	session.CompactionSettings.KeepRecentTokens = 100_000
+
+	registry := NewInMemoryModelRegistry(NewInMemoryAuthStorage(nil))
+	runtime, err := NewModelRuntimeFromRegistry(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := llm.Model{
+		ID:            "bearer-model",
+		Name:          "Bearer Model",
+		API:           "bearer-api",
+		Provider:      "bearer-provider",
+		BaseURL:       "https://example.test/v1",
+		Input:         []string{"text"},
+		ContextWindow: 1000,
+		MaxTokens:     100,
+	}
+	var (
+		streamCalls     int
+		capturedOptions llm.SimpleStreamOptions
+	)
+	provider, err := llm.CreateProvider(llm.CreateProviderOptions{
+		ID:      model.Provider,
+		Name:    "Bearer Provider",
+		BaseURL: model.BaseURL,
+		Models:  []llm.Model{model},
+		Auth: llm.ProviderAuth{
+			APIKey: &llm.APIKeyAuth{
+				Name: "Ambient bearer token",
+				Resolve: func(
+					context.Context,
+					llm.APIKeyResolveInput,
+				) (*llm.AuthResult, error) {
+					return &llm.AuthResult{
+						Auth: llm.ModelAuth{
+							Headers: map[string]string{
+								"Authorization": "Bearer ambient-token",
+							},
+						},
+						Source: "ambient bearer token",
+					}, nil
+				},
+			},
+		},
+		API: llm.APIProviderFuncs{
+			StreamSimpleFunc: func(
+				requestModel llm.Model,
+				_ llm.Context,
+				options llm.SimpleStreamOptions,
+			) (*llm.AssistantMessageEventStream, error) {
+				streamCalls++
+				capturedOptions = options
+				return llm.CompletedAssistantStream(
+					llm.AssistantMessage(
+						[]llm.ContentPart{llm.Text("summary with bearer auth")},
+						llm.StopReasonStop,
+						requestModel,
+					),
+				), nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.RegisterNativeProvider(provider); err != nil {
+		t.Fatal(err)
+	}
+	session.ModelRuntime = runtime
+	session.Agent.State.Model = model
+	mustPrompt(t, session, "Say hello")
+	mustPrompt(t, session, "Say goodbye")
+
+	result, err := session.Compact()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Summary, "summary with bearer auth") {
+		t.Fatalf("summary = %q", result.Summary)
+	}
+	if streamCalls != 1 {
+		t.Fatalf("summary stream calls = %d, want 1", streamCalls)
+	}
+	if capturedOptions.APIKey != "" {
+		t.Fatalf("summary API key = %q, want empty", capturedOptions.APIKey)
+	}
+	if got := capturedOptions.Headers["Authorization"]; got != "Bearer ambient-token" {
+		t.Fatalf("summary authorization = %q, want ambient bearer token", got)
 	}
 }
 

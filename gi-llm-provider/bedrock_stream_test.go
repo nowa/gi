@@ -2,11 +2,13 @@ package gillmprovider
 
 import (
 	"context"
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 func TestProcessBedrockConverseStreamEventsPiStyle(t *testing.T) {
@@ -319,6 +321,91 @@ func TestFormatBedrockStreamErrorUsesStablePrefixesAndRetentionHint(t *testing.T
 		!strings.Contains(formatted, "data-retention.html") {
 		t.Fatalf("formatted error = %q", formatted)
 	}
+}
+
+func TestNormalizeProviderErrorIgnoresBedrockResponseStreamInternals(
+	t *testing.T,
+) {
+	err := bedrockValidationResponseError()
+	normalized := NormalizeProviderError(err)
+
+	if normalized.StatusCode != http.StatusBadRequest ||
+		normalized.Body != "" ||
+		!normalized.MessageCarriesBody ||
+		!strings.Contains(
+			normalized.Message,
+			"on-demand throughput isn't supported",
+		) ||
+		strings.Contains(normalized.Message, "_readableState") {
+		t.Fatalf("normalized = %#v", normalized)
+	}
+}
+
+func TestBedrockPreservesSDKValidationMessageWhenResponseBodyIsStream(
+	t *testing.T,
+) {
+	model := MustGetModel(
+		"amazon-bedrock",
+		"global.anthropic.claude-opus-5",
+	)
+	provider := NewBedrockConverseStreamProvider(func(
+		context.Context,
+		BedrockConverseStreamRequest,
+	) (<-chan BedrockConverseStreamEvent, error) {
+		return nil, bedrockValidationResponseError()
+	})
+	stream, err := provider.StreamSimple(
+		model,
+		Context{Messages: []Message{UserMessageText("hi")}},
+		SimpleStreamOptions{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := stream.Result(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.StopReason != StopReasonError ||
+		!strings.Contains(
+			output.ErrorMessage,
+			"on-demand throughput isn't supported",
+		) ||
+		!strings.Contains(output.ErrorMessage, "inference profile") ||
+		strings.Contains(output.ErrorMessage, "_readableState") {
+		t.Fatalf("output = %#v", output)
+	}
+}
+
+func bedrockValidationResponseError() error {
+	return &smithyhttp.ResponseError{
+		Response: &smithyhttp.Response{
+			Response: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       bedrockUnreadableResponseBody{},
+			},
+		},
+		Err: &smithy.GenericAPIError{
+			Code: "ValidationException",
+			Message: "Invocation of model ID anthropic.claude-opus-5 " +
+				"with on-demand throughput isn't supported. Retry with " +
+				"an inference profile.",
+		},
+	}
+}
+
+type bedrockUnreadableResponseBody struct{}
+
+func (bedrockUnreadableResponseBody) Read([]byte) (int, error) {
+	panic("Bedrock response stream must not be read while formatting an error")
+}
+
+func (bedrockUnreadableResponseBody) Close() error {
+	return nil
+}
+
+func (bedrockUnreadableResponseBody) String() string {
+	return "_readableState"
 }
 
 func ptrFloat64(value float64) *float64 {

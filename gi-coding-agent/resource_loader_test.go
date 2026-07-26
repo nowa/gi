@@ -800,6 +800,25 @@ func TestDefaultResourceLoaderPiBasics(t *testing.T) {
 		}
 	})
 
+	t.Run("ignores context file candidates that are directories", func(t *testing.T) {
+		agentDir, cwd := createResourceLoaderDirs(t)
+		if err := os.Mkdir(filepath.Join(cwd, "AGENTS.md"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeResourceFile(t, filepath.Join(cwd, "CLAUDE.md"), "fallback instructions")
+
+		loader := NewDefaultResourceLoader(DefaultResourceLoaderOptions{CWD: cwd, AgentDir: agentDir})
+		loader.Reload()
+
+		files := loader.GetAgentsFiles().AgentsFiles
+		if len(files) != 1 {
+			t.Fatalf("context files = %#v, want one regular file", files)
+		}
+		if filepath.Base(files[0].Path) != "CLAUDE.md" || files[0].Content != "fallback instructions" {
+			t.Fatalf("context file = %#v, want CLAUDE.md fallback", files[0])
+		}
+	})
+
 	t.Run("discovers global and ancestor context files with content", func(t *testing.T) {
 		root := t.TempDir()
 		agentDir := filepath.Join(root, "agent")

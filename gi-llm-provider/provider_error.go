@@ -59,14 +59,39 @@ func NormalizeProviderError(err error) NormalizedProviderError {
 
 	normalized := NormalizedProviderError{Message: err.Error()}
 	var providerErr *ProviderError
-	if !errors.As(err, &providerErr) || providerErr == nil {
+	if errors.As(err, &providerErr) && providerErr != nil {
+		normalized.StatusCode = providerErr.StatusCode
+		normalized.Body = TruncateProviderErrorText(
+			strings.TrimSpace(providerErr.Body),
+			MaxProviderErrorBodyChars,
+		)
+		normalized.MessageCarriesBody = normalized.Body == "" ||
+			strings.Contains(normalized.Message, normalized.Body)
+		if normalized.StatusCode == 0 {
+			normalized.StatusCode = providerErrorHTTPStatusCode(err)
+		}
 		return normalized
 	}
 
-	normalized.StatusCode = providerErr.StatusCode
-	normalized.Body = TruncateProviderErrorText(strings.TrimSpace(providerErr.Body), MaxProviderErrorBodyChars)
-	normalized.MessageCarriesBody = normalized.Body == "" || strings.Contains(normalized.Message, normalized.Body)
+	// Smithy and other SDK errors expose status through a method while retaining
+	// an unread response stream internally. Read only the status interface:
+	// probing or formatting the response body could consume a live stream or
+	// leak implementation details into the user-facing error.
+	normalized.StatusCode = providerErrorHTTPStatusCode(err)
+	if normalized.StatusCode != 0 {
+		normalized.MessageCarriesBody = true
+	}
 	return normalized
+}
+
+func providerErrorHTTPStatusCode(err error) int {
+	var statusError interface {
+		HTTPStatusCode() int
+	}
+	if errors.As(err, &statusError) && statusError != nil {
+		return statusError.HTTPStatusCode()
+	}
+	return 0
 }
 
 // FormatProviderError composes a provider error without dropping a response
