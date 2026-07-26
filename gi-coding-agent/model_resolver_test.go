@@ -267,11 +267,13 @@ func TestResolveModelScopeWithDiagnosticsPreservesPiDataFlow(t *testing.T) {
 		t.Fatalf("diagnostics = %#v, want invalid-level and no-match warnings", result.Diagnostics)
 	}
 	if diagnostic := result.Diagnostics[0]; diagnostic.Type != ModelScopeDiagnosticWarning ||
+		diagnostic.Code != ModelScopeDiagnosticInvalidThinkingLevel ||
 		diagnostic.Pattern != "gpt-4o:invalid" ||
 		!strings.Contains(diagnostic.Message, `Invalid thinking level "invalid"`) {
 		t.Fatalf("invalid-level diagnostic = %#v", diagnostic)
 	}
 	if diagnostic := result.Diagnostics[1]; diagnostic.Type != ModelScopeDiagnosticWarning ||
+		diagnostic.Code != ModelScopeDiagnosticNoMatch ||
 		diagnostic.Pattern != "missing-*" ||
 		diagnostic.Message != `No models match pattern "missing-*"` {
 		t.Fatalf("no-match diagnostic = %#v", diagnostic)

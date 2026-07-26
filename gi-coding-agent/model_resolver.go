@@ -17,12 +17,18 @@ type ResolveCLIModelOptions = modelresolver.ResolveCLIModelOptions
 type ResolveCLIModelResult = modelresolver.ResolveCLIModelResult
 type ScopedModel = modelresolver.ScopedModel
 type ModelScopeDiagnosticType = modelresolver.ModelScopeDiagnosticType
+type ModelScopeDiagnosticCode = modelresolver.ModelScopeDiagnosticCode
 type ModelScopeDiagnostic = modelresolver.ModelScopeDiagnostic
 type ResolveModelScopeResult = modelresolver.ResolveModelScopeResult
 type FindInitialModelOptions = modelresolver.FindInitialModelOptions
 type InitialModelResult = modelresolver.InitialModelResult
 
 const ModelScopeDiagnosticWarning ModelScopeDiagnosticType = modelresolver.ModelScopeDiagnosticWarning
+
+const (
+	ModelScopeDiagnosticNoMatch              ModelScopeDiagnosticCode = modelresolver.ModelScopeDiagnosticNoMatch
+	ModelScopeDiagnosticInvalidThinkingLevel ModelScopeDiagnosticCode = modelresolver.ModelScopeDiagnosticInvalidThinkingLevel
+)
 
 func IsAliasModelID(id string) bool {
 	return modelresolver.IsAliasModelID(id)

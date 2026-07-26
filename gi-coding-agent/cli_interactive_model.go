@@ -109,11 +109,19 @@ func (h *CLIInteractiveTUIHost) handleScopedModelsSlashCommand() error {
 	}
 	session := host.Session
 	allModels := host.getAvailableModels()
-	if len(allModels) == 0 {
+	var configuredPatterns []string
+	if settings := h.settingsManager(); settings != nil {
+		configuredPatterns = settings.GetEnabledModels()
+	}
+	enabledIDs, hasSelectorState := scopedModelsSelectorEnabledIDs(
+		session,
+		configuredPatterns,
+		allModels,
+	)
+	if !hasSelectorState {
 		h.addStatus("No models available")
 		return nil
 	}
-	enabledIDs := enabledModelIDsForScopedSelector(session, h.settingsManager(), allModels)
 	selector := NewScopedModelsSelectorComponent(ScopedModelsSelectorConfig{
 		AllModels:       allModels,
 		EnabledModelIDs: enabledIDs,
@@ -137,7 +145,12 @@ func (h *CLIInteractiveTUIHost) handleScopedModelsSlashCommand() error {
 			h.addStatus("Model selection not saved: settings unavailable")
 			return
 		}
-		if len(enabled) == 0 || len(enabled) == len(allModels) {
+		allIDs := make([]string, 0, len(allModels))
+		for _, model := range allModels {
+			allIDs = append(allIDs, scopedModelFullID(model))
+		}
+		if enabled == nil ||
+			enabledIDsAreAllAvailable(enabled, allIDs) {
 			settings.SetEnabledModels(nil)
 		} else {
 			settings.SetEnabledModels(enabled)
@@ -150,34 +163,68 @@ func (h *CLIInteractiveTUIHost) handleScopedModelsSlashCommand() error {
 	return nil
 }
 
-func enabledModelIDsForScopedSelector(session *AgentSession, settings *SettingsManager, allModels []llm.Model) []string {
+func scopedModelsSelectorEnabledIDs(
+	session *AgentSession,
+	configuredPatterns []string,
+	allModels []llm.Model,
+) ([]string, bool) {
+	if len(allModels) == 0 &&
+		len(configuredPatterns) == 0 &&
+		(session == nil || len(session.ScopedModels) == 0) {
+		return nil, false
+	}
+	var configuredScope ResolveModelScopeResult
+	if len(configuredPatterns) > 0 {
+		configuredScope = ResolveModelScopeWithDiagnostics(
+			configuredPatterns,
+			cliModelSliceRegistry(allModels),
+		)
+	}
+	var ids []string
 	if session != nil && len(session.ScopedModels) > 0 {
-		ids := make([]string, 0, len(session.ScopedModels))
+		ids = make([]string, 0, len(session.ScopedModels))
 		for _, scoped := range session.ScopedModels {
 			ids = append(ids, scopedModelFullID(scoped.Model))
 		}
-		return ids
+	} else if len(configuredPatterns) > 0 {
+		ids = make([]string, 0, len(configuredScope.ScopedModels))
+		for _, scoped := range configuredScope.ScopedModels {
+			ids = append(ids, scopedModelFullID(scoped.Model))
+		}
 	}
-	if settings == nil {
-		return nil
+	for _, diagnostic := range configuredScope.Diagnostics {
+		if diagnostic.Code != ModelScopeDiagnosticNoMatch ||
+			containsString(ids, diagnostic.Pattern) {
+			continue
+		}
+		ids = append(ids, diagnostic.Pattern)
 	}
-	patterns := settings.GetEnabledModels()
-	if len(patterns) == 0 {
-		return nil
-	}
-	scopedModels := ResolveModelScope(patterns, cliModelSliceRegistry(allModels))
-	ids := make([]string, 0, len(scopedModels))
-	for _, scoped := range scopedModels {
-		ids = append(ids, scopedModelFullID(scoped.Model))
-	}
-	return ids
+	return ids, true
 }
 
 func setSessionScopedModelsFromEnabledIDs(session *AgentSession, allModels []llm.Model, enabled []string) {
 	if session == nil {
 		return
 	}
-	if len(enabled) > 0 && len(enabled) < len(allModels) {
+	allIDs := make([]string, 0, len(allModels))
+	hasEnabledAvailableModel := false
+	for _, model := range allModels {
+		id := scopedModelFullID(model)
+		allIDs = append(allIDs, id)
+		if containsString(enabled, id) {
+			hasEnabledAvailableModel = true
+		}
+	}
+	allAvailableModelsEnabled := enabled != nil
+	for _, id := range allIDs {
+		if !containsString(enabled, id) {
+			allAvailableModelsEnabled = false
+			break
+		}
+	}
+	if enabled != nil &&
+		hasEnabledAvailableModel &&
+		!allAvailableModelsEnabled {
 		session.SetScopedModels(ResolveModelScope(enabled, cliModelSliceRegistry(allModels)))
 		return
 	}

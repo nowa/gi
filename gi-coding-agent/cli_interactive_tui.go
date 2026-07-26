@@ -3307,9 +3307,13 @@ func (h *CLIInteractiveTUIHost) addRenderedCustomMessage(message llm.Message) bo
 	if renderer == nil {
 		return false
 	}
-	h.chat.AddChild(cliRenderedLinesComponent{render: func(width int) []string {
-		return renderer(message, map[string]any{"width": width, "expanded": h.toolOutputExpanded})
-	}})
+	component := newCLICustomMessageComponent(
+		message,
+		renderer,
+		h.outputPad(),
+	)
+	component.SetExpanded(h.toolOutputExpanded)
+	h.chat.AddChild(component)
 	return true
 }
 

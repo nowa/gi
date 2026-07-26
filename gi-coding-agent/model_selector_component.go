@@ -27,7 +27,7 @@ type ScopedModelsSelectorCallbacks struct {
 }
 
 type ScopedModelsSelectorComponent struct {
-	allModels     []llm.Model
+	modelsByID    map[string]llm.Model
 	allIDs        []string
 	enabledIDs    []string
 	selectedIndex int
@@ -39,9 +39,10 @@ type ScopedModelsSelectorComponent struct {
 }
 
 func NewScopedModelsSelectorComponent(config ScopedModelsSelectorConfig, callbacks ScopedModelsSelectorCallbacks) *ScopedModelsSelectorComponent {
+	models := cloneRuntimeModels(config.AllModels)
 	component := &ScopedModelsSelectorComponent{
-		allModels:  append([]llm.Model(nil), config.AllModels...),
-		enabledIDs: append([]string(nil), config.EnabledModelIDs...),
+		modelsByID: make(map[string]llm.Model, len(config.AllModels)),
+		enabledIDs: cloneOptionalStringSlice(config.EnabledModelIDs),
 		callbacks:  callbacks,
 		keybindings: func() KeybindingsConfig {
 			if config.Keybindings != nil {
@@ -50,8 +51,12 @@ func NewScopedModelsSelectorComponent(config ScopedModelsSelectorConfig, callbac
 			return DefaultProtocolKeybindings()
 		}(),
 	}
-	for _, model := range component.allModels {
-		component.allIDs = append(component.allIDs, scopedModelFullID(model))
+	for _, model := range models {
+		fullID := scopedModelFullID(model)
+		if _, exists := component.modelsByID[fullID]; !exists {
+			component.allIDs = append(component.allIDs, fullID)
+		}
+		component.modelsByID[fullID] = model.Clone()
 	}
 	return component
 }
@@ -97,7 +102,7 @@ func (c *ScopedModelsSelectorComponent) HandleInput(data string) {
 		}
 	case matchesKeybindingAction(data, c.keybindings, "app.models.save"):
 		if c.callbacks.OnPersist != nil {
-			c.callbacks.OnPersist(append([]string(nil), c.enabledIDs...))
+			c.callbacks.OnPersist(cloneOptionalStringSlice(c.enabledIDs))
 		}
 		c.dirty = false
 	case isBackspaceInput(data):
@@ -121,11 +126,24 @@ func (c *ScopedModelsSelectorComponent) Render(width int) []string {
 	if c.selectedIndex >= len(items) && len(items) > 0 {
 		c.selectedIndex = len(items) - 1
 	}
-	enabledCount := len(c.enabledIDs)
-	countText := fmt.Sprintf("%d/%d enabled", enabledCount, len(c.allIDs))
 	allEnabled := c.enabledIDs == nil
+	enabledCount := len(c.allIDs)
+	unavailableCount := 0
+	if !allEnabled {
+		enabledCount = 0
+		for _, id := range c.enabledIDs {
+			if _, available := c.modelsByID[id]; available {
+				enabledCount++
+			} else {
+				unavailableCount++
+			}
+		}
+	}
+	countText := fmt.Sprintf("%d/%d enabled", enabledCount, len(c.allIDs))
 	if allEnabled {
 		countText = "all enabled"
+	} else if unavailableCount > 0 {
+		countText += fmt.Sprintf(" · %d unavailable", unavailableCount)
 	}
 	save := c.modelKeyText("app.models.save", "ctrl+s")
 	lines := []string{
@@ -154,30 +172,45 @@ func (c *ScopedModelsSelectorComponent) Render(width int) []string {
 				prefix = tuiThemeAccent("→ ")
 			}
 			status := ""
-			if !allEnabled {
-				status = " [ ]"
+			if !item.available {
+				status = " ✗"
+			} else if !allEnabled {
+				status = " ✗"
 				if item.enabled {
-					status = " [x]"
+					status = " ✓"
 				}
 			}
-			modelID := item.model.ID
+			modelID := item.id
+			providerBadge := " [unavailable]"
+			if item.available {
+				modelID = item.model.ID
+				providerBadge = " [" + item.model.Provider + "]"
+			}
 			if index == c.selectedIndex {
 				modelID = tuiThemeAccent(modelID)
 			}
 			statusText := status
-			if status == " [x]" {
+			if status == " ✓" {
 				statusText = tuiThemeSuccess(status)
-			} else if status == " [ ]" {
+			} else if status == " ✗" {
 				statusText = tuiThemeDim(status)
 			}
-			line := prefix + modelID + tuiThemeMuted(" ["+item.model.Provider+"]") + statusText
+			line := prefix + modelID + tuiThemeMuted(providerBadge) + statusText
 			lines = append(lines, truncateSelectorLine(line, width))
 		}
 		if start > 0 || end < len(items) {
 			lines = append(lines, tuiThemeMuted(fmt.Sprintf("  (%d/%d)", c.selectedIndex+1, len(items))))
 		}
-		if selected, ok := c.selectedItem(items); ok && strings.TrimSpace(selected.model.Name) != "" {
-			lines = append(lines, "", truncateSelectorLine(tuiThemeMuted("  Model Name: "+selected.model.Name), width))
+		if selected, ok := c.selectedItem(items); ok {
+			detail := "  Model unavailable"
+			if selected.available {
+				detail = "  Model Name: " + selected.model.Name
+			}
+			lines = append(
+				lines,
+				"",
+				truncateSelectorLine(tuiThemeMuted(detail), width),
+			)
 		}
 	}
 	lines = append(lines, "")
@@ -255,23 +288,24 @@ func (c *ScopedModelsSelectorComponent) EnabledModelIDs() []string {
 	if c == nil {
 		return nil
 	}
-	return append([]string(nil), c.enabledIDs...)
+	return cloneOptionalStringSlice(c.enabledIDs)
 }
 
 type scopedModelSelectorItem struct {
-	id      string
-	model   llm.Model
-	enabled bool
+	id        string
+	model     llm.Model
+	available bool
+	enabled   bool
 }
 
 func (c *ScopedModelsSelectorComponent) items() []scopedModelSelectorItem {
 	if c == nil {
 		return nil
 	}
-	orderedIDs := c.allIDs
+	orderedIDs := append([]string(nil), c.allIDs...)
 	if c.enabledIDs != nil {
 		enabled := map[string]bool{}
-		orderedIDs = append([]string(nil), c.enabledIDs...)
+		orderedIDs = cloneOptionalStringSlice(c.enabledIDs)
 		for _, id := range c.enabledIDs {
 			enabled[id] = true
 		}
@@ -281,24 +315,21 @@ func (c *ScopedModelsSelectorComponent) items() []scopedModelSelectorItem {
 			}
 		}
 	}
-	modelsByID := map[string]llm.Model{}
-	for _, model := range c.allModels {
-		modelsByID[scopedModelFullID(model)] = model
-	}
 	items := make([]scopedModelSelectorItem, 0, len(orderedIDs))
 	for _, id := range orderedIDs {
-		model, ok := modelsByID[id]
-		if !ok {
-			continue
-		}
+		model, available := c.modelsByID[id]
 		items = append(items, scopedModelSelectorItem{
-			id:      id,
-			model:   model,
-			enabled: c.enabledIDs == nil || containsString(c.enabledIDs, id),
+			id:        id,
+			model:     model.Clone(),
+			available: available,
+			enabled:   c.enabledIDs == nil || containsString(c.enabledIDs, id),
 		})
 	}
 	if strings.TrimSpace(c.search) != "" {
 		items = gitui.FuzzyFilter(items, c.search, func(item scopedModelSelectorItem) string {
+			if !item.available {
+				return item.id
+			}
 			return modelSearchText(modelSearchItemFromModel(item.model))
 		})
 	}
@@ -372,11 +403,16 @@ func (c *ScopedModelsSelectorComponent) toggleSelectedProvider() {
 	if len(items) == 0 || c.selectedIndex < 0 || c.selectedIndex >= len(items) {
 		return
 	}
-	provider := items[c.selectedIndex].model.Provider
+	selected := items[c.selectedIndex]
+	if !selected.available {
+		return
+	}
+	provider := selected.model.Provider
 	var providerIDs []string
-	for _, model := range c.allModels {
+	for _, id := range c.allIDs {
+		model := c.modelsByID[id]
 		if model.Provider == provider {
-			providerIDs = append(providerIDs, scopedModelFullID(model))
+			providerIDs = append(providerIDs, id)
 		}
 	}
 	allProviderEnabled := true
@@ -407,7 +443,7 @@ func (c *ScopedModelsSelectorComponent) toggleSelectedProvider() {
 				c.enabledIDs = append(c.enabledIDs, id)
 			}
 		}
-		if len(c.enabledIDs) == len(c.allIDs) {
+		if enabledIDsAreAllAvailable(c.enabledIDs, c.allIDs) {
 			c.enabledIDs = nil
 		}
 	}
@@ -431,23 +467,19 @@ func (c *ScopedModelsSelectorComponent) enableModelIDs(targetIDs []string) {
 	if c == nil {
 		return
 	}
-	if targetIDs == nil {
-		c.enabledIDs = nil
-		return
-	}
-	if len(targetIDs) == 0 {
-		return
-	}
 	if c.enabledIDs == nil {
 		return
 	}
-	next := append([]string(nil), c.enabledIDs...)
+	if targetIDs == nil {
+		targetIDs = c.allIDs
+	}
+	next := cloneOptionalStringSlice(c.enabledIDs)
 	for _, id := range targetIDs {
 		if !containsString(next, id) {
 			next = append(next, id)
 		}
 	}
-	if len(next) == len(c.allIDs) {
+	if enabledIDsAreAllAvailable(next, c.allIDs) {
 		c.enabledIDs = nil
 		return
 	}
@@ -484,8 +516,20 @@ func (c *ScopedModelsSelectorComponent) clearModelIDs(targetIDs []string) {
 
 func (c *ScopedModelsSelectorComponent) notifyChange() {
 	if c.callbacks.OnChange != nil {
-		c.callbacks.OnChange(append([]string(nil), c.enabledIDs...))
+		c.callbacks.OnChange(cloneOptionalStringSlice(c.enabledIDs))
 	}
+}
+
+func enabledIDsAreAllAvailable(enabledIDs, allIDs []string) bool {
+	if enabledIDs == nil || len(enabledIDs) != len(allIDs) {
+		return false
+	}
+	for _, id := range allIDs {
+		if !containsString(enabledIDs, id) {
+			return false
+		}
+	}
+	return true
 }
 
 func indexOfString(values []string, target string) int {

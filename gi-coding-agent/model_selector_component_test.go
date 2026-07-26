@@ -68,7 +68,7 @@ func TestScopedModelsSelectorTogglesAndPersists(t *testing.T) {
 	if !reflect.DeepEqual(changes, want) {
 		t.Fatalf("changes = %#v, want %#v", changes, want)
 	}
-	if rendered := StripAnsi(strings.Join(selector.Render(80), "\n")); !strings.Contains(rendered, "[x]") || !strings.Contains(rendered, "[ ]") {
+	if rendered := StripAnsi(strings.Join(selector.Render(80), "\n")); !strings.Contains(rendered, "✓") || !strings.Contains(rendered, "✗") {
 		t.Fatalf("rendered selector missing enabled/disabled markers:\n%s", rendered)
 	}
 

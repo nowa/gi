@@ -137,8 +137,16 @@ type ModelScopeDiagnosticType string
 
 const ModelScopeDiagnosticWarning ModelScopeDiagnosticType = "warning"
 
+type ModelScopeDiagnosticCode string
+
+const (
+	ModelScopeDiagnosticNoMatch              ModelScopeDiagnosticCode = "no-match"
+	ModelScopeDiagnosticInvalidThinkingLevel ModelScopeDiagnosticCode = "invalid-thinking-level"
+)
+
 type ModelScopeDiagnostic struct {
 	Type    ModelScopeDiagnosticType
+	Code    ModelScopeDiagnosticCode
 	Message string
 	Pattern string
 }
@@ -261,6 +269,7 @@ func ResolveModelScopeWithDiagnostics(patterns []string, registry CodingModelReg
 		if parsed.Warning != "" {
 			diagnostics = append(diagnostics, ModelScopeDiagnostic{
 				Type:    ModelScopeDiagnosticWarning,
+				Code:    ModelScopeDiagnosticInvalidThinkingLevel,
 				Message: parsed.Warning,
 				Pattern: rawPattern,
 			})
@@ -283,6 +292,7 @@ func ResolveModelScopeWithDiagnostics(patterns []string, registry CodingModelReg
 func noModelScopeMatchDiagnostic(pattern string) ModelScopeDiagnostic {
 	return ModelScopeDiagnostic{
 		Type:    ModelScopeDiagnosticWarning,
+		Code:    ModelScopeDiagnosticNoMatch,
 		Message: fmt.Sprintf("No models match pattern %q", pattern),
 		Pattern: pattern,
 	}
