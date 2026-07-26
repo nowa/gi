@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      PI_ROOT: ${{ runner.temp }}/pi-v0.82.0
+      PI_ROOT: ${{ runner.temp }}/pi-baseline
     steps:
       - name: Check out Gi
         uses: actions/checkout@v7
@@ -23,7 +23,9 @@ jobs:
           node-version: 22
 
       - name: Check out the pinned Pi release
-        run: git clone --branch v0.82.0 --depth 1 https://github.com/earendil-works/pi.git "$PI_ROOT"
+        run: |
+          PI_TAG="$(node -p "require('./docs/pi-parity/baseline.json').upstream.tag")"
+          git clone --branch "$PI_TAG" --depth 1 https://github.com/earendil-works/pi.git "$PI_ROOT"
 
       - name: Verify the Pi tag, commit, and package versions
         run: node docs/pi-parity/verify-pi-baseline.mjs --pi-root "$PI_ROOT"
@@ -32,4 +34,4 @@ jobs:
         run: node --test docs/pi-parity/parity-baseline-lib.test.mjs
 
       - name: Reject parity debt drift
-        run: node docs/pi-parity/verify-parity-baseline.mjs --pi-root "$PI_ROOT"
+        run: node docs/pi-parity/verify-parity-baseline.mjs --pi-root "$PI_ROOT" --require-closed
