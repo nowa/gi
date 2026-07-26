@@ -3,9 +3,9 @@
 # Pi Coding Agent Source Audit
 
 > This document records the v0.78.0-era detailed source audit. The active
-> catch-up target is Pi v0.82.0 at `083e6162`; current machine-readable debt is
-> tracked in [`docs/pi-parity/v0.82.0-open-gaps.json`](docs/pi-parity/v0.82.0-open-gaps.json).
-> The historical green case table is not a v0.82.0 completion claim.
+> catch-up target is Pi v0.82.1 at `b4f29368`; current machine-readable debt is
+> tracked in [`docs/pi-parity/v0.82.1-open-gaps.json`](docs/pi-parity/v0.82.1-open-gaps.json).
+> The historical green case table is not a v0.82.1 completion claim.
 
 This document tracks source-level parity for Pi `packages/coding-agent/src` in the current local Pi checkout. It complements `PI_CODING_AGENT_TEST_CASE_PARITY.md`: test-case parity is green, but this file is the guardrail for behavior that Pi source implements without an explicit test.
 
@@ -52,7 +52,7 @@ This document tracks source-level parity for Pi `packages/coding-agent/src` in t
   interactive theme controller, and cancel restores the original preview.
 - Latest theme-core increment: custom theme validation now reserves `/` for
   automatic settings across discovery, palette loading, schema validation, and
-  HTML export. Pi v0.82.0's distinct built-in `thinkingMax` colors are present,
+  HTML export. Pi v0.82.1's distinct built-in `thinkingMax` colors are present,
   while legacy custom themes inherit `thinkingXhigh` through one shared
   terminal/CSS fallback rule; RGB and ANSI detection also share one luminance
   calculation.

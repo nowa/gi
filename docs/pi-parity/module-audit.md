@@ -1,12 +1,12 @@
 # Pi Parity Module Audit
 
 > The detailed mappings below originated from the v0.78.0 audit. The
-> machine-verifiable audit is now closed against the immutable Pi v0.82.0
-> baseline declared in `baseline.json`. `v0.82.0-open-gaps.json` remains the
+> machine-verifiable audit is now closed against the immutable Pi v0.82.1
+> baseline declared in `baseline.json`. `v0.82.1-open-gaps.json` remains the
 > authoritative drift snapshot.
 
-This document is the working audit for aligning Gi with Pi `v0.82.0` at commit
-`083e61621276bff9f6faefab87ce07fcd98734e2`. It records direct mappings,
+This document is the working audit for aligning Gi with Pi `v0.82.1` at commit
+`b4f293684bba718d59cc1157679bcf6157b3a7f5`. It records direct mappings,
 Go-native equivalents, protocol replacements, and explicit product-scope
 decisions; zero tracked gaps do not extend beyond that declared scope.
 
@@ -140,20 +140,20 @@ session/runtime code, and interactive TUI components still contain many
 cross-file dependencies, so they should be split only after the shared type
 boundaries are made explicit enough to avoid import cycles.
 
-## Current v0.82.0 Inventory Evidence
+## Current v0.82.1 Inventory Evidence
 
 All generated evidence below uses the clean, immutable Pi checkout at
-`/private/tmp/pi-v0.82.0`, whose HEAD is the commit declared in
+`/private/tmp/pi-v0.82.1`, whose HEAD is the commit declared in
 `baseline.json`.
 
 The member-level source inventory currently reports:
 
 | Module | Pi source files | Gi production files | Pi symbols | Missing Pi files | Missing Pi symbols |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 169 | 101 | 632 | 0 | 0 |
+| LLM provider | 169 | 102 | 635 | 0 | 0 |
 | Agent core | 35 | 35 | 327 | 0 | 0 |
 | TUI | 28 | 32 | 449 | 0 | 0 |
-| Coding agent | 177 | 184 | 2115 | 14 | 241 |
+| Coding agent | 177 | 208 | 2116 | 0 | 0 |
 
 `docs/pi-parity/member-symbol-inventory.md` is the generated per-file detail.
 A mentioned symbol means its ownership or gap has been classified; it does not
@@ -165,7 +165,7 @@ above. Regenerate the inventory with:
 
 ```sh
 node docs/pi-parity/verify-module-boundaries.mjs \
-  --pi-root /private/tmp/pi-v0.82.0 \
+  --pi-root /private/tmp/pi-v0.82.1 \
   --format markdown \
   --out docs/pi-parity/module-boundary-inventory.md
 ```
@@ -174,10 +174,10 @@ The test-case inventory currently reports:
 
 | Module | In-scope Pi test files | In-scope Pi cases | Candidate files | Candidate cases | No-candidate files | No-candidate cases |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| LLM provider | 111 | 1186 | 111 | 1186 | 0 | 0 |
+| LLM provider | 113 | 1208 | 113 | 1208 | 0 | 0 |
 | Agent core | 16 | 212 | 16 | 212 | 0 | 0 |
 | TUI | 27 | 700 | 27 | 700 | 0 | 0 |
-| Coding agent | 181 | 1649 | 178 | 1632 | 3 | 17 |
+| Coding agent | 181 | 1650 | 181 | 1650 | 0 | 0 |
 
 Candidate matching is an audit lead, not proof. Behavioral parity still
 requires the mapped Go tests, implementation review, and the release gate in
@@ -187,7 +187,7 @@ requires the mapped Go tests, implementation review, and the release gate in
 
 > The section below is retained as historical audit provenance only. Its
 > “current” counts refer to the old v0.78.0 pass and must not be used for the
-> v0.82.0 release decision.
+> v0.82.1 release decision.
 
 <details>
 <summary>Show the superseded v0.78.0 evidence</summary>
@@ -358,14 +358,14 @@ Observed direct coverage:
   `docs/pi-parity/llm-provider-file-map.md`.
 - Provider/model core: Pi `api-registry.ts`, `models.ts`, `models.generated.ts`, `types.ts`, `stream.ts` map to Gi `registry.go`, `models.go`, `pi_models_generated.go`, `types.go`, `event_stream.go`.
 - Pi's generated model catalog now comes from the official
-  `@earendil-works/pi-ai@0.82.0` release package (npm shasum
-  `b1f33e7cb81ef6a55918baaef2764ff03c37a925`). The tag intentionally omits the
+  `@earendil-works/pi-ai@0.82.1` release package (npm shasum
+  `02ebdfc2997fd88ca1f51a7b5c01f337a9462f34`). The tag intentionally omits the
   generated provider JSON, so Gi's checked-in `internal/cmd/modelgen` consumes
   the published data, preserves source order, rejects unknown fields, and
   verifies the published manifest schema/timestamp, exact shard set, per-file
   SHA-256 values, and normalized model/API structure hash. The validated
   generation timestamp is embedded into the generated Go catalog. This aligns
-  the catalog with v0.82.0, including the Fireworks
+  the 1,109-model catalog with v0.82.1, including Claude Opus 5, the Fireworks
   `kimi-k2p6-turbo` router, GPT-5.6 pricing tiers, and `max` thinking metadata.
 - Gi model registry initialization now mirrors Pi's generated-catalog path:
   `models.go` calls `registerPiGeneratedModels()` directly instead of first
@@ -502,7 +502,7 @@ Observed direct coverage:
   tests.
 - Interactive mode is consolidated primarily into `cli_interactive_tui.go`, with editor/dialog/status/settings/model/auth/help host APIs split into `cli_interactive_editor_host.go`, `cli_interactive_dialog_host.go`, `cli_interactive_status.go`, `cli_interactive_settings.go`, `cli_interactive_model.go`, `cli_interactive_auth.go`, and `cli_interactive_help.go` plus focused component/helper files. Experimental first-time setup has its own immutable eligibility boundary and one component-owned mutable state projection in `startup_ui.go` and `first_time_setup.go`; only the CLI coordinator persists the submitted theme, analytics preference, and stable tracking ID.
 - Interactive theme state is no longer duplicated between settings, preview flags, and the global palette. `SettingsManager.GetThemeSetting` exposes a presence-aware raw value, `AutoThemeSetting` is the immutable parsed projection, and `interactiveThemeController` is the sole mutable owner of terminal appearance, active concrete theme, automatic synchronization, and notification lifetime. Terminal detection happens outside controller locks; a monotonically increasing revision and serialized palette transition prevent a delayed query from overwriting a newer fixed selection. `settingsThemeSelection` separately owns the settings transaction for single versus automatic mode and fixed/light/dark choices: navigation emits preview-only values, Apply publishes one complete setting, and cancel restores the original preview. The host owns only construction, persistence after a successful selection, render invalidation, and disposal.
-- Theme parsing and projection share one reserved-name and color-fallback boundary. `/` is rejected from custom theme names before resource publication or HTML export because it belongs to automatic settings. Current built-ins define Pi v0.82.0's distinct `thinkingMax`; legacy custom themes inherit `thinkingXhigh` through the same lookup used by terminal palettes and CSS export. RGB and ANSI terminal detection share one luminance calculation.
+- Theme parsing and projection share one reserved-name and color-fallback boundary. `/` is rejected from custom theme names before resource publication or HTML export because it belongs to automatic settings. Current built-ins define Pi v0.82.1's distinct `thinkingMax`; legacy custom themes inherit `thinkingXhigh` through the same lookup used by terminal palettes and CSS export. RGB and ANSI terminal detection share one luminance calculation.
 - The canonical CLI thinking enum now includes `max`; the same value flows through argument diagnostics, scoped model patterns, persisted defaults, session/RPC validation, provider capability clamping, interactive descriptions, and theme selection. Models must explicitly advertise `max`, while legacy themes retain the `thinkingXhigh` visual fallback.
 - Interactive model selection consumes `ModelRuntime` through the narrow `ModelSelectorRuntime` interface. The runtime publishes immutable catalog snapshots; the selector owns only its detached model projection plus scope, search, selection, refresh status, and close state under one mutex. A background refresh uses an explicit 15-second context, republishes only a complete snapshot, refreshes scoped definitions without replacing their thinking levels, and invokes render/host callbacks after releasing selector locks. Close is idempotent and cancels refresh before selection/cancellation callbacks.
 - Pi `AssistantMessageComponent` / `UserMessageComponent` now map to Gi

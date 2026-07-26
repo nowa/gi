@@ -28,7 +28,7 @@ function parseArgs(argv) {
 		giRoot: process.cwd(),
 		piRoot: process.env.PI_REPO || path.join(os.homedir(), "Projects/agents/pi"),
 		baseline: "docs/pi-parity/baseline.json",
-		knownGaps: "docs/pi-parity/v0.82.0-open-gaps.json",
+		knownGaps: "docs/pi-parity/v0.82.1-open-gaps.json",
 		requireClosed: false,
 		format: "text",
 		allowDirty: false,

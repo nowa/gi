@@ -276,7 +276,7 @@ publishes one complete fixed or `light/dark` setting, and cancel restores the
 original preview without mutating `SettingsManager`.
 
 Theme loading now enforces the same boundary as that grammar: custom names
-cannot contain `/`, including discovery and HTML export paths. Pi v0.82.0's
+cannot contain `/`, including discovery and HTML export paths. Pi v0.82.1's
 `thinkingMax` token is distinct in both built-ins; legacy custom themes that
 omit it inherit `thinkingXhigh` consistently in terminal and CSS projections.
 

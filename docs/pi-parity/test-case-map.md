@@ -1,8 +1,8 @@
 # Pi Test-Case Parity Tracker
 
-> These counts are generated against Pi v0.82.0 at
-> `083e61621276bff9f6faefab87ce07fcd98734e2`. `baseline.json` declares scope
-> and `v0.82.0-open-gaps.json` is the authoritative zero-gap drift snapshot.
+> These counts are generated against Pi v0.82.1 at
+> `b4f293684bba718d59cc1157679bcf6157b3a7f5`. `baseline.json` declares scope
+> and `v0.82.1-open-gaps.json` is the authoritative zero-gap drift snapshot.
 
 This document tracks test-case-level parity between the local Pi checkout at
 `~/Projects/agents/pi` and Gi. It is intentionally stricter than file-level
@@ -24,10 +24,10 @@ The generated file-level inventory is in
 
 | Area | Pi `test`/`it` cases | Gi top-level Go tests | Case-name candidates | Current status |
 | --- | ---: | ---: | ---: | --- |
-| `packages/ai` / `gi-llm-provider` | 1186 | 427 | 1186/1186 | Provider/model/source surface has named case coverage for all 111 in-scope Pi AI test files; one TypeScript generator file with 3 cases is explicitly excluded. |
+| `packages/ai` / `gi-llm-provider` | 1208 | 433 | 1208/1208 | Provider/model/source surface has named case coverage for all 113 in-scope Pi AI test files; one TypeScript generator file with 3 cases is explicitly excluded. |
 | `packages/agent` / `gi-agent-core` + harness | 212 | 144 | 212/212 | Core loop, proxy, session, compaction, and harness behavior have named case coverage for all 16 in-scope Pi agent-core test files; 2 optional SQLite-adapter files with 12 cases are explicitly excluded. |
 | `packages/tui` / `gi-tui` | 700 | 501 | 700/700 | Component/editor/terminal parity has named case candidates for all 27 Pi TUI test files, with fixture-level Markdown/xterm checks validated by focused TUI tests. |
-| `packages/coding-agent` / `gi-coding-agent` | 1639 | 1276 | 1639/1639 | Interactive, print/RPC, packages, extensions, tools, session, OAuth, and utility edge cases have named case coverage for all 179 in-scope Pi coding-agent test files; 2 product/runtime-specific files with 10 cases are explicitly excluded. |
+| `packages/coding-agent` / `gi-coding-agent` | 1650 | 1282 | 1650/1650 | Interactive, print/RPC, packages, extensions, tools, session, OAuth, and utility edge cases have named case coverage for all 181 in-scope Pi coding-agent test files; 2 product/runtime-specific files with 10 cases are explicitly excluded. |
 
 These counts are not expected to match one-for-one because Pi uses nested
 Vitest cases while Gi uses Go top-level tests with table-driven subtests. The
@@ -61,6 +61,49 @@ test names alone.
 | TUI | 0 |
 | Coding agent | 0 |
 
+## Pi v0.82.1 Incremental Test Delta
+
+The `v0.82.0..v0.82.1` diff adds 34 `test`/`it` declarations under the
+in-scope AI and coding-agent test trees. Each declaration has an explicit Go
+regression below; table-driven subtests intentionally share their parent test.
+
+| Pi file and added case | Gi regression |
+| --- | --- |
+| `anthropic-auth-token.test.ts`: resolves `ANTHROPIC_AUTH_TOKEN` as a bearer Authorization header | `TestAnthropicAmbientAuthReachesRequestShape/uses_bearer_authorization_without_OAuth_shaping` |
+| `anthropic-auth-token.test.ts`: preserves `ANTHROPIC_OAUTH_TOKEN` as OAuth-shaped API auth | `TestAnthropicAmbientAuthReachesRequestShape/preserves_OAuth_shaping_for_OAuth_token` |
+| `anthropic-auth-token.test.ts`: uses Authorization headers without OAuth-mode request shaping | `TestAnthropicAmbientAuthReachesRequestShape/uses_bearer_authorization_without_OAuth_shaping` |
+| `anthropic-auth-token.test.ts`: threads auth-context `ANTHROPIC_AUTH_TOKEN` through request headers | `TestAnthropicAmbientAuthReachesRequestShape/uses_bearer_authorization_without_OAuth_shaping` |
+| `anthropic-auth-token.test.ts`: preserves OAuth request shaping for `ANTHROPIC_OAUTH_TOKEN` | `TestAnthropicAmbientAuthReachesRequestShape/preserves_OAuth_shaping_for_OAuth_token` |
+| `anthropic-auth-token.test.ts`: lets explicit request headers override `ANTHROPIC_AUTH_TOKEN` | `TestAnthropicAmbientAuthReachesRequestShape/explicit_request_header_overrides_ambient_bearer` |
+| `bedrock-models.test.ts`: exposes Claude Opus 5 through an inference profile only | `TestBedrockCatalogExposesOpus5ThroughInferenceProfileOnly` |
+| `bedrock-thinking-payload.test.ts`: uses adaptive thinking for Claude Opus 5 | `TestBuildBedrockAdditionalModelRequestFieldsThinking/adaptive_opus_5_high` |
+| `bedrock-thinking-payload.test.ts`: maps Claude Opus 5 `xhigh` reasoning to `effort=xhigh` | `TestBuildBedrockAdditionalModelRequestFieldsThinking/adaptive_opus_5_xhigh` |
+| `env-api-keys.test.ts`: reports `ANTHROPIC_AUTH_TOKEN` but preserves OAuth token API-key lookup | `TestEnvironmentAPIKeysSeparatesAnthropicBearerFromAPIKeys` |
+| `env-api-keys.test.ts`: does not return `ANTHROPIC_AUTH_TOKEN` as an API key | `TestEnvironmentAPIKeysSeparatesAnthropicBearerFromAPIKeys` |
+| `env-api-keys.test.ts`: preserves `ANTHROPIC_OAUTH_TOKEN` as an API key | `TestEnvironmentAPIKeysSeparatesAnthropicBearerFromAPIKeys` |
+| `env-api-keys.test.ts`: falls back to `ANTHROPIC_API_KEY` for API-key lookup | `TestEnvironmentAPIKeysSeparatesAnthropicBearerFromAPIKeys` |
+| `error-body.test.ts`: ignores a Bedrock response stream instead of serializing internals | `TestNormalizeProviderErrorIgnoresBedrockResponseStreamInternals` |
+| `models-runtime.test.ts`: keeps the underlying reason in wrapped OAuth refresh errors | `TestModelsRuntime/rejects_with_code_oauth_when_refresh_fails_preserving_the_stored_credential` |
+| `provider-error-body-regression.test.ts`: preserves the Bedrock SDK validation message for a stream body | `TestBedrockPreservesSDKValidationMessageWhenResponseBodyIsStream` |
+| `providers.test.ts`: resolves Anthropic bearer auth with auth-token precedence | `TestBuiltinProviderPiContracts/resolves_Anthropic_bearer_auth_from_env_with_auth_token_precedence` |
+| `providers.test.ts`: preserves Anthropic OAuth-token precedence over the API key | `TestBuiltinProviderPiContracts/preserves_Anthropic_OAuth_token_precedence_over_API_key` |
+| `radius-oauth.test.ts`: uses gateway endpoints directly for device login | `TestRadiusOAuthDeviceCodeLogin` |
+| `radius-oauth.test.ts`: refreshes directly through the gateway without discovery | `TestRadiusOAuthRefreshPreservesProviderMetadata` |
+| `radius-oauth.test.ts`: discovers only the interactive browser authorization endpoint | `TestRadiusOAuthBrowserLogin` |
+| `supports-xhigh.test.ts`: includes `xhigh` and `max` for Anthropic Opus 5 | `TestSupportedThinkingLevelsPiCaseNames/includes_xhigh_and_max_for_Anthropic_Opus_5_on_anthropic-messages_API` |
+| `supports-xhigh.test.ts`: includes `xhigh` and `max` for Bedrock Claude Opus 5 | `TestSupportedThinkingLevelsPiCaseNames/includes_xhigh_and_max_for_Bedrock_Claude_Opus_5` |
+| `custom-message.test.ts`: provides output padding to custom renderers and updates it | `TestCLICustomMessageComponentProvidesOutputPaddingToRenderersAndUpdatesIt` |
+| `llama-extension.test.ts`: persists and restores loaded models for cache-only startup refreshes | `TestLlamaProviderPersistsAndRestoresLoadedModelsForCacheOnlyStartupRefreshes` |
+| `remote-catalog-provider.test.ts`: revalidates a stored catalog with ETag and keeps the overlay on 304 | `TestWithRemoteCatalogETagLifecycle/revalidates_a_stored_catalog_with_its_etag_and_keeps_the_overlay_on_304` |
+| `remote-catalog-provider.test.ts`: drops a stale ETag when the overlay becomes unavailable | `TestWithRemoteCatalogETagLifecycle/drops_a_stale_etag_when_the_overlay_becomes_unavailable` |
+| `remote-catalog-provider.test.ts`: keeps the ETag and overlay after a transient failure | `TestWithRemoteCatalogETagLifecycle/keeps_the_etag_and_overlay_after_a_transient_failure` |
+| `resource-loader.test.ts`: ignores context-file candidates that are directories | `TestDefaultResourceLoaderPiBasics/ignores_context_file_candidates_that_are_directories` |
+| `agent-session-compaction.test.ts`: manually compacts with provider-resolved bearer auth | `TestAgentSessionCompactManualWithProviderResolvedBearerAuth` |
+| `6949-unavailable-scoped-model.test.ts`: shows and removes an enabled model without a catalog entry | `TestScopedModelsSelectorShowsAndRemovesEnabledModelWithoutCatalogEntry` |
+| `6949-unavailable-scoped-model.test.ts`: passes unmatched settings patterns with one combined resolution | `TestScopedModelsSelectorCarriesUnmatchedSettingsAndUnavailableSessionScope` |
+| `6949-unavailable-scoped-model.test.ts`: opens when only a session-scoped model is unavailable | `TestScopedModelsSelectorCarriesUnmatchedSettingsAndUnavailableSessionScope` |
+| `6949-unavailable-scoped-model.test.ts`: does not clear a partial scope when an enabled model is unavailable | `TestScopedModelsSelectorDoesNotClearPartialScopeWhenEnabledModelIsUnavailable` |
+
 ## Confirmed High-Risk UI/Logic Cases
 
 | Pi test case or contract | Gi coverage | Status |
@@ -80,7 +123,10 @@ test names alone.
 | `/model` provider-prefixed search ranks a direct provider model before a proxy-provider ID | `TestModelSearchTextPiContract`, `TestModelSelectorSearchRanksExactProviderBeforeProxyIDPiStyle`, `TestCLIInteractiveTUIHostModelSlashArgumentAutocompletePiStyle` | covered |
 | `ModelSelectorComponent` renders the cached runtime snapshot before an asynchronous catalog refresh, republishes refreshed definitions without losing scoped thinking levels, reports refresh outcomes, closes its refresh lifecycle before selection callbacks, and retains static catalogs when an optional runtime is a typed nil | `TestModelSelectorTreatsTypedNilRuntimeAsStaticCatalog`, `TestModelSelectorLoadsCachedSnapshotThenPublishesRefresh`, `TestModelSelectorReportsRefreshOutcomes`, `TestModelSelectorTimesOutAndKeepsCachedModels`, `TestModelSelectorSelectionClosesRefreshBeforeCallback` | covered through the narrow `ModelSelectorRuntime` boundary and race-tested component state |
 | DeepSeek V4 supports only `off/high/max`, so unsupported intermediate levels clamp upward/downward through the canonical order | `TestGetSupportedThinkingLevels`, `TestSupportedThinkingLevelsPiCaseNames`, `TestOfficialGrokAndDeepSeekModelCatalog` | covered |
-| The official Pi v0.82.0 generated model catalog and compat flags are registered in Gi, including 1,116 models, Fireworks Kimi K2.6 Turbo, GPT-5.6 pricing tiers, and `max` thinking maps | `TestFireworksModelCatalog`, `TestSupportedThinkingLevelsPiCaseNames`, `TestMaxThinkingLevelPiCaseNames`, generator tests | covered |
+| The official Pi v0.82.1 generated model catalog and compat flags are registered in Gi, including 1,109 models, Claude Opus 5, Fireworks Kimi K2.6 Turbo, GPT-5.6 pricing tiers, and `max` thinking maps | `TestFireworksModelCatalog`, `TestSupportedThinkingLevelsPiCaseNames`, `TestMaxThinkingLevelPiCaseNames`, `TestOfficialClaudeOpus5ModelCatalog`, generator tests | covered |
+| `packages/ai/test/anthropic-auth-token.test.ts` bearer-token precedence, OAuth shaping, request-scoped environment, and explicit-header override | `TestAnthropicAmbientAuthReachesRequestShape`, `TestAnthropicAPIKeyLookupExcludesBearerToken`, `TestAnthropicMessagesProviderUsesOAuthAuthorizationHeadersPiStyle` | covered through provider-owned `ModelAuth` resolution |
+| `packages/ai/test/radius-oauth.test.ts` gateway-direct device/token/refresh endpoints and browser-only discovery | `TestRadiusOAuthDeviceCodeLogin`, `TestRadiusOAuthRefreshPreservesProviderMetadata`, `TestRadiusOAuthBrowserLogin` | covered through the split Radius HTTP and orchestration boundaries |
+| `packages/ai/test/error-body.test.ts` and `provider-error-body-regression.test.ts` do not consume or serialize Bedrock response streams while retaining SDK validation details | `TestNormalizeProviderErrorIgnoresBedrockResponseStreamInternals`, `TestBedrockPreservesSDKValidationMessageWhenResponseBodyIsStream` | covered through typed status-only SDK error inspection |
 | `lazy-module-load.test.ts` root import/direct Anthropic wrapper/root dispatch contracts map to Gi's Go-native provider linking boundary | `TestLazyProviderModuleLoadingPiParity` | covered |
 | `packages/ai/test/models-runtime.test.ts` provider lifecycle, dynamic refresh/cache restore, credential selection, OAuth serialization, login/logout, header/env assembly, and lazy stream errors | `TestModelsRuntime`, `TestInMemoryModelsStoreClonesEntries`, `TestResolveProviderAuth*`, `TestAuthStorageCredentialStore*` | covered |
 | `packages/ai/test/pi-messages.test.ts` request/debug/error/rewrite/SSE conversion and built-in registration | `TestPiMessagesPiContracts`, focused pi-messages transport tests | covered |
@@ -90,7 +136,11 @@ test names alone.
 | `packages/ai/test/images-models.test.ts` ordered provider/model lifecycle, auth and option merging, unconfigured dispatch, coalesced refresh, typed targeted failures, and built-in OpenRouter assembly | `TestImagesModels*`, `TestImagesProviderRefreshCoalescesAndPreservesLastSnapshot`, `TestBuiltinImagesModelsSharesOpenRouterCredentialsWithTextModels` | covered |
 | `packages/ai/test/openrouter-oauth.test.ts` one-shot PKCE callback, permanent key, exchange failures, cancellation, callback host, and shared text/image auth | `TestOpenRouterOAuth*`, `TestBuiltinOpenRouterProviderUsesDefaultOAuth`, `TestBuiltinImagesModelsSharesOpenRouterCredentialsWithTextModels` | covered |
 | `packages/coding-agent/test/models-store.test.ts` provider-isolated JSON persistence and deletion | `TestFileModelsStorePiExactCaseNames` | covered |
-| `packages/coding-agent/test/remote-catalog-provider.test.ts` keyed catalog parsing, attribution, TTL/force policy, generated-vs-remote recency, and unavailable routes | `TestWithRemoteCatalogRefreshLifecycle` exact subcases and `TestModelsStoreEntryPreservesLastModifiedPresence` | covered through the reusable provider-owned remote overlay |
+| `packages/coding-agent/test/remote-catalog-provider.test.ts` keyed catalog parsing, attribution, TTL/force policy, ETag revalidation/304/unavailable/transient policy, generated-vs-remote recency, and unavailable routes | `TestWithRemoteCatalogRefreshLifecycle`, `TestWithRemoteCatalogETagLifecycle`, and `TestInMemoryModelsStoreClonesEntries` exact subcases | covered through the reusable provider-owned remote overlay |
+| `packages/coding-agent/test/custom-message.test.ts` exposes width, expanded state, and mutable output padding to custom renderers | `TestCLICustomMessageComponentProvidesOutputPaddingToRenderersAndUpdatesIt` | covered with mutex-owned presentation state |
+| `packages/coding-agent/test/suite/regressions/6949-unavailable-scoped-model.test.ts` displays, removes, persists, and opens scopes containing unavailable models without clearing partial scopes | `TestScopedModelsSelectorShowsAndRemovesEnabledModelWithoutCatalogEntry`, `TestScopedModelsSelectorCarriesUnmatchedSettingsAndUnavailableSessionScope`, `TestScopedModelsSelectorDoesNotClearPartialScopeWhenEnabledModelIsUnavailable` | covered through canonical full model IDs and membership-based scope state |
+| Manual compaction accepts provider-resolved header-only bearer authentication | `TestAgentSessionCompactManualWithProviderResolvedBearerAuth` | covered through `ModelRuntime.CompleteSimple` request assembly |
+| Resource context discovery skips directory candidates and continues to the next supported filename | `TestDefaultResourceLoaderPiBasics/ignores_context_file_candidates_that_are_directories` | covered through regular-file checks before reads |
 | `packages/coding-agent/test/model-runtime-cloudflare-compat.test.ts` Cloudflare endpoint and header materialization through canonical runtime auth | `TestModelRuntimeUsesProviderOwnedAuthProjectionPiStyle` | covered without a compatibility-only request bypass |
 | `packages/coding-agent/test/model-runtime-modify-models-compat.test.ts` native providers, topmost user overrides, extension refresh publication, and OAuth model projection | `TestModelRuntimeNativeProviderLifecyclePiStyle`, `TestModelRuntimeComposesRemoteModelsConfigAndExtensionLayers`, `TestModelRuntimeExtensionRefreshValidatesBeforePublish`, `TestModelRuntimeOAuthModelProjectionUsesRefreshCredential` | covered with synchronized provider-owned model state |
 | `packages/coding-agent/test/model-runtime-auth-options.test.ts` injected `CredentialStore`, provider-owned auth methods/status, scoped availability, extension API-key/OAuth method construction, request-scoped env, and final header assembly | `TestModelRuntimeAcceptsPiAICredentialStore`, `TestModelRuntimeDefaultCredentialStoreSurvivesLoginRefresh`, `TestModelRuntimeOwnsProviderRequestAssemblyPiStyle`, `TestModelRuntimeUsesProviderOwnedAuthProjectionPiStyle`, `TestModelRuntimeAvailabilityRefreshHonorsContext`, and focused provider-composer tests | covered through one runtime-owned credential overlay and provider runtime |
@@ -131,7 +181,7 @@ test names alone.
 
 - Keep the generated inventory and zero-gap snapshot synchronized whenever Pi
   or Gi changes.
-- Keep product-scope exclusions explicit. The v0.82.0 coding-agent exclusions
+- Keep product-scope exclusions explicit. The v0.82.1 coding-agent exclusions
   are Pi's optional TypeScript git-merge example and Node
   `proper-lockfile`/`signal-exit` listener re-send behavior; Gi uses protocol
   packages and Go `os/signal` plus `sync.Once`.

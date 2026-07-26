@@ -7530,7 +7530,7 @@ func TestCLIInteractiveTUIHostChangelogFallsBackToPackageChangelog(t *testing.T)
 	for _, expected := range []string{
 		"What's New",
 		"Go coding-agent port",
-		"0.82.0",
+		DefaultCodingAgentVersion,
 	} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf(

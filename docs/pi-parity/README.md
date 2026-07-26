@@ -1,18 +1,19 @@
-# Pi v0.82.0 Parity Baseline
+# Pi v0.82.1 Parity Baseline
 
 Gi's closed catch-up baseline is the immutable Pi release:
 
-- tag: `v0.82.0`
-- commit: `083e61621276bff9f6faefab87ce07fcd98734e2`
+- tag: `v0.82.1`
+- commit: `b4f293684bba718d59cc1157679bcf6157b3a7f5`
 - repository: `https://github.com/earendil-works/pi.git`
 
 The machine-readable scope and intentional exclusions are in `baseline.json`.
-The current debt snapshot is in `v0.82.0-open-gaps.json`.
+The current debt snapshot is in `v0.82.1-open-gaps.json`.
 
 ## Closed baseline and drift detection
 
 The source, module-boundary, and test-case verifiers predate Pi v0.82.0. The
-baseline opened with 1,545 audit items. The current snapshot is closed:
+original closure opened with 1,545 audit leads; the v0.82.1 catch-up introduced
+nine new source/test mapping leads. The current snapshot is closed:
 
 | Module | Open items |
 | --- | ---: |
@@ -49,16 +50,16 @@ Use a clean checkout of the exact Pi release. Do not generate the snapshot from
 a moving or dirty `main` checkout.
 
 ```sh
-git clone --branch v0.82.0 --depth 1 \
-  https://github.com/earendil-works/pi.git /private/tmp/pi-v0.82.0
+git clone --branch v0.82.1 --depth 1 \
+  https://github.com/earendil-works/pi.git /private/tmp/pi-v0.82.1
 
 node docs/pi-parity/verify-pi-baseline.mjs \
-  --pi-root /private/tmp/pi-v0.82.0
+  --pi-root /private/tmp/pi-v0.82.1
 
 node --test docs/pi-parity/parity-baseline-lib.test.mjs
 
 node docs/pi-parity/verify-parity-baseline.mjs \
-  --pi-root /private/tmp/pi-v0.82.0
+  --pi-root /private/tmp/pi-v0.82.1
 ```
 
 After a Pi or Gi parity change, regenerate the deterministic snapshot and
@@ -66,15 +67,15 @@ review any drift:
 
 ```sh
 node docs/pi-parity/snapshot-parity-gaps.mjs \
-  --pi-root /private/tmp/pi-v0.82.0 \
-  --out docs/pi-parity/v0.82.0-open-gaps.json
+  --pi-root /private/tmp/pi-v0.82.1 \
+  --out docs/pi-parity/v0.82.1-open-gaps.json
 ```
 
-The final v0.82.0 release gate is:
+The final v0.82.1 release gate is:
 
 ```sh
 node docs/pi-parity/verify-parity-baseline.mjs \
-  --pi-root /private/tmp/pi-v0.82.0 \
+  --pi-root /private/tmp/pi-v0.82.1 \
   --require-closed
 ```
 

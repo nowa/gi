@@ -6,7 +6,7 @@ This repository is a Go rebuild of the Pi `pi-ai`, `pi-agent-core`, and `pi-tui`
 
 > The detailed tables originated in the v0.78.0 audit. The machine-verifiable
 > source/member/module/test-mapping gate is now closed against the pinned Pi
-> v0.82.0 baseline. Exact scope, Go-native replacements, exclusions, and the
+> v0.82.1 baseline. Exact scope, Go-native replacements, exclusions, and the
 > zero-gap snapshot live in [`docs/pi-parity/`](docs/pi-parity/README.md).
 
 Case-level provider/agent parity is tracked in
@@ -30,7 +30,7 @@ transcript, and conformance artifacts live under [`protocol/spec/`](protocol/spe
 | `@earendil-works/pi-agent-core` | `github.com/nowa/gi/gi-agent-core` | Pi test-compatible: agent loop, stateful agent, tools, queues, lifecycle events |
 | `pi-agent-core` harness/session | `github.com/nowa/gi/gi-agent-core/harness` | Pi test-compatible: AgentHarness turn orchestration, stream hooks, local execution env, queue lifecycle, skills, prompt templates, system prompt formatting, truncate, uuidv7, storage/session/repo, session compaction, branch tree navigation and branch-summary hook customization |
 | `@earendil-works/pi-tui` | `github.com/nowa/gi/gi-tui` | Compatibility layer: Component/Container/TUI/Terminal abstractions including safe ordered child mutation and thread-safe snapshot rendering for chat-style layouts, race-safe mutable render components, overlays including Pi-style integer and decimal percentage `SizeValue` layout, key parsing/keybindings, autocomplete/fuzzy matching, text measurement/wrapping/truncation, reusable KillRing/UndoStack helpers, stdin escape/paste splitting, common components including SettingsList empty-current-value handling and CancellableLoader with Go context plus Pi-style signal/abort compatibility, editor input/undo/paste/autocomplete/rendering, ProcessTerminal raw mode/window sizing through Go's `golang.org/x/term`, keyboard negotiation, and terminal image fallbacks |
-| `@earendil-works/pi-coding-agent` | `github.com/nowa/gi/gi-coding-agent` | Pi v0.82.0 audited scope closed for CLI/config/settings, auth/model registry, print/RPC modes, session runtime, session manager, tools, package/resource loading, protocol-backed extensions, export helpers, experimental first-time setup, and interactive TUI runtime. One instance-scoped `ModelRuntime` composes built-ins, remote catalogs, `models.json`, extensions, OAuth model projection, and user overrides; it owns an injectable credential store plus process-local overlay, credential-dependent refresh, immutable availability snapshots, and final request assembly, while `ModelRegistry` remains a compatibility facade. Case/source/member/module evidence and explicit TypeScript/Node product-scope replacements are under `docs/pi-parity/`; this is not a blanket claim for packages excluded by `baseline.json` or credentialed live-provider behavior. |
+| `@earendil-works/pi-coding-agent` | `github.com/nowa/gi/gi-coding-agent` | Pi v0.82.1 audited scope closed for CLI/config/settings, auth/model registry, print/RPC modes, session runtime, session manager, tools, package/resource loading, protocol-backed extensions, export helpers, experimental first-time setup, and interactive TUI runtime. One instance-scoped `ModelRuntime` composes built-ins, remote catalogs, `models.json`, extensions, OAuth model projection, and user overrides; it owns an injectable credential store plus process-local overlay, credential-dependent refresh, immutable availability snapshots, and final request assembly, while `ModelRegistry` remains a compatibility facade. Case/source/member/module evidence and explicit TypeScript/Node product-scope replacements are under `docs/pi-parity/`; this is not a blanket claim for packages excluded by `baseline.json` or credentialed live-provider behavior. |
 
 The current official-package proof also covers `gi-mcp-adapter` stdio MCP
 `initialize`, `tools/list`, and `tools/call` execution for configured server
@@ -103,7 +103,7 @@ single/automatic mode flow, including independent light and dark choices,
 active-terminal preview, explicit Apply, mode switching, and cancel restoration;
 only the completed selection reaches persistent settings.
 
-Theme loading also follows Pi v0.82.0's reserved-name and max-thinking color
+Theme loading also follows Pi v0.82.1's reserved-name and max-thinking color
 contracts. Custom theme names containing `/` are rejected before discovery,
 activation, or export. Built-in `thinkingMax` colors are distinct, while legacy
 themes that omit the optional token fall back to `thinkingXhigh` in both TUI and

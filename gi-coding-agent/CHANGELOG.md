@@ -1,3 +1,8 @@
+## 0.82.1
+
+- Caught up to Pi v0.82.1 provider, model catalog, dynamic cache, scoped-model,
+  renderer, resource-loader, and compaction contracts.
+
 ## 0.82.0
 
 - Closed the declared Pi v0.82.0 parity scope with a reproducible zero-gap gate.

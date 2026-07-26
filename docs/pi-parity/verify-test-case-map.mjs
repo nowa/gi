@@ -16,6 +16,10 @@ const modules = [
 				"Exercises Pi's TypeScript-only models.dev source generator. Gi intentionally consumes Pi's published provider JSON, strictly decodes thinkingLevelMap, and preserves that verified metadata in its generated Go catalog.",
 		},
 		aliases: {
+			"packages/ai/test/anthropic-auth-token.test.ts": [
+				"gi-llm-provider/anthropic_auth_test.go",
+				"gi-llm-provider/anthropic_provider_test.go",
+			],
 			"packages/ai/test/anthropic-oauth.test.ts": ["gi-llm-provider/oauth_test.go"],
 			"packages/ai/test/azure-openai-base-url.test.ts": [
 				"gi-llm-provider/config_test.go",
@@ -51,6 +55,7 @@ const modules = [
 			"packages/ai/test/openrouter-cache-write-repro.test.ts": [
 				"gi-llm-provider/openai_completions_stream_test.go",
 			],
+			"packages/ai/test/radius-oauth.test.ts": ["gi-llm-provider/radius_oauth_test.go"],
 			"packages/ai/test/responseid.test.ts": [
 				"gi-llm-provider/anthropic_stream_test.go",
 				"gi-llm-provider/google_provider_test.go",
@@ -95,12 +100,27 @@ const modules = [
 			"packages/ai/test/zen.test.ts": ["gi-llm-provider/model_catalog_test.go"],
 		},
 		caseAliases: {
+			"packages/ai/test/anthropic-cache-write-1h-cost.test.ts": {
+				"falls back to the 5m rate when no breakdown is reported": [
+					"gi-llm-provider/anthropic_stream_test.go",
+				],
+			},
+			"packages/ai/test/anthropic-sse-parsing.test.ts": {
+				"ignores unknown SSE events after message_stop": [
+					"gi-llm-provider/anthropic_stream_test.go",
+				],
+			},
 			"packages/ai/test/bedrock-convert-messages.test.ts": {
 				"replaces blank user string content with a placeholder": [
 					"gi-llm-provider/bedrock_payload_test.go",
 				],
 				"replaces user content emptied by surrogate sanitization with a placeholder": [
 					"gi-llm-provider/bedrock_payload_test.go",
+				],
+			},
+			"packages/ai/test/error-body.test.ts": {
+				"ignores a Bedrock response stream instead of serializing its internals": [
+					"gi-llm-provider/bedrock_stream_test.go",
 				],
 			},
 			"packages/ai/test/github-copilot-oauth.test.ts": {
@@ -249,6 +269,9 @@ const modules = [
 		aliases: {
 			"packages/coding-agent/test/ansi-utils.test.ts": ["gi-coding-agent/pi_coding_agent_case_names_test.go"],
 			"packages/coding-agent/test/args.test.ts": ["gi-coding-agent/pi_coding_agent_case_names_test.go"],
+			"packages/coding-agent/test/custom-message.test.ts": [
+				"gi-coding-agent/custom_message_component_test.go",
+			],
 			"packages/coding-agent/test/compaction-serialization.test.ts": [
 				"gi-agent-core/harness/compaction_test.go",
 				"gi-coding-agent/pi_coding_agent_case_names_test.go",
@@ -392,6 +415,9 @@ const modules = [
 				"gi-coding-agent/agent_session_concurrent_test.go",
 				"gi-coding-agent/agent_session_retry_events_test.go",
 			],
+			"packages/coding-agent/test/suite/regressions/6949-unavailable-scoped-model.test.ts": [
+				"gi-coding-agent/unavailable_scoped_models_test.go",
+			],
 			"packages/coding-agent/test/tools.test.ts": [
 				"gi-coding-agent/tools_read_test.go",
 				"gi-coding-agent/tools_write_edit_test.go",
@@ -411,6 +437,11 @@ const modules = [
 			"packages/coding-agent/test/model-runtime-auth-options.test.ts": {
 				"transforms fully assembled headers once without forwarding the transform": [
 					"gi-llm-provider/models_runtime_test.go",
+				],
+			},
+			"packages/coding-agent/test/remote-catalog-provider.test.ts": {
+				"drops a stale etag when the overlay becomes unavailable": [
+					"gi-llm-provider/remote_catalog_test.go",
 				],
 			},
 			"packages/coding-agent/test/runtime-credentials.test.ts": {
