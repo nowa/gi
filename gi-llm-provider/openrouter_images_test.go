@@ -226,7 +226,7 @@ func TestOpenRouterImagesProviderHandlesHTTPError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.StopReason != ImagesStopReasonError || !strings.Contains(result.ErrorMessage, "HTTP 400") {
+	if result.StopReason != ImagesStopReasonError || result.ErrorMessage != "400: bad request" {
 		t.Fatalf("result = %#v", result)
 	}
 }

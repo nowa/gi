@@ -347,6 +347,66 @@ func TestRetryProviderRequestRetriesRetryableErrors(t *testing.T) {
 	}
 }
 
+func TestIsRetryableProviderErrorMatchesPiPolicy(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "ordinary error", err: errors.New("network error"), want: false},
+		{name: "missing status", err: &ProviderError{}, want: true},
+		{name: "explicit retry", err: &ProviderError{
+			StatusCode: http.StatusBadRequest,
+			Headers:    http.Header{"X-Should-Retry": []string{"true"}},
+		}, want: true},
+		{name: "explicit no retry", err: &ProviderError{
+			StatusCode: http.StatusInternalServerError,
+			Headers:    http.Header{"X-Should-Retry": []string{"false"}},
+		}, want: false},
+		{name: "directive value is case sensitive", err: &ProviderError{
+			StatusCode: http.StatusTooManyRequests,
+			Headers:    http.Header{"X-Should-Retry": []string{"FALSE"}},
+		}, want: true},
+		{name: "request timeout", err: &ProviderError{StatusCode: http.StatusRequestTimeout}, want: true},
+		{name: "conflict", err: &ProviderError{StatusCode: http.StatusConflict}, want: true},
+		{name: "rate limit", err: &ProviderError{StatusCode: http.StatusTooManyRequests}, want: true},
+		{name: "server error", err: &ProviderError{StatusCode: http.StatusInternalServerError}, want: true},
+		{name: "bad request", err: &ProviderError{StatusCode: http.StatusBadRequest}, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := IsRetryableProviderError(tc.err); got != tc.want {
+				t.Fatalf("IsRetryableProviderError(%v) = %t, want %t", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseProviderHeaderFloatMatchesJavaScriptPrefix(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		input string
+		want  float64
+		ok    bool
+	}{
+		{input: "1000", want: 1000, ok: true},
+		{input: "  -0.5e2 seconds", want: -50, ok: true},
+		{input: "1ms", want: 1, ok: true},
+		{input: "0x10", want: 0, ok: true},
+		{input: "not-a-number", ok: false},
+	}
+	for _, tc := range cases {
+		got, ok := parseProviderHeaderFloat(tc.input)
+		if ok != tc.ok || got != tc.want {
+			t.Fatalf("parseProviderHeaderFloat(%q) = (%v, %t), want (%v, %t)", tc.input, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
 func TestRetryProviderRequestUsesConfiguredBaseDelay(t *testing.T) {
 	t.Parallel()
 
@@ -423,7 +483,7 @@ func TestRetryProviderRequestRejectsServerDelayAboveLimit(t *testing.T) {
 			Err:        errors.New("provider error: 429"),
 		}
 	})
-	if err == nil || !strings.Contains(err.Error(), "server requested 277403s retry delay (max: 1s)") {
+	if err == nil || !strings.Contains(err.Error(), "Server requested 277403s retry delay (max: 1s)") {
 		t.Fatalf("error = %v", err)
 	}
 	if attempts != 1 {
@@ -487,6 +547,61 @@ func TestRetryProviderRequestCancelsBackoff(t *testing.T) {
 	}
 	if attempts != 1 {
 		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+}
+
+func TestRetryProviderRequestCancellationWinsAfterRequestError(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	providerErr := &ProviderError{
+		StatusCode: http.StatusTooManyRequests,
+		Err:        errors.New("provider error: 429"),
+	}
+	attempts := 0
+	_, err := RetryProviderRequest(ctx, ProviderRetryOptions{MaxRetries: 0}, func(context.Context) (string, error) {
+		attempts++
+		cancel()
+		return "", providerErr
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+}
+
+func TestRetryProviderRequestInvalidRetryAfterRetriesImmediately(t *testing.T) {
+	t.Parallel()
+
+	attempts := 0
+	var delays []time.Duration
+	value, err := RetryProviderRequest(context.Background(), ProviderRetryOptions{
+		MaxRetries: 1,
+		Sleep: func(_ context.Context, delay time.Duration) error {
+			delays = append(delays, delay)
+			return nil
+		},
+	}, func(context.Context) (string, error) {
+		attempts++
+		if attempts == 1 {
+			return "", &ProviderError{
+				StatusCode: http.StatusTooManyRequests,
+				Headers:    http.Header{"Retry-After": []string{"not-a-date"}},
+				Err:        errors.New("provider error: 429"),
+			}
+		}
+		return "ok", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != "ok" || attempts != 2 {
+		t.Fatalf("value=%q attempts=%d", value, attempts)
+	}
+	if !reflect.DeepEqual(delays, []time.Duration{0}) {
+		t.Fatalf("delays = %v, want [0s]", delays)
 	}
 }
 

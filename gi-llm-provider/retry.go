@@ -19,6 +19,10 @@ var nonRetryableProviderLimitErrorPattern = regexp.MustCompile(`(?i)(GoUsageLimi
 
 var retryableProviderErrorPattern = regexp.MustCompile(`(?i)(overloaded|rate.?limit|too many requests|429|500|502|503|504|524|service.?unavailable|server.?error|internal.?error|provider.?returned.?error|network.?error|connection.?error|connection.?refused|connection.?lost|other side closed|fetch failed|getaddrinfo|ENOTFOUND|EAI_AGAIN|upstream.?connect|reset before headers|socket hang up|socket connection was closed|timed? out|timeout|terminated|websocket.?closed|websocket.?error|ended without|stream ended before message_stop|stream ended before a terminal response event|http2 request did not get a response|retry delay|you can retry your request|try your request again|please retry your request|ResourceExhausted)`)
 
+var providerHeaderFloatPrefixPattern = regexp.MustCompile(
+	`^[ \t\n\r\f\v]*[+-]?(?:Infinity|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)`,
+)
+
 // IsRetryableAssistantError classifies a terminal assistant error using the
 // shared Pi-compatible provider and transport patterns. Policy and retry state
 // remain owned by the calling runtime.
@@ -178,6 +182,11 @@ func RetryProviderRequest[T any](ctx context.Context, options ProviderRetryOptio
 		if err == nil {
 			return value, nil
 		}
+		// Pi gives an AbortSignal that fired during the request precedence over
+		// the provider error, even when the request implementation ignored it.
+		if contextErr := ctx.Err(); contextErr != nil {
+			return zero, contextErr
+		}
 		if retryIndex >= maxRetries || !IsRetryableProviderError(err) {
 			return zero, err
 		}
@@ -199,7 +208,7 @@ func IsRetryableProviderError(err error) bool {
 	if !errors.As(err, &providerErr) || providerErr == nil {
 		return false
 	}
-	switch strings.ToLower(providerErr.Headers.Get("x-should-retry")) {
+	switch providerErr.Headers.Get("x-should-retry") {
 	case "true":
 		return true
 	case "false":
@@ -221,18 +230,18 @@ func providerRetryDelay(err error, retryIndex int, options ProviderRetryOptions)
 	}
 
 	if value := providerErr.Headers.Get("retry-after-ms"); value != "" {
-		if milliseconds, parseErr := strconv.ParseFloat(value, 64); parseErr == nil {
+		if milliseconds, ok := parseProviderHeaderFloat(value); ok {
 			return validateProviderRetryDelay(
-				time.Duration(milliseconds*float64(time.Millisecond)),
+				providerDurationFromFloat(milliseconds, time.Millisecond),
 				options.MaxRetryDelay,
 				providerErr.Error(),
 			)
 		}
 	}
 	if value := providerErr.Headers.Get("retry-after"); value != "" {
-		if seconds, parseErr := strconv.ParseFloat(value, 64); parseErr == nil {
+		if seconds, ok := parseProviderHeaderFloat(value); ok {
 			return validateProviderRetryDelay(
-				time.Duration(seconds*float64(time.Second)),
+				providerDurationFromFloat(seconds, time.Second),
 				options.MaxRetryDelay,
 				providerErr.Error(),
 			)
@@ -244,6 +253,9 @@ func providerRetryDelay(err error, retryIndex int, options ProviderRetryOptions)
 		if retryAt, parseErr := http.ParseTime(value); parseErr == nil {
 			return validateProviderRetryDelay(retryAt.Sub(now()), options.MaxRetryDelay, providerErr.Error())
 		}
+		// JavaScript's Date.parse produces NaN here and setTimeout treats that
+		// as zero. Preserve the observable immediate-retry behavior.
+		return validateProviderRetryDelay(0, options.MaxRetryDelay, providerErr.Error())
 	}
 
 	if retryIndex < 0 {
@@ -272,13 +284,46 @@ func validateProviderRetryDelay(delay time.Duration, configuredMax *time.Duratio
 	}
 	if maxDelay > 0 && delay > maxDelay {
 		return 0, fmt.Errorf(
-			"server requested %ds retry delay (max: %ds). %s",
+			"Server requested %ds retry delay (max: %ds). %s",
 			int64(math.Ceil(delay.Seconds())),
 			int64(math.Ceil(maxDelay.Seconds())),
 			providerErrorMessage,
 		)
 	}
 	return max(delay, 0), nil
+}
+
+// parseProviderHeaderFloat mirrors JavaScript Number.parseFloat: leading
+// whitespace is ignored and a valid numeric prefix is accepted even when the
+// provider appends a unit or other suffix.
+func parseProviderHeaderFloat(value string) (float64, bool) {
+	prefix := providerHeaderFloatPrefixPattern.FindString(value)
+	if prefix == "" {
+		return 0, false
+	}
+	prefix = strings.TrimSpace(prefix)
+	switch prefix {
+	case "Infinity", "+Infinity":
+		return math.Inf(1), true
+	case "-Infinity":
+		return math.Inf(-1), true
+	}
+	parsed, err := strconv.ParseFloat(prefix, 64)
+	return parsed, err == nil
+}
+
+func providerDurationFromFloat(value float64, unit time.Duration) time.Duration {
+	const maximum = time.Duration(1<<63 - 1)
+	const minimum = -maximum - 1
+	if math.IsInf(value, 1) ||
+		value >= float64(maximum)/float64(unit) {
+		return maximum
+	}
+	if math.IsInf(value, -1) ||
+		value <= float64(minimum)/float64(unit) {
+		return minimum
+	}
+	return time.Duration(value * float64(unit))
 }
 
 func providerRetrySleep(ctx context.Context, delay time.Duration, sleep func(context.Context, time.Duration) error) error {

@@ -1,6 +1,7 @@
 package gillmprovider
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -569,14 +570,13 @@ type openAICodexAPIError struct {
 }
 
 func (e *openAICodexAPIError) Error() string {
-	detail := strings.TrimSpace(e.message)
-	if detail == "" {
-		detail = strings.TrimSpace(e.code)
+	if e.message != "" {
+		return e.message
 	}
-	if detail == "" {
-		detail = "Codex error"
+	if e.code != "" {
+		return e.code
 	}
-	return detail
+	return "Codex error"
 }
 
 type openAICodexProtocolError struct {
@@ -595,62 +595,11 @@ func isOpenAICodexNonTransportError(err error) bool {
 }
 
 func decodeOpenAICodexWebSocketEvent(payload []byte) (OpenAIResponsesStreamEvent, error) {
-	var envelope struct {
-		Type    string `json:"type"`
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Error   *struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-		Response *struct {
-			Error *struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
-			} `json:"error"`
-		} `json:"response"`
-	}
-	if err := json.Unmarshal(payload, &envelope); err != nil {
+	if !json.Valid(payload) {
+		var value any
+		err := json.Unmarshal(payload, &value)
 		return OpenAIResponsesStreamEvent{}, &openAICodexProtocolError{
 			message: fmt.Sprintf("invalid Codex WebSocket JSON: %v", err),
-			payload: append(json.RawMessage(nil), payload...),
-		}
-	}
-	switch envelope.Type {
-	case "error":
-		code, message := envelope.Code, envelope.Message
-		if envelope.Error != nil {
-			if code == "" {
-				code = envelope.Error.Code
-			}
-			if message == "" {
-				message = envelope.Error.Message
-			}
-		}
-		detail := strings.TrimSpace(message)
-		if detail == "" {
-			detail = strings.TrimSpace(code)
-		}
-		if detail == "" {
-			detail = strings.TrimSpace(string(payload))
-		}
-		return OpenAIResponsesStreamEvent{}, &openAICodexAPIError{
-			code:    code,
-			message: "Codex error: " + detail,
-			payload: append(json.RawMessage(nil), payload...),
-		}
-	case "response.failed":
-		var code, message string
-		if envelope.Response != nil && envelope.Response.Error != nil {
-			code = envelope.Response.Error.Code
-			message = envelope.Response.Error.Message
-		}
-		if message == "" {
-			message = "Codex response failed"
-		}
-		return OpenAIResponsesStreamEvent{}, &openAICodexAPIError{
-			code:    code,
-			message: message,
 			payload: append(json.RawMessage(nil), payload...),
 		}
 	}
@@ -661,7 +610,59 @@ func decodeOpenAICodexWebSocketEvent(payload []byte) (OpenAIResponsesStreamEvent
 			payload: append(json.RawMessage(nil), payload...),
 		}
 	}
+	if eventErr := openAICodexTerminalEventError(event, payload); eventErr != nil {
+		return OpenAIResponsesStreamEvent{}, eventErr
+	}
 	return event, nil
+}
+
+// openAICodexTerminalEventError applies Codex's protocol-specific error
+// projection before events enter the shared Responses processor. Pi performs
+// the same projection in mapCodexEvents for both SSE and WebSocket transports.
+func openAICodexTerminalEventError(event OpenAIResponsesStreamEvent, payload []byte) error {
+	switch event.Type {
+	case "error":
+		detail := event.Error
+		if detail == "" {
+			detail = event.ErrorCode
+		}
+		if detail == "" {
+			detail = compactOpenAICodexEvent(payload)
+		}
+		return &openAICodexAPIError{
+			code:    event.ErrorCode,
+			message: "Codex error: " + detail,
+			payload: append(json.RawMessage(nil), payload...),
+		}
+	case "response.failed":
+		code := ""
+		message := ""
+		if event.Response != nil && event.Response.Error != nil {
+			code = event.Response.Error.Code
+			message = event.Response.Error.Message
+		}
+		if message == "" {
+			message = "Codex response failed"
+		}
+		return &openAICodexAPIError{
+			code:    code,
+			message: message,
+			payload: append(json.RawMessage(nil), payload...),
+		}
+	default:
+		return nil
+	}
+}
+
+func compactOpenAICodexEvent(payload []byte) string {
+	if len(payload) == 0 {
+		return "{}"
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, payload); err == nil {
+		return compact.String()
+	}
+	return string(payload)
 }
 
 func openAICodexWebSocketResponseItems(
@@ -778,11 +779,11 @@ func streamOpenAICodexResponsesBody(
 		if err != nil {
 			return false, err
 		}
+		if eventErr := openAICodexTerminalEventError(event, []byte(data)); eventErr != nil {
+			return false, eventErr
+		}
 		normalized, ok := normalizeOpenAICodexEvent(event)
 		if !ok {
-			if event.Type == "error" {
-				return false, fmt.Errorf("codex error: %s", event.Error)
-			}
 			return false, nil
 		}
 		emitted := processOpenAICodexNormalizedEvent(
@@ -802,11 +803,23 @@ func streamOpenAICodexResponsesBody(
 		return false, nil
 	})
 	if err != nil {
-		stream.Push(AssistantMessageEvent{Type: "error", Reason: StopReasonError, Error: AssistantErrorMessage(err.Error(), model, false)})
+		output.StopReason = StopReasonError
+		output.ErrorMessage = err.Error()
+		stream.Push(AssistantMessageEvent{
+			Type:   "error",
+			Reason: StopReasonError,
+			Error:  cloneMessageState(output),
+		})
 		return
 	}
 	if !terminal {
-		stream.Push(AssistantMessageEvent{Type: "done", Reason: output.StopReason, Message: output})
+		output.StopReason = StopReasonError
+		output.ErrorMessage = "OpenAI Responses stream ended before a terminal response event"
+		stream.Push(AssistantMessageEvent{
+			Type:   "error",
+			Reason: StopReasonError,
+			Error:  cloneMessageState(output),
+		})
 	}
 }
 

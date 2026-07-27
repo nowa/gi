@@ -237,7 +237,7 @@ func TestOpenAIResponsesProviderHandlesHTTPErrorAsAssistantError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.StopReason != StopReasonError || !strings.Contains(result.ErrorMessage, "HTTP 400") {
+	if result.StopReason != StopReasonError || result.ErrorMessage != "OpenAI API error (400): bad request" {
 		t.Fatalf("result = %#v", result)
 	}
 }
@@ -268,6 +268,24 @@ func TestDecodeOpenAIResponsesSSEEvent(t *testing.T) {
 	if terminal.Response == nil || terminal.Response.Usage == nil ||
 		terminal.Response.Usage.OutputTokensDetails.ReasoningTokens != 4 {
 		t.Fatalf("terminal event = %#v", terminal)
+	}
+
+	failed, err := DecodeOpenAIResponsesSSEEvent([]byte(`{"type":"response.failed","response":{"id":"resp_failed","status":"failed","error":{"code":"server_error","message":"boom"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failed.Response == nil || failed.Response.Error == nil ||
+		failed.Response.Error.Code != "server_error" ||
+		failed.Response.Error.Message != "boom" {
+		t.Fatalf("failed event = %#v", failed)
+	}
+
+	apiError, err := DecodeOpenAIResponsesSSEEvent([]byte(`{"type":"error","code":"invalid_request","message":"bad request"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if apiError.ErrorCode != "invalid_request" || apiError.Error != "bad request" {
+		t.Fatalf("error event = %#v", apiError)
 	}
 }
 

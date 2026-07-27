@@ -170,9 +170,16 @@ func DecodeOpenAIResponsesSSEEvent(data []byte) (OpenAIResponsesStreamEvent, err
 		Delta:       raw.Delta,
 		Arguments:   raw.Arguments,
 		Input:       raw.Input,
+		ErrorCode:   raw.Code,
+		Error:       raw.Message,
 	}
 	if raw.Error != nil {
-		event.Error = raw.Error.Message
+		if event.ErrorCode == "" {
+			event.ErrorCode = raw.Error.Code
+		}
+		if event.Error == "" {
+			event.Error = raw.Error.Message
+		}
 	}
 	if raw.Response != nil {
 		event.Response = &OpenAIResponsesResponseEvent{
@@ -196,6 +203,12 @@ func DecodeOpenAIResponsesSSEEvent(data []byte) (OpenAIResponsesStreamEvent, err
 		}
 		if raw.Response.IncompleteDetails != nil {
 			event.Response.IncompleteDetails = &OpenAIResponsesIncompleteDetails{Reason: raw.Response.IncompleteDetails.Reason}
+		}
+		if raw.Response.Error != nil {
+			event.Response.Error = &OpenAIResponsesError{
+				Code:    raw.Response.Error.Code,
+				Message: raw.Response.Error.Message,
+			}
 		}
 	}
 	if raw.Item != nil {
@@ -233,10 +246,13 @@ type openAIResponsesRawEvent struct {
 	Delta       string                         `json:"delta"`
 	Arguments   string                         `json:"arguments"`
 	Input       string                         `json:"input"`
+	Code        string                         `json:"code"`
+	Message     string                         `json:"message"`
 	Error       *openAIResponsesRawError       `json:"error"`
 }
 
 type openAIResponsesRawError struct {
+	Code    string `json:"code"`
 	Message string `json:"message"`
 }
 
@@ -246,6 +262,7 @@ type openAIResponsesRawResponse struct {
 	ServiceTier       string                               `json:"service_tier"`
 	Usage             *openAIResponsesRawUsage             `json:"usage"`
 	IncompleteDetails *openAIResponsesRawIncompleteDetails `json:"incomplete_details"`
+	Error             *openAIResponsesRawError             `json:"error"`
 }
 
 type openAIResponsesRawUsage struct {

@@ -107,12 +107,12 @@ func postJSONWithAcceptAndRetry(
 			return response, nil
 		}
 
-		body, readErr := io.ReadAll(io.LimitReader(response.Body, MaxProviderErrorBodyChars+1))
+		body, readErr := readProviderErrorBody(response.Body)
 		response.Body.Close()
 		if readErr != nil {
-			return nil, newProviderHTTPError(response.StatusCode, response.Header, string(body), readErr)
+			return nil, newNormalizedProviderHTTPError(response.StatusCode, response.Header, body, readErr)
 		}
-		return nil, newProviderHTTPError(response.StatusCode, response.Header, string(body), errors.New(response.Status))
+		return nil, newNormalizedProviderHTTPError(response.StatusCode, response.Header, body, errors.New(response.Status))
 	})
 }
 

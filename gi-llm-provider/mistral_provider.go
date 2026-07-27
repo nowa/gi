@@ -179,7 +179,7 @@ func (p MistralProvider) stream(model Model, llmContext Context, options StreamO
 		if ctx.Err() != nil {
 			return ErrorAssistantStream(AssistantErrorMessage(ctx.Err().Error(), model, true)), nil
 		}
-		return streamProviderRequestError(model, err), nil
+		return streamProviderRequestError(model, err, "Mistral API error"), nil
 	}
 	stream := NewAssistantMessageEventStream()
 	go streamMistralBody(model, response.Body, stream)

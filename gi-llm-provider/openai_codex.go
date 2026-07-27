@@ -303,6 +303,16 @@ func ProcessOpenAICodexStreamEvents(model Model, output *Message, events []OpenA
 	)
 	var emitted []AssistantMessageEvent
 	for _, event := range events {
+		if eventErr := openAICodexTerminalEventError(event, nil); eventErr != nil {
+			output.StopReason = StopReasonError
+			output.ErrorMessage = eventErr.Error()
+			emitted = append(emitted, AssistantMessageEvent{
+				Type:   "error",
+				Reason: StopReasonError,
+				Error:  cloneMessageState(*output),
+			})
+			break
+		}
 		normalized, ok := normalizeOpenAICodexEvent(event)
 		if !ok {
 			continue
@@ -535,14 +545,8 @@ func normalizeOpenAICodexEvent(event OpenAIResponsesStreamEvent) (OpenAIResponse
 		}
 		event.Type = "response.completed"
 		return event, true
-	case "response.failed":
-		if event.Response == nil {
-			event.Response = &OpenAIResponsesResponseEvent{Status: "failed"}
-		}
-		event.Type = "response.completed"
-		return event, true
 	case "error":
-		return event, false
+		return event, true
 	default:
 		return event, true
 	}

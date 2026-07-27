@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -103,7 +102,7 @@ func TestMistralProviderHandlesHTTPError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.StopReason != StopReasonError || !strings.Contains(result.ErrorMessage, "HTTP 400") {
+	if result.StopReason != StopReasonError || result.ErrorMessage != "Mistral API error (400): bad request" {
 		t.Fatalf("result = %#v", result)
 	}
 }

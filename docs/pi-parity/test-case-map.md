@@ -24,7 +24,7 @@ The generated file-level inventory is in
 
 | Area | Pi `test`/`it` cases | Gi top-level Go tests | Case-name candidates | Current status |
 | --- | ---: | ---: | ---: | --- |
-| `packages/ai` / `gi-llm-provider` | 1208 | 433 | 1208/1208 | Provider/model/source surface has named case coverage for all 113 in-scope Pi AI test files; one TypeScript generator file with 3 cases is explicitly excluded. |
+| `packages/ai` / `gi-llm-provider` | 1208 | 457 | 1208/1208 | Provider/model/source surface has named case coverage for all 113 in-scope Pi AI test files; one TypeScript generator file with 3 cases is explicitly excluded. |
 | `packages/agent` / `gi-agent-core` + harness | 212 | 144 | 212/212 | Core loop, proxy, session, compaction, and harness behavior have named case coverage for all 16 in-scope Pi agent-core test files; 2 optional SQLite-adapter files with 12 cases are explicitly excluded. |
 | `packages/tui` / `gi-tui` | 700 | 501 | 700/700 | Component/editor/terminal parity has named case candidates for all 27 Pi TUI test files, with fixture-level Markdown/xterm checks validated by focused TUI tests. |
 | `packages/coding-agent` / `gi-coding-agent` | 1650 | 1283 | 1650/1650 | Interactive, print/RPC, packages, extensions, tools, session, OAuth, and utility edge cases have named case coverage for all 181 in-scope Pi coding-agent test files; 2 product/runtime-specific files with 10 cases are explicitly excluded. |

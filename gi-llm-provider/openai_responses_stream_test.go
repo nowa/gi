@@ -354,3 +354,57 @@ func TestProcessOpenAIResponsesStreamFinalizesTerminalEvents(t *testing.T) {
 		})
 	}
 }
+
+func TestProcessOpenAIResponsesStreamFinalizesProviderFailures(t *testing.T) {
+	t.Parallel()
+
+	model := Model{ID: "gpt-5-mini", Provider: "openai", API: "openai-responses"}
+	tests := []struct {
+		name  string
+		event OpenAIResponsesStreamEvent
+		want  string
+	}{
+		{
+			name: "response failed",
+			event: OpenAIResponsesStreamEvent{
+				Type: "response.failed",
+				Response: &OpenAIResponsesResponseEvent{
+					ID:     "resp_failed",
+					Status: "failed",
+					Error:  &OpenAIResponsesError{Code: "server_error", Message: "boom"},
+				},
+			},
+			want: "server_error: boom",
+		},
+		{
+			name: "top level error",
+			event: OpenAIResponsesStreamEvent{
+				Type:      "error",
+				ErrorCode: "invalid_request",
+				Error:     "bad request",
+			},
+			want: "Error Code invalid_request: bad request",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			output := AssistantMessage(nil, StopReasonStop, model)
+			output.ResponseID = "resp_created"
+			events := ProcessOpenAIResponsesStreamEvents(
+				model,
+				&output,
+				[]OpenAIResponsesStreamEvent{tc.event},
+			)
+			if len(events) != 1 || events[0].Type != "error" {
+				t.Fatalf("events = %#v", events)
+			}
+			if output.StopReason != StopReasonError || output.ErrorMessage != tc.want {
+				t.Fatalf("output = %#v", output)
+			}
+			if output.ResponseID != "resp_created" {
+				t.Fatalf("response ID = %q, failed event must not replace prior state", output.ResponseID)
+			}
+		})
+	}
+}

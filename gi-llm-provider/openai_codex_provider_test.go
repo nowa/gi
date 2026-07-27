@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -189,6 +190,100 @@ func TestOpenAICodexResponsesProviderCompletesWhenSSEBodyStaysOpen(t *testing.T)
 	case <-handlerDone:
 	case <-time.After(time.Second):
 		t.Fatal("provider did not close the SSE body after terminal Codex event")
+	}
+}
+
+func TestOpenAICodexResponsesProviderRejectsSSEWithoutTerminalEvent(t *testing.T) {
+	t.Parallel()
+
+	model := Model{
+		ID:       "gpt-5.1-codex",
+		Provider: "openai-codex",
+		API:      "openai-codex-responses",
+		Input:    []string{"text"},
+	}
+	body := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_partial","status":"in_progress"}}`,
+		`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","status":"in_progress"}}`,
+		`data: {"type":"response.output_text.delta","output_index":0,"delta":"partial"}`,
+		"",
+	}, "\n\n")
+	stream := NewAssistantMessageEventStream()
+	streamOpenAICodexResponsesBody(
+		model,
+		io.NopCloser(strings.NewReader(body)),
+		stream,
+		"",
+		nil,
+		nil,
+	)
+	events := collectAssistantStreamEvents(stream)
+	result, err := stream.Result(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.StopReason != StopReasonError ||
+		result.ErrorMessage != "OpenAI Responses stream ended before a terminal response event" {
+		t.Fatalf("result = %#v", result)
+	}
+	if len(result.Content) != 1 || result.Content[0].Text != "partial" {
+		t.Fatalf("partial content was not preserved: %#v", result.Content)
+	}
+	if len(events) == 0 || events[len(events)-1].Type != "error" ||
+		containsAssistantEvent(events, "done") {
+		t.Fatalf("events = %#v", events)
+	}
+}
+
+func TestOpenAICodexResponsesProviderMapsSSETerminalErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		payload string
+		want    string
+	}{
+		{
+			name:    "api error",
+			payload: `{"type":"error","code":"invalid_request","message":"bad request"}`,
+			want:    "Codex error: bad request",
+		},
+		{
+			name:    "response failed",
+			payload: `{"type":"response.failed","response":{"error":{"code":"server_error","message":"backend failed"}}}`,
+			want:    "backend failed",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			model := Model{
+				ID:       "gpt-5.1-codex",
+				Provider: "openai-codex",
+				API:      "openai-codex-responses",
+				Input:    []string{"text"},
+			}
+			stream := NewAssistantMessageEventStream()
+			streamOpenAICodexResponsesBody(
+				model,
+				io.NopCloser(strings.NewReader("data: "+test.payload+"\n\n")),
+				stream,
+				"",
+				nil,
+				nil,
+			)
+			events := collectAssistantStreamEvents(stream)
+			result, err := stream.Result(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.StopReason != StopReasonError || result.ErrorMessage != test.want {
+				t.Fatalf("result = %#v, want error %q", result, test.want)
+			}
+			if len(events) != 2 || events[0].Type != "start" ||
+				events[1].Type != "error" || events[1].Error.ErrorMessage != test.want {
+				t.Fatalf("events = %#v", events)
+			}
+		})
 	}
 }
 

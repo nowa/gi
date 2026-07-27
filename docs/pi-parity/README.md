@@ -33,6 +33,8 @@ product/runtime decisions.
 The closed snapshot proves the audited source/member/module/test-mapping gate
 for this exact commit. It is not a claim that unrelated Pi packages, live
 credentialed providers, or byte-for-byte TypeScript APIs are implemented.
+The branch-by-branch review of event-stream, retry, provider-error, and stream
+EOF control flow is recorded in `high-risk-control-flow-audit.md`.
 
 CI compares the live verifier output with the committed snapshot:
 

@@ -1,11 +1,14 @@
 package gillmprovider
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
-	"unicode/utf8"
+	"unicode"
+	"unicode/utf16"
 )
 
 // MaxProviderErrorBodyChars bounds provider response bodies exposed to callers.
@@ -19,6 +22,8 @@ type ProviderError struct {
 	Headers    http.Header
 	Body       string
 	Err        error
+
+	bodyNormalized bool
 }
 
 func (e *ProviderError) Error() string {
@@ -61,10 +66,14 @@ func NormalizeProviderError(err error) NormalizedProviderError {
 	var providerErr *ProviderError
 	if errors.As(err, &providerErr) && providerErr != nil {
 		normalized.StatusCode = providerErr.StatusCode
-		normalized.Body = TruncateProviderErrorText(
-			strings.TrimSpace(providerErr.Body),
-			MaxProviderErrorBodyChars,
-		)
+		if providerErr.bodyNormalized {
+			normalized.Body = providerErr.Body
+		} else {
+			normalized.Body = TruncateProviderErrorText(
+				strings.TrimFunc(providerErr.Body, isProviderErrorTrimSpace),
+				MaxProviderErrorBodyChars,
+			)
+		}
 		normalized.MessageCarriesBody = normalized.Body == "" ||
 			strings.Contains(normalized.Message, normalized.Body)
 		if normalized.StatusCode == 0 {
@@ -103,28 +112,124 @@ func FormatProviderError(normalized NormalizedProviderError, prefix ...string) s
 	}
 	if normalized.MessageCarriesBody || normalized.StatusCode == 0 || normalized.Body == "" {
 		if label != "" && normalized.StatusCode != 0 {
-			return fmt.Sprintf("%s (HTTP %d): %s", label, normalized.StatusCode, normalized.Message)
+			return fmt.Sprintf("%s (%d): %s", label, normalized.StatusCode, normalized.Message)
 		}
 		return normalized.Message
 	}
 	if label != "" {
-		return fmt.Sprintf("%s (HTTP %d): %s", label, normalized.StatusCode, normalized.Body)
+		return fmt.Sprintf("%s (%d): %s", label, normalized.StatusCode, normalized.Body)
 	}
-	return fmt.Sprintf("HTTP %d: %s", normalized.StatusCode, normalized.Body)
+	return fmt.Sprintf("%d: %s", normalized.StatusCode, normalized.Body)
 }
 
-// TruncateProviderErrorText truncates by Unicode code point so the result
-// remains valid UTF-8 even when a provider body contains non-ASCII text.
+// TruncateProviderErrorText uses UTF-16 code units because Pi's JavaScript
+// String.length and String.slice do. utf16.Decode replaces a split surrogate
+// with U+FFFD, keeping the Go result valid UTF-8 at the only boundary where the
+// two string models cannot represent exactly the same intermediate value.
 func TruncateProviderErrorText(text string, maxChars int) string {
 	if maxChars < 0 {
 		maxChars = 0
 	}
-	if utf8.RuneCountInString(text) <= maxChars {
+	codeUnits := utf16.Encode([]rune(text))
+	if len(codeUnits) <= maxChars {
 		return text
 	}
-	runes := []rune(text)
-	remaining := len(runes) - maxChars
-	return fmt.Sprintf("%s... [truncated %d chars]", string(runes[:maxChars]), remaining)
+	remaining := len(codeUnits) - maxChars
+	return fmt.Sprintf("%s... [truncated %d chars]", string(utf16.Decode(codeUnits[:maxChars])), remaining)
+}
+
+// readProviderErrorBody applies trim and truncation while reading. It consumes
+// the complete body so the suffix reports the exact number of omitted UTF-16
+// units, but retains at most MaxProviderErrorBodyChars units in memory.
+func readProviderErrorBody(reader io.Reader) (string, error) {
+	if reader == nil {
+		return "", nil
+	}
+
+	input := bufio.NewReader(reader)
+	prefix := make([]uint16, 0, MaxProviderErrorBodyChars)
+	pendingWhitespace := make([]uint16, 0, MaxProviderErrorBodyChars)
+	totalUnits := 0
+	pendingUnits := 0
+	started := false
+	var readErr error
+
+	flushPending := func() {
+		if pendingUnits == 0 {
+			return
+		}
+		totalUnits += pendingUnits
+		prefix = appendUTF16Prefix(prefix, pendingWhitespace, MaxProviderErrorBodyChars)
+		pendingWhitespace = pendingWhitespace[:0]
+		pendingUnits = 0
+	}
+
+	for {
+		value, _, err := input.ReadRune()
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				readErr = err
+			}
+			break
+		}
+		units, unitCount := utf16UnitsForRune(value)
+		if isProviderErrorTrimSpace(value) {
+			if !started {
+				continue
+			}
+			pendingUnits += unitCount
+			pendingWhitespace = appendUTF16Prefix(
+				pendingWhitespace,
+				units[:unitCount],
+				MaxProviderErrorBodyChars-totalUnits,
+			)
+			continue
+		}
+
+		started = true
+		flushPending()
+		totalUnits += unitCount
+		prefix = appendUTF16Prefix(prefix, units[:unitCount], MaxProviderErrorBodyChars)
+	}
+
+	// pendingWhitespace is trailing whitespace and intentionally excluded,
+	// matching JavaScript String.trim().
+	if totalUnits == 0 {
+		return "", readErr
+	}
+	body := string(utf16.Decode(prefix))
+	if totalUnits > MaxProviderErrorBodyChars {
+		body = fmt.Sprintf(
+			"%s... [truncated %d chars]",
+			body,
+			totalUnits-MaxProviderErrorBodyChars,
+		)
+	}
+	return body, readErr
+}
+
+func utf16UnitsForRune(value rune) ([2]uint16, int) {
+	if value > 0xffff {
+		high, low := utf16.EncodeRune(value)
+		return [2]uint16{uint16(high), uint16(low)}, 2
+	}
+	return [2]uint16{uint16(value)}, 1
+}
+
+func appendUTF16Prefix(target, value []uint16, limit int) []uint16 {
+	remaining := limit - len(target)
+	if remaining <= 0 {
+		return target
+	}
+	if len(value) > remaining {
+		value = value[:remaining]
+	}
+	return append(target, value...)
+}
+
+func isProviderErrorTrimSpace(value rune) bool {
+	// ECMAScript trim includes BOM in addition to Unicode White_Space.
+	return value == '\uFEFF' || unicode.IsSpace(value)
 }
 
 func newProviderTransportError(err error) *ProviderError {
@@ -148,7 +253,13 @@ func newProviderHTTPError(statusCode int, headers http.Header, body string, err 
 	return &ProviderError{
 		StatusCode: statusCode,
 		Headers:    headers,
-		Body:       TruncateProviderErrorText(strings.TrimSpace(body), MaxProviderErrorBodyChars),
+		Body:       body,
 		Err:        err,
 	}
+}
+
+func newNormalizedProviderHTTPError(statusCode int, headers http.Header, body string, err error) *ProviderError {
+	providerErr := newProviderHTTPError(statusCode, headers, body, err)
+	providerErr.bodyNormalized = true
+	return providerErr
 }

@@ -2,6 +2,7 @@ package gillmprovider
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -14,6 +15,7 @@ type OpenAIResponsesStreamEvent struct {
 	Delta       string
 	Arguments   string
 	Input       string
+	ErrorCode   string
 	Error       string
 }
 
@@ -23,6 +25,12 @@ type OpenAIResponsesResponseEvent struct {
 	ServiceTier       string
 	Usage             *OpenAIResponsesUsage
 	IncompleteDetails *OpenAIResponsesIncompleteDetails
+	Error             *OpenAIResponsesError
+}
+
+type OpenAIResponsesError struct {
+	Code    string
+	Message string
 }
 
 type OpenAIResponsesUsage struct {
@@ -332,7 +340,7 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 				Partial:      cloneMessageState(*p.output),
 			})
 		}
-	case "response.completed", "response.incomplete", "response.failed":
+	case "response.completed", "response.incomplete":
 		if event.Response != nil {
 			p.output.ResponseID = event.Response.ID
 			if event.Response.Usage != nil {
@@ -347,11 +355,48 @@ func (p *OpenAIResponsesStreamProcessor) Process(event OpenAIResponsesStreamEven
 			}
 		}
 		if p.output.StopReason == StopReasonError {
-			return []AssistantMessageEvent{{Type: "error", Reason: p.output.StopReason, Error: *p.output}}
+			return p.terminalError(p.output.ErrorMessage)
 		}
-		return []AssistantMessageEvent{{Type: "done", Reason: p.output.StopReason, Message: *p.output}}
+		return []AssistantMessageEvent{{
+			Type:    "done",
+			Reason:  p.output.StopReason,
+			Message: cloneMessageState(*p.output),
+		}}
+	case "response.failed":
+		return p.terminalError(openAIResponsesFailedMessage(event.Response))
+	case "error":
+		return p.terminalError(fmt.Sprintf("Error Code %s: %s", event.ErrorCode, event.Error))
 	}
 	return nil
+}
+
+func (p *OpenAIResponsesStreamProcessor) terminalError(message string) []AssistantMessageEvent {
+	p.output.StopReason = StopReasonError
+	p.output.ErrorMessage = message
+	return []AssistantMessageEvent{{
+		Type:   "error",
+		Reason: StopReasonError,
+		Error:  cloneMessageState(*p.output),
+	}}
+}
+
+func openAIResponsesFailedMessage(response *OpenAIResponsesResponseEvent) string {
+	if response != nil && response.Error != nil {
+		code := response.Error.Code
+		if code == "" {
+			code = "unknown"
+		}
+		message := response.Error.Message
+		if message == "" {
+			message = "no message"
+		}
+		return code + ": " + message
+	}
+	if response != nil && response.IncompleteDetails != nil &&
+		response.IncompleteDetails.Reason != "" {
+		return "incomplete: " + response.IncompleteDetails.Reason
+	}
+	return "Unknown error (no error details in response)"
 }
 
 func (p *OpenAIResponsesStreamProcessor) createOutputSlot(
