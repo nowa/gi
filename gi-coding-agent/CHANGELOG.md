@@ -1,3 +1,10 @@
+## 0.82.2
+
+- Added pinned Pi constant, payload, stream, and cost differential gates across
+  every registered provider.
+- Made event delivery race-safe and aligned provider retry, error-body, and
+  OpenAI Responses/Codex terminal behavior with Pi v0.82.1.
+
 ## 0.82.1
 
 - Caught up to Pi v0.82.1 provider, model catalog, dynamic cache, scoped-model,
